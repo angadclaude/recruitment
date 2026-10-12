@@ -1,0 +1,850 @@
+/**
+ * LINK × JUSS Recruitment App — server (Google Apps Script)
+ *
+ * Data lives in tabs of the Google Sheet this script is attached to.
+ * Run `setup()` once from the Apps Script editor. See SETUP.md.
+ */
+
+// ───────────────────────── CONFIG ─────────────────────────
+const CONFIG = {
+  TZ: 'Europe/London',
+  APP_NAME: 'LINK × JUSS Recruitment',
+  OFFICE_ADDRESS: '2nd Floor East, Automotive House, Grays Place, Slough SL2 5AF',
+  PAY_TARGET: 5,                  // net attended appointments per booker, Mon–Fri
+  OUTCOME_DEADLINE_DAY: 6,        // 6 = Saturday (days after Monday: Mon=1 … Sat=6)
+  OUTCOME_DEADLINE_TIME: '19:00', // outcomes logged after this are flagged LATE
+  REPEAT_COUNTS_FOR_PAY: false,   // a repeat attendee (within 12 months) does not count
+  RETENTION_DAYS: 365,            // candidate data auto-deleted after this
+  SESSION_DAYS: 30,               // staff stay logged in for this long
+  HISTORY_SOURCE_ID: '1SjfhyQw-mnJY3iT8Q7p50795kP4DySJFx9fVcEEB_P8', // old Google Form sheet
+  HISTORY_SOURCE_TAB: 'Form Responses 1',
+};
+
+// Right-to-work options. level: ok | visa (ask expiry) | check (amber) | no (red, not paid)
+const RTW = [
+  ['British or Irish citizen', 'ok'],
+  ['Settled status / Indefinite Leave to Remain', 'ok'],
+  ['Pre-settled status', 'ok'],
+  ['Refugee / humanitarian protection', 'ok'],
+  ['Graduate visa (PSW)', 'visa'],
+  ['Spouse / partner / family visa', 'visa'],
+  ['Dependant of a Skilled Worker', 'visa'],
+  ['Youth Mobility visa', 'visa'],
+  ['BNO visa', 'visa'],
+  ['Ukraine scheme', 'visa'],
+  ['Dependant of a student', 'check'],
+  ['Student visa (Tier 4)', 'no'],
+  ['Skilled Worker / Health & Care visa', 'no'],
+  ['Asylum seeker (decision pending)', 'no'],
+  ['I need visa sponsorship', 'no'],
+  ['Other', 'check'],
+];
+
+// Admins can add, edit, switch off and delete users. Created by setup().
+const ADMINS = [
+  { name: 'Angad Oshan', email: 'angad@linkmarketing.org.uk', company: 'LINK' },
+  { name: 'Jess Grace', email: 'jess@linkmarketing.org.uk', company: 'LINK' },
+  { name: 'Satpal Oshan', email: 'satpal@jussmarketing.co.uk', company: 'JUSS' },
+  { name: 'Rubal Oshan', email: 'rubal@jussmarketing.co.uk', company: 'JUSS' },
+];
+
+const OUTCOMES = ['Academy booked', 'Thinking it over', 'No answer', 'Declined', 'Not suitable'];
+
+const SHEETS = {
+  Users: ['id', 'name', 'email', 'company', 'roles', 'active', 'created_at'],
+  Candidates: [
+    'id', 'created_at', 'attended_date', 'week_ending', 'resume_token',
+    'full_name', 'mobile', 'email', 'over18', 'booker_typed', 'booker_id', 'booker_name', 'company',
+    'source', 'rtw', 'visa_expiry', 'privacy_ok',
+    'repeat_of', 'repeat_info', 'repeat_block',
+    'in_room', 'presenter_id', 'presenter_name', 'rag', 'stars', 'tags', 'notes', 'notes_at',
+    'eval_at', 'q1_excitement', 'q2_stood_out', 'q3_reason', 'q4_situation', 'q4_looking_for',
+    'q5_start_date', 'q6_days', 'q7_commute', 'q8_resilience', 'q9_results_paid', 'q9_results_detail',
+    'q10_door', 'q11_coach', 'q12_bdp_stage', 'q12_bdp_why', 'q13_unspent', 'q14_questions',
+    'outcome', 'academy_date', 'outcome_notes', 'outcome_by', 'outcome_at', 'outcome_late',
+    'admin_status', 'admin_note', 'admin_by', 'admin_at',
+    'pay_excluded', 'pay_excluded_reason', 'thanks_sent_at', 'offer_sent_at',
+  ],
+  History: ['attended_date', 'full_name', 'mobile', 'email', 'booker_raw', 'presenter_raw'],
+  Codes: ['email', 'code_hash', 'expires', 'attempts'],
+  Sessions: ['token', 'user_id', 'expires'],
+  Log: ['at', 'user', 'action', 'candidate_id', 'detail'],
+};
+
+// ───────────────────────── WEB APP ─────────────────────────
+function doGet(e) {
+  const p = (e && e.parameter) || {};
+  const t = HtmlService.createTemplateFromFile('Index');
+  t.mode = p.app === 'staff' ? 'staff' : 'candidate';
+  t.k = p.k || '';
+  t.cid = p.c || '';
+  return t.evaluate()
+    .setTitle(CONFIG.APP_NAME)
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT);
+}
+
+function include(name) {
+  return HtmlService.createHtmlOutputFromFile(name).getContent();
+}
+
+/** Single entry point for the browser: google.script.run.api({action, token, ...}) */
+function api(req) {
+  try {
+    const fn = PUBLIC_ACTIONS[req.action];
+    if (fn) return { ok: true, data: fn(req) };
+    const sfn = STAFF_ACTIONS[req.action];
+    if (!sfn) throw new Error('Unknown action');
+    const user = userFromToken(req.token);
+    if (!user) return { ok: false, auth: true, error: 'Please log in again.' };
+    return { ok: true, data: sfn(req, user) };
+  } catch (err) {
+    return { ok: false, error: String((err && err.message) || err) };
+  }
+}
+
+// ───────────────────────── UTIL ─────────────────────────
+function ss() {
+  const id = PropertiesService.getScriptProperties().getProperty('SS_ID');
+  return id ? SpreadsheetApp.openById(id) : SpreadsheetApp.getActive();
+}
+function sheet(name) { return ss().getSheetByName(name); }
+
+function readTable(name) {
+  const sh = sheet(name);
+  const values = sh.getDataRange().getValues();
+  const headers = values.shift().map(String);
+  return values.map((r, i) => {
+    const o = { _row: i + 2 };
+    headers.forEach((h, j) => { o[h] = r[j] === null || r[j] === undefined ? '' : String(r[j]); });
+    return o;
+  });
+}
+function writeRow(name, obj) {
+  const cols = SHEETS[name];
+  const row = cols.map(c => (obj[c] === undefined || obj[c] === null) ? '' : String(obj[c]));
+  sheet(name).getRange(obj._row, 1, 1, cols.length).setValues([row]);
+}
+function appendRow(name, obj) {
+  const cols = SHEETS[name];
+  const sh = sheet(name);
+  const row = cols.map(c => (obj[c] === undefined || obj[c] === null) ? '' : String(obj[c]));
+  const r = sh.getLastRow() + 1;
+  ensureRows(sh, r, cols.length);
+  sh.getRange(r, 1, 1, cols.length).setValues([row]);
+  obj._row = r;
+  return obj;
+}
+/** Sheets start with 1,000 rows; grow in blocks of 500 (formatted as text) before writing past the end. */
+function ensureRows(sh, lastNeeded, ncols) {
+  const max = sh.getMaxRows();
+  if (lastNeeded <= max) return;
+  const add = Math.max(500, lastNeeded - max);
+  sh.insertRowsAfter(max, add);
+  sh.getRange(max + 1, 1, add, ncols).setNumberFormat('@');
+}
+function withLock(fn) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try { return fn(); } finally { lock.releaseLock(); }
+}
+function log(user, action, cid, detail) {
+  appendRow('Log', { at: nowStr(), user: user ? user.name : 'candidate', action: action, candidate_id: cid || '', detail: detail || '' });
+}
+
+function nowStr() { return Utilities.formatDate(new Date(), CONFIG.TZ, 'yyyy-MM-dd HH:mm'); }
+function todayStr() { return Utilities.formatDate(new Date(), CONFIG.TZ, 'yyyy-MM-dd'); }
+function addDays(ymd, n) {
+  const d = new Date(ymd + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+function weekday(ymd) { return new Date(ymd + 'T00:00:00Z').getUTCDay(); } // 0=Sun … 6=Sat
+function weekMonday(ymd) { const w = weekday(ymd); return addDays(ymd, w === 0 ? -6 : 1 - w); }
+function weekEnding(ymd) { return addDays(weekMonday(ymd), 6); } // Sunday
+function outcomeDeadline(attendedYmd) {
+  return addDays(weekMonday(attendedYmd), CONFIG.OUTCOME_DEADLINE_DAY - 1) + ' ' + CONFIG.OUTCOME_DEADLINE_TIME;
+}
+function daysBetween(a, b) {
+  return Math.round((new Date(b + 'T00:00:00Z') - new Date(a + 'T00:00:00Z')) / 86400000);
+}
+
+function uid() { return Utilities.getUuid().replace(/-/g, '').slice(0, 12); }
+function token() { return Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, ''); }
+function sha(s) {
+  return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, s)
+    .map(b => ('0' + (b & 0xff).toString(16)).slice(-2)).join('');
+}
+
+/** UK mobile → 07xxxxxxxxx (storage); returns '' if it doesn't look valid */
+function normMobile(s) {
+  let d = String(s || '').replace(/[^\d+]/g, '');
+  if (d.indexOf('+44') === 0) d = '0' + d.slice(3);
+  else if (d.indexOf('0044') === 0) d = '0' + d.slice(4);
+  else if (d.indexOf('44') === 0 && d.length === 12) d = '0' + d.slice(2);
+  d = d.replace(/\D/g, '');
+  return /^07\d{9}$/.test(d) ? d : '';
+}
+function cleanName(s) {
+  return String(s || '').trim().replace(/\s+/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+}
+function rtwLevel(rtw) {
+  const r = RTW.filter(x => x[0] === rtw)[0];
+  return r ? r[1] : 'check';
+}
+function truthy(v) { return v === true || v === 'TRUE' || v === 'true' || v === 'Yes'; }
+
+// ───────────────────────── DAY CODE (anti-fraud QR) ─────────────────────────
+function dayCode(ymd) {
+  const props = PropertiesService.getScriptProperties();
+  let secret = props.getProperty('DAY_SECRET');
+  if (!secret) { secret = token(); props.setProperty('DAY_SECRET', secret); }
+  return sha(secret + '|' + ymd).slice(0, 8);
+}
+function validDayCode(k) { return !!k && k === dayCode(todayStr()); }
+function evalOpen(ymd) { return PropertiesService.getScriptProperties().getProperty('EVAL_OPEN_' + ymd) === '1'; }
+
+// ───────────────────────── FLAGS / RULES ─────────────────────────
+/** Traffic-light flags for a candidate. Conviction flag only for admins. */
+function flagsFor(c, isAdmin) {
+  const f = [];
+  const red = t => f.push({ level: 'red', text: t });
+  const amber = t => f.push({ level: 'amber', text: t });
+  const green = t => f.push({ level: 'green', text: t });
+  if (c.over18 === 'No') red('Under 18');
+  const lvl = rtwLevel(c.rtw);
+  if (lvl === 'no') red('Not eligible: ' + c.rtw);
+  if (lvl === 'check') amber('Check right to work: ' + c.rtw);
+  if (c.visa_expiry) {
+    const left = daysBetween(todayStr(), c.visa_expiry);
+    if (left < 0) red('Visa expired ' + c.visa_expiry);
+    else if (left < 90) amber('Visa expires in ' + left + ' days');
+  }
+  if (truthy(c.repeat_block)) red('Previously not suitable — do not progress (' + c.repeat_info + ')');
+  else if (c.repeat_of) amber('Seen before: ' + c.repeat_info);
+  if (c.rag === 'R') red('Presenter marked RED — admin decides');
+  if (c.q7_commute === 'No') red("Can't commute to Slough");
+  if (c.q1_excitement && Number(c.q1_excitement) <= 6) amber('Excitement only ' + c.q1_excitement + '/10');
+  if (c.q10_door && c.q10_door.indexOf('C)') === 0) amber('Door scenario: "maybe this isn\'t for me"');
+  if (c.q11_coach && (c.q11_coach.indexOf('B)') === 0 || c.q11_coach.indexOf('C)') === 0)) amber('Coachability answer: ' + c.q11_coach.slice(3));
+  if (!c.booker_id) amber('Booker not confirmed' + (c.booker_typed ? ' (typed "' + c.booker_typed + '")' : ''));
+  if (isAdmin && c.q13_unspent === 'Yes') amber('Declared an unspent conviction');
+  if (truthy(c.outcome_late)) amber('Outcome logged late (after Sat ' + CONFIG.OUTCOME_DEADLINE_TIME + ')');
+  if (c.q12_bdp_stage && c.q12_bdp_stage.indexOf('Ownership') >= 0) green('Future owner ambition');
+  if (Number(c.stars) >= 4) green(c.stars + '★ from presenter');
+  return f;
+}
+
+/** Why a candidate does NOT count towards the booker's net attended ('' = counts). */
+function payExclusion(c) {
+  if (!truthy(c.in_room)) return 'Not confirmed in room by presenter';
+  const wd = weekday(c.attended_date);
+  if (wd === 0 || wd === 6) return 'Weekend appointment';
+  if (c.over18 !== 'Yes') return 'Under 18';
+  if (rtwLevel(c.rtw) === 'no') return 'Not eligible to work self-employed (' + c.rtw + ')';
+  if (c.repeat_of && !CONFIG.REPEAT_COUNTS_FOR_PAY) return 'Repeat attendee within 12 months';
+  if (truthy(c.pay_excluded)) return 'Removed by admin: ' + (c.pay_excluded_reason || 'no reason given');
+  return '';
+}
+
+// ───────────────────────── AUTH ─────────────────────────
+function usersAll() { return readTable('Users'); }
+function userById(id) { return usersAll().filter(u => u.id === id)[0]; }
+function rolesOf(u) { return String(u.roles || '').split(',').map(s => s.trim()).filter(String); }
+function has(u, role) { const r = rolesOf(u); return r.indexOf('admin') >= 0 || r.indexOf(role) >= 0; }
+function isAdmin(u) { return rolesOf(u).indexOf('admin') >= 0; }
+function publicUser(u) { return { id: u.id, name: u.name, email: u.email, company: u.company, roles: rolesOf(u), active: truthy(u.active) }; }
+
+function userFromToken(tok) {
+  if (!tok) return null;
+  const cache = CacheService.getScriptCache();
+  let uidv = cache.get('s_' + tok);
+  if (!uidv) {
+    const s = readTable('Sessions').filter(x => x.token === sha(tok))[0];
+    if (!s || s.expires < nowStr()) return null;
+    uidv = s.user_id;
+    cache.put('s_' + tok, uidv, 21600);
+  }
+  const u = userById(uidv);
+  return u && truthy(u.active) ? u : null;
+}
+
+function requestCode(req) {
+  const email = String(req.email || '').trim().toLowerCase();
+  const u = usersAll().filter(x => x.email.toLowerCase() === email && truthy(x.active))[0];
+  // Same response whether or not the email exists, so the list of staff can't be probed.
+  if (!u) return { sent: true };
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  withLock(() => {
+    const rows = readTable('Codes').filter(x => x.email === email);
+    const rec = rows[0] || { email: email };
+    rec.code_hash = sha(code + '|' + email);
+    rec.expires = Utilities.formatDate(new Date(Date.now() + 10 * 60000), CONFIG.TZ, 'yyyy-MM-dd HH:mm');
+    rec.attempts = '0';
+    rec._row ? writeRow('Codes', rec) : appendRow('Codes', rec);
+  });
+  MailApp.sendEmail({
+    to: email,
+    subject: 'Your login code: ' + code,
+    name: CONFIG.APP_NAME,
+    htmlBody: '<p>Hi ' + esc(u.name.split(' ')[0]) + ',</p><p>Your login code is:</p>' +
+      '<p style="font-size:28px;font-weight:bold;letter-spacing:4px">' + code + '</p>' +
+      '<p>It expires in 10 minutes. If you didn\'t ask for this, ignore this email.</p>',
+  });
+  return { sent: true };
+}
+
+function verifyCode(req) {
+  const email = String(req.email || '').trim().toLowerCase();
+  const code = String(req.code || '').trim();
+  return withLock(() => {
+    const rec = readTable('Codes').filter(x => x.email === email)[0];
+    if (!rec || rec.expires < nowStr()) throw new Error('Code expired — request a new one.');
+    if (Number(rec.attempts) >= 5) throw new Error('Too many attempts — request a new code.');
+    if (rec.code_hash !== sha(code + '|' + email)) {
+      rec.attempts = String(Number(rec.attempts) + 1); writeRow('Codes', rec);
+      throw new Error('Wrong code.');
+    }
+    rec.expires = '0000'; writeRow('Codes', rec);
+    const u = usersAll().filter(x => x.email.toLowerCase() === email && truthy(x.active))[0];
+    if (!u) throw new Error('Access not active.');
+    const t = token();
+    appendRow('Sessions', {
+      token: sha(t), user_id: u.id,
+      expires: Utilities.formatDate(new Date(Date.now() + CONFIG.SESSION_DAYS * 86400000), CONFIG.TZ, 'yyyy-MM-dd HH:mm'),
+    });
+    return { token: t, user: publicUser(u) };
+  });
+}
+
+// ───────────────────────── PUBLIC (candidate) ─────────────────────────
+function publicConfig(req) {
+  if (!validDayCode(req.k)) return { valid: false };
+  const bookers = usersAll().filter(u => truthy(u.active) && has(u, 'booker'))
+    .map(u => ({ id: u.id, name: u.name, company: u.company }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  return { valid: true, date: todayStr(), bookers: bookers, rtw: RTW.map(r => ({ label: r[0], level: r[1] })) };
+}
+
+function checkin(req) {
+  if (!validDayCode(req.k)) throw new Error('This QR code has expired. Please scan the code on the screen.');
+  const f = req.form || {};
+  const name = cleanName(f.full_name);
+  const mobile = normMobile(f.mobile);
+  const email = String(f.email || '').trim().toLowerCase();
+  if (name.split(' ').length < 2) throw new Error('Please enter your full name (first and last).');
+  if (!mobile) throw new Error('Please enter a valid UK mobile number (07…).');
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error('Please enter a valid email.');
+  if (['Yes', 'No'].indexOf(f.over18) < 0) throw new Error('Please answer whether you are 18 or over.');
+  if (!f.rtw) throw new Error('Please choose your right to work status.');
+  if (!truthy(f.privacy_ok)) throw new Error('Please tick the privacy notice to continue.');
+  const today = todayStr();
+  const booker = f.booker_id ? userById(f.booker_id) : null;
+
+  return withLock(() => {
+    const all = readTable('Candidates');
+    // Already checked in today on this mobile? Return the same record (e.g. phone refreshed).
+    const dupe = all.filter(c => c.mobile === mobile && c.attended_date === today)[0];
+    if (dupe) return { id: dupe.id, resume: dupe.resume_token, first_name: dupe.full_name.split(' ')[0] };
+
+    const rep = findRepeat(all, mobile, email, today);
+    const c = {
+      id: uid(), created_at: nowStr(), attended_date: today, week_ending: weekEnding(today),
+      resume_token: token().slice(0, 24),
+      full_name: name, mobile: mobile, email: email, over18: f.over18,
+      booker_typed: String(f.booker_typed || '').trim().slice(0, 60),
+      booker_id: booker ? booker.id : '', booker_name: booker ? booker.name : '',
+      company: booker ? booker.company : '',
+      source: String(f.source || '').slice(0, 40), rtw: f.rtw,
+      visa_expiry: rtwLevel(f.rtw) === 'visa' ? String(f.visa_expiry || '') : '',
+      privacy_ok: 'TRUE',
+      repeat_of: rep ? rep.ref : '', repeat_info: rep ? rep.info : '', repeat_block: rep && rep.block ? 'TRUE' : '',
+    };
+    appendRow('Candidates', c);
+    log(null, 'checkin', c.id, name);
+    return { id: c.id, resume: c.resume_token, first_name: name.split(' ')[0] };
+  });
+}
+
+/** Look for the same person in the last 12 months (new app records + imported history). */
+function findRepeat(all, mobile, email, today) {
+  const since = addDays(today, -CONFIG.RETENTION_DAYS);
+  const prev = all.filter(c => (c.mobile === mobile || (email && c.email === email)) && c.attended_date >= since && c.attended_date < today)
+    .sort((a, b) => b.attended_date.localeCompare(a.attended_date))[0];
+  if (prev) {
+    const block = prev.outcome === 'Not suitable' || prev.admin_status === 'rejected';
+    let info = 'attended ' + prev.attended_date + (prev.booker_name ? ', booked by ' + prev.booker_name : '');
+    if (prev.outcome) info += ' — outcome: ' + prev.outcome + (prev.academy_date ? ' (' + prev.academy_date + ')' : '');
+    return { ref: prev.id, info: info, block: block };
+  }
+  const h = readTable('History').filter(x => (x.mobile === mobile || (email && x.email === email)) && x.attended_date >= since)
+    .sort((a, b) => b.attended_date.localeCompare(a.attended_date))[0];
+  if (h) return { ref: 'history', info: 'attended ' + h.attended_date + ' (old form)' + (h.booker_raw ? ', booked by ' + h.booker_raw : ''), block: false };
+  return null;
+}
+
+function candidateByResume(req) {
+  const c = readTable('Candidates').filter(x => x.id === req.id)[0];
+  if (!c || !req.resume || c.resume_token !== req.resume) throw new Error('We could not find your check-in. Please scan the QR code again.');
+  return c;
+}
+
+function candidateStatus(req) {
+  const c = candidateByResume(req);
+  return { first_name: c.full_name.split(' ')[0], evalOpen: evalOpen(c.attended_date), evalDone: !!c.eval_at };
+}
+
+/** Lost the page? Re-scan the QR, enter mobile → back to your record (today only). */
+function resumeByMobile(req) {
+  if (!validDayCode(req.k)) throw new Error('Please scan the QR code on the screen.');
+  const m = normMobile(req.mobile);
+  const c = readTable('Candidates').filter(x => x.mobile === m && x.attended_date === todayStr())[0];
+  if (!c) throw new Error("We couldn't find a check-in for that number today.");
+  return { id: c.id, resume: c.resume_token, first_name: c.full_name.split(' ')[0] };
+}
+
+const EVAL_FIELDS = ['q1_excitement', 'q2_stood_out', 'q3_reason', 'q4_situation', 'q4_looking_for', 'q5_start_date',
+  'q6_days', 'q7_commute', 'q8_resilience', 'q9_results_paid', 'q9_results_detail', 'q10_door', 'q11_coach',
+  'q12_bdp_stage', 'q12_bdp_why', 'q13_unspent', 'q14_questions'];
+const EVAL_REQUIRED = ['q1_excitement', 'q2_stood_out', 'q3_reason', 'q4_situation', 'q5_start_date', 'q6_days',
+  'q7_commute', 'q8_resilience', 'q9_results_paid', 'q10_door', 'q11_coach', 'q12_bdp_stage', 'q13_unspent'];
+
+function submitEval(req) {
+  const a = req.answers || {};
+  EVAL_REQUIRED.forEach(k => { if (!String(a[k] || '').trim()) throw new Error('Please answer every question marked *.'); });
+  const done = withLock(() => {
+    const c = candidateByResume(req);
+    if (c.eval_at) return c;
+    if (!evalOpen(c.attended_date)) throw new Error('The evaluation opens at the end of the presentation.');
+    EVAL_FIELDS.forEach(k => { c[k] = String(a[k] || '').trim().slice(0, 1000); });
+    c.eval_at = nowStr();
+    writeRow('Candidates', c);
+    log(null, 'evaluation', c.id, '');
+    return c;
+  });
+  notifyBookerEval(done);
+  const b = done.booker_name ? done.booker_name.split(' ')[0] : 'Our team';
+  return { booker_first: b };
+}
+
+// ───────────────────────── STAFF ─────────────────────────
+function canSee(u, c) {
+  if (isAdmin(u)) return true;
+  if (c.booker_id === u.id) return true;
+  if (has(u, 'presenter') && (c.attended_date === todayStr() || c.presenter_id === u.id)) return true;
+  return false;
+}
+function shape(c, u) {
+  const o = {};
+  SHEETS.Candidates.forEach(k => { o[k] = c[k]; });
+  delete o.resume_token;
+  if (!isAdmin(u)) o.q13_unspent = '';
+  o.flags = flagsFor(c, isAdmin(u));
+  o.pay_reason = payExclusion(c);
+  o.deadline = outcomeDeadline(c.attended_date);
+  o.first_name = c.full_name.split(' ')[0];
+  return o;
+}
+function getC(id) {
+  const c = readTable('Candidates').filter(x => x.id === id)[0];
+  if (!c) throw new Error('Candidate not found');
+  return c;
+}
+
+function me(req, u) {
+  return {
+    user: publicUser(u),
+    today: todayStr(),
+    weekEnding: weekEnding(todayStr()),
+    outcomes: OUTCOMES,
+    rtw: RTW.map(r => ({ label: r[0], level: r[1] })),
+    address: CONFIG.OFFICE_ADDRESS,
+    payTarget: CONFIG.PAY_TARGET,
+    deadlineTime: CONFIG.OUTCOME_DEADLINE_TIME,
+  };
+}
+
+function listDay(req, u) {
+  const d = req.date || todayStr();
+  const rows = readTable('Candidates').filter(c => c.attended_date === d && canSee(u, c));
+  return { date: d, evalOpen: evalOpen(d), items: rows.sort((a, b) => a.created_at.localeCompare(b.created_at)).map(c => shape(c, u)) };
+}
+
+function listWeek(req, u) {
+  const we = req.weekEnding || weekEnding(todayStr());
+  let rows = readTable('Candidates').filter(c => c.week_ending === we && canSee(u, c));
+  if (req.mine) rows = rows.filter(c => c.booker_id === u.id);
+  return { weekEnding: we, items: rows.sort((a, b) => a.created_at.localeCompare(b.created_at)).map(c => shape(c, u)) };
+}
+
+function search(req, u) {
+  const q = String(req.q || '').trim().toLowerCase();
+  if (q.length < 2) return { items: [] };
+  const m = normMobile(q);
+  const rows = readTable('Candidates').filter(c => canSee(u, c) &&
+    (c.full_name.toLowerCase().indexOf(q) >= 0 || (m && c.mobile === m) || c.email.indexOf(q) >= 0));
+  return { items: rows.slice(-50).reverse().map(c => shape(c, u)) };
+}
+
+function getCandidate(req, u) {
+  const c = getC(req.id);
+  if (!canSee(u, c)) throw new Error('You do not have access to this candidate.');
+  return shape(c, u);
+}
+
+function saveNotes(req, u) {
+  if (!has(u, 'presenter')) throw new Error('Only presenters can write notes.');
+  return withLock(() => {
+    const c = getC(req.id);
+    if (!canSee(u, c)) throw new Error('No access');
+    c.in_room = req.in_room ? 'TRUE' : '';
+    if (['G', 'A', 'R', ''].indexOf(req.rag) >= 0) c.rag = req.rag;
+    const s = Number(req.stars); c.stars = s >= 1 && s <= 5 ? String(s) : '';
+    c.tags = (req.tags || []).join(', ').slice(0, 300);
+    c.notes = String(req.notes || '').slice(0, 2000);
+    c.presenter_id = u.id; c.presenter_name = u.name; c.notes_at = nowStr();
+    writeRow('Candidates', c);
+    log(u, 'notes', c.id, c.rag + ' ' + c.stars + '★');
+    return shape(c, u);
+  });
+}
+
+function markInRoom(req, u) {
+  if (!has(u, 'presenter')) throw new Error('Only presenters can confirm attendance.');
+  return withLock(() => {
+    const c = getC(req.id);
+    c.in_room = req.in_room ? 'TRUE' : '';
+    if (!c.presenter_id) { c.presenter_id = u.id; c.presenter_name = u.name; }
+    writeRow('Candidates', c);
+    log(u, 'in_room', c.id, c.in_room);
+    return shape(c, u);
+  });
+}
+
+function setEvalOpen(req, u) {
+  if (!has(u, 'presenter')) throw new Error('Only presenters can open evaluations.');
+  const d = req.date || todayStr();
+  PropertiesService.getScriptProperties().setProperty('EVAL_OPEN_' + d, req.open ? '1' : '0');
+  log(u, 'eval_open', '', d + ' ' + !!req.open);
+  return { evalOpen: !!req.open };
+}
+
+function saveOutcome(req, u) {
+  return withLock(() => {
+    const c = getC(req.id);
+    if (!(isAdmin(u) || c.booker_id === u.id)) throw new Error('Only the booker or admin can log the outcome.');
+    if (OUTCOMES.indexOf(req.outcome) < 0) throw new Error('Choose an outcome.');
+    if (req.outcome === 'Academy booked') {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(req.academy_date || '')) throw new Error('Pick the BA Academy Day 1 date.');
+    }
+    c.outcome = req.outcome;
+    c.academy_date = req.outcome === 'Academy booked' ? req.academy_date : '';
+    c.outcome_notes = String(req.outcome_notes || '').slice(0, 2000);
+    c.outcome_by = u.name; c.outcome_at = nowStr();
+    c.outcome_late = c.outcome_at > outcomeDeadline(c.attended_date) ? 'TRUE' : '';
+    // RED from presenter (or a repeat block) → admin has the final say on an Academy booking.
+    if (req.outcome === 'Academy booked' && (c.rag === 'R' || truthy(c.repeat_block))) {
+      if (isAdmin(u)) { c.admin_status = 'approved'; c.admin_by = u.name; c.admin_at = nowStr(); }
+      else if (c.admin_status !== 'approved') c.admin_status = 'pending';
+    } else if (c.admin_status === 'pending') c.admin_status = '';
+    writeRow('Candidates', c);
+    log(u, 'outcome', c.id, c.outcome + (c.outcome_late ? ' LATE' : ''));
+    if (c.admin_status === 'pending') notifyAdminsPending(c);
+    return shape(c, u);
+  });
+}
+
+function adminDecision(req, u) {
+  if (!isAdmin(u)) throw new Error('Admin only');
+  return withLock(() => {
+    const c = getC(req.id);
+    if (['approved', 'rejected'].indexOf(req.decision) < 0) throw new Error('Bad decision');
+    c.admin_status = req.decision; c.admin_note = String(req.note || '').slice(0, 500);
+    c.admin_by = u.name; c.admin_at = nowStr();
+    if (req.decision === 'rejected') { c.outcome = 'Not suitable'; c.academy_date = ''; }
+    writeRow('Candidates', c);
+    log(u, 'admin_' + req.decision, c.id, c.admin_note);
+    return shape(c, u);
+  });
+}
+
+function setPayExcluded(req, u) {
+  if (!isAdmin(u)) throw new Error('Admin only');
+  return withLock(() => {
+    const c = getC(req.id);
+    c.pay_excluded = req.excluded ? 'TRUE' : '';
+    c.pay_excluded_reason = req.excluded ? String(req.reason || '').slice(0, 200) : '';
+    writeRow('Candidates', c);
+    log(u, 'pay_excluded', c.id, c.pay_excluded + ' ' + c.pay_excluded_reason);
+    return shape(c, u);
+  });
+}
+
+function reassignBooker(req, u) {
+  if (!isAdmin(u)) throw new Error('Admin only');
+  return withLock(() => {
+    const c = getC(req.id);
+    const b = userById(req.booker_id);
+    if (!b) throw new Error('Booker not found');
+    const before = c.booker_name || c.booker_typed;
+    c.booker_id = b.id; c.booker_name = b.name; c.company = b.company;
+    writeRow('Candidates', c);
+    log(u, 'reassign', c.id, before + ' → ' + b.name);
+    return shape(c, u);
+  });
+}
+
+function markSent(req, u) {
+  return withLock(() => {
+    const c = getC(req.id);
+    if (!canSee(u, c)) throw new Error('No access');
+    if (req.kind === 'thanks') c.thanks_sent_at = nowStr();
+    if (req.kind === 'offer') c.offer_sent_at = nowStr();
+    writeRow('Candidates', c);
+    log(u, 'whatsapp_' + req.kind, c.id, '');
+    return { ok: true };
+  });
+}
+
+/** Weekly pay report: net attended per booker, Mon–Fri. Bookers see only their own row. */
+function payReport(req, u) {
+  const we = req.weekEnding || weekEnding(todayStr());
+  const rows = readTable('Candidates').filter(c => c.week_ending === we);
+  const by = {};
+  usersAll().filter(x => has(x, 'booker')).forEach(b => {
+    by[b.id] = { booker_id: b.id, name: b.name, company: b.company, active: truthy(b.active) && rolesOf(b).indexOf('booker') >= 0,
+      attended: 0, net: 0, excluded: [], outcomes: 0, late: 0, missing: 0 };
+  });
+  const unassigned = [];
+  rows.forEach(c => {
+    if (!c.booker_id || !by[c.booker_id]) { unassigned.push({ id: c.id, name: c.full_name, typed: c.booker_typed }); return; }
+    const r = by[c.booker_id];
+    r.attended++;
+    const why = payExclusion(c);
+    if (why) r.excluded.push({ id: c.id, name: c.full_name, why: why }); else r.net++;
+    if (c.outcome) { r.outcomes++; if (truthy(c.outcome_late)) r.late++; } else r.missing++;
+  });
+  let list = Object.keys(by).map(k => by[k]).filter(r => r.attended > 0 || r.active);
+  if (!isAdmin(u)) list = list.filter(r => r.booker_id === u.id);
+  list.sort((a, b) => b.net - a.net || a.name.localeCompare(b.name));
+  return {
+    weekEnding: we, deadline: addDays(we, -1) + ' ' + CONFIG.OUTCOME_DEADLINE_TIME,
+    target: CONFIG.PAY_TARGET, rows: list, unassigned: isAdmin(u) ? unassigned : [],
+  };
+}
+
+function listUsers(req, u) {
+  if (!isAdmin(u)) {
+    // Non-admins only need the booker list (for nothing sensitive): names only.
+    return { users: [] };
+  }
+  return { users: usersAll().map(publicUser).sort((a, b) => a.name.localeCompare(b.name)) };
+}
+
+function saveUser(req, u) {
+  if (!isAdmin(u)) throw new Error('Admin only');
+  const x = req.user || {};
+  const email = String(x.email || '').trim().toLowerCase();
+  if (!String(x.name || '').trim()) throw new Error('Name required');
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error('Valid email required');
+  if (['LINK', 'JUSS'].indexOf(x.company) < 0) throw new Error('Company must be LINK or JUSS');
+  const roles = (x.roles || []).filter(r => ['admin', 'presenter', 'booker'].indexOf(r) >= 0);
+  if (!roles.length) throw new Error('Pick at least one role');
+  return withLock(() => {
+    const all = usersAll();
+    if (all.some(o => o.email.toLowerCase() === email && o.id !== x.id)) throw new Error('That email is already used.');
+    let rec = x.id ? all.filter(o => o.id === x.id)[0] : null;
+    if (x.id && !rec) throw new Error('User not found');
+    if (rec && rec.id === u.id && (roles.indexOf('admin') < 0 || !x.active)) throw new Error("You can't remove your own admin access.");
+    if (!rec) rec = { id: uid(), created_at: nowStr() };
+    rec.name = cleanName(x.name); rec.email = email; rec.company = x.company;
+    rec.roles = roles.join(','); rec.active = x.active ? 'TRUE' : '';
+    rec._row ? writeRow('Users', rec) : appendRow('Users', rec);
+    log(u, 'user_save', '', rec.name + ' ' + rec.roles + ' active=' + rec.active);
+    return publicUser(rec);
+  });
+}
+
+/** Delete a user outright. If they still own candidates, switch them off instead (keeps pay history intact). */
+function deleteUser(req, u) {
+  if (!isAdmin(u)) throw new Error('Admin only');
+  if (req.id === u.id) throw new Error("You can't delete yourself.");
+  return withLock(() => {
+    const rec = usersAll().filter(o => o.id === req.id)[0];
+    if (!rec) throw new Error('User not found');
+    const owns = readTable('Candidates').some(c => c.booker_id === rec.id);
+    if (owns) {
+      rec.active = ''; writeRow('Users', rec);
+      log(u, 'user_deactivate', '', rec.name + ' (has candidates)');
+      return { deleted: false, deactivated: true };
+    }
+    sheet('Users').deleteRow(rec._row);
+    log(u, 'user_delete', '', rec.name);
+    return { deleted: true };
+  });
+}
+
+function qrInfo(req, u) {
+  if (!has(u, 'presenter')) throw new Error('Presenter only');
+  const d = todayStr();
+  return { url: ScriptApp.getService().getUrl() + '?k=' + dayCode(d), date: d };
+}
+
+const PUBLIC_ACTIONS = {
+  publicConfig: publicConfig, checkin: checkin, candidateStatus: candidateStatus,
+  resumeByMobile: resumeByMobile, submitEval: submitEval, requestCode: requestCode, verifyCode: verifyCode,
+};
+const STAFF_ACTIONS = {
+  me: me, listDay: listDay, listWeek: listWeek, search: search, getCandidate: getCandidate,
+  saveNotes: saveNotes, markInRoom: markInRoom, setEvalOpen: setEvalOpen, saveOutcome: saveOutcome,
+  adminDecision: adminDecision, setPayExcluded: setPayExcluded, reassignBooker: reassignBooker,
+  markSent: markSent, payReport: payReport, listUsers: listUsers, saveUser: saveUser, deleteUser: deleteUser, qrInfo: qrInfo,
+};
+
+// ───────────────────────── EMAIL ALERTS (free, via Gmail) ─────────────────────────
+function appUrl(cid) { return ScriptApp.getService().getUrl() + '?app=staff' + (cid ? '&c=' + cid : ''); }
+function esc(s) { return String(s || '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch])); }
+function mail(to, subject, html) {
+  try { MailApp.sendEmail({ to: to, subject: subject, htmlBody: html, name: CONFIG.APP_NAME }); } catch (e) { console.error(e); }
+}
+
+function notifyBookerEval(c) {
+  const b = c.booker_id ? userById(c.booker_id) : null;
+  if (!b || !truthy(b.active)) return;
+  mail(b.email, '📋 ' + c.full_name + "'s evaluation is in — call them",
+    '<p>Hi ' + esc(b.name.split(' ')[0]) + ',</p><p><b>' + esc(c.full_name) + '</b> has finished their evaluation. ' +
+    'Their notes, evaluation and flags are on one page:</p><p><a href="' + appUrl(c.id) + '">Open ' + esc(c.full_name.split(' ')[0]) + "'s snapshot</a></p>" +
+    '<p>Log the outcome by <b>Saturday ' + CONFIG.OUTCOME_DEADLINE_TIME + '</b>.</p>');
+}
+
+function notifyAdminsPending(c) {
+  usersAll().filter(x => isAdmin(x) && truthy(x.active)).forEach(a => {
+    mail(a.email, '🔴 Needs your decision: ' + c.full_name,
+      '<p>' + esc(c.booker_name) + ' wants to book <b>' + esc(c.full_name) + '</b> for BA Academy (' + esc(c.academy_date) + '), ' +
+      'but the presenter marked them RED or they were previously not suitable.</p><p><a href="' + appUrl(c.id) + '">Review and decide</a></p>');
+  });
+}
+
+/** Wed + Fri 10:00 — progress nudge to every active booker. */
+function weeklyProgressEmails() {
+  const we = weekEnding(todayStr());
+  const rows = readTable('Candidates').filter(c => c.week_ending === we);
+  usersAll().filter(b => truthy(b.active) && has(b, 'booker')).forEach(b => {
+    const mine = rows.filter(c => c.booker_id === b.id);
+    const net = mine.filter(c => !payExclusion(c)).length;
+    const need = Math.max(0, CONFIG.PAY_TARGET - net);
+    const msg = need === 0
+      ? '🔥 You\'re on <b>' + net + '/' + CONFIG.PAY_TARGET + '</b> net attended this week. Target hit — keep going.'
+      : 'You\'re on <b>' + net + '/' + CONFIG.PAY_TARGET + '</b> net attended this week. <b>' + need + ' more</b> needed by Friday.';
+    mail(b.email, (need === 0 ? '✅ ' : '⏳ ') + net + '/' + CONFIG.PAY_TARGET + ' net attended this week',
+      '<p>Hi ' + esc(b.name.split(' ')[0]) + ',</p><p>' + msg + '</p><p><a href="' + appUrl() + '">Open the app</a></p>');
+  });
+}
+
+/** Sat 14:00 — outstanding outcomes before the 19:00 deadline. */
+function saturdayDeadlineEmails() {
+  const we = weekEnding(todayStr());
+  const rows = readTable('Candidates').filter(c => c.week_ending === we && !c.outcome);
+  usersAll().filter(b => truthy(b.active) && has(b, 'booker')).forEach(b => {
+    const mine = rows.filter(c => c.booker_id === b.id);
+    if (!mine.length) return;
+    mail(b.email, '⚠️ ' + mine.length + ' outcome' + (mine.length > 1 ? 's' : '') + ' to log by ' + CONFIG.OUTCOME_DEADLINE_TIME + ' today',
+      '<p>Hi ' + esc(b.name.split(' ')[0]) + ',</p><p>Still to log:</p><ul>' +
+      mine.map(c => '<li><a href="' + appUrl(c.id) + '">' + esc(c.full_name) + '</a></li>').join('') +
+      '</ul><p>Anything logged after ' + CONFIG.OUTCOME_DEADLINE_TIME + ' is flagged late.</p>');
+  });
+}
+
+/** Mon 09:00 — last week's pay report to admins. */
+function mondayPayReportEmail() {
+  const lastWe = addDays(weekEnding(todayStr()), -7);
+  const admin = usersAll().filter(x => isAdmin(x) && truthy(x.active));
+  if (!admin.length) return;
+  const rep = payReport({ weekEnding: lastWe }, admin[0]);
+  const rowsHtml = rep.rows.filter(r => r.attended > 0).map(r =>
+    '<tr><td>' + esc(r.name) + '</td><td>' + r.company + '</td><td align="center">' + r.attended + '</td><td align="center"><b>' + r.net + '</b></td>' +
+    '<td align="center">' + (r.net >= rep.target ? '✅' : '❌') + '</td><td align="center">' + r.late + '</td><td align="center">' + r.missing + '</td></tr>').join('');
+  const html = '<p>Pay report — week ending ' + lastWe + ' (target ' + rep.target + ' net attended)</p>' +
+    '<table border="1" cellpadding="6" style="border-collapse:collapse"><tr><th>Booker</th><th>Co.</th><th>Attended</th><th>Net</th><th>Target</th><th>Late outcomes</th><th>No outcome</th></tr>' +
+    rowsHtml + '</table>' + (rep.unassigned.length ? '<p>⚠️ ' + rep.unassigned.length + ' candidate(s) with no confirmed booker — assign them in the app.</p>' : '') +
+    '<p><a href="' + appUrl() + '">Open the app</a></p>';
+  admin.forEach(a => mail(a.email, 'Pay report — w/e ' + lastWe, html));
+}
+
+/** Daily 02:00 — GDPR: delete anything older than 12 months; tidy expired sessions/codes. */
+function dailyMaintenance() {
+  const cutoff = addDays(todayStr(), -CONFIG.RETENTION_DAYS);
+  withLock(() => {
+    deleteWhere('Candidates', r => r.attended_date && r.attended_date < cutoff);
+    deleteWhere('History', r => r.attended_date && r.attended_date < cutoff);
+    deleteWhere('Sessions', r => r.expires < nowStr());
+    deleteWhere('Codes', r => r.expires < nowStr());
+    deleteWhere('Log', r => r.at.slice(0, 10) < cutoff);
+  });
+}
+function deleteWhere(name, pred) {
+  const rows = readTable(name).filter(pred).map(r => r._row).sort((a, b) => b - a);
+  const sh = sheet(name);
+  rows.forEach(r => sh.deleteRow(r));
+  return rows.length;
+}
+
+// ───────────────────────── ONE-OFF SETUP (run from editor) ─────────────────────────
+/** Creates the tabs, your admin account and the scheduled alerts. Safe to run again. */
+function setup() {
+  const book = SpreadsheetApp.getActive();
+  PropertiesService.getScriptProperties().setProperty('SS_ID', book.getId());
+  Object.keys(SHEETS).forEach(name => {
+    let sh = book.getSheetByName(name);
+    if (!sh) sh = book.insertSheet(name);
+    const cols = SHEETS[name];
+    sh.getRange(1, 1, 1, cols.length).setValues([cols]).setFontWeight('bold');
+    sh.setFrozenRows(1);
+    sh.getRange(1, 1, sh.getMaxRows(), cols.length).setNumberFormat('@'); // keep phone numbers & dates as text
+  });
+  ['Sheet1', 'Sheet 1'].forEach(n => { const s = book.getSheetByName(n); if (s && book.getSheets().length > 1) book.deleteSheet(s); });
+
+  const existing = usersAll().map(u => u.email.toLowerCase());
+  ADMINS.forEach(a => {
+    if (existing.indexOf(a.email) < 0) {
+      appendRow('Users', { id: uid(), name: a.name, email: a.email, company: a.company, roles: 'admin', active: 'TRUE', created_at: nowStr() });
+    }
+  });
+  const email = ADMINS.map(a => a.email).join(', ');
+  dayCode(todayStr()); // creates the secret
+
+  ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger('weeklyProgressEmails').timeBased().onWeekDay(ScriptApp.WeekDay.WEDNESDAY).atHour(10).inTimezone(CONFIG.TZ).create();
+  ScriptApp.newTrigger('weeklyProgressEmails').timeBased().onWeekDay(ScriptApp.WeekDay.FRIDAY).atHour(10).inTimezone(CONFIG.TZ).create();
+  ScriptApp.newTrigger('saturdayDeadlineEmails').timeBased().onWeekDay(ScriptApp.WeekDay.SATURDAY).atHour(14).inTimezone(CONFIG.TZ).create();
+  ScriptApp.newTrigger('mondayPayReportEmail').timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(9).inTimezone(CONFIG.TZ).create();
+  ScriptApp.newTrigger('dailyMaintenance').timeBased().everyDays(1).atHour(2).inTimezone(CONFIG.TZ).create();
+  return 'Setup complete. Admin: ' + email;
+}
+
+/**
+ * Imports the last 12 months of the old Google Form sheet into the History tab,
+ * so repeat candidates are spotted from day one. Run once from the editor.
+ */
+function importHistory() {
+  const src = SpreadsheetApp.openById(CONFIG.HISTORY_SOURCE_ID).getSheetByName(CONFIG.HISTORY_SOURCE_TAB);
+  const values = src.getDataRange().getValues();
+  const head = values.shift().map(h => String(h).toLowerCase());
+  const col = re => head.findIndex(h => re.test(h));
+  const iName = col(/full name/), iPhone = col(/phone/), iEmail = col(/email/), iBooker = col(/booked you/), iPres = col(/presentation run by/);
+  const cutoff = addDays(todayStr(), -CONFIG.RETENTION_DAYS);
+  const out = [];
+  values.forEach(r => {
+    const ts = r[0];
+    if (!(ts instanceof Date)) return;
+    const d = Utilities.formatDate(ts, CONFIG.TZ, 'yyyy-MM-dd');
+    if (d < cutoff) return;
+    out.push([d, cleanName(r[iName]), normMobile(r[iPhone]), String(r[iEmail] || '').trim().toLowerCase(),
+      String(r[iBooker] || '').trim(), String(r[iPres] || '').trim()]);
+  });
+  const h = sheet('History');
+  if (h.getLastRow() > 1) h.getRange(2, 1, h.getLastRow() - 1, SHEETS.History.length).clearContent();
+  ensureRows(h, out.length + 1, SHEETS.History.length);
+  if (out.length) h.getRange(2, 1, out.length, SHEETS.History.length).setValues(out);
+  return 'Imported ' + out.length + ' rows from the last 12 months.';
+}
