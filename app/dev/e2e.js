@@ -186,8 +186,8 @@ async function fillEval(p) {
   ok((await api(admin, 'getCandidate', { id: (await api(admin, 'search', { q: 'Jasraj' })).items[0].id })).in_room === 'TRUE', 'rating Jasraj automatically confirmed "in the room"');
   const thanks = decodeURIComponent((await pp.getAttribute('a.wa[data-kind=thanks]', 'href')).split('?text=')[1]);
   fs.writeFileSync(`${SHOTS}/msg-thanks.txt`, thanks);
-  ok(thanks === "Hey Jasraj! 👋\n\nThanks for coming through for your Appointment Presentation today in association with LINK Marketing.\nWe loved meeting you in person.\n\nFiza will contact you shortly about your next steps 📲\nKeep your phone close!",
-    'thank-you WhatsApp = Angad\'s new wording (LINK, booker Fiza)');
+  ok(thanks === "Hey Jasraj! 👋\n\nThanks for coming through for your Appointment Presentation today in association with LINK Marketing.\nWe loved meeting you in person.\n\nOur Team will contact you at the latest by close of business on Friday 6PM about your next steps 📲\nKeep your phone close!",
+    'thank-you WhatsApp = Angad\'s wording (LINK, contact by Friday 6PM)');
   for (const [c, rag] of [[ishita, 'R'], [adham, 'G'], [ali, 'A'], [jag, 'A'], [kid, 'R']]) {
     await api(nathan, 'saveNotes', { id: c.id, rag, stars: rag === 'G' ? 3 : 2, tags: [], notes: 'test' });
   }
