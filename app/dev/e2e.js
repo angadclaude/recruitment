@@ -266,6 +266,16 @@ async function fillEval(p) {
   fs.writeFileSync(idx, orig);
   ok(!!gotNew, 'a newly published version shows on the very next open (not stuck on the old copy)');
   await pp.reload(); await pp.waitForSelector('.tabbar button');
+  // OneSignal registers the same worker file with its own "?appId=…": the app must not fight it or reload
+  await pp.evaluate(() => { window.__still = 1; return navigator.serviceWorker.register('OneSignalSDKWorker.js?appId=test&sdkVersion=160000', { scope: './' }); });
+  await pp.waitForFunction(() => navigator.serviceWorker.controller && /appId=test/.test(navigator.serviceWorker.controller.scriptURL), null, { timeout: 10000 });
+  await pp.waitForTimeout(3000);
+  ok(await pp.evaluate(() => window.__still === 1), 'OneSignal taking over the worker does not reload the app');
+  await pp.reload(); await pp.waitForSelector('.tabbar button'); await pp.waitForTimeout(1500);
+  ok(await pp.evaluate(() => navigator.serviceWorker.getRegistration().then(r => /appId=test/.test(r.active.scriptURL))), "next open keeps OneSignal's worker (no swapping back and forth)");
+  await pp.click('#abMe');
+  ok(/Alerts: not set up yet/.test(await pp.innerText('#menu')), 'account menu shows the alerts status');
+  await pp.click('#menu', { position: { x: 5, y: 5 } });
   await pres.setOffline(true);
   await pp.reload(); await pp.waitForSelector('text=Jasraj Bhuller', { timeout: 8000 });
   ok(true, 'app opens with NO signal (from the phone\'s copy)');
@@ -279,11 +289,15 @@ async function fillEval(p) {
   await pp.waitForFunction(() => !JSON.parse(localStorage.getItem('lr_outbox') || '[]').length, null, { timeout: 15000 });
   ok((await api(admin, 'getCandidate', { id: jag.id })).notes === 'Did Day 1 in June already. Saved with no signal.', 'signal back → change synced to Google automatically');
   await pp.goBack(); await pp.waitForSelector('.kpis');
-  await pp.evaluate(() => {
-    const sw = document.querySelector('.swipe'); const t = (type, x) => sw.dispatchEvent(new TouchEvent(type, { bubbles: true, touches: type === 'touchend' ? [] : [new Touch({ identifier: 1, target: sw, clientX: x, clientY: 200 })] }));
-    t('touchstart', 300); t('touchmove', 250); t('touchmove', 150); t('touchmove', 100); t('touchend', 100);
-  });
-  await pp.waitForSelector('.swipe.open');
+  // A background refresh can redraw the list mid-swipe, so swipe again if it didn't stick.
+  for (let i = 0; i < 3 && !(await pp.$('.swipe.open')); i++) {
+    await pp.evaluate(() => {
+      const sw = document.querySelector('.swipe'); const t = (type, x) => sw.dispatchEvent(new TouchEvent(type, { bubbles: true, touches: type === 'touchend' ? [] : [new Touch({ identifier: 1, target: sw, clientX: x, clientY: 200 })] }));
+      t('touchstart', 300); t('touchmove', 250); t('touchmove', 150); t('touchmove', 100); t('touchend', 100);
+    });
+    await pp.waitForSelector('.swipe.open', { timeout: 3000 }).catch(() => {});
+  }
+  await pp.waitForSelector('.swipe.open', { timeout: 1000 });
   ok(/^tel:/.test(await pp.getAttribute('.swipe.open .act.call', 'href')) && /wa\.me/.test(await pp.getAttribute('.swipe.open .act.wa', 'href')), 'swipe a candidate → Call / WhatsApp buttons');
   await shot(pp, '04b-swipe');
   const dark = await browser.newContext(Object.assign({ colorScheme: 'dark' }, PHONE));

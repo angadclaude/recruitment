@@ -74,7 +74,8 @@ function page(opts) {
   ${staff ? `<script>
     window.OneSignalDeferred = window.OneSignalDeferred || [];
     if ((window.APP_CONFIG || {}).ONESIGNAL_APP_ID) {
-      var s = document.createElement('script'); s.src = 'https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js'; s.defer = true; document.head.appendChild(s);
+      var s = document.createElement('script'); s.src = 'https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js'; s.defer = true;
+      s.onerror = function () { window.__osLoadErr = true; }; document.head.appendChild(s);
     }
   </script>` : ''}
   <script src="app.js?v=${v}"></script>
@@ -120,6 +121,8 @@ self.addEventListener('activate', e => {
   e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k.indexOf('recruit-') === 0 && k !== CACHE).map(k => caches.delete(k))))
     .then(() => self.clients.claim()));
 });
+// The app asks which version this is, so it only reloads when there's actually something new to show.
+self.addEventListener('message', e => { if (e.data === 'version' && e.ports && e.ports[0]) e.ports[0].postMessage('${v}'); });
 function pageKey(u) { return u.origin + u.pathname + (u.pathname.slice(-1) === '/' ? 'index.html' : ''); }
 self.addEventListener('fetch', e => {
   const r = e.request;

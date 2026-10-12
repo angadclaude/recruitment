@@ -566,13 +566,31 @@ function boot() {
 }
 function registerSW() {
   if (!CFG.API_URL || !('serviceWorker' in navigator) || !window.isSecureContext) return;
-  const hadOld = !!navigator.serviceWorker.controller;
-  navigator.serviceWorker.register('OneSignalSDKWorker.js', { scope: './' }).then(reg => { S.swReg = reg; reg.update().catch(() => {}); }).catch(() => {});
+  const sw = navigator.serviceWorker, hadOld = !!sw.controller;
+  // OneSignal registers this same file with its own "?appId=…" on the end. Registering it again without that would
+  // swap the worker back and forth on every open, so keep whichever registration is already there.
+  const ours = reg => reg && [reg.active, reg.waiting, reg.installing].some(w => w && /\/OneSignalSDKWorker\.js(\?|$)/.test(w.scriptURL));
+  sw.getRegistration('./').then(reg => ours(reg) ? reg : sw.register('OneSignalSDKWorker.js', { scope: './' }))
+    .then(reg => { S.swReg = reg; reg.update().catch(() => {}); }).catch(() => {});
   // A new version just took over: reload once so it's on screen straight away (never mid-typing or with unsynced saves).
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
+  // OneSignal re-registering the same version also swaps the worker; that needs no reload.
+  sw.addEventListener('controllerchange', () => {
     if (!hadOld || S.reloading) return;
-    const go = () => { if (isTyping() || outbox().length) return setTimeout(go, 3000); S.reloading = true; location.reload(); };
-    go();
+    swVersion().then(v => {
+      if (v && v === window.APP_VERSION) return;
+      const go = () => { if (isTyping() || outbox().length) return setTimeout(go, 3000); S.reloading = true; location.reload(); };
+      go();
+    });
+  });
+}
+function swVersion() {
+  const c = navigator.serviceWorker.controller;
+  if (!c || !window.MessageChannel) return Promise.resolve('');
+  return new Promise(res => {
+    const ch = new MessageChannel();
+    ch.port1.onmessage = e => res(String(e.data || ''));
+    c.postMessage('version', [ch.port2]);
+    setTimeout(() => res(''), 2000);
   });
 }
 function tick() {
@@ -707,7 +725,7 @@ function toggleMenu() {
     '<div class="small muted">' + h(u.company) + ' · ' + h(u.roles.join(', ')) + '</div></div></div>' +
     '<button class="btn ghost block" id="mRefresh" style="margin-top:12px">↻ Refresh now</button>' +
     '<button class="btn ghost block" id="mLogout" style="margin-top:8px;color:var(--red)">Log out</button>' +
-    '<p class="small muted center" style="margin:10px 0 0">App version ' + h(window.APP_VERSION || 'dev') + '</p></div>';
+    '<p class="small muted center" style="margin:10px 0 0">App version ' + h(window.APP_VERSION || 'dev') + '<br>Alerts: ' + h(pushStatus()) + '</p></div>';
   m.hidden = false;
   m.onclick = e => { if (e.target === m) m.hidden = true; };
   document.getElementById('mRefresh').onclick = () => { m.hidden = true; pullRefresh(); };
@@ -734,6 +752,8 @@ function refreshBars() {
     html = '<div class="pushbar"><div><b>📲 Make it an app:</b> tap <b>Share</b> → <b>Add to Home Screen</b>, then open it from the icon. Full screen, faster, and you get alerts.</div><button class="x" id="barX">✕</button></div>';
   } else if (!IS_STANDALONE && INSTALL_EVT && !dismissed) {
     html = '<div class="pushbar"><div><b>📲 Install the app</b> for full screen + alerts.</div><button class="btn sm" id="barInstall">Install</button><button class="x" id="barX">✕</button></div>';
+  } else if (PUSH.os && !PUSH.granted && pushBlocked()) {
+    html = '<div class="pushbar"><div>🔕 <b>Alerts are blocked.</b> Phone Settings → Notifications → Recruitment → Allow Notifications.</div></div>';
   } else if (PUSH.os && !PUSH.granted) {
     html = '<div class="pushbar"><div>🔔 Turn on alerts so you never miss a check-in or evaluation.</div><button class="btn sm" id="pushon">Turn on</button></div>';
   }
@@ -752,17 +772,30 @@ function initPush() {
   PUSH.started = true;
   const base = location.pathname.replace(/[^/]*$/, '');  // e.g. /recruitment/join/
   window.OneSignalDeferred.push(function (OneSignal) {
-    return OneSignal.init({
+    return Promise.resolve().then(() => OneSignal.init({
       appId: CFG.ONESIGNAL_APP_ID,
       serviceWorkerPath: base.slice(1) + 'OneSignalSDKWorker.js',
       serviceWorkerParam: { scope: base },
       notifyButton: { enable: false },
-    }).then(() => OneSignal.login(S.me.user.id)).then(() => {
+    })).then(() => OneSignal.login(S.me.user.id)).then(() => {
       PUSH.os = OneSignal; PUSH.granted = OneSignal.Notifications.permission;
       OneSignal.Notifications.addEventListener('permissionChange', g => { PUSH.granted = g; });
       refreshBars();  // show the "turn on" bar if needed
-    }).catch(e => console.warn('push init', e));
+    }).catch(e => { PUSH.err = String((e && e.message) || e).slice(0, 160); console.warn('push init', e); });
   });
+}
+function pushBlocked() { return !!window.Notification && Notification.permission === 'denied'; }
+/** One line for the account menu, so anyone can see (and screenshot) why alerts aren't arriving. */
+function pushStatus() {
+  if (!CFG.ONESIGNAL_APP_ID) return 'not set up yet';
+  if (IS_IOS && !IS_STANDALONE) return 'open the app from your Home Screen icon';
+  if (PUSH.err) return 'error: ' + PUSH.err;
+  if (window.__osLoadErr) return "couldn't reach OneSignal (check signal)";
+  if (!PUSH.os) return 'connecting…';
+  if (pushBlocked()) return 'blocked in phone Settings';
+  if (!PUSH.granted) return 'off (tap 🔔 Turn on)';
+  const sub = PUSH.os.User && PUSH.os.User.PushSubscription;
+  return sub && sub.optedIn ? 'on ✅' : 'allowed, not subscribed yet';
 }
 
 
