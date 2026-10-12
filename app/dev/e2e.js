@@ -332,7 +332,7 @@ async function fillEval(p) {
   const links = msg.match(/https:\/\/\S+/g);
   ok(/welcome-link\.html/.test(links[0]), 'first link is the welcome page (so WhatsApp shows the poster card)');
   ok(links.some(l => l.indexOf('forms.office.com') >= 0 && l.indexOf('QT4blMNFxEuaVSUMKK6uNT5Z') > 0), 'LINK message carries the Pre-Coaching Module link');
-  ok(links.some(l => /google\.com\/maps/.test(l) && /LINK%20Marketing/.test(l)), 'LINK message carries LINK Marketing on Google Maps');
+  ok(links.indexOf('https://maps.app.goo.gl/f4pkh222EHHTyQSM9') >= 0, 'LINK message carries LINK Marketing\'s Google Maps listing');
   ok(/⏳ Not confirmed yet/.test(await bp.innerText('body')), 'snapshot shows "not confirmed yet"');
 
   // ── 5. Candidate opens their welcome page from WhatsApp → confirms ──
@@ -343,7 +343,7 @@ async function fillEval(p) {
   await shot(wp, '10-welcome-page', true);
   const wtxt = await wp.innerText('body');
   ok(/Monday 19 October/.test(wtxt) && /Day 1 is in 7 days/.test(wtxt) && /Pre-Coaching Module/.test(wtxt) && /Practical Learning Day/.test(wtxt), 'welcome page: date, countdown, pre-coaching, Week 1 plan');
-  ok(/forms\.office\.com/.test(await wp.getAttribute('a:has-text("Open the Pre-Coaching Module")', 'href')) && /LINK%20Marketing/.test(await wp.getAttribute('a:has-text("Google Maps")', 'href')), 'LINK welcome page: Pre-Coaching Module button + LINK Google Maps');
+  ok(/forms\.office\.com/.test(await wp.getAttribute('a:has-text("Open the Pre-Coaching Module")', 'href')) && (await wp.getAttribute('a:has-text("Google Maps")', 'href')) === 'https://maps.app.goo.gl/f4pkh222EHHTyQSM9', 'LINK welcome page: Pre-Coaching Module button + LINK Google Maps listing');
   ok(await wp.$eval('.wl-poster img', i => i.complete && i.naturalWidth > 0 && /poster-link/.test(i.src)), 'LINK welcome page shows the LINK Week 1 poster (your screenshot)');
   const og = await (await fetch(wurl.replace(PUBLIC, APP))).text();
   ok(og.includes('og:image" content="' + PUBLIC + 'img/og-link.jpg"'), 'WhatsApp link preview shows the LINK poster card (og:image)');
@@ -371,7 +371,7 @@ async function fillEval(p) {
   const jmsg = decodeURIComponent((await ap.getAttribute('a.wa[data-kind=offer]', 'href')).split('?text=')[1]);
   fs.writeFileSync(`${SHOTS}/msg-juss.txt`, jmsg);
   ok(/JUSS Marketing BA Academy/.test(jmsg) && /welcome-juss\.html/.test(jmsg) && !/Pre-Coaching/.test(jmsg), 'JUSS booker → JUSS message + JUSS welcome page');
-  ok(/google\.com\/maps\S+JUSS%20Marketing/.test(jmsg) && !/forms\.office\.com/.test(jmsg), 'JUSS message carries JUSS Marketing on Google Maps (no LINK pre-coaching)');
+  ok(jmsg.indexOf('https://maps.app.goo.gl/zeP4MjS2hMJzB9V9A') >= 0 && jmsg.indexOf('f4pkh222') < 0 && !/forms\.office\.com/.test(jmsg), 'JUSS message carries JUSS Marketing\'s Google Maps listing (no LINK pre-coaching)');
   ok(/– Rubal, JUSS Marketing$/.test(jmsg), 'JUSS message signed by Rubal (sent by Angad)');
   const jwurl = jmsg.match(/https:\/\/\S+welcome-juss\.html\?t=\w+/)[0];
   const jp = await cand.newPage();
@@ -379,7 +379,7 @@ async function fillEval(p) {
   await jp.waitForSelector('text=You\'re in, Adham');
   await shot(jp, '12-welcome-juss', true);
   ok(/Thursday onwards/.test(await jp.innerText('body')), 'JUSS welcome page uses the JUSS schedule');
-  ok(/JUSS%20Marketing/.test(await jp.getAttribute('a:has-text("Google Maps")', 'href')) && !(await jp.$('a:has-text("Pre-Coaching Module")')), 'JUSS welcome page: JUSS Google Maps, no pre-coaching button');
+  ok((await jp.getAttribute('a:has-text("Google Maps")', 'href')) === 'https://maps.app.goo.gl/zeP4MjS2hMJzB9V9A' && !(await jp.$('a:has-text("Pre-Coaching Module")')), 'JUSS welcome page: JUSS Google Maps listing, no pre-coaching button');
   ok(await jp.$eval('.wl-poster img', i => i.complete && i.naturalWidth > 0 && /poster-juss/.test(i.src)), 'JUSS welcome page shows the JUSS Week 1 poster (your screenshot)');
   const jog = await (await fetch(jwurl.replace(PUBLIC, APP))).text();
   ok(jog.includes('og:image" content="' + PUBLIC + 'img/og-juss.jpg"'), 'JUSS WhatsApp link preview shows the JUSS poster card');
