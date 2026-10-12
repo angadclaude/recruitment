@@ -816,39 +816,42 @@ function pushKeys() {
   return app && key ? { app: app, key: key } : null;
 }
 
-/** Push notification to staff users' phones. Each user is identified in OneSignal by their app user id. */
+/** Push notification to staff users' phones. Each user is identified in OneSignal by their app user id.
+ *  Returns the ids it actually reached: someone who hasn't turned alerts on in the app isn't reached. */
 function pushTo(userIds, title, body, url) {
   const k = pushKeys();
-  if (!k || !userIds.length) return false;
-  const payload = JSON.stringify({
-    app_id: k.app, target_channel: 'push',
-    include_aliases: { external_id: userIds },
-    headings: { en: title }, contents: { en: body }, web_url: url,
-  });
-  // New OneSignal keys use "Key", older ones "Basic" — try both.
-  for (const scheme of ['Key ', 'Basic ']) {
-    try {
-      const r = UrlFetchApp.fetch('https://api.onesignal.com/notifications?c=push', {
-        method: 'post', contentType: 'application/json', payload: payload,
-        headers: { Authorization: scheme + k.key }, muteHttpExceptions: true,
-      });
-      const code = r.getResponseCode();
-      if (code === 401 || code === 403) continue;
-      return code >= 200 && code < 300;
-    } catch (e) { console.error(e); return false; }
-  }
-  return false;
+  if (!k || !userIds.length) return [];
+  const send = scheme => UrlFetchApp.fetchAll(userIds.map(id => ({
+    url: 'https://api.onesignal.com/notifications?c=push',
+    method: 'post', contentType: 'application/json', muteHttpExceptions: true,
+    headers: { Authorization: scheme + k.key },
+    payload: JSON.stringify({
+      app_id: k.app, target_channel: 'push',
+      include_aliases: { external_id: [id] },
+      headings: { en: title }, contents: { en: body }, web_url: url,
+    }),
+  })));
+  try {
+    // New OneSignal keys use "Key", older ones "Basic".
+    let res = send('Key ');
+    if (res.every(r => r.getResponseCode() === 401 || r.getResponseCode() === 403)) res = send('Basic ');
+    // OneSignal still answers 200 when that person has no phone subscribed, just with an empty id.
+    return userIds.filter((id, i) => {
+      const code = res[i].getResponseCode();
+      if (code < 200 || code >= 300) return false;
+      try { return !!JSON.parse(res[i].getContentText()).id; } catch (e) { return false; }
+    });
+  } catch (e) { console.error(e); return []; }
 }
 
-/** Send an alert: phone push when set up; email as a fallback (or always, if EMAIL_ALERTS is on). */
+/** Send an alert: phone push when set up; email to anyone the push didn't reach (or everyone, if EMAIL_ALERTS is on). */
 function notify(users, title, body, cid) {
   const list = users.filter(u => u && truthy(u.active));
   if (!list.length) return;
   const url = staffUrl(cid || '');
-  const pushed = pushTo(list.map(u => u.id), title, body, url);
-  if (!pushed || CONFIG.EMAIL_ALERTS) {
-    list.forEach(u => mail(u.email, title, '<p>' + esc(body) + '</p><p><a href="' + url + '">Open the app</a></p>'));
-  }
+  const reached = pushTo(list.map(u => u.id), title, body, url);
+  list.filter(u => CONFIG.EMAIL_ALERTS || reached.indexOf(u.id) < 0)
+    .forEach(u => mail(u.email, title, '<p>' + esc(body) + '</p><p><a href="' + url + '">Open the app</a></p>'));
 }
 
 /** Wed + Fri 10:00 — progress nudge to every active booker. */
