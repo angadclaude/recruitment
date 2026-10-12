@@ -485,6 +485,14 @@ async function fillEval(p) {
   await ap.click('#bedit summary'); await ap.click('#bbar .chip');
   await ap.waitForFunction(() => /Fiza 2 BAR/.test(document.getElementById('bimg').dataset.info), null, { timeout: 5000 });
   ok(/BAR$/.test((await bInfo()).rows[0]), 'admin can still tap a name to add/remove (BAR)');
+  const infoIs = (re) => ap.waitForFunction(r => { const i = document.getElementById('bimg'); return i && new RegExp(r).test(i.dataset.info || ''); }, re, { timeout: 10000 });
+  await ap.click('.daybar .dchip[data-d="2026-10-13"]'); await infoIs('"attended":0');
+  ok(await ap.$('.daybar .dchip.on[data-d="2026-10-13"]'), "tap Tue inside the bulletin → Tuesday's poster (no going back to Today)");
+  await ap.click('#bwprev'); await ap.waitForSelector('.daybar .dchip.on[data-d="2026-10-06"]');
+  ok(true, '‹ jumps to the same day last week');
+  await ap.click('#bwnext'); await ap.waitForSelector('.daybar .dchip.on[data-d="2026-10-13"]');
+  ok(await ap.$('#bwnext[disabled]'), "› stops at this week (can't go into the future)");
+  await ap.click('.daybar .dchip[data-d="2026-10-12"]'); await infoIs('"attended":[1-9]');
   await ap.click('#bkind button[data-k=weekly]');
   await ap.waitForFunction(() => /weekly/.test((document.getElementById('bimg') || {}).dataset ? document.getElementById('bimg').dataset.info || '' : ''), null, { timeout: 10000 });
   bi = await bInfo();

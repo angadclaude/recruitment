@@ -198,17 +198,13 @@
     const size = fit(t, 92, 400, 700, BIG), tw = measure(t, size, 400, BIG);
     text(t, W / 2 - 30, y + 112, { fam: BIG, weight: 400, size: size, italic: true, align: 'center', color: grad(0, y + 36, 0, y + 112, ['#ffc02e', '#f7931e', ORANGE, '#d9381c']), stroke: '#fff', strokeW: 8, shadow: 'rgba(160,50,0,.45)', sy: 5 });
     emoji('🚀', W / 2 - 30 + tw / 2 + 48, y + 72, 58);
-    // LET'S SMASH PLAN [8][0]   ·   # PLAN [1]
-    const by = y + 120, bh = 48;
-    brushBanner(70, by, 600, bh, grad(70, 0, 670, 0, ['#f7931e', ORANGE, '#d7263d']), 21);
-    brushBanner(700, by, 265, bh, NAVY, 23);
-    let cx = 100;
-    text("LET'S SMASH", cx, by + 40, { size: 36, weight: 700, italic: true, color: '#fff' }); cx += measure("LET'S SMASH", 36, 700) + 18;
-    text('PLAN', cx, by + 40, { size: 36, weight: 700, italic: true, color: NAVY }); cx += measure('PLAN', 36, 700) + 12;
-    String(o.plan).split('').forEach(d => { cx += numBox(d, cx, by + 40, 34, NAVY) + 4; });
-    const m = String(o.tag || '').match(/^(.*?)(\d+)$/) || [o.tag, o.tag, ''];
-    text(m[1], 730, by + 40, { size: 36, weight: 700, italic: true, color: '#fff', maxW: 150 });
-    if (m[2]) numBox(m[2], 730 + Math.min(150, measure(m[1], 36, 700)) + 10, by + 40, 34, BLUE);
+    // #PLAN [1], centred under Mission 200
+    if (!o.tag) return;
+    const m = String(o.tag).match(/^(.*?)(\d+)$/) || [o.tag, o.tag, ''];
+    const tw2 = Math.min(360, measure(m[1], 36, 700)), nw = m[2] ? measure(m[2], 34, 700) + 24 : 0, bw = tw2 + nw + 70, bx = (W - bw) / 2, by = y + 120;
+    brushBanner(bx, by, bw, 48, NAVY, 23);
+    text(m[1], bx + 30, by + 40, { size: 36, weight: 700, italic: true, color: '#fff', maxW: 360 });
+    if (m[2]) numBox(m[2], bx + 30 + tw2 + 10, by + 40, 34, BLUE);
   }
   function begin(canvas, scale) {
     canvas.width = W * scale; canvas.height = H * scale;
