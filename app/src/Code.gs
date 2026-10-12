@@ -276,7 +276,16 @@ function payExclusion(c) {
 }
 
 // ───────────────────────── AUTH ─────────────────────────
-function usersAll() { return readTable('Users'); }
+/** Staff list, cached between requests for speed (cleared whenever a user is saved or deleted). */
+function usersAll() {
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get('users_v1');
+  if (hit) return JSON.parse(hit);
+  const rows = readTable('Users');
+  try { cache.put('users_v1', JSON.stringify(rows), 600); } catch (e) { /* too big to cache: fine */ }
+  return rows;
+}
+function usersChanged() { CacheService.getScriptCache().remove('users_v1'); delete MEMO.Users; }
 function userById(id) { return usersAll().filter(u => u.id === id)[0]; }
 function rolesOf(u) { return String(u.roles || '').split(',').map(s => s.trim()).filter(String); }
 function has(u, role) { const r = rolesOf(u); return r.indexOf('admin') >= 0 || r.indexOf(role) >= 0; }
@@ -720,7 +729,7 @@ function saveUser(req, u) {
   const roles = (x.roles || []).filter(r => ['admin', 'presenter', 'booker'].indexOf(r) >= 0);
   if (!roles.length) throw new Error('Pick at least one role');
   return withLock(() => {
-    const all = usersAll();
+    const all = readTable('Users');
     if (all.some(o => o.email.toLowerCase() === email && o.id !== x.id)) throw new Error('That email is already used.');
     let rec = x.id ? all.filter(o => o.id === x.id)[0] : null;
     if (x.id && !rec) throw new Error('User not found');
@@ -729,6 +738,7 @@ function saveUser(req, u) {
     rec.name = cleanName(x.name); rec.email = email; rec.company = x.company;
     rec.roles = roles.join(','); rec.active = x.active ? 'TRUE' : '';
     rec._row ? writeRow('Users', rec) : appendRow('Users', rec);
+    usersChanged();
     log(u, 'user_save', '', rec.name + ' ' + rec.roles + ' active=' + rec.active);
     return publicUser(rec);
   });
@@ -739,16 +749,16 @@ function deleteUser(req, u) {
   if (!isAdmin(u)) throw new Error('Admin only');
   if (req.id === u.id) throw new Error("You can't delete yourself.");
   return withLock(() => {
-    const rec = usersAll().filter(o => o.id === req.id)[0];
+    const rec = readTable('Users').filter(o => o.id === req.id)[0];
     if (!rec) throw new Error('User not found');
     const owns = readTable('Candidates').some(c => c.booker_id === rec.id);
     if (owns) {
-      rec.active = ''; writeRow('Users', rec);
+      rec.active = ''; writeRow('Users', rec); usersChanged();
       log(u, 'user_deactivate', '', rec.name + ' (has candidates)');
       return { deleted: false, deactivated: true };
     }
     sheet('Users').deleteRow(rec._row);
-    delete MEMO.Users;
+    usersChanged();
     log(u, 'user_delete', '', rec.name);
     return { deleted: true };
   });
@@ -865,6 +875,12 @@ function mondayPayReportEmail() {
     (rep.unassigned.length ? ' ' + rep.unassigned.length + ' need a booker assigned.' : ''), '');
 }
 
+/** Every 5 minutes: keeps Google's copy of the app loaded so people don't wait for a cold start. */
+function keepWarm() {
+  const t = nowStr().slice(11, 13);
+  if (t >= '07' && t <= '20') usersAll();
+}
+
 /** Daily 02:00 — GDPR: delete anything older than 12 months; tidy expired sessions/codes. */
 function dailyMaintenance() {
   const cutoff = addDays(todayStr(), -CONFIG.RETENTION_DAYS);
@@ -900,12 +916,14 @@ function setup() {
   });
   ['Sheet1', 'Sheet 1'].forEach(n => { const s = book.getSheetByName(n); if (s && book.getSheets().length > 1) book.deleteSheet(s); });
 
-  const existing = usersAll().map(u => u.email.toLowerCase());
+  usersChanged();
+  const existing = readTable('Users').map(u => u.email.toLowerCase());
   ADMINS.forEach(a => {
     if (existing.indexOf(a.email) < 0) {
       appendRow('Users', { id: uid(), name: a.name, email: a.email, company: a.company, roles: 'admin', active: 'TRUE', created_at: nowStr() });
     }
   });
+  usersChanged();
   const email = ADMINS.map(a => a.email).join(', ');
 
   ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
@@ -914,6 +932,7 @@ function setup() {
   ScriptApp.newTrigger('saturdayDeadlineEmails').timeBased().onWeekDay(ScriptApp.WeekDay.SATURDAY).atHour(14).inTimezone(CONFIG.TZ).create();
   ScriptApp.newTrigger('mondayPayReportEmail').timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(9).inTimezone(CONFIG.TZ).create();
   ScriptApp.newTrigger('dailyMaintenance').timeBased().everyDays(1).atHour(2).inTimezone(CONFIG.TZ).create();
+  ScriptApp.newTrigger('keepWarm').timeBased().everyMinutes(5).create();
   return 'Setup complete. Admin: ' + email;
 }
 

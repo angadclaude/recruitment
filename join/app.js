@@ -451,6 +451,8 @@ function fetchWeek(we, extra) {
       return (req.withUsers && b.me && b.me.user.roles.indexOf('admin') >= 0 ? call('listUsers').then(u => { b.users = u.users; return b; }) : b);
     });
   }).then(b => {
+    const pend = pendingIds();
+    if (pend.length) b.items = b.items.map(x => pend.indexOf(x.id) >= 0 ? (findCand(x.id) || x) : x);
     S.data[b.weekEnding] = { items: b.items, pay: b.pay, at: Date.now() };
     if (b.users) S.users = b.users;
     if (b.me) {
@@ -545,7 +547,21 @@ function boot() {
   hist('replace', { v: S.tab, p: {} });
   if (BOOT.cid) { const id = BOOT.cid; BOOT.cid = ''; nav('cand', { id: id }, true); } else nav(S.tab, {}, false);
   stopTimer();
-  S.timer = setInterval(() => { if (document.visibilityState === 'visible') refreshQuiet(); }, POLL_MS);
+  S.lastPoll = Date.now();
+  S.timer = setInterval(tick, 5000);
+  FLUSHING = false; flush();
+  registerSW();
+}
+function registerSW() {
+  if (!CFG.API_URL || !('serviceWorker' in navigator) || !window.isSecureContext) return;
+  navigator.serviceWorker.register('OneSignalSDKWorker.js', { scope: './' }).catch(() => {});
+}
+function tick() {
+  if (document.visibilityState !== 'visible' || !S.me) return;
+  const hr = Number(londonNow().slice(11, 13));
+  const live = S.view === 'today' && S.day === S.me.today && hr >= 7 && hr < 17;
+  if (Date.now() - S.lastPoll >= (live ? 10000 : POLL_MS)) { S.lastPoll = Date.now(); refreshQuiet(); }
+  if (outbox().length) flush();
 }
 function refreshQuiet() {
   if (!S.me) return;
@@ -614,7 +630,7 @@ function ensureShell() {
       '<div class="ab-title" id="abTitle"></div><span class="sync" id="sync"></span>' +
       '<button class="avatar-btn" id="abMe">' + h(initials(S.me.user.name)) + '</button>' +
     '</div></header>' +
-    '<div id="bars"></div><main id="page"></main><div id="menu" hidden></div>' +
+    '<div id="bars"></div><div id="ptr"><span class="spinner sm"></span></div><main id="page"></main><div id="menu" hidden></div>' +
     '<nav class="tabbar" id="tabbar"></nav>';
   document.getElementById('abBack').onclick = back;
   document.getElementById('abMe').onclick = toggleMenu;
@@ -635,6 +651,34 @@ function paint(title, html, quiet, sub) {
   else { window.scrollTo(0, 0); page.classList.remove('enter', 'enter-sub'); void page.offsetWidth; page.classList.add(sub ? 'enter-sub' : 'enter'); }
   return page;
 }
+// Pull down at the top of a list to refresh
+const PTR = { y: 0, d: 0, on: false };
+document.addEventListener('touchstart', e => {
+  PTR.on = BOOT.mode === 'staff' && S.booted && window.scrollY <= 0 && ['today', 'mine', 'all', 'pay', 'team'].indexOf(S.view) >= 0 && !e.target.closest('.swipe, input, textarea');
+  PTR.y = e.touches[0].clientY; PTR.d = 0;
+}, { passive: true });
+document.addEventListener('touchmove', e => {
+  if (!PTR.on) return;
+  PTR.d = e.touches[0].clientY - PTR.y;
+  const el = document.getElementById('ptr'); if (!el) return;
+  el.style.height = Math.max(0, Math.min(64, PTR.d / 2.2)) + 'px';
+  el.classList.toggle('ready', PTR.d > 130);
+}, { passive: true });
+document.addEventListener('touchend', () => {
+  if (!PTR.on) return;
+  PTR.on = false;
+  const el = document.getElementById('ptr'); if (!el) return;
+  if (PTR.d > 130) { el.style.height = '44px'; pullRefresh().then(() => { el.style.height = '0'; el.classList.remove('ready'); }); }
+  else { el.style.height = '0'; el.classList.remove('ready'); }
+});
+function pullRefresh() {
+  if (navigator.vibrate) navigator.vibrate(10);
+  Object.keys(S.data).forEach(k => { S.data[k].at = 0; });
+  if (S.view === 'team') S.users = null;
+  const we = S.view === 'today' ? weekEndingOf(S.day) : S.week;
+  return fetchWeek(we, S.view === 'team' ? { withUsers: true } : null).then(() => render(true), e => toast(e.message));
+}
+
 function toggleMenu() {
   const m = document.getElementById('menu');
   if (!m.hidden) { m.hidden = true; return; }
@@ -645,9 +689,10 @@ function toggleMenu() {
     '<button class="btn ghost block" id="mLogout" style="margin-top:8px;color:var(--red)">Log out</button></div>';
   m.hidden = false;
   m.onclick = e => { if (e.target === m) m.hidden = true; };
-  document.getElementById('mRefresh').onclick = () => { m.hidden = true; Object.keys(S.data).forEach(k => { S.data[k].at = 0; }); render(true); };
+  document.getElementById('mRefresh').onclick = () => { m.hidden = true; pullRefresh(); };
   document.getElementById('mLogout').onclick = () => {
-    store.del('tok'); store.del('cache'); S.token = ''; S.me = null; S.data = {}; S.users = null; S.booted = false; S.tab = '';
+    if (outbox().length && !navigator.onLine) { toast('Wait for signal first: you have changes that haven\'t synced'); return; }
+    store.del('outbox'); store.del('tok'); store.del('cache'); S.token = ''; S.me = null; S.data = {}; S.users = null; S.booted = false; S.tab = '';
     if (PUSH.os) PUSH.os.logout().catch(() => {});
     startStaff();
   };
@@ -661,7 +706,10 @@ function refreshBars() {
   const el = document.getElementById('bars'); if (!el) return;
   const dismissed = (store.get('barsHidden') || 0) > Date.now();
   let html = '';
-  if (!IS_STANDALONE && IS_IOS && !dismissed) {
+  const pend = outbox().length;
+  if (pend && !navigator.onLine) {
+    html = '<div class="pushbar"><div>📶 <b>No signal.</b> ' + pend + ' change' + (pend > 1 ? 's' : '') + ' saved on your phone. They\'ll sync automatically.</div></div>';
+  } else if (!IS_STANDALONE && IS_IOS && !dismissed) {
     html = '<div class="pushbar"><div><b>📲 Make it an app:</b> tap <b>Share</b> → <b>Add to Home Screen</b>, then open it from the icon. Full screen, faster, and you get alerts.</div><button class="x" id="barX">✕</button></div>';
   } else if (!IS_STANDALONE && INSTALL_EVT && !dismissed) {
     html = '<div class="pushbar"><div><b>📲 Install the app</b> for full screen + alerts.</div><button class="btn sm" id="barInstall">Install</button><button class="x" id="barX">✕</button></div>';
@@ -710,7 +758,17 @@ function statusPill(c) {
   return '<span class="pill">Awaiting evaluation</span>';
 }
 function avatar(c, cls) { return '<span class="av ' + (cls || '') + ' rag-' + (c.rag || 'X') + '">' + h(initials(c.full_name)) + '</span>'; }
+function waFor(c) {
+  const offerReady = c.outcome === 'Academy booked' && c.admin_status !== 'pending' && c.admin_status !== 'rejected' && c.welcome_url;
+  if (offerReady && (isAdmin() || c.booker_id === S.me.user.id)) return waUrl(c.mobile, msgAcademy(c));
+  if (isPresenter()) return waUrl(c.mobile, msgThanks(c));
+  return waUrl(c.mobile, '');
+}
 function item(c, showStatus) {
+  return '<div class="swipe"><div class="acts"><a class="act call" href="tel:' + h(c.mobile) + '">' + icon('phone', 20) + '<span>Call</span></a>' +
+    '<a class="act wa" href="' + h(waFor(c)) + '" target="_blank" rel="noopener">' + icon('chat', 20) + '<span>WhatsApp</span></a></div>' + itemBtn(c, showStatus) + '</div>';
+}
+function itemBtn(c, showStatus) {
   return '<button class="item" data-id="' + h(c.id) + '">' + avatar(c) + '<div class="main">' +
     '<div class="name">' + h(c.full_name) + (c.stars ? ' <span class="stars-sm">' + '★'.repeat(Number(c.stars)) + '</span>' : '') + '</div>' +
     '<div class="sub">' + (c.booker_name ? h(c.booker_name) + ' <span class="co ' + h(c.company) + '">' + h(c.company) + '</span>' : '<i>Booker not confirmed' + (c.booker_typed ? ': "' + h(c.booker_typed) + '"' : '') + '</i>') + '</div>' +
@@ -718,7 +776,34 @@ function item(c, showStatus) {
     '</div><span class="chev">›</span></button>';
 }
 function bindItems(root) {
-  (root || document).querySelectorAll('.item[data-id]').forEach(el => { el.onclick = () => nav('cand', { id: el.dataset.id }, true); });
+  (root || document).querySelectorAll('.item[data-id]').forEach(el => {
+    el.onclick = () => {
+      const sw = el.parentNode.classList.contains('swipe') ? el.parentNode : null;
+      if (sw && sw.classList.contains('open')) { closeSwipes(); return; }
+      nav('cand', { id: el.dataset.id }, true);
+    };
+  });
+  (root || document).querySelectorAll('.swipe').forEach(bindSwipe);
+}
+// Swipe a candidate left to reveal Call / WhatsApp
+function closeSwipes(except) { document.querySelectorAll('.swipe.open').forEach(x => { if (x !== except) { x.classList.remove('open'); x.querySelector('.item').style.transform = ''; } }); }
+function bindSwipe(sw) {
+  const it = sw.querySelector('.item'); const W = 152;
+  let x0 = 0, y0 = 0, dx = 0, mode = '';
+  sw.addEventListener('touchstart', e => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dx = 0; mode = ''; it.style.transition = 'none'; }, { passive: true });
+  sw.addEventListener('touchmove', e => {
+    const mx = e.touches[0].clientX - x0, my = e.touches[0].clientY - y0;
+    if (!mode) mode = Math.abs(mx) > 8 && Math.abs(mx) > Math.abs(my) ? 'x' : (Math.abs(my) > 8 ? 'y' : '');
+    if (mode !== 'x') return;
+    dx = Math.max(-W - 20, Math.min(0, mx + (sw.classList.contains('open') ? -W : 0)));
+    it.style.transform = 'translateX(' + dx + 'px)';
+  }, { passive: true });
+  sw.addEventListener('touchend', () => {
+    it.style.transition = '';
+    if (mode !== 'x') return;
+    if (dx < -W / 2) { closeSwipes(sw); sw.classList.add('open'); it.style.transform = 'translateX(' + (-W) + 'px)'; }
+    else { sw.classList.remove('open'); it.style.transform = ''; }
+  });
 }
 function groupByDate(items) {
   const g = {};
@@ -937,7 +1022,7 @@ function viewCandidate(id) {
     renderCandidate(c);
     const vid = S.viewId;
     call('getCandidate', { id: id }).then(x => {
-      if (JSON.stringify(x) === JSON.stringify(c)) return;
+      if (pendingIds().indexOf(id) >= 0 || JSON.stringify(x) === JSON.stringify(c)) return;
       const d = S.data[x.week_ending]; if (d) { const i = d.items.findIndex(y => y.id === x.id); if (i >= 0) d.items[i] = x; }
       saveCache();
       const typing = document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
@@ -952,6 +1037,55 @@ function viewCandidate(id) {
     .catch(e => { if (S.viewId === vid) paint('', '<div class="err">' + h(e.message) + '</div>', false, true); });
 }
 function saved(nc, msg) { upsert(nc); toast(msg); if (S.view === 'cand' && S.params.id === nc.id) renderCandidate(nc, true); }
+
+// ───── Instant saves: change shows straight away, syncs in the background, retries when signal returns ─────
+let FLUSHING = false;
+function outbox() { return store.get('outbox') || []; }
+function setOutbox(q) { store.set('outbox', q); showPending(); }
+function pendingIds() { return outbox().map(o => o.id); }
+function isTyping() { return document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName); }
+function londonNow() {
+  const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+    .formatToParts(new Date()).reduce((a, x) => (a[x.type] = x.value, a), {});
+  return p.year + '-' + p.month + '-' + p.day + ' ' + p.hour + ':' + p.minute;
+}
+function showPending() {
+  const n = outbox().length;
+  const el = document.getElementById('sync'); if (el) el.classList.toggle('on', S.syncing > 0 || n > 0);
+  refreshBars();
+}
+function queueSave(action, payload, local, msg) {
+  local._pending = true;
+  const d = S.data[local.week_ending];
+  if (d) { const i = d.items.findIndex(x => x.id === local.id); if (i >= 0) d.items[i] = local; else d.items.push(local); }
+  saveCache();
+  setOutbox(outbox().concat([{ action: action, payload: payload, id: local.id, t: Date.now() }]));
+  toast(msg);
+  if (S.view === 'cand' && S.params.id === local.id) renderCandidate(local, true);
+  flush();
+}
+function flush() {
+  if (FLUSHING || !S.token) return;
+  const op = outbox()[0]; if (!op) return;
+  FLUSHING = true;
+  call(op.action, op.payload).then(nc => {
+    setOutbox(outbox().slice(1));
+    FLUSHING = false;
+    if (pendingIds().indexOf(nc.id) < 0) {
+      upsert(nc);
+      if (S.view === 'cand' && S.params.id === nc.id && !isTyping()) renderCandidate(nc, true);
+    }
+    flush();
+  }, err => {
+    FLUSHING = false;
+    if (/connection|network|fetch/i.test(err.message)) { showPending(); return; }  // no signal: keep it, retry on the next tick
+    setOutbox(outbox().slice(1));
+    toast('Not saved: ' + err.message);
+    call('getCandidate', { id: op.id }).then(nc => { upsert(nc); if (S.view === 'cand' && S.params.id === nc.id) renderCandidate(nc, true); }).catch(() => {});
+    flush();
+  });
+}
+window.addEventListener('online', () => flush());
 
 function brandOf(c) { return c.company === 'JUSS' ? 'JUSS Marketing' : 'LINK Marketing'; }
 function waUrl(mobile, text) { return 'https://wa.me/44' + String(mobile).slice(1) + '?text=' + encodeURIComponent(text); }
@@ -1010,7 +1144,7 @@ function renderCandidate(c, quiet) {
   let html = '<div class="profile">' + avatar(c, 'xl') + '<h1>' + h(c.full_name) + '</h1>' +
     '<div class="muted small">Attended ' + fmt(c.attended_date) + ' · ' + (c.booker_name ? 'booked by <b>' + h(c.booker_name) + '</b> <span class="co ' + h(c.company) + '">' + h(c.company) + '</span>' : '<b>booker not confirmed</b>' + (c.booker_typed ? ' ("' + h(c.booker_typed) + '")' : '')) + '</div>' +
     (c.stars ? '<div class="stars-lg">' + '★'.repeat(Number(c.stars)) + '<span>' + '★'.repeat(5 - Number(c.stars)) + '</span></div>' : '') +
-    '<div class="pills center-pills">' + statusPill(c) + '</div>' +
+    '<div class="pills center-pills">' + statusPill(c) + (c._pending ? '<span class="pill">⏳ Syncing…</span>' : '') + '</div>' +
     '<div class="actions"><a href="tel:' + h(c.mobile) + '">' + icon('phone') + '<span>Call</span></a>' +
     '<a href="' + h(waMain) + '" target="_blank" rel="noopener">' + icon('chat') + '<span>WhatsApp</span></a>' +
     '<a href="mailto:' + h(c.email) + '">' + icon('mail') + '<span>Email</span></a></div></div>' +
@@ -1063,7 +1197,8 @@ function renderCandidate(c, quiet) {
   const wa = [];
   if (canNotes) wa.push('<a class="btn wa block" target="_blank" rel="noopener" data-kind="thanks" href="' + h(waUrl(c.mobile, msgThanks(c))) + '">💬 Send thank-you message</a>' +
     (c.thanks_sent_at ? '<p class="small muted center">Opened ' + fmtTs(c.thanks_sent_at) + '</p>' : ''));
-  if (canOutcome && offerReady) wa.push('<a class="btn wa block" target="_blank" rel="noopener" data-kind="offer" href="' + h(waUrl(c.mobile, msgAcademy(c))) + '">🎉 Send BA Academy Day 1 details (' + h(c.company || 'LINK') + ')</a>' +
+  if (canOutcome && offerReady && !c.welcome_url && c._pending) wa.push('<div class="flag amber">⏳ Syncing. The Academy WhatsApp button appears in a moment.</div>');
+  if (canOutcome && offerReady && (c.welcome_url || !c._pending)) wa.push('<a class="btn wa block" target="_blank" rel="noopener" data-kind="offer" href="' + h(waUrl(c.mobile, msgAcademy(c))) + '">🎉 Send BA Academy Day 1 details (' + h(c.company || 'LINK') + ')</a>' +
     (c.offer_sent_at ? '<p class="small muted center">Opened ' + fmtTs(c.offer_sent_at) + '</p>' : '') +
     (c.welcome_url ? '<a class="btn ghost sm" target="_blank" rel="noopener" href="' + h(c.welcome_url) + '">👀 Preview their welcome page</a>' : ''));
   if (canOutcome && c.outcome === 'No answer') wa.push('<a class="btn wa block" target="_blank" rel="noopener" data-kind="noanswer" href="' + h(waUrl(c.mobile, msgNoAnswer(c))) + '">📞 Send "missed you" message</a>');
@@ -1092,19 +1227,31 @@ function renderCandidate(c, quiet) {
     bindChips(pres);
     pres.querySelectorAll('.rag button').forEach(b => { b.onclick = () => { st.rag = st.rag === b.dataset.r ? '' : b.dataset.r; pres.querySelectorAll('.rag button').forEach(x => x.classList.toggle('on', x.dataset.r === st.rag)); }; });
     pres.querySelectorAll('.stars button').forEach(b => { b.onclick = () => { st.stars = Number(b.dataset.s); pres.querySelectorAll('.stars button').forEach(x => x.classList.toggle('on', Number(x.dataset.s) <= st.stars)); }; });
-    document.getElementById('savenotes').onclick = e => {
-      const btn = e.currentTarget; busy(btn, true);
-      call('saveNotes', { id: c.id, in_room: !!c.in_room, rag: st.rag || '', stars: st.stars, tags: chipVals(pres, 'tags'), notes: document.getElementById('notes').value })
-        .then(nc => saved(nc, 'Notes saved ✓')).catch(x => { busy(btn, false); showErr(document.getElementById('perr'), x.message); });
+    document.getElementById('savenotes').onclick = () => {
+      const payload = { id: c.id, in_room: !!c.in_room, rag: st.rag || '', stars: st.stars, tags: chipVals(pres, 'tags'), notes: document.getElementById('notes').value };
+      const local = Object.assign({}, c, {
+        rag: payload.rag, stars: payload.stars ? String(payload.stars) : '', tags: payload.tags.join(', '), notes: payload.notes,
+        in_room: (c.in_room || payload.rag || payload.stars) ? 'TRUE' : '', presenter_id: S.me.user.id, presenter_name: S.me.user.name, notes_at: londonNow(),
+      });
+      queueSave('saveNotes', payload, local, 'Notes saved ✓');
     };
   }
   if (canOutcome) {
     const out = document.getElementById('out');
     bindChips(out, (n, v) => { if (n === 'outcome') document.getElementById('acad').hidden = v !== 'Academy booked'; });
-    document.getElementById('saveout').onclick = e => {
-      const btn = e.currentTarget; busy(btn, true);
-      call('saveOutcome', { id: c.id, outcome: chipVal(out, 'outcome'), academy_date: document.getElementById('adate').value, outcome_notes: document.getElementById('onotes').value })
-        .then(nc => saved(nc, nc.outcome_late ? 'Saved — flagged late' : 'Outcome saved ✓')).catch(x => { busy(btn, false); showErr(document.getElementById('oerr'), x.message); });
+    document.getElementById('saveout').onclick = () => {
+      const payload = { id: c.id, outcome: chipVal(out, 'outcome'), academy_date: document.getElementById('adate').value, outcome_notes: document.getElementById('onotes').value };
+      const err = document.getElementById('oerr');
+      if (!payload.outcome) return showErr(err, 'Choose an outcome.');
+      if (payload.outcome === 'Academy booked' && !/^\d{4}-\d{2}-\d{2}$/.test(payload.academy_date)) return showErr(err, 'Pick the BA Academy Day 1 date.');
+      const acad = payload.outcome === 'Academy booked' ? payload.academy_date : '';
+      const now = londonNow();
+      const local = Object.assign({}, c, {
+        outcome: payload.outcome, academy_date: acad, outcome_notes: payload.outcome_notes, outcome_by: S.me.user.name, outcome_at: now,
+        outcome_late: now > c.deadline ? 'TRUE' : '', academy_confirmed_at: acad === c.academy_date ? c.academy_confirmed_at : '',
+        admin_status: acad && (c.rag === 'R' || c.repeat_block) && !isAdmin() && c.admin_status !== 'approved' ? 'pending' : (acad ? c.admin_status : (c.admin_status === 'pending' ? '' : c.admin_status)),
+      });
+      queueSave('saveOutcome', payload, local, local.outcome_late ? 'Saved — flagged late' : 'Outcome saved ✓');
     };
   }
   document.querySelectorAll('a.wa[data-kind]').forEach(a => {

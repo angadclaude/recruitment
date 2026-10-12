@@ -69,7 +69,7 @@ function load(opts) {
     console,
     SpreadsheetApp: { getActive: () => book, openById: () => book },
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => (k in state.props ? state.props[k] : null), setProperty: (k, v) => { state.props[k] = String(v); } }) },
-    CacheService: { getScriptCache: () => ({ get: k => state.cache[k] || null, put: (k, v) => { state.cache[k] = v; }, removeAll: () => {} }) },
+    CacheService: { getScriptCache: () => ({ get: k => state.cache[k] || null, put: (k, v) => { state.cache[k] = v; }, remove: k => { delete state.cache[k]; }, removeAll: () => {} }) },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
     Utilities: {
       formatDate: fmtDate,
@@ -84,7 +84,7 @@ function load(opts) {
       getService: () => ({ getUrl: () => url }),
       getProjectTriggers: () => state.triggers, deleteTrigger: () => {},
       WeekDay: { MONDAY: 'MON', WEDNESDAY: 'WED', FRIDAY: 'FRI', SATURDAY: 'SAT' },
-      newTrigger: fn => { const t = { fn }; const ch = { timeBased: () => ch, onWeekDay: d => (t.day = d, ch), atHour: hr => (t.hour = hr, ch), everyDays: () => ch, inTimezone: () => ch, create: () => state.triggers.push(t) }; return ch; },
+      newTrigger: fn => { const t = { fn }; const ch = { timeBased: () => ch, onWeekDay: d => (t.day = d, ch), atHour: hr => (t.hour = hr, ch), everyDays: () => ch, everyMinutes: () => ch, inTimezone: () => ch, create: () => state.triggers.push(t) }; return ch; },
     },
     Session: { getEffectiveUser: () => ({ getEmail: () => 'angad@linkmarketing.org.uk' }) },
     HtmlService: {},
