@@ -240,6 +240,7 @@ async function fillEval(p) {
   fs.writeFileSync(`${SHOTS}/msg-link.txt`, msg);
   const wurl = (msg.match(/https:\/\/\S+welcome-link\.html\?t=\w+/) || [])[0];
   ok(/^JASRAJ!! 🎉 You're IN\./.test(msg) && /Pre-Coaching Module/.test(msg) && wurl, 'LINK WhatsApp: Gen Z copy + personal welcome link');
+  ok(/– Jess, LINK Marketing$/.test(msg), 'LINK message signed by Jess (sent by Fiza)');
   ok(msg.length < 520, 'message is short and scannable (' + msg.length + ' chars)');
   ok(/⏳ Not confirmed yet/.test(await bp.innerText('body')), 'snapshot shows "not confirmed yet"');
 
@@ -277,6 +278,7 @@ async function fillEval(p) {
   const jmsg = decodeURIComponent((await ap.getAttribute('a.wa[data-kind=offer]', 'href')).split('?text=')[1]);
   fs.writeFileSync(`${SHOTS}/msg-juss.txt`, jmsg);
   ok(/JUSS Marketing BA Academy/.test(jmsg) && /welcome-juss\.html/.test(jmsg) && !/Pre-Coaching/.test(jmsg), 'JUSS booker → JUSS message + JUSS welcome page');
+  ok(/– Rubal, JUSS Marketing$/.test(jmsg), 'JUSS message signed by Rubal (sent by Angad)');
   const jwurl = jmsg.match(/https:\/\/\S+welcome-juss\.html\?t=\w+/)[0];
   const jp = await cand.newPage();
   await jp.goto(jwurl.replace(PUBLIC, APP));

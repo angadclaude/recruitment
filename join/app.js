@@ -383,7 +383,7 @@ function renderWelcome(w) {
 
     '<details class="card"><summary><b>🖼️ View the Week 1 poster</b></summary><img src="img/poster-' + co.toLowerCase() + '.jpg" alt="Week 1 schedule poster" style="width:100%;border-radius:10px;margin-top:10px" onerror="this.parentNode.hidden=true"></details>' +
 
-    '<p class="center muted small" style="margin:18px 0 110px">Questions? Just reply to ' + h(w.booker_first || 'us') + ' on WhatsApp 💬</p>' +
+    '<p class="center muted small" style="margin:18px 0 110px">Questions? Just reply to the WhatsApp message 💬</p>' +
     '<div class="wl-cta" id="cta"></div></div>';
 
   const icsA = document.getElementById('ics');
@@ -719,7 +719,8 @@ function msgAcademy(c) {
   ];
   if (c.welcome_url) lines.push('👇 Your Week 1 game plan + tap *CONFIRM* to lock in your spot:', c.welcome_url, '');
   if (!juss) lines.push('⚡ Before Day 1: finish the *Pre-Coaching Module* in your welcome email');
-  lines.push('🪪 Bring photo ID + your right-to-work share code', '', 'Let\'s get it 🔥', '– ' + S.me.user.name.split(' ')[0]);
+  const sign = (S.me.signoff || {})[juss ? 'JUSS' : 'LINK'] || S.me.user.name.split(' ')[0];
+  lines.push('🪪 Bring photo ID + your right-to-work share code', '', 'Let\'s get it 🔥', '– ' + sign + ', ' + brandOf(c));
   return lines.join('\n');
 }
 

@@ -21,6 +21,7 @@ const CONFIG = {
   // Where the app lives for staff and candidates (the GitHub Pages / custom domain address, ending in /).
   // Leave '' to use the Google Apps Script link instead (no push notifications).
   PUBLIC_URL: 'https://angadclaude.github.io/recruitment/join/',
+  ACADEMY_SIGNOFF: { LINK: 'Jess', JUSS: 'Rubal' }, // who signs the BA Academy WhatsApp, whoever sends it
   EMAIL_ALERTS: false,            // true = also email every alert. Push is used when OneSignal keys are set.
   SESSION_DAYS: 30,               // staff stay logged in for this long
   HISTORY_SOURCE_ID: '1SjfhyQw-mnJY3iT8Q7p50795kP4DySJFx9fVcEEB_P8', // old Google Form sheet
@@ -504,6 +505,7 @@ function me(req, u) {
     payTarget: CONFIG.PAY_TARGET,
     deadlineTime: CONFIG.OUTCOME_DEADLINE_TIME,
     links: { checkin: publicLink('checkin'), eval: publicLink('eval'), staff: staffUrl('') },
+    signoff: CONFIG.ACADEMY_SIGNOFF,
   };
 }
 
