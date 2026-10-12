@@ -54,6 +54,7 @@ function page(opts) {
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>${opts.title}</title>
   <meta name="theme-color" content="#F15A24">
+  <meta name="color-scheme" content="only light">
   <meta name="robots" content="noindex, nofollow">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-180.png">
