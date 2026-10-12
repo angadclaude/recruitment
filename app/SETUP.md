@@ -111,13 +111,15 @@ Put the two QR codes on the presentation once. They never change:
 | Mon–Thu 18:00: your day (who came in, evaluations) + who still needs closing, sending Day 1 details or confirming | every booker who had appointments (nothing to say = no message) |
 | **Fri 15:00 week roundup:** appointments, who's booked, who's not, no outcome yet, who's been sent the Day 1 WhatsApp (and who hasn't), net vs target | every booker who had appointments |
 | **Fri 15:00 team roundup:** the same, one line per booker, loose ends first | admins |
-| Sat 14:00: "2 outcomes due by 19:00" | bookers with calls outstanding |
+| Sat 14:00: "🔴 2 outcomes LATE (due Fri 18:00)" | bookers who missed the deadline |
 | Mon 09:00: pay report ready | admins |
 
 ## Rules built in (top of `Code.gs`)
 - **Net attended:** Mon–Fri, **rated by the presenter**, 18+, eligible to work self-employed, not seen in the last **6 months**, not removed by admin. Target 5.
 - **Check-ins outside 07:00–17:00 still go through**, but admins see an amber "outside office hours" flag. Combined with "presenter must rate them", nobody can be checked in from home for pay.
-- **Outcome deadline Saturday 19:00.** Sunday outcomes are accepted and marked LATE.
+- **Outcome deadline Friday 18:00** (the thank-you WhatsApp promises candidates a call "by close of business Friday 6PM"). Later outcomes are accepted and marked LATE.
+- **Made a mistake in the evaluation?** The candidate scans the evaluation QR again → **✏️ Change my answers** (same day, until their booker logs the call). The booker gets a push.
+- **Busy moments** (20+ people scanning at once): the app waits its turn and retries by itself; candidates see "Busy, still sending…", never an error. Answers are kept on the phone until they're sent.
 - **Presenter RED / previously rejected** → admin decides before the Academy message unlocks.
 - **12-month auto-delete** (GDPR). Conviction answer is admin-only.
 

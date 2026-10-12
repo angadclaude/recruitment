@@ -11,8 +11,8 @@ const CONFIG = {
   APP_NAME: 'Juss & Link Recruitment App',
   OFFICE_ADDRESS: '2nd Floor East, Automotive House, Grays Place, Slough SL2 5AF',
   PAY_TARGET: 5,                  // net attended appointments per booker, Mon–Fri
-  OUTCOME_DEADLINE_DAY: 6,        // 6 = Saturday (days after Monday: Mon=1 … Sat=6)
-  OUTCOME_DEADLINE_TIME: '19:00', // outcomes logged after this are flagged LATE
+  OUTCOME_DEADLINE_DAY: 5,        // 5 = Friday (Mon=1 … Fri=5, Sat=6). Matches the thank-you WhatsApp: "by Friday 6PM"
+  OUTCOME_DEADLINE_TIME: '18:00', // outcomes logged after this are flagged LATE
   REPEAT_DAYS: 183,               // "seen before" window: 6 months
   REPEAT_COUNTS_FOR_PAY: false,   // a repeat attendee (within REPEAT_DAYS) does not count
   RETENTION_DAYS: 365,            // candidate data auto-deleted after this
@@ -77,7 +77,7 @@ const SHEETS = {
     'admin_status', 'admin_note', 'admin_by', 'admin_at',
     'pay_excluded', 'pay_excluded_reason', 'thanks_sent_at', 'offer_sent_at',
     'welcome_token', 'academy_confirmed_at',
-    'p_why_sales', 'p_why_sales_note', 'p_interesting',
+    'p_why_sales', 'p_why_sales_note', 'p_interesting', 'eval_edited_at',
   ],
   History: ['attended_date', 'full_name', 'mobile', 'email', 'booker_raw', 'presenter_raw'],
   Codes: ['email', 'code_hash', 'expires', 'attempts'],
@@ -133,14 +133,18 @@ function api(req) {
     if (!user) return { ok: false, auth: true, error: 'Please log in again.' };
     return { ok: true, data: sfn(req, user) };
   } catch (err) {
-    return { ok: false, error: String((err && err.message) || err) };
+    const msg = String((err && err.message) || err);
+    // Google being busy (lock queue, too many at once, a Sheets hiccup) → the app retries by itself
+    const retry = !!(err && err.retry) || /timed out|Service invoked too many|try again later|Lock|Service Spreadsheets|Service error/i.test(msg);
+    return { ok: false, error: retry ? 'Lots of people are sending at once. Trying again…' : msg, retry: retry };
   }
 }
 
 // ───────────────────────── UTIL ─────────────────────────
 function ss() {
+  if (MEMO._ss) return MEMO._ss;
   const id = PropertiesService.getScriptProperties().getProperty('SS_ID');
-  return id ? SpreadsheetApp.openById(id) : SpreadsheetApp.getActive();
+  return (MEMO._ss = id ? SpreadsheetApp.openById(id) : SpreadsheetApp.getActive());
 }
 function sheet(name) { return ss().getSheetByName(name); }
 
@@ -154,9 +158,14 @@ function readTable(name) {
   if (want && headers.length < want.length && headers.every((h, i) => h === want[i])) {
     // New version added columns: append their headers so nothing needs re-running.
     const add = want.slice(headers.length);
+    ensureCols(sh, want.length, name);
     sh.getRange(1, headers.length + 1, 1, add.length).setValues([add]).setFontWeight('bold');
     sh.getRange(1, headers.length + 1, sh.getMaxRows(), add.length).setNumberFormat('@');
     add.forEach(h => headers.push(h));
+  }
+  // Rows are written by column position, so a column inserted or moved by hand would scramble data. Stop instead.
+  if (want && !want.every((h, i) => headers[i] === h)) {
+    throw new Error('The "' + name + '" tab\'s columns were changed in the Google Sheet. Undo that change (File → Version history) and try again.');
   }
   const rows = values.map((r, i) => {
     const o = { _row: i + 2 };
@@ -167,9 +176,10 @@ function readTable(name) {
   return rows;
 }
 function writeRow(name, obj) {
-  const cols = SHEETS[name];
+  const cols = SHEETS[name], sh = sheet(name);
   const row = cols.map(c => (obj[c] === undefined || obj[c] === null) ? '' : String(obj[c]));
-  sheet(name).getRange(obj._row, 1, 1, cols.length).setValues([row]);
+  ensureCols(sh, cols.length, name);
+  sh.getRange(obj._row, 1, 1, cols.length).setValues([row]);
   delete MEMO[name];
 }
 function appendRow(name, obj) {
@@ -178,10 +188,27 @@ function appendRow(name, obj) {
   const row = cols.map(c => (obj[c] === undefined || obj[c] === null) ? '' : String(obj[c]));
   const r = sh.getLastRow() + 1;
   ensureRows(sh, r, cols.length);
+  ensureCols(sh, cols.length, name);
   sh.getRange(r, 1, 1, cols.length).setValues([row]);
   delete MEMO[name];
   obj._row = r;
   return obj;
+}
+/** One row, read fresh by position (cheap, safe inside a lock). */
+function readRow(name, r) {
+  const cols = SHEETS[name], sh = sheet(name), n = Math.min(cols.length, sh.getLastColumn());
+  const v = sh.getRange(r, 1, 1, n).getValues()[0];
+  const o = { _row: r };
+  cols.forEach((c, i) => { o[c] = i < n && v[i] !== null && v[i] !== undefined ? String(v[i]) : ''; });
+  return o;
+}
+/** Row number of a record by its id (first column) — reads one narrow column, not the whole tab. */
+function rowOfId(name, id) {
+  const sh = sheet(name), last = sh.getLastRow();
+  if (last < 2 || !id) return 0;
+  const ids = sh.getRange(2, 1, last - 1, 1).getValues();
+  for (let i = ids.length - 1; i >= 0; i--) if (String(ids[i][0]) === id) return i + 2;
+  return 0;
 }
 /** Sheets start with 1,000 rows; grow in blocks of 500 (formatted as text) before writing past the end. */
 function ensureRows(sh, lastNeeded, ncols) {
@@ -191,13 +218,29 @@ function ensureRows(sh, lastNeeded, ncols) {
   sh.insertRowsAfter(max, add);
   sh.getRange(max + 1, 1, add, ncols).setNumberFormat('@');
 }
+/** A new version can add columns at the end: make sure the tab is wide enough (checked once per request). */
+function ensureCols(sh, n, name) {
+  if (MEMO['_cols_' + name]) return;
+  const max = sh.getMaxColumns();
+  if (max < n) sh.insertColumnsAfter(max, n - max);
+  MEMO['_cols_' + name] = true;
+}
 function withLock(fn) {
   const lock = LockService.getScriptLock();
-  lock.waitLock(20000);
-  try { return fn(); } finally { lock.releaseLock(); }
+  if (!lock.tryLock(25000)) throw busyError();
+  // flush() makes this write visible before the next person in the queue reads the sheet
+  try { const r = fn(); SpreadsheetApp.flush(); return r; } finally { lock.releaseLock(); }
 }
+function busyError() { const e = new Error('Lots of people are sending at once. Trying again…'); e.retry = true; return e; }
+/** Audit line. Sheet.appendRow is atomic, so this is safe outside the lock (keeps the lock short). */
 function log(user, action, cid, detail) {
-  appendRow('Log', { at: nowStr(), user: user ? user.name : 'candidate', action: action, candidate_id: cid || '', detail: detail || '' });
+  try {
+    const sh = sheet('Log'), cols = SHEETS.Log;
+    const o = { at: nowStr(), user: user ? user.name : 'candidate', action: action, candidate_id: cid || '', detail: detail || '' };
+    ensureRows(sh, sh.getLastRow() + 2, cols.length);
+    sh.appendRow(cols.map(c => String(o[c] == null ? '' : o[c])));
+    delete MEMO.Log;
+  } catch (e) { console.error(e); }
 }
 
 function nowStr() { return Utilities.formatDate(new Date(), CONFIG.TZ, 'yyyy-MM-dd HH:mm'); }
@@ -210,6 +253,7 @@ function addDays(ymd, n) {
 function weekday(ymd) { return new Date(ymd + 'T00:00:00Z').getUTCDay(); } // 0=Sun … 6=Sat
 function weekMonday(ymd) { const w = weekday(ymd); return addDays(ymd, w === 0 ? -6 : 1 - w); }
 function weekEnding(ymd) { return addDays(weekMonday(ymd), 6); } // Sunday
+function deadlineLabel() { return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][CONFIG.OUTCOME_DEADLINE_DAY % 7] + ' ' + CONFIG.OUTCOME_DEADLINE_TIME; }
 function outcomeDeadline(attendedYmd) {
   return addDays(weekMonday(attendedYmd), CONFIG.OUTCOME_DEADLINE_DAY - 1) + ' ' + CONFIG.OUTCOME_DEADLINE_TIME;
 }
@@ -231,6 +275,7 @@ function normMobile(s) {
   else if (d.indexOf('0044') === 0) d = '0' + d.slice(4);
   else if (d.indexOf('44') === 0 && d.length === 12) d = '0' + d.slice(2);
   d = d.replace(/\D/g, '');
+  if (/^7\d{9}$/.test(d)) d = '0' + d;  // Sheets drops the leading 0 from numbers typed into the old form
   return /^07\d{9}$/.test(d) ? d : '';
 }
 function cleanName(s) {
@@ -269,7 +314,7 @@ function flagsFor(c, isAdmin) {
   if (isAdmin && c.q13_unspent === 'Yes') amber('Declared an unspent conviction');
   const at = String(c.created_at || '').slice(11, 16);
   if (isAdmin && at && (at < CONFIG.CHECKIN_FROM || at > CONFIG.CHECKIN_TO)) amber('Checked in at ' + at + ' (outside office hours)');
-  if (truthy(c.outcome_late)) amber('Outcome logged late (after Sat ' + CONFIG.OUTCOME_DEADLINE_TIME + ')');
+  if (truthy(c.outcome_late)) amber('Outcome logged late (after ' + deadlineLabel() + ')');
   if (c.q12_bdp_stage && c.q12_bdp_stage.indexOf('Ownership') >= 0) green('Future owner ambition');
   if (Number(c.stars) >= 4) green(c.stars + '★ from presenter');
   return f;
@@ -282,7 +327,7 @@ function payExclusion(c) {
   if (wd === 0 || wd === 6) return 'Weekend appointment';
   if (c.over18 !== 'Yes') return 'Under 18';
   if (rtwLevel(c.rtw) === 'no') return 'Not eligible to work self-employed (' + c.rtw + ')';
-  if (c.repeat_of && !CONFIG.REPEAT_COUNTS_FOR_PAY) return 'Repeat attendee within 12 months';
+  if (c.repeat_of && !CONFIG.REPEAT_COUNTS_FOR_PAY) return 'Repeat attendee (seen in the last 6 months)';
   if (truthy(c.pay_excluded)) return 'Removed by admin: ' + (c.pay_excluded_reason || 'no reason given');
   return '';
 }
@@ -320,6 +365,9 @@ function userFromToken(tok) {
 
 function requestCode(req) {
   const email = String(req.email || '').trim().toLowerCase();
+  const cache = CacheService.getScriptCache(), rk = 'codes_' + sha(email).slice(0, 20), n = Number(cache.get(rk) || 0);
+  if (n >= 3) throw new Error('Too many codes requested. Use the last code we emailed, or wait 15 minutes.');
+  cache.put(rk, String(n + 1), 900);
   const u = usersAll().filter(x => x.email.toLowerCase() === email && truthy(x.active))[0];
   // Same response whether or not the email exists, so the list of staff can't be probed.
   if (!u) return { sent: true };
@@ -348,11 +396,11 @@ function verifyCode(req) {
   const code = String(req.code || '').trim();
   return withLock(() => {
     const rec = readTable('Codes').filter(x => x.email === email)[0];
-    if (!rec || rec.expires < nowStr()) throw new Error('Code expired — request a new one.');
+    if (!rec || rec.expires < nowStr()) throw new Error("That code isn't right or has expired. Check the latest email, or request a new code.");
     if (Number(rec.attempts) >= 5) throw new Error('Too many attempts — request a new code.');
     if (rec.code_hash !== sha(code + '|' + email)) {
       rec.attempts = String(Number(rec.attempts) + 1); writeRow('Codes', rec);
-      throw new Error('Wrong code.');
+      throw new Error("That code isn't right or has expired. Check the latest email, or request a new code.");
     }
     rec.expires = '0000'; writeRow('Codes', rec);
     const u = usersAll().filter(x => x.email.toLowerCase() === email && truthy(x.active))[0];
@@ -387,14 +435,13 @@ function checkin(req) {
   if (!truthy(f.privacy_ok)) throw new Error('Please tick the privacy notice to continue.');
   const today = todayStr();
   const booker = f.booker_id ? userById(f.booker_id) : null;
+  // Repeat check (last 6 months + old form history) before taking the lock: those rows don't change today.
+  const rep = findRepeat(readTable('Candidates'), mobile, email, today);
 
   const res = withLock(() => {
-    const all = readTable('Candidates');
-    // Already checked in today on this mobile? Return the same record (e.g. scanned twice).
-    const dupe = all.filter(c => c.mobile === mobile && c.attended_date === today)[0];
+    // Already checked in today on this mobile? Return the same record (scanned twice, double tap, retry).
+    const dupe = todaysRowByMobile(mobile, today);
     if (dupe) return { c: dupe, isNew: false };
-
-    const rep = findRepeat(all, mobile, email, today);
     const c = {
       id: uid(), created_at: nowStr(), attended_date: today, week_ending: weekEnding(today),
       resume_token: token().slice(0, 24),
@@ -408,13 +455,23 @@ function checkin(req) {
       repeat_of: rep ? rep.ref : '', repeat_info: rep ? rep.info : '', repeat_block: rep && rep.block ? 'TRUE' : '',
     };
     appendRow('Candidates', c);
-    log(null, 'checkin', c.id, name);
     return { c: c, isNew: true };
   });
+  if (res.isNew) log(null, 'checkin', res.c.id, name);
   if (res.isNew && booker) {
     notify([booker], '🙌 ' + name.split(' ')[0] + ' just checked in', name + ' is in the room for your appointment.', res.c.id);
   }
   return { id: res.c.id, resume: res.c.resume_token, first_name: res.c.full_name.split(' ')[0], evalDone: !!res.c.eval_at };
+}
+
+/** Today's check-in for a mobile, read fresh: only the first columns (id … mobile), then that one row. */
+function todaysRowByMobile(mobile, today) {
+  const cols = SHEETS.Candidates, iM = cols.indexOf('mobile'), iD = cols.indexOf('attended_date');
+  const sh = sheet('Candidates'), last = sh.getLastRow();
+  if (last < 2) return null;
+  const v = sh.getRange(2, 1, last - 1, Math.max(iM, iD) + 1).getValues();
+  for (let i = v.length - 1; i >= 0; i--) if (String(v[i][iM]) === mobile && String(v[i][iD]) === today) return readRow('Candidates', i + 2);
+  return null;
 }
 
 /** Look for the same person in the last 6 months (new app records + imported history). */
@@ -442,7 +499,16 @@ function candidateByResume(req) {
 
 function candidateStatus(req) {
   const c = candidateByResume(req);
-  return { first_name: c.full_name.split(' ')[0], attended_date: c.attended_date, today: todayStr(), evalDone: !!c.eval_at };
+  return { first_name: c.full_name.split(' ')[0], attended_date: c.attended_date, today: todayStr(), evalDone: !!c.eval_at, canEdit: canEditEval(c) };
+}
+/** A candidate can change their answers the same day, until their booker has logged the call outcome. */
+function canEditEval(c) { return !!c.eval_at && c.attended_date === todayStr() && !c.outcome; }
+/** Their own answers, to change them (same day, before the outcome). */
+function myEval(req) {
+  const c = candidateByResume(req);
+  if (!canEditEval(c)) throw new Error("Your answers can't be changed now. Speak to the person who booked you in.");
+  const a = {}; EVAL_FIELDS.forEach(k => { a[k] = c[k]; });
+  return { answers: a };
 }
 
 /** Evaluation QR on a different phone/page: find today's check-in by mobile number. */
@@ -451,7 +517,7 @@ function resumeByMobile(req) {
   if (!m) throw new Error('Please enter a valid UK mobile number (07…).');
   const c = readTable('Candidates').filter(x => x.mobile === m && x.attended_date === todayStr())[0];
   if (!c) return { found: false };
-  return { found: true, id: c.id, resume: c.resume_token, first_name: c.full_name.split(' ')[0], evalDone: !!c.eval_at };
+  return { found: true, id: c.id, resume: c.resume_token, first_name: c.full_name.split(' ')[0], evalDone: !!c.eval_at, canEdit: canEditEval(c) };
 }
 
 const EVAL_FIELDS = ['q1_excitement', 'q2_stood_out', 'q3_reason', 'q4_situation', 'q4_looking_for', 'q5_start_date',
@@ -463,19 +529,28 @@ const EVAL_REQUIRED = ['q1_excitement', 'q2_stood_out', 'q3_reason', 'q4_situati
 function submitEval(req) {
   const a = req.answers || {};
   EVAL_REQUIRED.forEach(k => { if (!String(a[k] || '').trim()) throw new Error('Please answer every question marked *.'); });
-  const done = withLock(() => {
-    const c = candidateByResume(req);
-    if (c.eval_at) return c;
-    if (c.attended_date < addDays(todayStr(), -1)) throw new Error('This evaluation link has expired. Please speak to the person who booked you in.');
+  const found = candidateByResume(req);  // the full read happens before the lock
+  if (found.attended_date < addDays(todayStr(), -1)) throw new Error('This evaluation link has expired. Please speak to the person who booked you in.');
+  const res = withLock(() => {
+    const c = readRow('Candidates', found._row);  // fresh copy of just this row
+    if (c.id !== found.id) throw busyError();      // rows only move in the 02:00 clean-up: just retry
+    let status = 'new';
+    if (c.eval_at) {
+      if (!req.edit) return { c: c, status: 'already' };  // sent before (double tap or retry): keep the first answers
+      if (!canEditEval(c)) throw new Error("Your answers can't be changed now. Speak to the person who booked you in.");
+      status = 'edited';
+    }
     EVAL_FIELDS.forEach(k => { c[k] = String(a[k] || '').trim().slice(0, 1000); });
-    c.eval_at = nowStr();
+    if (status === 'new') c.eval_at = nowStr(); else c.eval_edited_at = nowStr();
     writeRow('Candidates', c);
-    log(null, 'evaluation', c.id, '');
-    return c;
+    return { c: c, status: status };
   });
-  const b = done.booker_id ? userById(done.booker_id) : null;
-  if (b) notify([b], '📋 ' + done.full_name.split(' ')[0] + "'s evaluation is in", 'Call ' + done.full_name + ' — log the outcome by Sat ' + CONFIG.OUTCOME_DEADLINE_TIME + '.', done.id);
-  return { booker_first: done.booker_name ? done.booker_name.split(' ')[0] : 'Our team' };
+  const c = res.c, first = c.full_name.split(' ')[0];
+  if (res.status !== 'already') log(null, res.status === 'edited' ? 'evaluation_changed' : 'evaluation', c.id, '');
+  const b = c.booker_id ? userById(c.booker_id) : null;
+  if (b && res.status === 'new') notify([b], '📋 ' + first + "'s evaluation is in", 'Call ' + c.full_name + ' — log the outcome by ' + deadlineLabel() + '.', c.id);
+  if (b && res.status === 'edited') notify([b], '✏️ ' + first + ' changed their evaluation answers', 'Have a look before you call ' + first + '.', c.id);
+  return { status: res.status, booker_first: c.booker_name ? c.booker_name.split(' ')[0] : 'Our team' };
 }
 
 /** Candidate's personal BA Academy welcome page (link inside the WhatsApp message). */
@@ -526,9 +601,9 @@ function shape(c, u) {
   return o;
 }
 function getC(id) {
-  const c = readTable('Candidates').filter(x => x.id === id)[0];
-  if (!c) throw new Error('Candidate not found');
-  return c;
+  const r = rowOfId('Candidates', id);
+  if (!r) throw new Error('Candidate not found');
+  return readRow('Candidates', r);
 }
 
 function me(req, u) {
@@ -540,7 +615,7 @@ function me(req, u) {
     rtw: RTW.map(r => ({ label: r[0], level: r[1] })),
     address: CONFIG.OFFICE_ADDRESS,
     payTarget: CONFIG.PAY_TARGET,
-    deadlineTime: CONFIG.OUTCOME_DEADLINE_TIME,
+    deadlineTime: CONFIG.OUTCOME_DEADLINE_TIME, deadlineLabel: deadlineLabel(),
     links: { checkin: publicLink('checkin'), eval: publicLink('eval'), staff: staffUrl('') },
     signoff: CONFIG.ACADEMY_SIGNOFF,
   };
@@ -618,8 +693,9 @@ function markInRoom(req, u) {
 }
 
 function saveOutcome(req, u) {
-  return withLock(() => {
+  const res = withLock(() => {
     const c = getC(req.id);
+    c._wasPending = c.admin_status === 'pending';
     if (!(isAdmin(u) || c.booker_id === u.id)) throw new Error('Only the booker or admin can log the outcome.');
     if (OUTCOMES.indexOf(req.outcome) < 0) throw new Error('Choose an outcome.');
     if (req.outcome === 'Academy booked') {
@@ -638,14 +714,17 @@ function saveOutcome(req, u) {
       if (isAdmin(u)) { c.admin_status = 'approved'; c.admin_by = u.name; c.admin_at = nowStr(); }
       else if (c.admin_status !== 'approved') c.admin_status = 'pending';
     } else if (c.admin_status === 'pending') c.admin_status = '';
+    const wasPending = c._wasPending;
     writeRow('Candidates', c);
-    log(u, 'outcome', c.id, c.outcome + (c.outcome_late ? ' LATE' : ''));
-    if (c.admin_status === 'pending') {
-      notify(usersAll().filter(isAdmin), '🔴 Decision needed: ' + c.full_name,
-        c.booker_name + ' wants to book BA Academy, but the presenter marked RED or they were previously not suitable.', c.id);
-    }
-    return shape(c, u);
+    return { c: c, alert: c.admin_status === 'pending' && !wasPending };
   });
+  const c = res.c;
+  log(u, 'outcome', c.id, c.outcome + (c.outcome_late ? ' LATE' : ''));
+  if (res.alert) {
+    notify(usersAll().filter(isAdmin), '🔴 Decision needed: ' + c.full_name,
+      c.booker_name + ' wants to book BA Academy, but the presenter marked RED or they were previously not suitable.', c.id);
+  }
+  return shape(c, u);
 }
 
 function adminDecision(req, u) {
@@ -722,7 +801,7 @@ function payReport(req, u) {
   if (!isAdmin(u)) list = list.filter(r => r.booker_id === u.id);
   list.sort((a, b) => b.net - a.net || a.name.localeCompare(b.name));
   return {
-    weekEnding: we, deadline: addDays(we, -1) + ' ' + CONFIG.OUTCOME_DEADLINE_TIME,
+    weekEnding: we, deadline: outcomeDeadline(addDays(we, -6)),
     target: CONFIG.PAY_TARGET, rows: list, unassigned: isAdmin(u) ? unassigned : [],
   };
 }
@@ -765,6 +844,7 @@ function deleteUser(req, u) {
   if (!isAdmin(u)) throw new Error('Admin only');
   if (req.id === u.id) throw new Error("You can't delete yourself.");
   return withLock(() => {
+    delete MEMO.Users;
     const rec = readTable('Users').filter(o => o.id === req.id)[0];
     if (!rec) throw new Error('User not found');
     const owns = readTable('Candidates').some(c => c.booker_id === rec.id);
@@ -782,7 +862,7 @@ function deleteUser(req, u) {
 
 const PUBLIC_ACTIONS = {
   publicConfig: publicConfig, checkin: checkin, candidateStatus: candidateStatus,
-  resumeByMobile: resumeByMobile, submitEval: submitEval, requestCode: requestCode, verifyCode: verifyCode,
+  resumeByMobile: resumeByMobile, submitEval: submitEval, myEval: myEval, requestCode: requestCode, verifyCode: verifyCode,
   welcomeInfo: welcomeInfo, confirmAcademy: confirmAcademy,
 };
 const STAFF_ACTIONS = {
@@ -869,15 +949,15 @@ function weeklyProgressEmails() {
   });
 }
 
-/** Sat 14:00 — outstanding outcomes before the 19:00 deadline. */
+/** Sat 14:00 (existing trigger) — outcomes were due Friday 18:00: chase anything still missing. They show as LATE. */
 function saturdayDeadlineEmails() {
   const we = weekEnding(todayStr());
-  const rows = readTable('Candidates').filter(c => c.week_ending === we && !c.outcome);
+  const rows = readTable('Candidates').filter(c => c.week_ending === we && truthy(c.in_room) && !c.outcome);
   usersAll().filter(b => truthy(b.active)).forEach(b => {
     const mine = rows.filter(c => c.booker_id === b.id);
     if (!mine.length) return;
-    notify([b], '⚠️ ' + mine.length + ' call outcome' + (mine.length > 1 ? 's' : '') + ' due by ' + CONFIG.OUTCOME_DEADLINE_TIME,
-      mine.map(c => c.full_name).join(', ') + '. After ' + CONFIG.OUTCOME_DEADLINE_TIME + ' they show as late.', '');
+    notify([b], '🔴 ' + mine.length + ' outcome' + (mine.length > 1 ? 's' : '') + ' LATE (due ' + deadlineLabel() + ')',
+      mine.map(c => c.full_name).join(', ') + '. Log ' + (mine.length > 1 ? 'them' : 'it') + ' now: they\'re waiting to hear from us.', '');
   });
 }
 
@@ -972,7 +1052,7 @@ function roundupFor(s) {
   const target = CONFIG.PAY_TARGET, lines = [];
   if (s.booked.length) lines.push('✅ Booked: ' + firstNames(s.booked));
   if (s.notBooked.length) lines.push('❌ Not booked: ' + firstNames(s.notBooked));
-  if (s.open.length) lines.push('📞 No outcome yet: ' + firstNames(s.open) + ' (due Sat ' + CONFIG.OUTCOME_DEADLINE_TIME + ')');
+  if (s.open.length) lines.push('📞 No outcome yet: ' + firstNames(s.open) + ' (due ' + deadlineLabel() + ')');
   if (s.sent.length) lines.push('📲 Day 1 text sent: ' + firstNames(s.sent));
   if (s.unsent.length) lines.push('⚠️ Day 1 text NOT sent: ' + firstNames(s.unsent));
   lines.push('Net ' + s.net + '/' + target + (s.net >= target ? ' ✅ target hit 🔥' : ' · ' + (target - s.net) + ' short'));
@@ -1022,6 +1102,7 @@ function setup() {
     let sh = book.getSheetByName(name);
     if (!sh) sh = book.insertSheet(name);
     const cols = SHEETS[name];
+    ensureCols(sh, cols.length, name);
     sh.getRange(1, 1, 1, cols.length).setValues([cols]).setFontWeight('bold');
     sh.setFrozenRows(1);
     sh.getRange(1, 1, sh.getMaxRows(), cols.length).setNumberFormat('@'); // keep phone numbers & dates as text

@@ -41,10 +41,15 @@ function load(opts) {
       return new Range(this, 1, 1, Math.max(1, this.data.length), nc);
     }
     getLastRow() { let n = this.data.length; while (n > 0 && this.data[n - 1].every(v => v === '' || v === undefined)) n--; return n; }
+    getLastColumn() { return Math.max(0, ...this.data.map(r => { let n = r.length; while (n > 0 && (r[n - 1] === '' || r[n - 1] === undefined)) n--; return n; })); }
+    appendRow(vals) { const r = this.getLastRow(); while (this.data.length <= r) this.data.push([]); this.data[r] = vals.slice(); if (r + 1 > this.getMaxRows()) this.maxRows = r + 1; return this; }
     getMaxRows() { return this.maxRows || 1000; }
+    getMaxColumns() { return this.maxCols || 26; }
+    insertColumnsAfter(after, n) { this.maxCols = (this.maxCols || 26) + n; }
     insertRowsAfter(after, n) { this.maxRows = (this.maxRows || 1000) + n; }
     getRange(r, c, nr, nc) {
       if (r + (nr || 1) - 1 > this.getMaxRows()) throw new Error('The coordinates of the range are outside the dimensions of the sheet.');
+      if (c + (nc || 1) - 1 > this.getMaxColumns()) throw new Error('The coordinates of the range are outside the dimensions of the sheet.');
       return new Range(this, r, c, nr || 1, nc || 1);
     }
     deleteRow(r) { this.data.splice(r - 1, 1); }
@@ -67,10 +72,15 @@ function load(opts) {
 
   const ctx = {
     console,
-    SpreadsheetApp: { getActive: () => book, openById: () => book },
+    SpreadsheetApp: { getActive: () => book, openById: () => book, flush: () => {} },
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => (k in state.props ? state.props[k] : null), setProperty: (k, v) => { state.props[k] = String(v); } }) },
     CacheService: { getScriptCache: () => ({ get: k => state.cache[k] || null, put: (k, v) => { state.cache[k] = v; }, remove: k => { delete state.cache[k]; }, removeAll: () => {} }) },
-    LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+    // ctx.__lockBusy = N → the next N lock attempts fail (simulates a queue of people sending at once)
+    LockService: { getScriptLock: () => ({
+      tryLock() { if (ctx.__lockBusy > 0) { ctx.__lockBusy--; return false; } return true; },
+      waitLock() { if (ctx.__lockBusy > 0) { ctx.__lockBusy--; throw new Error('Lock timeout: another process was holding the lock for too long.'); } },
+      releaseLock() {},
+    }) },
     Utilities: {
       formatDate: fmtDate,
       getUuid: () => crypto.randomUUID(),

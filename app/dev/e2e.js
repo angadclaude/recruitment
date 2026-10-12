@@ -216,6 +216,9 @@ async function fillEval(p) {
   await shot(p2, '07-eval-find-by-mobile');
   await p2.fill('#m', '07700 900300');
   await p2.click('#go');
+  await p2.waitForSelector('text=Is this you, Adham?');
+  ok(true, 'typed mobile → "Is this you, Adham?" first (a typo can\'t open someone else\'s form)');
+  await p2.click('#yes');
   await p2.waitForSelector('text=Your evaluation, Adham');
   ok(true, 'different phone: evaluation QR finds Adham by mobile number');
   await p2c.close();
@@ -225,6 +228,18 @@ async function fillEval(p) {
   await p2e.goto(APP + 'eval.html'); await p2e.fill('#m', '07700 900123'); await p2e.click('#go');
   await p2e.waitForSelector('text=Already done, Jasraj');
   ok(/already sent your evaluation today/.test(await p2e.innerText('body')), 'evaluation sent already → "Already done, Jasraj. You\'ve already sent your evaluation today."');
+  await p2e.click('#edit');
+  await p2e.waitForSelector('text=Change your answers, Jasraj');
+  ok((await p2e.$$('.chips[data-name=q3_reason] .chip.on')).length === 1, 'made a mistake → "Change my answers" opens the form with their answers filled in');
+  await p2e.fill('textarea[name=q14_questions]', 'Changed my mind: when is Day 1?');
+  await post('/dev/eval', { js: 'globalThis.__lockBusy = 2' });  // Google busy: 2 people ahead in the queue
+  const tEdit = Date.now();
+  await p2e.click('#go');
+  await p2e.waitForSelector('text=Updated, Jasraj!', { timeout: 30000 });
+  const jasId = (await api(admin, 'search', { q: 'Jasraj' })).items[0].id;
+  const jasNow = await api(admin, 'getCandidate', { id: jasId });
+  ok(jasNow.q14_questions === 'Changed my mind: when is Day 1?' && !!jasNow.eval_edited_at, 'Google busy → the save waits its turn and goes through by itself (' + Math.round((Date.now() - tEdit) / 1000) + 's), answers updated');
+  ok((await pushesTo(fiza.id)).some(p => /Jasraj changed their evaluation answers/.test(p.body.headings.en)), 'PUSH → booker: "Jasraj changed their evaluation answers"');
   await p2d.close();
 
   // Never checked in → evaluation QR offers check-in, then evaluation straight after
@@ -236,8 +251,11 @@ async function fillEval(p) {
   await p3.waitForSelector('text=can\'t find a check-in');
   await p3.click('#ci');
   await fillCheckin(p3, { name: 'Late Arrival', mobile: '07700 900600', email: 'late@example.com', booker: 'Mo Aden' });
+  await post('/dev/eval', { js: 'globalThis.__lockBusy = 2' });
   await p3.click('#go');
-  await p3.waitForSelector('text=Your evaluation, Late');
+  await p3.waitForSelector('text=Busy, still checking you in…', { timeout: 5000 });
+  await p3.waitForSelector('text=Your evaluation, Late', { timeout: 30000 });
+  ok(true, '10am rush: Google busy → candidate sees "Busy, still checking you in…" and gets in by itself (no error)');
   ok(true, 'missed the check-in QR → checks in from the evaluation QR, then evaluates');
   await p3c.close();
 
@@ -297,6 +315,11 @@ async function fillEval(p) {
   await pres.setOffline(false);
   await pp.waitForFunction(() => !JSON.parse(localStorage.getItem('lr_outbox') || '[]').length, null, { timeout: 15000 });
   ok((await api(admin, 'getCandidate', { id: jag.id })).notes === 'Did Day 1 in June already. Saved with no signal.', 'signal back → change synced to Google automatically');
+  await post('/dev/eval', { js: 'globalThis.__lockBusy = 1' });
+  await pp.fill('#notes', 'Saved while Google was busy.');
+  await pp.click('#savenotes');
+  await pp.waitForFunction(() => !JSON.parse(localStorage.getItem('lr_outbox') || '[]').length, null, { timeout: 20000 });
+  ok((await api(admin, 'getCandidate', { id: jag.id })).notes === 'Saved while Google was busy.', "presenter's save while Google is busy → kept and retried, not lost");
   await pp.goBack(); await pp.waitForSelector('.kpis');
   // A background refresh can redraw the list mid-swipe, so swipe again if it didn't stick.
   for (let i = 0; i < 3 && !(await pp.$('.swipe.open')); i++) {
@@ -332,7 +355,7 @@ async function fillEval(p) {
   ok(/Southall/.test(snap) && /Commission selling phones/.test(snap), 'one-page snapshot: presenter notes + evaluation together');
   ok(/💡 Plays semi-pro football/.test(snap) && /Wants to earn on results, saving for a house/.test(snap), 'booker sees the room answers: 💡 ice-breaker + why sales');
   const hdr = (await getJson('/dev/sheet?name=Candidates'))[0];
-  ok(hdr.slice(-3).join() === 'p_why_sales,p_why_sales_note,p_interesting', 'existing Sheet got the new columns automatically (no data moved)');
+  ok(hdr.slice(-4).join() === 'p_why_sales,p_why_sales_note,p_interesting,eval_edited_at', 'existing Sheet got the new columns automatically (no data moved)');
   ok(!/Unspent convictions/.test(snap), 'conviction answer hidden from bookers');
   await bp.click('.chips[data-name=outcome] .chip:has-text("Academy booked")');
   await bp.fill('#adate', '2026-10-19');
@@ -382,6 +405,8 @@ async function fillEval(p) {
   // ── 6. Admin: JUSS message, RED approval, slide QR codes ──
   console.log('admin');
   await api(await loginApi('abdullahi@example.com'), 'saveOutcome', { id: adham.id, outcome: 'Academy booked', academy_date: '2026-10-19', outcome_notes: '' });
+  const lockedEdit = await post('/api', { action: 'myEval', id: adham.id, resume: adham.resume });
+  ok(!lockedEdit.ok && /can't be changed/.test(lockedEdit.error), 'once the booker has logged the call, the candidate can no longer change their answers');
   const pend = await api(await loginApi('mo@example.com'), 'saveOutcome', { id: ishita.id, outcome: 'Academy booked', academy_date: '2026-10-19', outcome_notes: 'keen' });
   ok(pend.admin_status === 'pending', 'RED candidate booked by booker → waits for admin');
   ok((await pushesTo(angadId)).some(p => /Decision needed/.test(p.body.headings.en)), 'PUSH → admins: "Decision needed"');
@@ -427,6 +452,17 @@ async function fillEval(p) {
   await api(admin, 'reassignBooker', { id: ali.id, booker_id: fiza.id });
   await api(admin, 'setPayExcluded', { id: jag.id, excluded: true, reason: 'Share code failed at Academy' });
 
+  // Shared phone: someone else's check-in is saved on it → "Not you?" gives a fresh form
+  const shc = await browser.newContext(PHONE);
+  const shp = await shc.newPage();
+  await shp.goto(APP + 'checkin.html');
+  await shp.evaluate(a => localStorage.setItem('lr_cand', JSON.stringify(a)), { id: adham.id, resume: adham.resume, first_name: 'Adham' });
+  await shp.goto(APP + 'checkin.html');
+  await shp.waitForSelector('#notme');
+  await shp.click('#notme'); await shp.waitForSelector('[name=full_name]');
+  ok(true, 'shared phone: "Not you? Check someone else in" → a fresh check-in form');
+  await shc.close();
+
   // ── Daily 18:00 round-up for every booker (runs from the 5-minute keep-warm, no extra trigger) ──
   await setTime('2026-10-12T17:55:00+01:00');
   let before18 = (await getJson('/dev/pushes')).length;
@@ -465,6 +501,7 @@ async function fillEval(p) {
   const late = await api(await loginApi('fiza@example.com'), 'saveOutcome', { id: ali.id, outcome: 'No answer', outcome_notes: '' });
   ok(late.outcome_late === 'TRUE', 'outcome logged on Sunday accepted but flagged LATE');
   const pay = await api(admin, 'payReport', { weekEnding: '2026-10-18' });
+  ok(pay.deadline === '2026-10-16 18:00' && (await api(admin, 'me', {})).deadlineLabel === 'Fri 18:00', 'outcome deadline = Friday 18:00 (matches "by Friday 6PM" in the thank-you WhatsApp)');
   const prow = n => pay.rows.find(r => r.name === n);
   ok(prow('Fiza Iqbal').net === 2 && prow('Fiza Iqbal').late === 1, 'pay: Fiza net 2, 1 late');
   ok(prow('Mo Aden').net === 0, 'pay: Mo net 0 (Tier 4 excluded; Seven + Late Arrival not rated by presenter)');
