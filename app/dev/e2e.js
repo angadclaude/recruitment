@@ -95,6 +95,8 @@ async function fillEval(p) {
   console.log('setup');
   await post('/dev/run', { fn: 'setup' });
   await post('/dev/props', { ONESIGNAL_APP_ID: 'test-app', ONESIGNAL_API_KEY: 'test-key' });
+  // Simulate Angad's live Sheet, created before the presenter-question columns existed
+  await post('/dev/eval', { js: "SpreadsheetApp.getActive().getSheetByName('Candidates').data[0].splice(-3)" });
   await setTime('2026-10-12T09:30:00+01:00'); // Monday morning
   const admin = await loginApi('angad@linkmarketing.org.uk');
   const users = (await api(admin, 'listUsers')).users;
@@ -171,7 +173,11 @@ async function fillEval(p) {
   await pp.waitForSelector('#savenotes');
   await pp.click('.rag button.G');
   await pp.click('.stars button[data-s="4"]');
-  await pp.click('.chips[data-name=tags] .chip:has-text("Earnings driven")');
+  await pp.click('.chips[data-name=why] .chip:has-text("Uncapped earnings")');
+  await pp.click('.chips[data-name=why] .chip:has-text("Wants own business")');
+  await pp.fill('#whynote', 'Saving for a house');
+  await pp.fill('#interesting', 'Plays semi-pro football');
+  await pp.click('.chips[data-name=tags] .chip:has-text("Great energy")');
   await pp.click('.chips[data-name=tags] .chip:has-text("Future owner")');
   await pp.fill('#notes', 'Southall. Likes performance-based earnings, looking for personal development + environment. Strong.');
   await pp.click('#savenotes');
@@ -286,6 +292,9 @@ async function fillEval(p) {
   await bp.waitForSelector('#saveout');
   const snap = await bp.innerText('body');
   ok(/Southall/.test(snap) && /Commission selling phones/.test(snap), 'one-page snapshot: presenter notes + evaluation together');
+  ok(/💡 Plays semi-pro football/.test(snap) && /Uncapped earnings, Wants own business — Saving for a house/.test(snap), 'booker sees the room answers: 💡 ice-breaker + why sales');
+  const hdr = (await getJson('/dev/sheet?name=Candidates'))[0];
+  ok(hdr.slice(-3).join() === 'p_why_sales,p_why_sales_note,p_interesting', 'existing Sheet got the new columns automatically (no data moved)');
   ok(!/Unspent convictions/.test(snap), 'conviction answer hidden from bookers');
   await bp.click('.chips[data-name=outcome] .chip:has-text("Academy booked")');
   await bp.fill('#adate', '2026-10-19');

@@ -74,6 +74,7 @@ const SHEETS = {
     'admin_status', 'admin_note', 'admin_by', 'admin_at',
     'pay_excluded', 'pay_excluded_reason', 'thanks_sent_at', 'offer_sent_at',
     'welcome_token', 'academy_confirmed_at',
+    'p_why_sales', 'p_why_sales_note', 'p_interesting',
   ],
   History: ['attended_date', 'full_name', 'mobile', 'email', 'booker_raw', 'presenter_raw'],
   Codes: ['email', 'code_hash', 'expires', 'attempts'],
@@ -146,6 +147,14 @@ function readTable(name) {
   const sh = sheet(name);
   const values = sh.getDataRange().getValues();
   const headers = values.shift().map(String);
+  const want = SHEETS[name];
+  if (want && headers.length < want.length && headers.every((h, i) => h === want[i])) {
+    // New version added columns: append their headers so nothing needs re-running.
+    const add = want.slice(headers.length);
+    sh.getRange(1, headers.length + 1, 1, add.length).setValues([add]).setFontWeight('bold');
+    sh.getRange(1, headers.length + 1, sh.getMaxRows(), add.length).setNumberFormat('@');
+    add.forEach(h => headers.push(h));
+  }
   const rows = values.map((r, i) => {
     const o = { _row: i + 2 };
     headers.forEach((h, j) => { o[h] = r[j] === null || r[j] === undefined ? '' : String(r[j]); });
@@ -582,6 +591,10 @@ function saveNotes(req, u) {
     c.in_room = (req.in_room || c.rag || c.stars) ? 'TRUE' : '';
     c.tags = (req.tags || []).join(', ').slice(0, 300);
     c.notes = String(req.notes || '').slice(0, 2000);
+    // The two questions the presenter asks in the room (only touched when sent, so older app versions can't wipe them)
+    if (req.why !== undefined) c.p_why_sales = (req.why || []).join(', ').slice(0, 300);
+    if (req.why_note !== undefined) c.p_why_sales_note = String(req.why_note || '').slice(0, 300);
+    if (req.interesting !== undefined) c.p_interesting = String(req.interesting || '').slice(0, 300);
     c.presenter_id = u.id; c.presenter_name = u.name; c.notes_at = nowStr();
     writeRow('Candidates', c);
     log(u, 'notes', c.id, c.rag + ' ' + c.stars + '★');

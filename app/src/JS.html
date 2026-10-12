@@ -1014,7 +1014,8 @@ function viewSlideQR() {
 }
 
 // ───── Candidate snapshot (the one page) ─────
-const TAGS = ['Learn new skills', 'Earnings driven', 'Personal development', 'Sales experience', 'Customer service exp', 'Confident', 'Quiet', 'Great energy', 'Holiday booked', 'Leadership potential', 'Future owner'];
+const TAGS = ['Sales experience', 'Customer service exp', 'Confident', 'Quiet', 'Great energy', 'Holiday booked', 'Leadership potential', 'Future owner'];
+const WHY_SALES = ['Uncapped earnings', 'Learn new skills', 'Career progression', 'Personal development', 'Likes talking to people', 'Wants own business', 'Flexible / self-employed'];
 
 function viewCandidate(id) {
   const c = findCand(id);
@@ -1144,6 +1145,7 @@ function renderCandidate(c, quiet) {
   let html = '<div class="profile">' + avatar(c, 'xl') + '<h1>' + h(c.full_name) + '</h1>' +
     '<div class="muted small">Attended ' + fmt(c.attended_date) + ' · ' + (c.booker_name ? 'booked by <b>' + h(c.booker_name) + '</b> <span class="co ' + h(c.company) + '">' + h(c.company) + '</span>' : '<b>booker not confirmed</b>' + (c.booker_typed ? ' ("' + h(c.booker_typed) + '")' : '')) + '</div>' +
     (c.stars ? '<div class="stars-lg">' + '★'.repeat(Number(c.stars)) + '<span>' + '★'.repeat(5 - Number(c.stars)) + '</span></div>' : '') +
+    (c.p_interesting ? '<div class="icebreak">💡 ' + h(c.p_interesting) + '</div>' : '') +
     '<div class="pills center-pills">' + statusPill(c) + (c._pending ? '<span class="pill">⏳ Syncing…</span>' : '') + '</div>' +
     '<div class="actions"><a href="tel:' + h(c.mobile) + '">' + icon('phone') + '<span>Call</span></a>' +
     '<a href="' + h(waMain) + '" target="_blank" rel="noopener">' + icon('chat') + '<span>WhatsApp</span></a>' +
@@ -1152,16 +1154,26 @@ function renderCandidate(c, quiet) {
 
   // Presenter
   html += '<div class="section-h">Presenter</div><div class="card" id="pres">';
+  const onList = (v, x) => String(v || '').split(', ').indexOf(x) >= 0;
   if (canNotes) {
-    html += '<div class="rag"><button type="button" class="G' + (c.rag === 'G' ? ' on' : '') + '" data-r="G">Green</button>' +
+    html += '<label class="q" style="margin-top:0">💬 Why work in sales?</label>' +
+      '<div class="chips" data-name="why" data-multi="1">' + WHY_SALES.map(t => '<button type="button" class="chip' + (onList(c.p_why_sales, t) ? ' on' : '') + '" data-v="' + h(t) + '">' + h(t) + '</button>').join('') + '</div>' +
+      '<input type="text" id="whynote" maxlength="300" style="margin-top:8px" placeholder="In their words, e.g. saving for a house" value="' + h(c.p_why_sales_note) + '">' +
+      '<label class="q">✨ Something interesting about them</label>' +
+      '<input type="text" id="interesting" maxlength="300" placeholder="e.g. plays semi-pro football" value="' + h(c.p_interesting) + '">' +
+      '<label class="q">Rating</label><div class="rag"><button type="button" class="G' + (c.rag === 'G' ? ' on' : '') + '" data-r="G">Green</button>' +
       '<button type="button" class="A' + (c.rag === 'A' ? ' on' : '') + '" data-r="A">Amber</button><button type="button" class="R' + (c.rag === 'R' ? ' on' : '') + '" data-r="R">Red</button></div>' +
       '<div class="stars">' + [1, 2, 3, 4, 5].map(n => '<button type="button" data-s="' + n + '" class="' + (Number(c.stars) >= n ? 'on' : '') + '">★</button>').join('') + '</div>' +
-      '<div class="chips" data-name="tags" data-multi="1">' + TAGS.map(t => '<button type="button" class="chip' + ((c.tags || '').split(', ').indexOf(t) >= 0 ? ' on' : '') + '" data-v="' + h(t) + '">' + h(t) + '</button>').join('') + '</div>' +
-      '<textarea id="notes" placeholder="Notes, e.g. Done sales in Turkey, likes speaking to people. Loves football." style="margin-top:12px">' + h(c.notes) + '</textarea>' +
+      '<label class="q">Quick tags</label><div class="chips" data-name="tags" data-multi="1">' + TAGS.map(t => '<button type="button" class="chip' + ((c.tags || '').split(', ').indexOf(t) >= 0 ? ' on' : '') + '" data-v="' + h(t) + '">' + h(t) + '</button>').join('') + '</div>' +
+      '<label class="q">Other notes</label><textarea id="notes" placeholder="Anything else, e.g. done sales in Turkey, holiday in December">' + h(c.notes) + '</textarea>' +
       '<div id="perr"></div><button class="btn block" id="savenotes" style="margin-top:10px">Save notes</button>' +
       '<p class="small muted center">' + (c.in_room ? '✅ In the room · ' : '') + (c.notes_at ? 'saved ' + fmtTs(c.notes_at) + ' by ' + h(c.presenter_name) : 'Rating them confirms they were in the room') + '</p>';
   } else {
-    html += '<dl class="kv">' + kv('In the room', c.in_room ? 'Yes' : 'Not rated yet') + kv('Recommendation', { G: 'Green', A: 'Amber', R: 'Red' }[c.rag] || '') +
+    html += (c.p_why_sales || c.p_why_sales_note || c.p_interesting
+      ? '<div class="qa"><div class="qq">💬 Why work in sales?</div><div class="aa">' + (h([c.p_why_sales, c.p_why_sales_note].filter(String).join(' — ')) || '<span class="muted">—</span>') + '</div></div>' +
+        '<div class="qa"><div class="qq">✨ Something interesting about them</div><div class="aa">' + (h(c.p_interesting) || '<span class="muted">—</span>') + '</div></div><hr>'
+      : '') +
+      '<dl class="kv">' + kv('In the room', c.in_room ? 'Yes' : 'Not rated yet') + kv('Recommendation', { G: 'Green', A: 'Amber', R: 'Red' }[c.rag] || '') +
       kv('Stars', c.stars ? c.stars + ' / 5' : '') + kv('Tags', c.tags) + kv('Presenter', c.presenter_name) + '</dl>' +
       (c.notes ? '<p style="white-space:pre-wrap;margin-top:10px">' + h(c.notes) + '</p>' : '<p class="muted">No notes yet.</p>');
   }
@@ -1228,9 +1240,11 @@ function renderCandidate(c, quiet) {
     pres.querySelectorAll('.rag button').forEach(b => { b.onclick = () => { st.rag = st.rag === b.dataset.r ? '' : b.dataset.r; pres.querySelectorAll('.rag button').forEach(x => x.classList.toggle('on', x.dataset.r === st.rag)); }; });
     pres.querySelectorAll('.stars button').forEach(b => { b.onclick = () => { st.stars = Number(b.dataset.s); pres.querySelectorAll('.stars button').forEach(x => x.classList.toggle('on', Number(x.dataset.s) <= st.stars)); }; });
     document.getElementById('savenotes').onclick = () => {
-      const payload = { id: c.id, in_room: !!c.in_room, rag: st.rag || '', stars: st.stars, tags: chipVals(pres, 'tags'), notes: document.getElementById('notes').value };
+      const payload = { id: c.id, in_room: !!c.in_room, rag: st.rag || '', stars: st.stars, tags: chipVals(pres, 'tags'), notes: document.getElementById('notes').value,
+        why: chipVals(pres, 'why'), why_note: document.getElementById('whynote').value, interesting: document.getElementById('interesting').value };
       const local = Object.assign({}, c, {
         rag: payload.rag, stars: payload.stars ? String(payload.stars) : '', tags: payload.tags.join(', '), notes: payload.notes,
+        p_why_sales: payload.why.join(', '), p_why_sales_note: payload.why_note, p_interesting: payload.interesting,
         in_room: (c.in_room || payload.rag || payload.stars) ? 'TRUE' : '', presenter_id: S.me.user.id, presenter_name: S.me.user.name, notes_at: londonNow(),
       });
       queueSave('saveNotes', payload, local, 'Notes saved ✓');
