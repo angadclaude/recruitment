@@ -44,14 +44,15 @@ async function loginUi(page, email, url) {
   await page.waitForSelector('.tabbar button');
 }
 /** ms from the real tap to `text` appearing on screen (excludes the test robot's own scrolling). */
-async function tapToText(page, selector, text) {
+async function tapToText(page, selector, text, keepFocus) {
   await page.evaluate(t => {
     window.__tap = 0; window.__seen = 0;
     document.addEventListener('click', () => { window.__tap = performance.now(); }, { capture: true, once: true });
     const mo = new MutationObserver(() => { if (window.__tap && !window.__seen && document.body.innerText.includes(t)) { window.__seen = performance.now(); mo.disconnect(); } });
     mo.observe(document.body, { subtree: true, childList: true, characterData: true });
   }, text);
-  await page.click(selector);
+  if (keepFocus) await page.evaluate(sel => document.querySelector(sel).click(), selector);  // iPhone: text box stays focused
+  else await page.click(selector);
   await page.waitForFunction(() => window.__seen > 0, null, { timeout: 10000 });
   return Math.round(await page.evaluate(() => window.__seen - window.__tap));
 }
@@ -313,16 +314,25 @@ async function fillEval(p) {
   await bp.click('.chips[data-name=outcome] .chip:has-text("Academy booked")');
   await bp.fill('#adate', '2026-10-19');
   await bp.fill('#onotes', 'Great call.');
-  const tOut = await tapToText(bp, '#saveout', 'Outcome saved ✓');
+  await post('/dev/delay', { ms: 1500 });  // Google-like delay, like on Angad's phone
+  const tOut = await tapToText(bp, '#saveout', 'Outcome saved ✓', true);
   ok(tOut < 300, 'outcome save feels instant (' + tOut + 'ms after the tap)');
-  await bp.waitForSelector('a.wa[data-kind=offer]');
+  await bp.waitForSelector('a.wa[data-kind=offer]', { timeout: 10000 });
+  await post('/dev/delay', { ms: 0 });
+  ok(true, 'iPhone-style save (notes box still focused): 🎉 congratulations button appears once synced');
   await shot(bp, '09-booker-outcome', true);
+  await bp.goBack(); await bp.waitForSelector('text=🎉 Send congratulations');
+  ok(true, 'list shows "🎉 Send congratulations" until it\'s sent');
+  await bp.click('.item:has-text("Jasraj Bhuller")'); await bp.waitForSelector('a.wa[data-kind=offer]');
   const msg = decodeURIComponent((await bp.getAttribute('a.wa[data-kind=offer]', 'href')).split('?text=')[1]);
   fs.writeFileSync(`${SHOTS}/msg-link.txt`, msg);
   const wurl = (msg.match(/https:\/\/\S+welcome-link\.html\?t=\w+/) || [])[0];
   ok(/^JASRAJ!! 🎉 You're IN\./.test(msg) && /Pre-Coaching Module/.test(msg) && wurl, 'LINK WhatsApp: Gen Z copy + personal welcome link');
   ok(/– Jess, LINK Marketing$/.test(msg), 'LINK message signed by Jess (sent by Fiza)');
-  ok(msg.length < 520, 'message is short and scannable (' + msg.length + ' chars)');
+  const links = msg.match(/https:\/\/\S+/g);
+  ok(/welcome-link\.html/.test(links[0]), 'first link is the welcome page (so WhatsApp shows the poster card)');
+  ok(links.some(l => l.indexOf('forms.office.com') >= 0 && l.indexOf('QT4blMNFxEuaVSUMKK6uNT5Z') > 0), 'LINK message carries the Pre-Coaching Module link');
+  ok(links.some(l => /google\.com\/maps/.test(l) && /LINK%20Marketing/.test(l)), 'LINK message carries LINK Marketing on Google Maps');
   ok(/⏳ Not confirmed yet/.test(await bp.innerText('body')), 'snapshot shows "not confirmed yet"');
 
   // ── 5. Candidate opens their welcome page from WhatsApp → confirms ──
@@ -333,6 +343,7 @@ async function fillEval(p) {
   await shot(wp, '10-welcome-page', true);
   const wtxt = await wp.innerText('body');
   ok(/Monday 19 October/.test(wtxt) && /Day 1 is in 7 days/.test(wtxt) && /Pre-Coaching Module/.test(wtxt) && /Practical Learning Day/.test(wtxt), 'welcome page: date, countdown, pre-coaching, Week 1 plan');
+  ok(/forms\.office\.com/.test(await wp.getAttribute('a:has-text("Open the Pre-Coaching Module")', 'href')) && /LINK%20Marketing/.test(await wp.getAttribute('a:has-text("Google Maps")', 'href')), 'LINK welcome page: Pre-Coaching Module button + LINK Google Maps');
   ok(await wp.$eval('.wl-poster img', i => i.complete && i.naturalWidth > 0 && /poster-link/.test(i.src)), 'LINK welcome page shows the LINK Week 1 poster (your screenshot)');
   const og = await (await fetch(wurl.replace(PUBLIC, APP))).text();
   ok(og.includes('og:image" content="' + PUBLIC + 'img/og-link.jpg"'), 'WhatsApp link preview shows the LINK poster card (og:image)');
@@ -360,6 +371,7 @@ async function fillEval(p) {
   const jmsg = decodeURIComponent((await ap.getAttribute('a.wa[data-kind=offer]', 'href')).split('?text=')[1]);
   fs.writeFileSync(`${SHOTS}/msg-juss.txt`, jmsg);
   ok(/JUSS Marketing BA Academy/.test(jmsg) && /welcome-juss\.html/.test(jmsg) && !/Pre-Coaching/.test(jmsg), 'JUSS booker → JUSS message + JUSS welcome page');
+  ok(/google\.com\/maps\S+JUSS%20Marketing/.test(jmsg) && !/forms\.office\.com/.test(jmsg), 'JUSS message carries JUSS Marketing on Google Maps (no LINK pre-coaching)');
   ok(/– Rubal, JUSS Marketing$/.test(jmsg), 'JUSS message signed by Rubal (sent by Angad)');
   const jwurl = jmsg.match(/https:\/\/\S+welcome-juss\.html\?t=\w+/)[0];
   const jp = await cand.newPage();
@@ -367,6 +379,7 @@ async function fillEval(p) {
   await jp.waitForSelector('text=You\'re in, Adham');
   await shot(jp, '12-welcome-juss', true);
   ok(/Thursday onwards/.test(await jp.innerText('body')), 'JUSS welcome page uses the JUSS schedule');
+  ok(/JUSS%20Marketing/.test(await jp.getAttribute('a:has-text("Google Maps")', 'href')) && !(await jp.$('a:has-text("Pre-Coaching Module")')), 'JUSS welcome page: JUSS Google Maps, no pre-coaching button');
   ok(await jp.$eval('.wl-poster img', i => i.complete && i.naturalWidth > 0 && /poster-juss/.test(i.src)), 'JUSS welcome page shows the JUSS Week 1 poster (your screenshot)');
   const jog = await (await fetch(jwurl.replace(PUBLIC, APP))).text();
   ok(jog.includes('og:image" content="' + PUBLIC + 'img/og-juss.jpg"'), 'JUSS WhatsApp link preview shows the JUSS poster card');

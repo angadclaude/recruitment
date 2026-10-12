@@ -1,4 +1,4 @@
-window.APP_VERSION = '44b5a5ee';
+window.APP_VERSION = '205cae0e';
 
 (function () {
 'use strict';
@@ -35,7 +35,11 @@ function call(action, payload) {
     if (res && res.ok) return res.data;
     if (res && res.auth) { store.del('tok'); S.token = ''; S.me = null; startStaff(); return new Promise(() => {}); } // session expired → login
     throw new Error((res && res.error) || 'Something went wrong');
-  }, err => { throw new Error((err && err.message && !/fetch/i.test(err.message)) ? err.message : 'No connection — check your signal and try again'); });
+  }, err => {
+    const m = (err && err.message) || '';
+    const offline = !err || err.name === 'TypeError' || /fetch|load failed|network|internet|offline/i.test(m);
+    throw new Error(offline ? 'No connection — check your signal and try again' : m);
+  });
 }
 function stopTimer() { if (S.timer) { clearInterval(S.timer); S.timer = null; } }
 function scrollTop() { window.scrollTo(0, 0); }
@@ -338,7 +342,14 @@ const WEEK1 = {
     ['💰', 'Thursday onwards', 'Sales Days', '10:30am – 8:30pm', '1st day on badge! Your coach is side by side with you. Apply what you\'ve learnt and bag your incentives'],
   ],
 };
-const MAPS = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent('Automotive House, Grays Place, Slough SL2 5AF');
+// Each company's office + Google Maps link (swap in the exact Google Maps share links when you have them).
+const OFFICES = {
+  LINK: { address: '2nd Floor East, Automotive House, Grays Place, Slough SL2 5AF',
+    maps: 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent('LINK Marketing, Automotive House, Grays Place, Slough SL2 5AF') },
+  JUSS: { address: '2nd Floor East, Automotive House, Grays Place, Slough SL2 5AF',
+    maps: 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent('JUSS Marketing, Automotive House, Grays Place, Slough SL2 5AF') },
+};
+const PRE_COACHING = { LINK: 'https://forms.office.com/pages/responsepage.aspx?id=QT4blMNFxEuaVSUMKK6uNT5ZuU1A_UdDsSk-r6KY6olUQ0JEWFU0NDU1MEI5REZZRzY3WEc1SEVaTC4u&route=shorturl' };
 
 function startWelcome() {
   call('welcomeInfo', { t: BOOT.k }).then(renderWelcome)
@@ -349,6 +360,8 @@ function renderWelcome(w) {
   scrollTop();
   const co = w.company === 'JUSS' ? 'JUSS' : 'LINK';
   const brand = co + ' Marketing';
+  const office = OFFICES[co];
+  w.address = office.address;
   const days = Math.round((D(w.academy_date) - D(w.today)) / 86400000);
   const when = days > 1 ? 'Day 1 is in ' + days + ' days' : days === 1 ? 'Day 1 is TOMORROW 👀' : days === 0 ? 'Day 1 is TODAY 🔥' : 'Day 1 was ' + fmt(w.academy_date);
   const mon = D(w.academy_date).getUTCDay() === 1;
@@ -370,11 +383,12 @@ function renderWelcome(w) {
 
     '<div class="card"><div class="small muted">DAY 1 · INDUCTION</div><div class="wl-date">' + h(fmtLong(w.academy_date)) + '</div>' +
     '<div class="wl-time">⏰ 1:30pm – 6:00pm</div><p>📍 ' + h(w.address) + '<br><span class="muted small">2 mins from Slough station</span></p>' +
-    '<div class="row"><a class="btn sm" href="' + MAPS + '" target="_blank" rel="noopener">🗺️ Directions</a>' +
+    '<div class="row"><a class="btn sm" href="' + h(office.maps) + '" target="_blank" rel="noopener">🗺️ Google Maps</a>' +
     '<a class="btn ghost sm" href="' + h(gcal) + '" target="_blank" rel="noopener">📅 Google Calendar</a>' +
     '<a class="btn ghost sm" id="ics" href="#" download="ba-academy-day1.ics">🍏 Apple / Outlook</a></div></div>' +
 
-    (co === 'LINK' ? '<div class="wl-alert">⚡ <b>Before Day 1:</b> finish the <b>Pre-Coaching Module</b> attached in your welcome email.</div>' : '') +
+    (PRE_COACHING[co] ? '<div class="wl-alert">⚡ <b>Before Day 1:</b> complete your <b>Pre-Coaching Module</b>.' +
+      '<a class="btn block" style="margin-top:10px" href="' + h(PRE_COACHING[co]) + '" target="_blank" rel="noopener">📝 Open the Pre-Coaching Module</a></div>' : '') +
     '<div class="card"><div class="small muted">BRING WITH YOU</div><p style="font-size:17px;margin:8px 0 0">🪪 Photo ID<br>🔑 Your right-to-work share code</p></div>' +
 
     '<h3>Your Week 1 game plan</h3><div class="card wl-week">' + steps + '</div>' +
@@ -762,6 +776,8 @@ function flagCounts(c) {
 }
 function statusPill(c) {
   if (c.admin_status === 'pending') return '<span class="pill red">Awaiting admin</span>';
+  if (c.outcome === 'Academy booked' && c.welcome_url && !c.offer_sent_at && !c.academy_confirmed_at && c.admin_status !== 'pending' && c.admin_status !== 'rejected' && S.me && (isAdmin() || c.booker_id === S.me.user.id))
+    return '<span class="pill orange">🎉 Send congratulations</span>';
   if (c.outcome === 'Academy booked') return '<span class="pill green">' + (c.academy_confirmed_at ? '✅ Day 1 confirmed' : 'Academy ' + fmt(c.academy_date)) + (c.outcome_late ? ' · late' : '') + '</span>';
   if (c.outcome) return '<span class="pill blue">' + h(c.outcome) + (c.outcome_late ? ' · late' : '') + '</span>';
   if (c.eval_at) return '<span class="pill orange">📞 Call needed</span>';
@@ -1053,6 +1069,10 @@ let FLUSHING = false;
 function outbox() { return store.get('outbox') || []; }
 function setOutbox(q) { store.set('outbox', q); showPending(); }
 function pendingIds() { return outbox().map(o => o.id); }
+function whenNotTyping(fn) {
+  const later = () => setTimeout(() => { if (!isTyping()) { document.removeEventListener('focusout', later); fn(); } }, 50);
+  document.addEventListener('focusout', later);
+}
 function isTyping() { return document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName); }
 function londonNow() {
   const p = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
@@ -1083,7 +1103,8 @@ function flush() {
     FLUSHING = false;
     if (pendingIds().indexOf(nc.id) < 0) {
       upsert(nc);
-      if (S.view === 'cand' && S.params.id === nc.id && !isTyping()) renderCandidate(nc, true);
+      const show = () => { if (S.view === 'cand' && S.params.id === nc.id) renderCandidate(findCand(nc.id) || nc, true); };
+      if (!isTyping()) show(); else whenNotTyping(show);
     }
     flush();
   }, err => {
@@ -1126,9 +1147,12 @@ function msgAcademy(c) {
     '📍 Automotive House, Slough (2 mins from the station)',
     '',
   ];
+  const co = juss ? 'JUSS' : 'LINK';
+  // Welcome link first: WhatsApp previews the first link, which is the poster card.
   if (c.welcome_url) lines.push('👇 Your Week 1 game plan + tap *CONFIRM* to lock in your spot:', c.welcome_url, '');
-  if (!juss) lines.push('⚡ Before Day 1: finish the *Pre-Coaching Module* in your welcome email');
-  const sign = (S.me.signoff || {})[juss ? 'JUSS' : 'LINK'] || S.me.user.name.split(' ')[0];
+  if (PRE_COACHING[co]) lines.push('⚡ *Before Day 1:* complete your *Pre-Coaching Module* 👇', PRE_COACHING[co], '');
+  lines.push('🗺️ Find us on Google Maps:', OFFICES[co].maps, '');
+  const sign = (S.me.signoff || {})[co] || S.me.user.name.split(' ')[0];
   lines.push('🪪 Bring photo ID + your right-to-work share code', '', 'Let\'s get it 🔥', '– ' + sign + ', ' + brandOf(c));
   return lines.join('\n');
 }
@@ -1218,7 +1242,7 @@ function renderCandidate(c, quiet) {
   const wa = [];
   if (canNotes) wa.push('<a class="btn wa block" target="_blank" rel="noopener" data-kind="thanks" href="' + h(waUrl(c.mobile, msgThanks(c))) + '">💬 Send thank-you message</a>' +
     (c.thanks_sent_at ? '<p class="small muted center">Opened ' + fmtTs(c.thanks_sent_at) + '</p>' : ''));
-  if (canOutcome && offerReady && !c.welcome_url && c._pending) wa.push('<div class="flag amber">⏳ Syncing. The Academy WhatsApp button appears in a moment.</div>');
+  if (canOutcome && offerReady && !c.welcome_url && c._pending) wa.push('<div class="flag amber"><span class="spinner sm inline"></span> Saving to Google… the 🎉 congratulations button appears here in a few seconds.</div>');
   if (canOutcome && offerReady && (c.welcome_url || !c._pending)) wa.push('<a class="btn wa block" target="_blank" rel="noopener" data-kind="offer" href="' + h(waUrl(c.mobile, msgAcademy(c))) + '">🎉 Send BA Academy Day 1 details (' + h(c.company || 'LINK') + ')</a>' +
     (c.offer_sent_at ? '<p class="small muted center">Opened ' + fmtTs(c.offer_sent_at) + '</p>' : '') +
     (c.welcome_url ? '<a class="btn ghost sm" target="_blank" rel="noopener" href="' + h(c.welcome_url) + '">👀 Preview their welcome page</a>' : ''));
@@ -1249,6 +1273,7 @@ function renderCandidate(c, quiet) {
     pres.querySelectorAll('.rag button').forEach(b => { b.onclick = () => { st.rag = st.rag === b.dataset.r ? '' : b.dataset.r; pres.querySelectorAll('.rag button').forEach(x => x.classList.toggle('on', x.dataset.r === st.rag)); }; });
     pres.querySelectorAll('.stars button').forEach(b => { b.onclick = () => { st.stars = Number(b.dataset.s); pres.querySelectorAll('.stars button').forEach(x => x.classList.toggle('on', Number(x.dataset.s) <= st.stars)); }; });
     document.getElementById('savenotes').onclick = () => {
+      if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
       const payload = { id: c.id, in_room: !!c.in_room, rag: st.rag || '', stars: st.stars, tags: chipVals(pres, 'tags'), notes: document.getElementById('notes').value,
         why_note: document.getElementById('whynote').value, interesting: document.getElementById('interesting').value };
       const local = Object.assign({}, c, {
@@ -1263,6 +1288,7 @@ function renderCandidate(c, quiet) {
     const out = document.getElementById('out');
     bindChips(out, (n, v) => { if (n === 'outcome') document.getElementById('acad').hidden = v !== 'Academy booked'; });
     document.getElementById('saveout').onclick = () => {
+      if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
       const payload = { id: c.id, outcome: chipVal(out, 'outcome'), academy_date: document.getElementById('adate').value, outcome_notes: document.getElementById('onotes').value };
       const err = document.getElementById('oerr');
       if (!payload.outcome) return showErr(err, 'Choose an outcome.');
