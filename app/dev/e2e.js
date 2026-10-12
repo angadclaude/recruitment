@@ -136,6 +136,7 @@ async function fillEval(p) {
   await fillCheckin(cp, { name: 'jasraj bhuller', mobile: '07700 900123', email: 'jasraj@example.com', booker: 'Fiza Iqbal', rtw: 'Graduate visa (PSW)', expiry: '2027-11-30' });
   await cp.click('#go');
   await cp.waitForSelector('text=You\'re checked in, Jasraj!');
+  ok(/After the presentation, please scan the second QR code on the screen \(Evaluation form\) for us to proceed with your application\./.test(await cp.innerText('body')), 'checked-in screen: "After the presentation, please scan the second QR code… to proceed with your application."');
   await shot(cp, '02-checked-in');
   ok(true, 'candidate checked in from the static slide QR (no presenter action)');
   ok((await pushesTo(fiza.id)).some(p => /Jasraj just checked in/.test(p.body.headings.en)), 'PUSH → booker: "Jasraj just checked in"');
