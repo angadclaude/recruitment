@@ -294,7 +294,7 @@ function renderEval() {
     return w + '</div>';
   };
   const draw = () => {
-    $app.innerHTML = logos(48) + '<h1>Your evaluation, ' + h(C.rec.first_name) + '</h1><p class="muted">About 4 minutes. Be honest — there are no wrong answers.</p>' +
+    $app.innerHTML = logos(48) + '<h1>Your evaluation, ' + h(C.rec.first_name) + '</h1><p class="muted">About 4 minutes. Your answers shape your next step with us, so make them count.</p>' +
       '<form id="f" class="card" novalidate>' + EVAL.map(qhtml).join('') + '<div id="err"></div><button class="btn block" id="go" type="submit">Submit my evaluation</button></form>';
     const f = document.getElementById('f');
     bindChips(f, (name, v) => {
@@ -986,7 +986,7 @@ function viewPay(quiet) {
 }
 
 // ───── Bulletins (admins): the daily stats poster and the weekly top 5, shared to WhatsApp in one tap ─────
-const BULL_DEFAULTS = { mission: '200', plan: '80', tag: '#PLAN1', cash: '50' };
+const BULL_DEFAULTS = { mission: '200', tag: '#PLAN1', cash: '50' };
 /** BAR = BA Referral: a BA referred a friend (refer a friend → friend does 10 sign-ups → £100). Picked by the candidate at check-in. */
 function isBar(c) { return /BA referral|^Friend \/ referral$/i.test(c.source || ''); }
 const TAGLINE = 'Great energy today, team! Let\'s keep the momentum rolling!';
@@ -1038,10 +1038,15 @@ function viewBulletin() {
   const day = S.params.day || S.day, kind = S.params.kind === 'weekly' ? 'weekly' : 'daily';
   const we = weekEndingOf(day), d = want(we), prev = kind === 'weekly' ? want(addDays(we, -7)) : null;
   if (!S.users && !S.usersAsked) { S.usersAsked = true; fetchWeek(we, { withUsers: true }).then(() => { if (S.view === 'bulletin') render(true); }).catch(() => {}); }
-  const seg = '<div class="seg bullseg" id="bkind"><button data-k="daily" class="' + (kind === 'daily' ? 'on' : '') + '">📊 ' + DAYS[D(day).getUTCDay()] + ' ' + fmt(day).split(' ').slice(1).join(' ') + '</button>' +
+  const seg = '<div class="seg bullseg" id="bkind"><button data-k="daily" class="' + (kind === 'daily' ? 'on' : '') + '">📊 Daily stats</button>' +
     '<button data-k="weekly" class="' + (kind === 'weekly' ? 'on' : '') + '">🏆 Week top 5</button></div>';
+  const mon = addDays(we, -6), days = [0, 1, 2, 3, 4].map(i => addDays(mon, i)), today = S.me.today;
+  const dayBar = '<div class="daybar"><button class="iconbtn" id="bwprev" aria-label="Previous week">‹</button>' +
+    (kind === 'daily' ? days.map(x => '<button class="dchip' + (x === day ? ' on' : '') + '" data-d="' + x + '"' + (x > today ? ' disabled' : '') + '><b>' + DAYS[D(x).getUTCDay()] + '</b><span>' + Number(x.slice(8)) + '</span></button>').join('')
+      : '<div class="dweek">Week ending ' + h(fmt(we)) + '</div>') +
+    '<button class="iconbtn" id="bwnext" aria-label="Next week"' + (addDays(mon, 7) > today ? ' disabled' : '') + '>›</button></div>';
   if (!window.JLBulletin) return paint('Bulletin', '<div class="err">Bulletins work in the installed app. Open it from your home-screen icon.</div>', false, true);
-  if (!d) return bindBullSeg(paint('Bulletin', seg + skeleton(3), false, true), day);
+  if (!d) return bindBullSeg(paint('Bulletin', seg + dayBar + skeleton(3), false, true), day);
   const n = bulletinNumbers(d.items, day, prev && prev.items);
   const key = kind + day + (prev ? '+' : '');
   // Fresh wording when the day/kind changes, or once last week's numbers arrive (unless already edited)
@@ -1059,9 +1064,9 @@ function viewBulletin() {
         (n.today.length ? '<label class="q">(BAR) BA referral</label><p class="hint" style="margin:0 0 8px">Set automatically when the candidate picked "BA referral" at check-in. Tap to change.</p><div class="chips" id="bbar">' + n.today.slice(0, 6).map(r => '<button class="chip' + (bar[r.key] ? ' on' : '') + '" data-k="' + h(r.key) + '">' + h(r.name) + '</button>').join('') + '</div>' : '')
       : field('bm0', '🏆 Yellow box', S.bull.msgs[0], true) + field('bm1', '🎯 Blue box', S.bull.msgs[1], true) + field('bm2', '🚀 Green box', S.bull.msgs[2], true) +
         '<p class="hint">Put {curly brackets} around words to colour them.</p>') +
-    '<div class="bullopts">' + field('bmis', 'Mission', o.mission) + field('bplan', 'Plan', o.plan) + field('bhash', 'Hashtag', o.tag) + field('bcash', 'Cash £', o.cash) + '</div>' +
+    '<div class="bullopts">' + field('bmis', 'Mission', o.mission) + field('bhash', 'Hashtag', o.tag) + field('bcash', 'Cash £', o.cash) + '</div>' +
     '<button class="btn ghost sm" id="breset" style="margin-top:12px">↺ Reset wording</button></details>';
-  const page = paint('Bulletin', seg +
+  const page = paint('Bulletin', seg + dayBar +
     '<div class="bullbtns"><button class="btn wa" id="bshare" disabled>📤 Share to WhatsApp</button><a class="btn ghost" id="bsave" hidden>⬇️ Save</a></div>' +
     (warn.length ? '<div class="card tight small">⚠️ ' + warn.map(h).join('<br>⚠️ ') + '</div>' : '') +
     '<div class="bullimg"><img id="bimg" alt="Bulletin"><div class="loading" id="bload"><span class="spinner inline"></span> Making your bulletin…</div></div>' + edit, false, true);
@@ -1104,7 +1109,7 @@ function viewBulletin() {
   const on = (id, fn) => { const el = document.getElementById(id); if (el) el.oninput = () => { fn(el.value); redraw(); }; };
   on('btag', v => { S.bull.tagline = v; S.bull.edited = true; });
   [0, 1, 2].forEach(i => on('bm' + i, v => { S.bull.msgs[i] = v; S.bull.edited = true; }));
-  [['bmis', 'mission'], ['bplan', 'plan'], ['bhash', 'tag'], ['bcash', 'cash']].forEach(f => on(f[0], v => { const x = store.get('bullOpts') || {}; x[f[1]] = v.trim(); store.set('bullOpts', x); }));
+  [['bmis', 'mission'], ['bhash', 'tag'], ['bcash', 'cash']].forEach(f => on(f[0], v => { const x = store.get('bullOpts') || {}; x[f[1]] = v.trim(); store.set('bullOpts', x); }));
   page.querySelectorAll('#bbar .chip').forEach(c => {
     c.onclick = () => {
       const all = store.get('barTags') || {}, k = c.dataset.k;
@@ -1116,7 +1121,14 @@ function viewBulletin() {
   document.getElementById('breset').onclick = () => { S.bull = null; store.del('bullOpts'); const t = store.get('barTags') || {}; delete t[day]; store.set('barTags', t); render(); };
 }
 function bindBullSeg(page, day) {
-  page.querySelectorAll('#bkind button').forEach(b => { b.onclick = () => { if (!b.classList.contains('on')) { S.params = { day: day, kind: b.dataset.k }; hist('replace', { v: 'bulletin', p: S.params }); render(); } }; });
+  const go = (d, k) => { S.params = { day: d, kind: k || S.params.kind }; hist('replace', { v: 'bulletin', p: S.params }); render(); };
+  page.querySelectorAll('#bkind button').forEach(b => { b.onclick = () => { if (!b.classList.contains('on')) go(day, b.dataset.k); }; });
+  page.querySelectorAll('.daybar .dchip').forEach(b => { b.onclick = () => { if (!b.classList.contains('on')) go(b.dataset.d); }; });
+  // Week arrows keep the same weekday (Friday → last Friday), never past today
+  const wk = n => { let d = addDays(day, n); if (d > S.me.today) d = S.me.today; if (D(d).getUTCDay() === 0) d = addDays(d, -2); else if (D(d).getUTCDay() === 6) d = addDays(d, -1); go(d); };
+  const p = page.querySelector('#bwprev'), n = page.querySelector('#bwnext');
+  if (p) p.onclick = () => wk(-7);
+  if (n) n.onclick = () => wk(7);
   return page;
 }
 
@@ -1194,6 +1206,7 @@ function slideQR(url, title, caption, colour) {
   return cv.toDataURL('image/png');
 }
 
+const QR_CAPTIONS = { checkin: 'Takes 1 minute 👋', eval: '4 minutes · your answers shape your next step' };
 function viewSlideQR() {
   const L = S.me.links;
   const card = (url, title, cap, col, file, where) => {
@@ -1203,8 +1216,8 @@ function viewSlideQR() {
       '<p class="small muted" style="word-break:break-all">' + h(url) + '</p></div>';
   };
   paint('Slide QR codes', '<p class="hint">These never change. Put them on the presentation once and you\'re done.</p>' +
-    card(L.checkin, 'SCAN TO CHECK IN', 'Takes 1 minute · do it now 👋', '#F15A24', 'qr-1-checkin.png', '1 · First slide: Check-in') +
-    card(L.eval, 'SCAN FOR YOUR EVALUATION', '4 minutes · be honest, no wrong answers', '#2FB5C0', 'qr-2-evaluation.png', '2 · Last slide: Evaluation') +
+    card(L.checkin, 'SCAN TO CHECK IN', QR_CAPTIONS.checkin, '#F15A24', 'qr-1-checkin.png', '1 · First slide: Check-in') +
+    card(L.eval, 'SCAN FOR YOUR EVALUATION', QR_CAPTIONS.eval, '#2FB5C0', 'qr-2-evaluation.png', '2 · Last slide: Evaluation') +
     '<p class="hint">If Download doesn\'t work on your phone, press and hold the image → Save.</p>', false, true);
 }
 

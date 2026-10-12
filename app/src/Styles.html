@@ -189,6 +189,13 @@ details.card summary::-webkit-details-marker { display: none; }
 .bullimg img { width: 100%; display: block; border-radius: 12px; box-shadow: var(--shadow); }
 .bullimg img:not([src]) { display: none; }
 .bullimg .loading { padding: 60px 0; text-align: center; }
+.daybar { display: flex; align-items: center; gap: 6px; margin: 0 0 10px; }
+.daybar .dchip { flex: 1; border: 1.5px solid var(--line); background: var(--card); border-radius: 12px; padding: 6px 0; font: inherit; cursor: pointer; display: flex; flex-direction: column; align-items: center; line-height: 1.15; color: var(--ink); }
+.daybar .dchip span { font-size: 13px; color: var(--muted); }
+.daybar .dchip.on { border-color: var(--orange); background: var(--orange); color: #fff; }
+.daybar .dchip.on span { color: #fff; }
+.daybar .dchip[disabled] { opacity: .35; }
+.daybar .dweek { flex: 1; text-align: center; font-weight: 700; }
 .bullopts { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
 .appname { text-align: center; font-weight: 800; font-size: 20px; letter-spacing: .2px; margin: 4px 0 2px; color: var(--ink); }
 .qrcard { text-align: center; }
