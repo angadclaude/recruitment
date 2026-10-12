@@ -1,4 +1,4 @@
-window.APP_VERSION = '6ccf1c2b';
+window.APP_VERSION = '99275c98';
 
 (function () {
 'use strict';
@@ -1307,11 +1307,10 @@ function waUrl(mobile, text) { return 'https://wa.me/44' + String(mobile).slice(
 const HEART = { LINK: '🧡', JUSS: '🧡💙' };
 function heartOf(c) { return HEART[c.company === 'JUSS' ? 'JUSS' : 'LINK']; }
 function msgThanks(c) {
-  const b = c.booker_name ? c.booker_name.split(' ')[0] : '';
   return 'Hey ' + c.first_name + '! 👋\n\n' +
     'Thanks for coming through for your Appointment Presentation today in association with ' + brandOf(c) + '.\n' +
     'We loved meeting you in person.\n\n' +
-    (b ? b + ' will' : 'We will') + ' contact you shortly about your next steps 📲\n' +
+    'Our Team will contact you at the latest by close of business on Friday 6PM about your next steps 📲\n' +
     'Keep your phone close!';
 }
 function msgNoAnswer(c) {
