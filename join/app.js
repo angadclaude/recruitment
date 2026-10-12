@@ -1,4 +1,4 @@
-window.APP_VERSION = '25f46fbe';
+window.APP_VERSION = '01c104f5';
 
 (function () {
 'use strict';
@@ -266,7 +266,7 @@ function renderCheckedIn(first, evalDone, canEdit) {
   scrollTop();
   $app.innerHTML = logos(56) + '<div class="card center"><div class="big-emoji">✅</div><h1>You\'re checked in, ' + h(first) + '!</h1>' +
     '<p>We aim to begin at 10 AM 🕙</p>' +
-    '<div class="ok" style="text-align:left">📝 <b>At the end</b>, scan the second QR code on the screen (<b>Evaluation</b>) to fill in your evaluation.</div></div>';
+    '<div class="ok" style="text-align:left">📝 <b>After the presentation</b>, please scan the second QR code on the screen (<b>Evaluation form</b>) for us to proceed with your application.</div></div>';
   const nm = document.createElement('button'); nm.className = 'btn ghost sm'; nm.id = 'notme'; nm.style.marginTop = '14px';
   nm.textContent = 'Not you? Check someone else in';
   nm.onclick = () => { store.del('cand'); C.rec = null; loadCheckin(''); };
