@@ -43,6 +43,18 @@ async function loginUi(page, email, url) {
   await page.click('#go');
   await page.waitForSelector('.tabbar button');
 }
+/** ms from the real tap to `text` appearing on screen (excludes the test robot's own scrolling). */
+async function tapToText(page, selector, text) {
+  await page.evaluate(t => {
+    window.__tap = 0; window.__seen = 0;
+    document.addEventListener('click', () => { window.__tap = performance.now(); }, { capture: true, once: true });
+    const mo = new MutationObserver(() => { if (window.__tap && !window.__seen && document.body.innerText.includes(t)) { window.__seen = performance.now(); mo.disconnect(); } });
+    mo.observe(document.body, { subtree: true, childList: true, characterData: true });
+  }, text);
+  await page.click(selector);
+  await page.waitForFunction(() => window.__seen > 0, null, { timeout: 10000 });
+  return Math.round(await page.evaluate(() => window.__seen - window.__tap));
+}
 const shot = async (page, name, full) => { await page.waitForTimeout(300); return page.screenshot({ path: `${SHOTS}/${name}.png`, fullPage: !!full }); };
 const setTime = iso => post('/dev/time', { iso });
 const ok = (cond, msg) => { assert.ok(cond, msg); console.log('  ✓ ' + msg); };
@@ -87,6 +99,7 @@ async function fillEval(p) {
   const admin = await loginApi('angad@linkmarketing.org.uk');
   const users = (await api(admin, 'listUsers')).users;
   ok(users.length === 4 && users.every(u => u.roles.includes('admin')), '4 admins seeded (Angad, Jess, Satpal, Rubal)');
+  ok((await post('/dev/eval', { js: 'JSON.stringify(ScriptApp.getProjectTriggers().map(t => t.fn))' })).out.includes('keepWarm'), 'keep-warm trigger installed');
   const angadId = users.find(u => /angad/.test(u.email)).id;
 
   const mk = (name, email, company, roles) => api(admin, 'saveUser', { user: { name, email, company, roles, active: true } });
@@ -229,6 +242,36 @@ async function fillEval(p) {
   await post('/dev/delay', { ms: 0 });
   ok(true, 'phone back button returns to the list');
 
+  // Level 1: offline engine, instant saves, swipe, dark mode
+  await pp.reload(); await pp.waitForSelector('.tabbar button');
+  ok(await pp.evaluate(() => navigator.serviceWorker.getRegistration().then(r => !!(r && r.active))), 'app is installed on the phone (service worker active)');
+  await pres.setOffline(true);
+  await pp.reload(); await pp.waitForSelector('text=Jasraj Bhuller', { timeout: 8000 });
+  ok(true, 'app opens with NO signal (from the phone\'s copy)');
+  await pp.click('.item:has-text("Jagpreet Kular")'); await pp.waitForSelector('#savenotes');
+  await pp.fill('#notes', 'Did Day 1 in June already. Saved with no signal.');
+  const tSave = await tapToText(pp, '#savenotes', '⏳ Syncing');
+  ok(tSave < 300, 'save shows instantly even offline (' + tSave + 'ms after the tap)');
+  ok(/No signal/.test(await pp.innerText('#bars')), 'banner: "No signal, 1 change saved on your phone"');
+  ok((await api(admin, 'getCandidate', { id: jag.id })).notes !== 'Did Day 1 in June already. Saved with no signal.', 'not on the server yet (offline)');
+  await pres.setOffline(false);
+  await pp.waitForFunction(() => !JSON.parse(localStorage.getItem('lr_outbox') || '[]').length, null, { timeout: 15000 });
+  ok((await api(admin, 'getCandidate', { id: jag.id })).notes === 'Did Day 1 in June already. Saved with no signal.', 'signal back → change synced to Google automatically');
+  await pp.goBack(); await pp.waitForSelector('.kpis');
+  await pp.evaluate(() => {
+    const sw = document.querySelector('.swipe'); const t = (type, x) => sw.dispatchEvent(new TouchEvent(type, { bubbles: true, touches: type === 'touchend' ? [] : [new Touch({ identifier: 1, target: sw, clientX: x, clientY: 200 })] }));
+    t('touchstart', 300); t('touchmove', 250); t('touchmove', 150); t('touchmove', 100); t('touchend', 100);
+  });
+  await pp.waitForSelector('.swipe.open');
+  ok(/^tel:/.test(await pp.getAttribute('.swipe.open .act.call', 'href')) && /wa\.me/.test(await pp.getAttribute('.swipe.open .act.wa', 'href')), 'swipe a candidate → Call / WhatsApp buttons');
+  await shot(pp, '04b-swipe');
+  const dark = await browser.newContext(Object.assign({ colorScheme: 'dark' }, PHONE));
+  const dp = await dark.newPage();
+  await loginUi(dp, 'nathan@example.com'); await dp.waitForSelector('text=Jasraj Bhuller');
+  await shot(dp, '04c-dark-today');
+  ok(await dp.evaluate(() => getComputedStyle(document.body).backgroundColor) === 'rgb(17, 17, 22)', 'dark mode follows the phone setting');
+  await dark.close();
+
   // ── 4. Booker: snapshot → outcome → Gen Z WhatsApp with welcome link ──
   console.log('booker');
   const bk = await browser.newContext(PHONE);
@@ -247,7 +290,8 @@ async function fillEval(p) {
   await bp.click('.chips[data-name=outcome] .chip:has-text("Academy booked")');
   await bp.fill('#adate', '2026-10-19');
   await bp.fill('#onotes', 'Great call.');
-  await bp.click('#saveout');
+  const tOut = await tapToText(bp, '#saveout', 'Outcome saved ✓');
+  ok(tOut < 300, 'outcome save feels instant (' + tOut + 'ms after the tap)');
   await bp.waitForSelector('a.wa[data-kind=offer]');
   await shot(bp, '09-booker-outcome', true);
   const msg = decodeURIComponent((await bp.getAttribute('a.wa[data-kind=offer]', 'href')).split('?text=')[1]);
