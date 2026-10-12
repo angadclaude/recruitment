@@ -430,6 +430,13 @@ async function fillEval(p) {
   const before = (await getJson('/dev/pushes')).length;
   await post('/dev/run', { fn: 'weeklyProgressEmails' });
   ok((await getJson('/dev/pushes')).slice(before).some(p => /net attended|target/.test(p.body.headings.en)), 'scheduled progress alert goes out as a push');
+  await post('/dev/eval', { js: `globalThis.__pushOff = ['${abd.id}']` });
+  const mailBefore = (await getJson('/dev/mail')).length;
+  await post('/dev/run', { fn: 'weeklyProgressEmails' });
+  const newMail = (await getJson('/dev/mail')).slice(mailBefore);
+  ok(newMail.some(m => m.to === abd.email && /net attended|target/.test(m.subject)), 'booker who never turned alerts on still gets it, by email');
+  ok(!newMail.some(m => m.to === fiza.email), 'booker with alerts on gets the push only (no duplicate email)');
+  await post('/dev/eval', { js: 'globalThis.__pushOff = []' });
 
   // ── 10. Access removed / Apps Script fallback / GDPR ──
   await api(admin, 'saveUser', { user: Object.assign({}, fiza, { active: false }) });

@@ -78,7 +78,17 @@ function load(opts) {
       computeDigest: (alg, s) => Array.from(crypto.createHash(alg).update(String(s), 'utf8').digest()).map(b => (b > 127 ? b - 256 : b)),
     },
     MailApp: { sendEmail: o => { state.outbox.push(Object.assign({ at: new Date().toISOString() }, o)); } },
-    UrlFetchApp: { fetch: (url, o) => { state.pushes.push({ url, headers: o.headers, body: JSON.parse(o.payload) }); return { getResponseCode: () => 200, getContentText: () => '{"id":"x"}' }; } },
+    // Fake OneSignal: users listed in globalThis.__pushOff have no phone subscribed (200 with an empty id, like the real API).
+    UrlFetchApp: {
+      fetch: (url, o) => {
+        const body = JSON.parse(o.payload);
+        const off = (ctx.__pushOff || []).some(id => body.include_aliases.external_id.includes(id));
+        state.pushes.push({ url, headers: o.headers, body, reached: !off });
+        const text = off ? '{"id":"","errors":["All included players are not subscribed"]}' : '{"id":"x"}';
+        return { getResponseCode: () => 200, getContentText: () => text };
+      },
+      fetchAll: reqs => reqs.map(r => ctx.UrlFetchApp.fetch(r.url, r)),
+    },
     ContentService: { MimeType: { JSON: 'json' }, createTextOutput: t => ({ setMimeType: () => t }) },
     ScriptApp: {
       getService: () => ({ getUrl: () => url }),
