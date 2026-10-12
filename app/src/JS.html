@@ -151,7 +151,7 @@ function renderCheckin(then) {
     '<label class="q">Your right to work in the UK <span class="req">*</span></label>' +
     '<select name="rtw"><option value="">Choose one…</option>' + C.cfg.rtw.map(r => '<option>' + h(r.label) + '</option>').join('') + '</select>' +
     '<div id="exp" hidden><label class="q">Visa expiry date <span class="req">*</span></label><input type="date" name="visa_expiry"></div>' +
-    '<label class="check"><input type="checkbox" name="privacy_ok"> <span>I agree that LINK Marketing and JUSS Marketing can use these details to assess my application and contact me about it. They are kept for a maximum of 12 months.</span></label>' +
+    '<label class="check"><input type="checkbox" name="privacy_ok"> <span>I agree that LINK Marketing and JUSS Marketing can use these details to assess my application and contact me about it. They are kept in full for 12 weeks. After that, only basic details and the result of my application are kept, for up to 6 months, then deleted.</span></label>' +
     '<div id="err"></div>' +
     '<button class="btn block" id="go" type="submit">Check in</button>' +
     '</form>';

@@ -26,7 +26,7 @@ Already created in your Drive: **Recruitment App — DO NOT EDIT** (https://docs
 Choose **`setup`** in the dropdown → **▶ Run** → **Review permissions** → choose your account → **Advanced → Go to Untitled project (unsafe) → Allow**.
 This creates the tabs, the 4 admins (Angad, Jess, Satpal, Rubal) and the scheduled alerts.
 
-### A4. Import the last 12 months (for repeat candidates)
+### A4. Import the last 6 months (for repeat candidates)
 Choose **`importHistory`** → **▶ Run**.
 
 ### A5. Publish
@@ -121,7 +121,7 @@ Put the two QR codes on the presentation once. They never change:
 - **Made a mistake in the evaluation?** The candidate scans the evaluation QR again → **✏️ Change my answers** (same day, until their booker logs the call). The booker gets a push.
 - **Busy moments** (20+ people scanning at once): the app waits its turn and retries by itself; candidates see "Busy, still sending…", never an error. Answers are kept on the phone until they're sent.
 - **Presenter RED / previously rejected** → admin decides before the Academy message unlocks.
-- **12-month auto-delete** (GDPR). Conviction answer is admin-only.
+- **GDPR, as the check-in page promises:** full details for **12 weeks**, then trimmed to the basics (name, contact, result, what pay needs). Evaluation answers, the convictions answer and presenter notes are wiped. Everything is deleted after **6 months** (= the repeat-candidate window). The conviction answer is admin-only.
 
 ## Changing something later
 Apps Script: edit → Save → **Deploy → Manage deployments → ✏️ → New version → Deploy**. The URL stays the same.
