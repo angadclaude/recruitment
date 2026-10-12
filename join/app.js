@@ -1,3 +1,4 @@
+window.APP_VERSION = '44b5a5ee';
 
 (function () {
 'use strict';
@@ -554,7 +555,14 @@ function boot() {
 }
 function registerSW() {
   if (!CFG.API_URL || !('serviceWorker' in navigator) || !window.isSecureContext) return;
-  navigator.serviceWorker.register('OneSignalSDKWorker.js', { scope: './' }).catch(() => {});
+  const hadOld = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register('OneSignalSDKWorker.js', { scope: './' }).then(reg => { S.swReg = reg; reg.update().catch(() => {}); }).catch(() => {});
+  // A new version just took over: reload once so it's on screen straight away (never mid-typing or with unsynced saves).
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadOld || S.reloading) return;
+    const go = () => { if (isTyping() || outbox().length) return setTimeout(go, 3000); S.reloading = true; location.reload(); };
+    go();
+  });
 }
 function tick() {
   if (document.visibilityState !== 'visible' || !S.me) return;
@@ -562,6 +570,7 @@ function tick() {
   const live = S.view === 'today' && S.day === S.me.today && hr >= 7 && hr < 17;
   if (Date.now() - S.lastPoll >= (live ? 10000 : POLL_MS)) { S.lastPoll = Date.now(); refreshQuiet(); }
   if (outbox().length) flush();
+  if (S.swReg && Date.now() - (S.swCheck || 0) > 15 * 60000) { S.swCheck = Date.now(); S.swReg.update().catch(() => {}); }
 }
 function refreshQuiet() {
   if (!S.me) return;
@@ -686,7 +695,8 @@ function toggleMenu() {
   m.innerHTML = '<div class="menu-card"><div class="row"><span class="av lg">' + h(initials(u.name)) + '</span><div><b>' + h(u.name) + '</b><div class="small muted">' + h(u.email) + '</div>' +
     '<div class="small muted">' + h(u.company) + ' · ' + h(u.roles.join(', ')) + '</div></div></div>' +
     '<button class="btn ghost block" id="mRefresh" style="margin-top:12px">↻ Refresh now</button>' +
-    '<button class="btn ghost block" id="mLogout" style="margin-top:8px;color:var(--red)">Log out</button></div>';
+    '<button class="btn ghost block" id="mLogout" style="margin-top:8px;color:var(--red)">Log out</button>' +
+    '<p class="small muted center" style="margin:10px 0 0">App version ' + h(window.APP_VERSION || 'dev') + '</p></div>';
   m.hidden = false;
   m.onclick = e => { if (e.target === m) m.hidden = true; };
   document.getElementById('mRefresh').onclick = () => { m.hidden = true; pullRefresh(); };

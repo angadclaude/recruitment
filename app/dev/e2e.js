@@ -256,6 +256,15 @@ async function fillEval(p) {
   // Level 1: offline engine, instant saves, swipe, dark mode
   await pp.reload(); await pp.waitForSelector('.tabbar button');
   ok(await pp.evaluate(() => navigator.serviceWorker.getRegistration().then(r => !!(r && r.active))), 'app is installed on the phone (service worker active)');
+  // A new version is published while the phone has the old one saved → must show on the very next open
+  const idx = path.join(__dirname, '..', '..', 'join', 'index.html');
+  const orig = fs.readFileSync(idx, 'utf8');
+  fs.writeFileSync(idx, orig.replace('<head>', '<head><meta name="build-test" content="NEW">'));
+  await pp.reload(); await pp.waitForSelector('.tabbar button');
+  const gotNew = await pp.$('meta[name="build-test"]');
+  fs.writeFileSync(idx, orig);
+  ok(!!gotNew, 'a newly published version shows on the very next open (not stuck on the old copy)');
+  await pp.reload(); await pp.waitForSelector('.tabbar button');
   await pres.setOffline(true);
   await pp.reload(); await pp.waitForSelector('text=Jasraj Bhuller', { timeout: 8000 });
   ok(true, 'app opens with NO signal (from the phone\'s copy)');

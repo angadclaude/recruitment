@@ -21,8 +21,9 @@ const files = {
   'logos.js': inner(read('Logos.html'), 'script'),
   'qr.js': inner(read('QR.html'), 'script'),
 };
-Object.keys(files).forEach(f => write(f, files[f]));
 const v = crypto.createHash('sha1').update(Object.values(files).join('')).digest('hex').slice(0, 8);
+files['app.js'] = 'window.APP_VERSION = \'' + v + '\';\n' + files['app.js'];
+Object.keys(files).forEach(f => write(f, files[f]));
 
 // config.js holds the two settings Angad pastes in. Never overwrite it once it exists.
 if (!fs.existsSync(path.join(OUT, 'config.js'))) {
@@ -107,9 +108,10 @@ write('manifest.webmanifest', JSON.stringify({
 write('OneSignalSDKWorker.js', `// Push notifications (OneSignal). Never block the app if their CDN is unreachable.
 try { importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js'); } catch (e) { /* offline or blocked */ }
 
-// App shell kept on the phone: show the saved copy instantly, update it in the background.
+// Pages (and config) come from the network first, so a new version shows up on the very next open;
+// the phone's copy is only used when there's no signal. Versioned files (?v=…) and images are safe to serve from the copy.
 const CACHE = 'recruit-${v}';
-const SHELL = ['index.html', 'app.css?v=${v}', 'app.js?v=${v}', 'logos.js?v=${v}', 'qr.js?v=${v}', 'config.js?v=${v}',
+const SHELL = ['index.html', 'checkin.html', 'eval.html', 'app.css?v=${v}', 'app.js?v=${v}', 'logos.js?v=${v}', 'qr.js?v=${v}',
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-180.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -118,14 +120,27 @@ self.addEventListener('activate', e => {
   e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k.indexOf('recruit-') === 0 && k !== CACHE).map(k => caches.delete(k))))
     .then(() => self.clients.claim()));
 });
+function pageKey(u) { return u.origin + u.pathname + (u.pathname.slice(-1) === '/' ? 'index.html' : ''); }
 self.addEventListener('fetch', e => {
   const r = e.request;
-  if (r.method !== 'GET' || new URL(r.url).origin !== self.location.origin) return;  // Google API calls are never cached here
-  const nav = r.mode === 'navigate';
-  e.respondWith(caches.open(CACHE).then(c => c.match(r, { ignoreSearch: nav }).then(hit => {
-    const net = fetch(r).then(res => { if (res && res.ok) c.put(nav ? new URL(r.url).pathname.replace(/^.*\\//, '') || 'index.html' : r, res.clone()); return res; })
-      .catch(() => hit || caches.match('index.html'));
-    return hit || net;
+  const u = new URL(r.url);
+  if (r.method !== 'GET' || u.origin !== self.location.origin) return;  // Google API calls are never touched
+  const isPage = r.mode === 'navigate' || /(\\.html|\\/|config\\.js)$/.test(u.pathname);
+  if (isPage) {
+    const key = pageKey(u);
+    const fromCache = () => caches.open(CACHE).then(c => c.match(key)).then(hit => hit || caches.match(self.registration.scope + 'index.html'));
+    const net = fetch(u.href, { cache: 'no-cache', credentials: 'same-origin' }).then(res => {
+      if (res && res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(key, copy)); }
+      return res;
+    });
+    // Weak signal: don't hang. After 4s use the phone's copy (the network copy still lands for next time).
+    const slow = new Promise(resolve => setTimeout(() => fromCache().then(hit => hit && resolve(hit)), 4000));
+    e.respondWith(Promise.race([net.catch(fromCache), slow]));
+    return;
+  }
+  e.respondWith(caches.open(CACHE).then(c => c.match(r).then(hit => {
+    const fresh = fetch(r).then(res => { if (res && res.ok) c.put(r, res.clone()); return res; }).catch(() => hit);
+    return hit || fresh;
   })));
 });
 `);
