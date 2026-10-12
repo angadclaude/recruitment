@@ -3,8 +3,8 @@ try { importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js')
 
 // Pages (and config) come from the network first, so a new version shows up on the very next open;
 // the phone's copy is only used when there's no signal. Versioned files (?v=…) and images are safe to serve from the copy.
-const CACHE = 'recruit-44b5a5ee';
-const SHELL = ['index.html', 'checkin.html', 'eval.html', 'app.css?v=44b5a5ee', 'app.js?v=44b5a5ee', 'logos.js?v=44b5a5ee', 'qr.js?v=44b5a5ee',
+const CACHE = 'recruit-205cae0e';
+const SHELL = ['index.html', 'checkin.html', 'eval.html', 'app.css?v=205cae0e', 'app.js?v=205cae0e', 'logos.js?v=205cae0e', 'qr.js?v=205cae0e',
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-180.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
