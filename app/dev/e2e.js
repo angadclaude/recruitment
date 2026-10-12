@@ -434,6 +434,23 @@ async function fillEval(p) {
   ok(!digests.some(p => p.body.include_aliases.external_id.includes(jessId)), 'no round-up for someone with no appointments (no spam)');
   await post('/dev/run', { fn: 'keepWarm' });
   ok((await getJson('/dev/pushes')).length === before18 + digests.length, 'sent once a day only (the next run 5 minutes later sends nothing)');
+  // Friday 15:00: week roundup to each booker + team roundup to admins (instead of the 18:00 round-up)
+  await setTime('2026-10-16T14:55:00+01:00');
+  const beforeFri = (await getJson('/dev/pushes')).length;
+  await post('/dev/run', { fn: 'keepWarm' });
+  ok((await getJson('/dev/pushes')).length === beforeFri, 'Friday: nothing before 15:00');
+  await setTime('2026-10-16T15:05:00+01:00');
+  await post('/dev/run', { fn: 'keepWarm' });
+  const fri = (await getJson('/dev/pushes')).slice(beforeFri);
+  const rFiza = fri.find(p => p.body.include_aliases.external_id.includes(fiza.id));
+  ok(rFiza && /^🏁 Week roundup: \d+ appointments? · \d+ booked$/.test(rFiza.body.headings.en) && /✅ Booked: /.test(rFiza.body.contents.en) && /Day 1 text/.test(rFiza.body.contents.en),
+    'Friday 15:00 → Fiza: "' + (rFiza ? rFiza.body.headings.en + ' | ' + rFiza.body.contents.en.replace(/\n/g, ' | ') : 'none') + '"');
+  const rTeam = fri.find(p => p.body.include_aliases.external_id.includes(angadId) && /^📋 Team week/.test(p.body.headings.en));
+  ok(rTeam && /Fiza Iqbal: \d+ in/.test(rTeam.body.contents.en) && /Day 1 texts sent \d+\/\d+/.test(rTeam.body.contents.en),
+    'Friday 15:00 → admins get the team roundup: "' + (rTeam ? rTeam.body.headings.en + ' | ' + rTeam.body.contents.en.replace(/\n/g, ' | ') : 'none') + '"');
+  await setTime('2026-10-16T18:05:00+01:00');
+  await post('/dev/run', { fn: 'keepWarm' });
+  ok((await getJson('/dev/pushes')).length === beforeFri + fri.length, 'no extra 18:00 message on Friday');
 
   // ── 7. Sunday close → logged but LATE; pay ──
   await setTime('2026-10-18T15:00:00+01:00');
