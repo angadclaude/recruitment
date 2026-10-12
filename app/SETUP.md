@@ -108,7 +108,7 @@ Put the two QR codes on the presentation once. They never change:
 
 ## Rules built in (top of `Code.gs`)
 - **Net attended:** Mon–Fri, **rated by the presenter**, 18+, eligible to work self-employed, not seen in the last **6 months**, not removed by admin. Target 5.
-- **Check-in only 07:00–17:00.** Combined with "presenter must rate them", nobody can be checked in from home for pay.
+- **Check-ins outside 07:00–17:00 still go through**, but admins see an amber "outside office hours" flag. Combined with "presenter must rate them", nobody can be checked in from home for pay.
 - **Outcome deadline Saturday 19:00.** Sunday outcomes are accepted and marked LATE.
 - **Presenter RED / previously rejected** → admin decides before the Academy message unlocks.
 - **12-month auto-delete** (GDPR). Conviction answer is admin-only.
