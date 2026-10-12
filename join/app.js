@@ -235,7 +235,7 @@ function renderCheckedIn(first, evalDone) {
   if (evalDone) return renderDone();
   scrollTop();
   $app.innerHTML = logos(56) + '<div class="card center"><div class="big-emoji">✅</div><h1>You\'re checked in, ' + h(first) + '!</h1>' +
-    '<p>Sit back and enjoy the presentation 🙌</p>' +
+    '<p>We aim to begin at 10 AM 🕙</p>' +
     '<div class="ok" style="text-align:left">📝 <b>At the end</b>, scan the second QR code on the screen (<b>Evaluation</b>) to fill in your evaluation.</div></div>';
 }
 

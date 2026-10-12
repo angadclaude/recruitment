@@ -2,8 +2,8 @@
 try { importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js'); } catch (e) { /* offline or blocked */ }
 
 // App shell kept on the phone: show the saved copy instantly, update it in the background.
-const CACHE = 'recruit-89f62210';
-const SHELL = ['index.html', 'app.css?v=89f62210', 'app.js?v=89f62210', 'logos.js?v=89f62210', 'qr.js?v=89f62210', 'config.js?v=89f62210',
+const CACHE = 'recruit-f7c13b2f';
+const SHELL = ['index.html', 'app.css?v=f7c13b2f', 'app.js?v=f7c13b2f', 'logos.js?v=f7c13b2f', 'qr.js?v=f7c13b2f', 'config.js?v=f7c13b2f',
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-180.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
