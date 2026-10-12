@@ -1,6 +1,6 @@
 {
-  "name": "LINK × JUSS Recruitment",
-  "short_name": "Recruitment",
+  "name": "Juss & Link Recruitment App",
+  "short_name": "Juss & Link Recruitment App",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

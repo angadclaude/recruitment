@@ -8,7 +8,7 @@
 // ───────────────────────── CONFIG ─────────────────────────
 const CONFIG = {
   TZ: 'Europe/London',
-  APP_NAME: 'LINK × JUSS Recruitment',
+  APP_NAME: 'Juss & Link Recruitment App',
   OFFICE_ADDRESS: '2nd Floor East, Automotive House, Grays Place, Slough SL2 5AF',
   PAY_TARGET: 5,                  // net attended appointments per booker, Mon–Fri
   OUTCOME_DEADLINE_DAY: 6,        // 6 = Saturday (days after Monday: Mon=1 … Sat=6)
