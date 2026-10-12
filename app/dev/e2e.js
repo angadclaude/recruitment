@@ -173,9 +173,8 @@ async function fillEval(p) {
   await pp.waitForSelector('#savenotes');
   await pp.click('.rag button.G');
   await pp.click('.stars button[data-s="4"]');
-  await pp.click('.chips[data-name=why] .chip:has-text("Uncapped earnings")');
-  await pp.click('.chips[data-name=why] .chip:has-text("Wants own business")');
-  await pp.fill('#whynote', 'Saving for a house');
+  ok(!(await pp.$('.chips[data-name=why]')), 'presenter types the answers (no tap options in presenter notes)');
+  await pp.fill('#whynote', 'Wants to earn on results, saving for a house');
   await pp.fill('#interesting', 'Plays semi-pro football');
   await pp.click('.chips[data-name=tags] .chip:has-text("Great energy")');
   await pp.click('.chips[data-name=tags] .chip:has-text("Future owner")');
@@ -184,6 +183,10 @@ async function fillEval(p) {
   await pp.waitForSelector('text=In the room · saved');
   await shot(pp, '04-presenter-notes', true);
   ok((await api(admin, 'getCandidate', { id: (await api(admin, 'search', { q: 'Jasraj' })).items[0].id })).in_room === 'TRUE', 'rating Jasraj automatically confirmed "in the room"');
+  const thanks = decodeURIComponent((await pp.getAttribute('a.wa[data-kind=thanks]', 'href')).split('?text=')[1]);
+  fs.writeFileSync(`${SHOTS}/msg-thanks.txt`, thanks);
+  ok(thanks === "Hey Jasraj! 👋\n\nThanks for coming through for your Appointment Presentation today in association with LINK Marketing.\nWe loved meeting you in person.\n\nFiza will contact you shortly about your next steps 📲\nKeep your phone close!",
+    'thank-you WhatsApp = Angad\'s new wording (LINK, booker Fiza)');
   for (const [c, rag] of [[ishita, 'R'], [adham, 'G'], [ali, 'A'], [jag, 'A'], [kid, 'R']]) {
     await api(nathan, 'saveNotes', { id: c.id, rag, stars: rag === 'G' ? 3 : 2, tags: [], notes: 'test' });
   }
@@ -193,6 +196,8 @@ async function fillEval(p) {
   await cp.goto(APP + 'eval.html');
   await cp.waitForSelector('text=Your evaluation, Jasraj');
   ok(true, 'same phone: evaluation QR opens straight into Jasraj\'s evaluation');
+  const q3 = await cp.$$eval('.chips[data-name=q3_reason] .chip', els => els.map(e => e.textContent));
+  ok(['Uncapped earnings', 'Career progression', 'Learn new skills'].every(x => q3.includes(x)), 'evaluation keeps the standard options: earnings, career progression, learn new skills');
   await fillEval(cp);
   await shot(cp, '05-evaluation', true);
   await cp.click('#go');
@@ -292,7 +297,7 @@ async function fillEval(p) {
   await bp.waitForSelector('#saveout');
   const snap = await bp.innerText('body');
   ok(/Southall/.test(snap) && /Commission selling phones/.test(snap), 'one-page snapshot: presenter notes + evaluation together');
-  ok(/💡 Plays semi-pro football/.test(snap) && /Uncapped earnings, Wants own business — Saving for a house/.test(snap), 'booker sees the room answers: 💡 ice-breaker + why sales');
+  ok(/💡 Plays semi-pro football/.test(snap) && /Wants to earn on results, saving for a house/.test(snap), 'booker sees the room answers: 💡 ice-breaker + why sales');
   const hdr = (await getJson('/dev/sheet?name=Candidates'))[0];
   ok(hdr.slice(-3).join() === 'p_why_sales,p_why_sales_note,p_interesting', 'existing Sheet got the new columns automatically (no data moved)');
   ok(!/Unspent convictions/.test(snap), 'conviction answer hidden from bookers');
@@ -319,6 +324,7 @@ async function fillEval(p) {
   await shot(wp, '10-welcome-page', true);
   const wtxt = await wp.innerText('body');
   ok(/Monday 19 October/.test(wtxt) && /Day 1 is in 7 days/.test(wtxt) && /Pre-Coaching Module/.test(wtxt) && /Practical Learning Day/.test(wtxt), 'welcome page: date, countdown, pre-coaching, Week 1 plan');
+  ok(await wp.$eval('.wl-poster img', i => i.complete && i.naturalWidth > 0 && /poster-link/.test(i.src)), 'LINK welcome page shows the LINK Week 1 poster (your screenshot)');
   const og = await (await fetch(wurl.replace(PUBLIC, APP))).text();
   ok(og.includes('og:image" content="' + PUBLIC + 'img/og-link.jpg"'), 'WhatsApp link preview shows the LINK poster card (og:image)');
   await wp.click('#conf');
@@ -352,6 +358,9 @@ async function fillEval(p) {
   await jp.waitForSelector('text=You\'re in, Adham');
   await shot(jp, '12-welcome-juss', true);
   ok(/Thursday onwards/.test(await jp.innerText('body')), 'JUSS welcome page uses the JUSS schedule');
+  ok(await jp.$eval('.wl-poster img', i => i.complete && i.naturalWidth > 0 && /poster-juss/.test(i.src)), 'JUSS welcome page shows the JUSS Week 1 poster (your screenshot)');
+  const jog = await (await fetch(jwurl.replace(PUBLIC, APP))).text();
+  ok(jog.includes('og:image" content="' + PUBLIC + 'img/og-juss.jpg"'), 'JUSS WhatsApp link preview shows the JUSS poster card');
 
   await ap.goto(APP + 'index.html?c=' + ishita.id);
   await ap.waitForSelector('#approve');

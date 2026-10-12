@@ -242,7 +242,7 @@ function renderCheckedIn(first, evalDone) {
 const EVAL = [
   { k: 'q1_excitement', t: 'On a scale of 1–10, how excited are you about this opportunity right now?', type: 'scale' },
   { k: 'q2_stood_out', t: 'What stood out to you most from today?', type: 'text' },
-  { k: 'q3_reason', t: 'Pick your #1 reason for joining (choose one)', opts: ['Uncapped earnings', 'Leadership', 'Sales skills', 'Personal development', 'Travel', 'Team environment'] },
+  { k: 'q3_reason', t: 'Pick your #1 reason for joining (choose one)', opts: ['Uncapped earnings', 'Career progression', 'Learn new skills', 'Leadership', 'Sales skills', 'Personal development', 'Travel', 'Team environment'] },
   { k: 'q4_situation', t: 'What is your current situation?', opts: ['Working full-time', 'Working part-time', 'Studying', 'Looking for work'] },
   { k: 'q4_looking_for', t: 'How long have you been looking for work?', opts: ['Less than 1 month', '1–3 months', '3–6 months', '6+ months'], showIf: a => a.q4_situation === 'Looking for work' },
   { k: 'q5_start_date', t: 'What is your earliest start date?', type: 'date' },
@@ -377,11 +377,11 @@ function renderWelcome(w) {
     '<div class="card"><div class="small muted">BRING WITH YOU</div><p style="font-size:17px;margin:8px 0 0">🪪 Photo ID<br>🔑 Your right-to-work share code</p></div>' +
 
     '<h3>Your Week 1 game plan</h3><div class="card wl-week">' + steps + '</div>' +
+    '<div class="card wl-poster"><img src="img/poster-' + co.toLowerCase() + '.jpg" alt="' + h(brand) + ' Week 1 Coaching & Field Schedule" onerror="this.parentNode.hidden=true"></div>' +
 
     '<details class="card"><summary><b>🚀 Where this can take you</b></summary><div class="ladder" style="margin-top:10px">' +
     LADDER.map(l => '<div style="background:' + l[0] + '">' + h(l[1]) + ' <span>— ' + h(l[2]) + '</span></div>').join('') + '</div></details>' +
 
-    '<details class="card"><summary><b>🖼️ View the Week 1 poster</b></summary><img src="img/poster-' + co.toLowerCase() + '.jpg" alt="Week 1 schedule poster" style="width:100%;border-radius:10px;margin-top:10px" onerror="this.parentNode.hidden=true"></details>' +
 
     '<p class="center muted small" style="margin:18px 0 110px">Questions? Just reply to the WhatsApp message 💬</p>' +
     '<div class="wl-cta" id="cta"></div></div>';
@@ -1015,7 +1015,6 @@ function viewSlideQR() {
 
 // ───── Candidate snapshot (the one page) ─────
 const TAGS = ['Sales experience', 'Customer service exp', 'Confident', 'Quiet', 'Great energy', 'Holiday booked', 'Leadership potential', 'Future owner'];
-const WHY_SALES = ['Uncapped earnings', 'Learn new skills', 'Career progression', 'Personal development', 'Likes talking to people', 'Wants own business', 'Flexible / self-employed'];
 
 function viewCandidate(id) {
   const c = findCand(id);
@@ -1096,8 +1095,10 @@ function heartOf(c) { return HEART[c.company === 'JUSS' ? 'JUSS' : 'LINK']; }
 function msgThanks(c) {
   const b = c.booker_name ? c.booker_name.split(' ')[0] : '';
   return 'Hey ' + c.first_name + '! 👋\n\n' +
-    'Thanks for coming through to ' + brandOf(c) + ' today ' + heartOf(c) + ' Loved having you in the room.\n\n' +
-    (b ? b + ' will' : 'We\'ll') + ' hit you up shortly about your next steps 📲 Keep your phone close!';
+    'Thanks for coming through for your Appointment Presentation today in association with ' + brandOf(c) + '.\n' +
+    'We loved meeting you in person.\n\n' +
+    (b ? b + ' will' : 'We will') + ' contact you shortly about your next steps 📲\n' +
+    'Keep your phone close!';
 }
 function msgNoAnswer(c) {
   return 'Hey ' + c.first_name + ' 👋 it\'s ' + S.me.user.name.split(' ')[0] + ' from ' + brandOf(c) + '!\n\n' +
@@ -1154,13 +1155,11 @@ function renderCandidate(c, quiet) {
 
   // Presenter
   html += '<div class="section-h">Presenter</div><div class="card" id="pres">';
-  const onList = (v, x) => String(v || '').split(', ').indexOf(x) >= 0;
   if (canNotes) {
     html += '<label class="q" style="margin-top:0">💬 Why work in sales?</label>' +
-      '<div class="chips" data-name="why" data-multi="1">' + WHY_SALES.map(t => '<button type="button" class="chip' + (onList(c.p_why_sales, t) ? ' on' : '') + '" data-v="' + h(t) + '">' + h(t) + '</button>').join('') + '</div>' +
-      '<input type="text" id="whynote" maxlength="300" style="margin-top:8px" placeholder="In their words, e.g. saving for a house" value="' + h(c.p_why_sales_note) + '">' +
-      '<label class="q">✨ Something interesting about them</label>' +
-      '<input type="text" id="interesting" maxlength="300" placeholder="e.g. plays semi-pro football" value="' + h(c.p_interesting) + '">' +
+      '<textarea id="whynote" maxlength="300" class="short" placeholder="Type their answer, e.g. wants to earn on results, saving for a house">' + h(c.p_why_sales_note || c.p_why_sales) + '</textarea>' +
+      '<label class="q">✨ Tell us something interesting about you</label>' +
+      '<textarea id="interesting" maxlength="300" class="short" placeholder="Type their answer, e.g. plays semi-pro football">' + h(c.p_interesting) + '</textarea>' +
       '<label class="q">Rating</label><div class="rag"><button type="button" class="G' + (c.rag === 'G' ? ' on' : '') + '" data-r="G">Green</button>' +
       '<button type="button" class="A' + (c.rag === 'A' ? ' on' : '') + '" data-r="A">Amber</button><button type="button" class="R' + (c.rag === 'R' ? ' on' : '') + '" data-r="R">Red</button></div>' +
       '<div class="stars">' + [1, 2, 3, 4, 5].map(n => '<button type="button" data-s="' + n + '" class="' + (Number(c.stars) >= n ? 'on' : '') + '">★</button>').join('') + '</div>' +
@@ -1170,7 +1169,7 @@ function renderCandidate(c, quiet) {
       '<p class="small muted center">' + (c.in_room ? '✅ In the room · ' : '') + (c.notes_at ? 'saved ' + fmtTs(c.notes_at) + ' by ' + h(c.presenter_name) : 'Rating them confirms they were in the room') + '</p>';
   } else {
     html += (c.p_why_sales || c.p_why_sales_note || c.p_interesting
-      ? '<div class="qa"><div class="qq">💬 Why work in sales?</div><div class="aa">' + (h([c.p_why_sales, c.p_why_sales_note].filter(String).join(' — ')) || '<span class="muted">—</span>') + '</div></div>' +
+      ? '<div class="qa"><div class="qq">💬 Why work in sales?</div><div class="aa">' + (h(c.p_why_sales_note || c.p_why_sales) || '<span class="muted">—</span>') + '</div></div>' +
         '<div class="qa"><div class="qq">✨ Something interesting about them</div><div class="aa">' + (h(c.p_interesting) || '<span class="muted">—</span>') + '</div></div><hr>'
       : '') +
       '<dl class="kv">' + kv('In the room', c.in_room ? 'Yes' : 'Not rated yet') + kv('Recommendation', { G: 'Green', A: 'Amber', R: 'Red' }[c.rag] || '') +
@@ -1241,10 +1240,10 @@ function renderCandidate(c, quiet) {
     pres.querySelectorAll('.stars button').forEach(b => { b.onclick = () => { st.stars = Number(b.dataset.s); pres.querySelectorAll('.stars button').forEach(x => x.classList.toggle('on', Number(x.dataset.s) <= st.stars)); }; });
     document.getElementById('savenotes').onclick = () => {
       const payload = { id: c.id, in_room: !!c.in_room, rag: st.rag || '', stars: st.stars, tags: chipVals(pres, 'tags'), notes: document.getElementById('notes').value,
-        why: chipVals(pres, 'why'), why_note: document.getElementById('whynote').value, interesting: document.getElementById('interesting').value };
+        why_note: document.getElementById('whynote').value, interesting: document.getElementById('interesting').value };
       const local = Object.assign({}, c, {
         rag: payload.rag, stars: payload.stars ? String(payload.stars) : '', tags: payload.tags.join(', '), notes: payload.notes,
-        p_why_sales: payload.why.join(', '), p_why_sales_note: payload.why_note, p_interesting: payload.interesting,
+        p_why_sales_note: payload.why_note, p_interesting: payload.interesting,
         in_room: (c.in_room || payload.rag || payload.stars) ? 'TRUE' : '', presenter_id: S.me.user.id, presenter_name: S.me.user.name, notes_at: londonNow(),
       });
       queueSave('saveNotes', payload, local, 'Notes saved ✓');
