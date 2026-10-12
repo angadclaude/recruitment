@@ -202,7 +202,8 @@ async function fillEval(p) {
   await fillEval(cp);
   await shot(cp, '05-evaluation', true);
   await cp.click('#go');
-  await cp.waitForSelector('text=Fiza will give you a call');
+  await cp.waitForSelector('text=Thank you, Jasraj!');
+  ok(/by close of business on Friday 6PM/.test(await cp.innerText('body')), 'after the evaluation: "Thank you, Jasraj!" + contact by Friday 6PM');
   await shot(cp, '06-eval-done');
   ok((await pushesTo(fiza.id)).some(p => /evaluation is in/.test(p.body.headings.en) && /\?c=/.test(p.body.web_url)), 'PUSH → booker: "evaluation is in" (opens the snapshot)');
   ok((await getJson('/dev/mail')).filter(m => /evaluation/.test(m.subject)).length === 0, 'no email sent when push is set up');
@@ -218,6 +219,13 @@ async function fillEval(p) {
   await p2.waitForSelector('text=Your evaluation, Adham');
   ok(true, 'different phone: evaluation QR finds Adham by mobile number');
   await p2c.close();
+  // Same person scans the evaluation QR again after sending it → told it's already done (not a confusing "thank you")
+  const p2d = await browser.newContext(PHONE);
+  const p2e = await p2d.newPage();
+  await p2e.goto(APP + 'eval.html'); await p2e.fill('#m', '07700 900123'); await p2e.click('#go');
+  await p2e.waitForSelector('text=Already done, Jasraj');
+  ok(/already sent your evaluation today/.test(await p2e.innerText('body')), 'evaluation sent already → "Already done, Jasraj. You\'ve already sent your evaluation today."');
+  await p2d.close();
 
   // Never checked in → evaluation QR offers check-in, then evaluation straight after
   const p3c = await browser.newContext(PHONE);
