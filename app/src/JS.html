@@ -19,6 +19,7 @@ function toast(msg) {
   clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, 2600);
 }
 const CFG = window.APP_CONFIG || {};
+const BA_REFERRAL = 'Friend who works here (BA referral)';
 function call(action, payload) {
   const req = Object.assign({}, payload || {}, { action: action, token: S.token });
   let p;
@@ -118,7 +119,7 @@ function loadCheckin(then) {
 
 function renderCheckin(then) {
   scrollTop();
-  const sources = ['Indeed', 'TikTok', 'Instagram', 'Facebook', 'LinkedIn', 'Friend / referral', 'Other'];
+  const sources = ['Indeed', 'TikTok', 'Instagram', 'Facebook', 'LinkedIn', BA_REFERRAL, 'Other'];
   $app.innerHTML = logos(56) +
     (then === 'eval' ? '<h1>Quick check-in first 👋</h1><p class="muted">We couldn\'t find you, so fill this in, then your evaluation opens straight after.</p>'
       : '<h1>Welcome — let\'s check you in 👋</h1><p class="muted">Takes about a minute.</p>') +
@@ -986,21 +987,28 @@ function viewPay(quiet) {
 
 // ───── Bulletins (admins): the daily stats poster and the weekly top 5, shared to WhatsApp in one tap ─────
 const BULL_DEFAULTS = { mission: '200', plan: '80', tag: '#PLAN1', cash: '50' };
+/** BAR = BA Referral: a BA referred a friend (refer a friend → friend does 10 sign-ups → £100). Picked by the candidate at check-in. */
+function isBar(c) { return /BA referral|^Friend \/ referral$/i.test(c.source || ''); }
 const TAGLINE = 'Great energy today, team! Let\'s keep the momentum rolling!';
 const TAGLINE_FRI = 'Great energy today, team! Let\'s keep the momentum rolling over the weekend ready for a big week next week!!';
 function inRoom(c) { return c.in_room === true || c.in_room === 'TRUE'; }
 function joinAnd(a) { return a.length < 2 ? a.join('') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1]; }
 /** Poster numbers, on the same rules as Pay: rated by the presenter, Mon–Fri, and only people who count. */
-function bulletinNumbers(items, day) {
+function bulletinNumbers(items, day, prevItems) {
   const we = weekEndingOf(day), week = [6, 5, 4, 3, 2].map(n => addDays(we, -n));
   const att = items.filter(inRoom), today = att.filter(c => c.attended_date === day), inWeek = att.filter(c => week.indexOf(c.attended_date) >= 0);
+  const twoWeeks = inWeek.concat((prevItems || []).filter(inRoom));
   // First names, unless two people on the team share one (then the full name)
   const firsts = {};
   (S.users || []).map(u => u.name).concat(items.map(c => c.booker_name)).forEach(n => { if (n) { const f = n.split(' ')[0].toLowerCase(); (firsts[f] = firsts[f] || {})[n] = 1; } });
   const short = n => (Object.keys(firsts[n.split(' ')[0].toLowerCase()] || {}).length > 1 ? n : n.split(' ')[0]);
   const tally = list => {
     const m = {};
-    list.forEach(c => { if (c.pay_reason || !c.booker_name) return; const k = c.booker_id || c.booker_name; (m[k] = m[k] || { key: k, name: short(c.booker_name), n: 0 }).n++; });
+    list.forEach(c => {
+      if (c.pay_reason || !c.booker_name) return;
+      const k = c.booker_id || c.booker_name, r = (m[k] = m[k] || { key: k, name: short(c.booker_name), n: 0, bars: 0 });
+      r.n++; if (isBar(c)) r.bars++;
+    });
     return Object.keys(m).map(k => m[k]).sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
   };
   const noBooker = list => list.filter(c => !c.pay_reason && !c.booker_name).length;
@@ -1010,6 +1018,7 @@ function bulletinNumbers(items, day) {
     unrated: items.filter(c => c.attended_date === day && !inRoom(c)).length,
     noBooker: noBooker(today), weekNoBooker: noBooker(inWeek),
     today: tally(today), week: tally(inWeek), weekAttended: inWeek.length,
+    bars2w: tally(twoWeeks).filter(r => r.bars).sort((a, b) => b.bars - a.bars), twoWeeksKnown: !!prevItems,
   };
 }
 function bulletinWording(n) {
@@ -1019,24 +1028,27 @@ function bulletinWording(n) {
     msgs: [
       (n.week.some(r => r.n >= n.target) ? 'Well done to those who hit qualified for the weekly recruitment incentive!' : 'The weekly recruitment incentive is still up for grabs!') +
         (close.length ? ' Great effort {' + joinAnd(close) + '}, so close!' : ''),
-      top ? 'Big shout out to {' + top.name + '} leading the way with {' + top.n + '} this week!!' : 'Big shout out to everyone booking this week!!',
+      n.bars2w.length ? 'Big shout out to {' + n.bars2w[0].name + '} shooting for the BAR incentive after having {' + n.bars2w[0].bars + ' BAR' + (n.bars2w[0].bars > 1 ? 's' : '') + '} over the past ' + (n.twoWeeksKnown ? '2 weeks' : 'week') + '!!'
+        : top ? 'Big shout out to {' + top.name + '} leading the way with {' + top.n + '} this week!!' : 'Big shout out to everyone booking this week!!',
       'Let\'s have a big Monday next week\nhave a great weekend team!!',
     ],
   };
 }
 function viewBulletin() {
   const day = S.params.day || S.day, kind = S.params.kind === 'weekly' ? 'weekly' : 'daily';
-  const we = weekEndingOf(day), d = want(we);
+  const we = weekEndingOf(day), d = want(we), prev = kind === 'weekly' ? want(addDays(we, -7)) : null;
   if (!S.users && !S.usersAsked) { S.usersAsked = true; fetchWeek(we, { withUsers: true }).then(() => { if (S.view === 'bulletin') render(true); }).catch(() => {}); }
   const seg = '<div class="seg bullseg" id="bkind"><button data-k="daily" class="' + (kind === 'daily' ? 'on' : '') + '">📊 ' + DAYS[D(day).getUTCDay()] + ' ' + fmt(day).split(' ').slice(1).join(' ') + '</button>' +
     '<button data-k="weekly" class="' + (kind === 'weekly' ? 'on' : '') + '">🏆 Week top 5</button></div>';
   if (!window.JLBulletin) return paint('Bulletin', '<div class="err">Bulletins work in the installed app. Open it from your home-screen icon.</div>', false, true);
   if (!d) return bindBullSeg(paint('Bulletin', seg + skeleton(3), false, true), day);
-  const n = bulletinNumbers(d.items, day);
-  const key = kind + day;
-  if (!S.bull || S.bull.key !== key) S.bull = Object.assign({ key: key }, bulletinWording(n));
+  const n = bulletinNumbers(d.items, day, prev && prev.items);
+  const key = kind + day + (prev ? '+' : '');
+  // Fresh wording when the day/kind changes, or once last week's numbers arrive (unless already edited)
+  if (!S.bull || (S.bull.key !== key && !(S.bull.edited && S.bull.key.replace('+', '') === key.replace('+', '')))) S.bull = Object.assign({ key: key }, bulletinWording(n));
   const o = Object.assign({}, BULL_DEFAULTS, store.get('bullOpts') || {});
-  const bar = store.get('bullBar') || {};
+  const barSet = () => { const ov = (store.get('barTags') || {})[day] || {}; const m = {}; n.today.forEach(r => { m[r.key] = r.key in ov ? ov[r.key] : r.bars > 0; }); return m; };
+  const bar = barSet();
   const warn = [];
   if (kind === 'daily' && n.unrated) warn.push(n.unrated + ' checked in but not rated by the presenter yet, so not counted.');
   if (kind === 'daily' ? n.noBooker : n.weekNoBooker) warn.push((kind === 'daily' ? n.noBooker : n.weekNoBooker) + ' with no confirmed booker, so not on the poster. Assign them in Pay.');
@@ -1044,7 +1056,7 @@ function viewBulletin() {
   const edit = '<details class="card" id="bedit"><summary><b>✏️ Edit wording</b> <span class="small muted">· optional</span></summary>' +
     (kind === 'daily'
       ? field('btag', 'Message under the date', S.bull.tagline, true) +
-        (n.today.length ? '<label class="q">Tag as (BAR)</label><div class="chips" id="bbar">' + n.today.slice(0, 6).map(r => '<button class="chip' + (bar[r.key] ? ' on' : '') + '" data-k="' + h(r.key) + '">' + h(r.name) + '</button>').join('') + '</div>' : '')
+        (n.today.length ? '<label class="q">(BAR) BA referral</label><p class="hint" style="margin:0 0 8px">Set automatically when the candidate picked "BA referral" at check-in. Tap to change.</p><div class="chips" id="bbar">' + n.today.slice(0, 6).map(r => '<button class="chip' + (bar[r.key] ? ' on' : '') + '" data-k="' + h(r.key) + '">' + h(r.name) + '</button>').join('') + '</div>' : '')
       : field('bm0', '🏆 Yellow box', S.bull.msgs[0], true) + field('bm1', '🎯 Blue box', S.bull.msgs[1], true) + field('bm2', '🚀 Green box', S.bull.msgs[2], true) +
         '<p class="hint">Put {curly brackets} around words to colour them.</p>') +
     '<div class="bullopts">' + field('bmis', 'Mission', o.mission) + field('bplan', 'Plan', o.plan) + field('bhash', 'Hashtag', o.tag) + field('bcash', 'Cash £', o.cash) + '</div>' +
@@ -1058,7 +1070,7 @@ function viewBulletin() {
     const opts = Object.assign({}, BULL_DEFAULTS, store.get('bullOpts') || {}, { tagline: S.bull.tagline });
     const data = kind === 'daily'
       ? { day: day, weekday: n.weekday, target: n.target, attended: n.attended, nonQual: n.nonQual, weekTotal: n.weekday === 5 ? n.weekAttended : null,
-          rows: JLBulletin.dailyRows(n.today.map(r => Object.assign({}, r, { bar: !!(store.get('bullBar') || {})[r.key] }))) }
+          rows: JLBulletin.dailyRows(n.today.map(r => Object.assign({}, r, { bar: !!barSet()[r.key] }))) }
       : { target: n.target, rows: JLBulletin.weeklyRows(n.week, n.target), msgs: S.bull.msgs };
     return JLBulletin.load('').then(assets => new Promise(res => {
       const cv = JLBulletin.draw(document.createElement('canvas'), kind, data, opts, assets);
@@ -1090,11 +1102,18 @@ function viewBulletin() {
     } else { document.getElementById('bsave').click(); toast('Saved. Open WhatsApp and attach the image.'); }
   };
   const on = (id, fn) => { const el = document.getElementById(id); if (el) el.oninput = () => { fn(el.value); redraw(); }; };
-  on('btag', v => { S.bull.tagline = v; });
-  [0, 1, 2].forEach(i => on('bm' + i, v => { S.bull.msgs[i] = v; }));
+  on('btag', v => { S.bull.tagline = v; S.bull.edited = true; });
+  [0, 1, 2].forEach(i => on('bm' + i, v => { S.bull.msgs[i] = v; S.bull.edited = true; }));
   [['bmis', 'mission'], ['bplan', 'plan'], ['bhash', 'tag'], ['bcash', 'cash']].forEach(f => on(f[0], v => { const x = store.get('bullOpts') || {}; x[f[1]] = v.trim(); store.set('bullOpts', x); }));
-  page.querySelectorAll('#bbar .chip').forEach(c => { c.onclick = () => { const x = store.get('bullBar') || {}; x[c.dataset.k] = !x[c.dataset.k]; if (!x[c.dataset.k]) delete x[c.dataset.k]; store.set('bullBar', x); c.classList.toggle('on'); redraw(); }; });
-  document.getElementById('breset').onclick = () => { S.bull = null; store.del('bullOpts'); render(); };
+  page.querySelectorAll('#bbar .chip').forEach(c => {
+    c.onclick = () => {
+      const all = store.get('barTags') || {}, k = c.dataset.k;
+      all[day] = all[day] || {}; all[day][k] = !barSet()[k];
+      Object.keys(all).sort().slice(0, -14).forEach(x => { delete all[x]; });  // keep the last 2 weeks only
+      store.set('barTags', all); c.classList.toggle('on', all[day][k]); redraw();
+    };
+  });
+  document.getElementById('breset').onclick = () => { S.bull = null; store.del('bullOpts'); const t = store.get('barTags') || {}; delete t[day]; store.set('barTags', t); render(); };
 }
 function bindBullSeg(page, day) {
   page.querySelectorAll('#bkind button').forEach(b => { b.onclick = () => { if (!b.classList.contains('on')) { S.params = { day: day, kind: b.dataset.k }; hist('replace', { v: 'bulletin', p: S.params }); render(); } }; });
