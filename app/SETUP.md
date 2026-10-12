@@ -51,17 +51,19 @@ Open [`join/config.js`](../join/config.js) on GitHub → ✏️ edit → paste t
 
 ## Part C. OneSignal: phone notifications (10 min)
 
-1. Sign up free at **onesignal.com** → **New App** → name it *LINK × JUSS Recruitment* → choose **Web**.
+1. Sign up free at **onesignal.com** (click the link in OneSignal's confirmation email) → **New App** → name it *LINK × JUSS Recruitment* → choose **Web**.
 2. **Typical Site** setup:
    - Site name: `Recruitment` · Site URL: `https://angadclaude.github.io`
    - Default icon: upload [`assets/icon-192.png`](assets/icon-192.png)
    - **Advanced → Service worker:** path `/recruitment/join/`, filename `OneSignalSDKWorker.js`, scope `/recruitment/join/`
    - Skip the "add code to site" step. It's already built in.
-3. **Settings → Keys & IDs** → copy the **App ID** and the **REST API Key**.
+3. **Settings → Keys & IDs** → copy the **App ID**. Click **Add key** to create the **REST API Key**, and copy it straight away: it's only shown once.
 4. Paste the **App ID** into [`join/config.js`](../join/config.js) after `ONESIGNAL_APP_ID:` → Commit.
 5. In Apps Script: ⚙️ **Project Settings → Script properties → Add**:
    - `ONESIGNAL_APP_ID` = the App ID
    - `ONESIGNAL_API_KEY` = the REST API Key *(this one is secret, so it lives only in Google, never on GitHub)*
+   - The property name goes in the left box and the value in the right box. Keep the existing `SS_ID` row.
+6. Test it: open the app from the home-screen icon → tap **Turn on**. Your phone gets OneSignal's "Thanks for subscribing!" alert. Check someone in with you as booker, and your phone buzzes "🙌 … just checked in".
 
 Until Part C is done, alerts go by email instead. Nothing breaks.
 
@@ -78,6 +80,8 @@ Until Part C is done, alerts go by email instead. Nothing breaks.
 > **Android:** Chrome menu ⋮ → *Install app* → tap **Turn on** for alerts.
 
 **iPhone users must open it from the home-screen icon.** Apple only allows notifications for web apps added to the home screen (iOS 16.4+).
+
+**Check each person before they leave the room:** tap their initials (top right). It must say **Alerts: on ✅**. If it says anything else, that line tells you what's wrong. Anyone who isn't on gets alerts by email only. Once a week, compare OneSignal → **Audience → Subscriptions** with the Team list.
 
 ## Part E. The slides
 Put the two QR codes on the presentation once. They never change:
