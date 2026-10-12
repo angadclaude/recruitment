@@ -152,7 +152,7 @@ async function fillEval(p) {
   // More candidates (API) — mirrors the handwritten sheet
   const ci = form => api('', 'checkin', { form: Object.assign({ over18: 'Yes', privacy_ok: true, source: 'Indeed', rtw: 'British or Irish citizen' }, form) });
   const ishita = await ci({ full_name: 'Ishita Rani', mobile: '07700900200', email: 'ishita@example.com', booker_id: mo.id, rtw: 'Student visa (Tier 4)' });
-  const adham = await ci({ full_name: 'Adham Soliman', mobile: '07700900300', email: 'adham@example.com', booker_id: abd.id });
+  const adham = await ci({ full_name: 'Adham Soliman', mobile: '07700900300', email: 'adham@example.com', booker_id: abd.id, source: 'Friend who works here (BA referral)' });
   const ali = await ci({ full_name: 'Ali Yilmaz', mobile: '+44 7700 900400', email: 'ali@example.com', booker_typed: 'Ian' });
   const jag = await ci({ full_name: 'Jagpreet Kular', mobile: '07700900999', email: 'jag@example.com', booker_id: abd.id });
   const seven = await ci({ full_name: 'Seven Months', mobile: '07700900777', email: 'seven@example.com', booker_id: mo.id });
@@ -440,18 +440,21 @@ async function fillEval(p) {
   ok(bi.kind === 'daily' && bi.attended === monday.length && bi.nonQual === monday.filter(c => c.pay_reason).length && bi.nonQual > 0,
     'daily bulletin: ' + bi.attended + ' attended, ' + bi.nonQual + ' non-qualifiers (rated only, same rules as Pay)');
   const expRows = pay.rows.filter(r => r.net > 0).sort((a, b) => b.net - a.net).map(r => r.name.split(' ')[0] + ' ' + r.net);
-  ok(JSON.stringify(bi.rows.map(r => r.replace(/^\S+ /, ''))) === JSON.stringify(expRows) && /^🥇 /.test(bi.rows[0]), 'top performers match Pay, gold for #1: ' + bi.rows.join(' · '));
+  ok(JSON.stringify(bi.rows.map(r => r.replace(/^\S+ /, '').replace(/ BAR$/, ''))) === JSON.stringify(expRows) && /^🥇 /.test(bi.rows[0]), 'top performers match Pay, gold for #1: ' + bi.rows.join(' · '));
   ok(await ap.$eval('#bimg', i => i.complete && i.naturalWidth === 1536 && i.naturalHeight === 2304), 'poster image made on the phone (1536×2304)');
   const saveImg = async f => fs.writeFileSync(`${SHOTS}/${f}`, Buffer.from(await ap.$eval('#bimg', i => fetch(i.src).then(r => r.arrayBuffer()).then(b => Array.from(new Uint8Array(b))))));
   await saveImg('15-bulletin-daily.jpg');
   await shot(ap, '15b-bulletin-screen');
+  ok(/Abdullahi 1 BAR$/.test(bi.rows[1]) && !/BAR/.test(bi.rows[0]), '(BAR) added automatically for a "BA referral" check-in (Adham → Abdullahi)');
   await ap.click('#bedit summary'); await ap.click('#bbar .chip');
-  await ap.waitForFunction(() => /BAR/.test(document.getElementById('bimg').dataset.info), null, { timeout: 5000 });
-  ok(/BAR$/.test((await bInfo()).rows[0]), 'tap a name → (BAR) tag added to the poster');
+  await ap.waitForFunction(() => /Fiza 2 BAR/.test(document.getElementById('bimg').dataset.info), null, { timeout: 5000 });
+  ok(/BAR$/.test((await bInfo()).rows[0]), 'admin can still tap a name to add/remove (BAR)');
   await ap.click('#bkind button[data-k=weekly]');
   await ap.waitForFunction(() => /weekly/.test((document.getElementById('bimg') || {}).dataset ? document.getElementById('bimg').dataset.info || '' : ''), null, { timeout: 10000 });
   bi = await bInfo();
   ok(bi.rows[0] === '🥇 ' + expRows[0], 'Week top 5 poster: ' + bi.rows.join(' · '));
+  const blue = await ap.inputValue('#bm1').catch(async () => { await ap.click('#bedit summary'); return ap.inputValue('#bm1'); });
+  ok(/Abdullahi.*BAR incentive.*1 BAR/.test(blue), 'blue box writes itself: "' + blue + '"');
   await saveImg('16-bulletin-week.jpg');
   const [dl] = await Promise.all([ap.waitForEvent('download'), ap.click('#bshare')]);
   ok(dl.suggestedFilename() === 'JL-top5-2026-10-18.jpg', 'Share → image ready for WhatsApp (saved where sharing isn\'t available)');
