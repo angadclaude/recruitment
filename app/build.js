@@ -20,6 +20,7 @@ const files = {
   'app.js': inner(read('JS.html'), 'script'),
   'logos.js': inner(read('Logos.html'), 'script'),
   'qr.js': inner(read('QR.html'), 'script'),
+  'bulletin.js': inner(read('Bulletin.html'), 'script'),
 };
 const v = crypto.createHash('sha1').update(Object.values(files).join('')).digest('hex').slice(0, 8);
 files['app.js'] = 'window.APP_VERSION = \'' + v + '\';\n' + files['app.js'];
@@ -78,6 +79,7 @@ function page(opts) {
       s.onerror = function () { window.__osLoadErr = true; }; document.head.appendChild(s);
     }
   </script>` : ''}
+  ${staff ? `<script src="bulletin.js?v=${v}"></script>` : ''}
   <script src="app.js?v=${v}"></script>
 </body>
 </html>
@@ -100,8 +102,8 @@ write('manifest.webmanifest', JSON.stringify({
   start_url: './index.html', scope: './', display: 'standalone',
   background_color: '#F6F4F1', theme_color: '#F15A24',
   icons: [
-    { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
-    { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
+    { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+    { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
   ],
 }, null, 2));
 // One service worker does both jobs: OneSignal push + keeping the app on the phone so it opens
@@ -112,7 +114,7 @@ try { importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js')
 // Pages (and config) come from the network first, so a new version shows up on the very next open;
 // the phone's copy is only used when there's no signal. Versioned files (?v=…) and images are safe to serve from the copy.
 const CACHE = 'recruit-${v}';
-const SHELL = ['index.html', 'checkin.html', 'eval.html', 'app.css?v=${v}', 'app.js?v=${v}', 'logos.js?v=${v}', 'qr.js?v=${v}',
+const SHELL = ['index.html', 'checkin.html', 'eval.html', 'app.css?v=${v}', 'app.js?v=${v}', 'logos.js?v=${v}', 'qr.js?v=${v}', 'bulletin.js?v=${v}',
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-180.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -149,6 +151,8 @@ self.addEventListener('fetch', e => {
 `);
 
 ['icon-180.png', 'icon-192.png', 'icon-512.png'].forEach(f => copy(path.join(ASSETS, f), 'icons/' + f));
-['poster-link.jpg', 'poster-juss.jpg', 'og-link.jpg', 'og-juss.jpg'].forEach(f => copy(path.join(ASSETS, f), 'img/' + f));
+['poster-link.jpg', 'poster-juss.jpg', 'og-link.jpg', 'og-juss.jpg', 'logo-juss.png', 'logo-link.png'].forEach(f => copy(path.join(ASSETS, f), 'img/' + f));
+// Bulletin fonts (Oswald + Anton, SIL Open Font License, see fonts/OFL.txt)
+fs.readdirSync(path.join(ASSETS, 'fonts')).forEach(f => copy(path.join(ASSETS, 'fonts', f), 'fonts/' + f));
 
 console.log('Built ' + OUT + ' (v' + v + ') for ' + BASE);

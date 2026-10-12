@@ -251,6 +251,7 @@ async function fillEval(p) {
   const tCand = Date.now() - t0;
   ok(tCand < 500, 'candidate page opens instantly from the phone\'s copy (' + tCand + 'ms)');
   await pp.goBack(); await pp.waitForSelector('.kpis');
+  ok(!(await pp.$('#bullDaily')), "presenters don't see the bulletin buttons (admins only)");
   await post('/dev/delay', { ms: 0 });
   ok(true, 'phone back button returns to the list');
 
@@ -427,6 +428,34 @@ async function fillEval(p) {
   await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button');
   await ap.click('.tabbar button[data-tab=pay]'); await ap.waitForSelector('.payrow');
   await shot(ap, '14-admin-pay', true);
+
+  // ── Bulletins: one tap for admins, same numbers as Pay ──
+  await ap.click('.tabbar button[data-tab=today]'); await ap.waitForSelector('#bullDaily');
+  for (let i = 0; i < 6; i++) await ap.click('#dprev');
+  await ap.click('#bullDaily');
+  await ap.waitForSelector('#bimg[data-info]', { timeout: 15000 });
+  const bInfo = async () => JSON.parse(await ap.getAttribute('#bimg', 'data-info'));
+  const monday = (await api(admin, 'listWeek', { weekEnding: '2026-10-18' })).items.filter(c => c.attended_date === '2026-10-12' && (c.in_room === true || c.in_room === 'TRUE'));
+  let bi = await bInfo();
+  ok(bi.kind === 'daily' && bi.attended === monday.length && bi.nonQual === monday.filter(c => c.pay_reason).length && bi.nonQual > 0,
+    'daily bulletin: ' + bi.attended + ' attended, ' + bi.nonQual + ' non-qualifiers (rated only, same rules as Pay)');
+  const expRows = pay.rows.filter(r => r.net > 0).sort((a, b) => b.net - a.net).map(r => r.name.split(' ')[0] + ' ' + r.net);
+  ok(JSON.stringify(bi.rows.map(r => r.replace(/^\S+ /, ''))) === JSON.stringify(expRows) && /^🥇 /.test(bi.rows[0]), 'top performers match Pay, gold for #1: ' + bi.rows.join(' · '));
+  ok(await ap.$eval('#bimg', i => i.complete && i.naturalWidth === 1536 && i.naturalHeight === 2304), 'poster image made on the phone (1536×2304)');
+  const saveImg = async f => fs.writeFileSync(`${SHOTS}/${f}`, Buffer.from(await ap.$eval('#bimg', i => fetch(i.src).then(r => r.arrayBuffer()).then(b => Array.from(new Uint8Array(b))))));
+  await saveImg('15-bulletin-daily.jpg');
+  await shot(ap, '15b-bulletin-screen');
+  await ap.click('#bedit summary'); await ap.click('#bbar .chip');
+  await ap.waitForFunction(() => /BAR/.test(document.getElementById('bimg').dataset.info), null, { timeout: 5000 });
+  ok(/BAR$/.test((await bInfo()).rows[0]), 'tap a name → (BAR) tag added to the poster');
+  await ap.click('#bkind button[data-k=weekly]');
+  await ap.waitForFunction(() => /weekly/.test((document.getElementById('bimg') || {}).dataset ? document.getElementById('bimg').dataset.info || '' : ''), null, { timeout: 10000 });
+  bi = await bInfo();
+  ok(bi.rows[0] === '🥇 ' + expRows[0], 'Week top 5 poster: ' + bi.rows.join(' · '));
+  await saveImg('16-bulletin-week.jpg');
+  const [dl] = await Promise.all([ap.waitForEvent('download'), ap.click('#bshare')]);
+  ok(dl.suggestedFilename() === 'JL-top5-2026-10-18.jpg', 'Share → image ready for WhatsApp (saved where sharing isn\'t available)');
+  await ap.click('#abBack'); await ap.waitForSelector('#bullDaily');
 
   // ── 8. Check-in outside hours: accepted, flagged amber for admins only ──
   await setTime('2026-10-19T21:00:00+01:00');
