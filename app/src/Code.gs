@@ -24,6 +24,7 @@ const CONFIG = {
   ACADEMY_SIGNOFF: { LINK: 'Jess', JUSS: 'Rubal' }, // who signs the BA Academy WhatsApp, whoever sends it
   EMAIL_ALERTS: false,            // true = also email every alert. Push is used when OneSignal keys are set.
   SESSION_DAYS: 30,               // staff stay logged in for this long
+  SHEET_ID: '',                   // the data Sheet; only needed if this script isn't opened from the Sheet itself
   HISTORY_SOURCE_ID: '1SjfhyQw-mnJY3iT8Q7p50795kP4DySJFx9fVcEEB_P8', // old Google Form sheet
   HISTORY_SOURCE_TAB: 'Form Responses 1',
 };
@@ -83,11 +84,23 @@ const SHEETS = {
 // ───────────────────────── WEB APP ─────────────────────────
 function doGet(e) {
   const p = (e && e.parameter) || {};
-  const t = HtmlService.createTemplateFromFile('Index');
-  t.mode = p.app === 'staff' ? 'staff' : (['eval', 'welcome'].indexOf(p.go) >= 0 ? p.go : 'checkin');
-  t.k = p.t || '';
-  t.cid = p.c || '';
-  return t.evaluate()
+  const mode = p.app === 'staff' ? 'staff' : (['eval', 'welcome'].indexOf(p.go) >= 0 ? p.go : 'checkin');
+  let out;
+  if (CONFIG.PUBLIC_URL) {
+    // Only Code.gs is needed in Apps Script: the screens load from the app's own web address.
+    const b = CONFIG.PUBLIC_URL;
+    out = HtmlService.createHtmlOutput('<!DOCTYPE html><html><head><base target="_top"><meta charset="utf-8">' +
+      '<link rel="stylesheet" href="' + b + 'app.css"></head><body>' +
+      '<div id="boot" data-mode="' + esc(mode) + '" data-k="' + esc(p.t) + '" data-cid="' + esc(p.c) + '"></div>' +
+      '<div id="app"><div class="loading">Loading…</div></div><div id="toast" class="toast" hidden></div>' +
+      '<script src="' + b + 'logos.js"></script><script src="' + b + 'qr.js"></script><script src="' + b + 'app.js"></script></body></html>');
+  } else {
+    // No web address: serve the bundled HTML files (Index, Styles, JS, Logos, QR) from this project.
+    const t = HtmlService.createTemplateFromFile('Index');
+    t.mode = mode; t.k = p.t || ''; t.cid = p.c || '';
+    out = t.evaluate();
+  }
+  return out
     .setTitle(CONFIG.APP_NAME)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT);
@@ -860,7 +873,8 @@ function deleteWhere(name, pred) {
 // ───────────────────────── ONE-OFF SETUP (run from editor) ─────────────────────────
 /** Creates the tabs, your admin account and the scheduled alerts. Safe to run again. */
 function setup() {
-  const book = SpreadsheetApp.getActive();
+  const book = CONFIG.SHEET_ID ? SpreadsheetApp.openById(CONFIG.SHEET_ID) : SpreadsheetApp.getActive();
+  if (!book) throw new Error('Set CONFIG.SHEET_ID to the ID of the data Sheet.');
   PropertiesService.getScriptProperties().setProperty('SS_ID', book.getId());
   Object.keys(SHEETS).forEach(name => {
     let sh = book.getSheetByName(name);

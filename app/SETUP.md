@@ -1,4 +1,4 @@
-# Setting up the Recruitment App (about 40 minutes, one time)
+# Setting up the Recruitment App (about 25 minutes, one time)
 
 **How it fits together:**
 
@@ -12,28 +12,28 @@ Your app's address: **https://angadclaude.github.io/recruitment/join/**
 
 ---
 
-## Part A. Google: the data and the brain (20 min)
+## Part A. Google: the data and the brain (5 min)
 
-### A1. Create the Sheet
-Go to **sheets.new** → name it **Recruitment App — DO NOT EDIT**.
+### A1. Open the Sheet
+Already created in your Drive: **Recruitment App — DO NOT EDIT** (https://docs.google.com/spreadsheets/d/1QThJvy6l7HPrHQaa9jQst7tFmeCRqUZSWaI8oSxm--0/edit).
 
-### A2. Paste in the code
+### A2. Paste in the code (one file)
 1. In the Sheet: **Extensions → Apps Script**.
-2. Replace everything in `Code.gs` with [`src/Code.gs`](src/Code.gs).
-3. Add five HTML files (**＋ → HTML**, type the name exactly, paste the contents):
-   `Index` ← [`src/Index.html`](src/Index.html) · `Styles` ← [`src/Styles.html`](src/Styles.html) · `JS` ← [`src/JS.html`](src/JS.html) · `Logos` ← [`src/Logos.html`](src/Logos.html) · `QR` ← [`src/QR.html`](src/QR.html)
-4. ⚙️ **Project Settings → Time zone → London**. 💾 **Save**.
+2. Open https://raw.githubusercontent.com/angadclaude/recruitment/main/app/src/Code.gs in a new tab → **Ctrl/Cmd + A** → **Ctrl/Cmd + C**.
+3. Back in Apps Script, click inside `Code.gs` → **Ctrl/Cmd + A** → **Ctrl/Cmd + V** → 💾 **Save**.
 
 ### A3. Run setup
-Choose **`setup`** in the dropdown → **▶ Run** → allow the permissions (**Advanced → Go to project → Allow**).
+Choose **`setup`** in the dropdown → **▶ Run** → **Review permissions** → choose your account → **Advanced → Go to Untitled project (unsafe) → Allow**.
 This creates the tabs, the 4 admins (Angad, Jess, Satpal, Rubal) and the scheduled alerts.
 
 ### A4. Import the last 12 months (for repeat candidates)
 Choose **`importHistory`** → **▶ Run**.
 
 ### A5. Publish
-**Deploy → New deployment → ⚙️ Web app** → Execute as **Me**, Who has access **Anyone** → **Deploy**.
+**Deploy → New deployment → ⚙️ → Web app** → Execute as **Me**, Who has access **Anyone** → **Deploy**.
 Copy the **Web app URL** (ends in `/exec`). You need it in B2.
+
+*(Only using Google, without the GitHub web address? Set `PUBLIC_URL: ''` in Code.gs and also add the HTML files `Index`, `Styles`, `JS`, `Logos` and `QR` from `src/`.)*
 
 ---
 
