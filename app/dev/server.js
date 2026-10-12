@@ -10,6 +10,7 @@ const PORT = Number(process.argv[2] || 8787);
 const SRC = path.join(__dirname, '..', 'src');
 const JOIN = path.join(__dirname, '..', '..', 'join');
 const gas = load({ url: `http://localhost:${PORT}/exec` });
+let DELAY = 0;
 
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const SHIM = `<script>
@@ -40,8 +41,11 @@ http.createServer(async (req, res) => {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       return res.end(render(u.searchParams));
     }
+    if (u.pathname === '/dev/delay' && req.method === 'POST') { DELAY = (await body(req)).ms || 0; res.writeHead(200, { 'content-type': 'application/json' }); return res.end('{}'); }
     if (u.pathname === '/api' && req.method === 'POST') {
-      const r = gas.api(await body(req));
+      const b = await body(req);
+      if (DELAY) await new Promise(r => setTimeout(r, DELAY));  // simulate Google's real response time
+      const r = gas.api(b);
       res.writeHead(200, { 'content-type': 'application/json' });
       return res.end(JSON.stringify(r));
     }
