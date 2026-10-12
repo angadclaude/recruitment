@@ -343,7 +343,7 @@ function renderEval(edit) {
       }
       const btn = document.getElementById('go'); busy(btn, true, 'Sending…');
       callRetry('submitEval', { id: C.rec.id, resume: C.rec.resume, answers: a, edit: !!edit }, () => { btn.innerHTML = 'Busy, still sending… (your answers are safe)'; })
-        .then(r => { store.del('evaldraft_' + C.rec.id); renderDone(r.status === 'already' ? 'already' : r.status === 'edited' ? 'updated' : 'new', r.status !== 'already'); })
+        .then(r => { store.del('evaldraft_' + C.rec.id); renderDone(r.status === 'already' ? 'already' : r.status === 'edited' ? 'updated' : 'new', r.status === 'new' || r.status === 'edited'); })
         .catch(ex => { busy(btn, false); showErr(err, ex.message); });
     });
   };
@@ -965,7 +965,7 @@ function viewMine(quiet) {
     body = '<div class="hero"><div>' + ring(r.net, d.pay.target) + '</div><div class="hero-txt"><b>' + (left ? left + ' more to hit ' + d.pay.target : 'Target smashed 🔥') + '</b>' +
       '<span>' + r.attended + ' attended · ' + r.excluded.length + ' don\'t count</span>' +
       (r.excluded.length ? '<span class="small">' + r.excluded.map(x => h(x.name) + ' (' + h(x.why) + ')').join(' · ') + '</span>' : '') + '</div></div>' +
-      (toCall.length ? '<div class="section-h">📞 To call <span>log by ' + h(S.me.deadlineLabel || 'Fri ' + S.me.deadlineTime) + '</span></div><div class="list">' + toCall.map(c => item(c, true)).join('') + '</div>' : '') +
+      (toCall.length ? '<div class="section-h">📞 To call <span>log by ' + h(S.me.deadlineLabel || 'Sat ' + S.me.deadlineTime) + '</span></div><div class="list">' + toCall.map(c => item(c, true)).join('') + '</div>' : '') +
       (items.length > toCall.length ? '<div class="section-h">' + (toCall.length ? 'Everyone else' : 'This week') + '</div>' + groupByDate(items.filter(c => toCall.indexOf(c) < 0))
         : items.length ? '' : empty('🗓️', 'No candidates this week yet.'));
   }
