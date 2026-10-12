@@ -398,6 +398,9 @@ async function fillEval(p) {
   ok(await jp.$eval('.wl-poster img', i => i.complete && i.naturalWidth > 0 && /poster-juss/.test(i.src)), 'JUSS welcome page shows the JUSS Week 1 poster (your screenshot)');
   const jog = await (await fetch(jwurl.replace(PUBLIC, APP))).text();
   ok(jog.includes('og:image" content="' + PUBLIC + 'img/og-juss.jpg"'), 'JUSS WhatsApp link preview shows the JUSS poster card');
+  const appHtml = await (await fetch(APP + 'index.html')).text();
+  ok(appHtml.includes('og:title" content="Juss & Link Recruitment App"') && appHtml.includes('img/og-app.jpg') && appHtml.includes('apple-mobile-web-app-title" content="Juss & Link Recruitment App"'),
+    'sharing the app link shows "Juss & Link Recruitment App" + logo card; same name when added to the home screen');
 
   await ap.goto(APP + 'index.html?c=' + ishita.id);
   await ap.waitForSelector('#approve');

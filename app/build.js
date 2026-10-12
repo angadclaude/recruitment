@@ -6,6 +6,7 @@ const path = require('path');
 const crypto = require('crypto');
 
 const BASE = process.argv[2] || 'https://angadclaude.github.io/recruitment/join/';
+const APP_NAME = 'Juss & Link Recruitment App';  // what people see when the link is shared and under the icon
 const SRC = path.join(__dirname, 'src');
 const ASSETS = path.join(__dirname, 'assets');
 const OUT = path.join(__dirname, '..', 'join');
@@ -45,7 +46,7 @@ function page(opts) {
     `<meta property="og:description" content="${opts.og.desc}">`,
     `<meta property="og:image" content="${BASE}img/${opts.og.img}">`,
     `<meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">`,
-    `<meta property="og:url" content="${BASE}${opts.file}">`,
+    `<meta property="og:url" content="${BASE}${opts.file === 'index.html' ? '' : opts.file}">`,
     `<meta name="twitter:card" content="summary_large_image">`,
   ].join('\n  ') : '';
   const staff = opts.mode === 'staff';
@@ -60,7 +61,7 @@ function page(opts) {
   <meta name="robots" content="noindex, nofollow">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-180.png">
-  ${staff ? '<link rel="manifest" href="manifest.webmanifest">\n  <meta name="apple-mobile-web-app-capable" content="yes">\n  <meta name="apple-mobile-web-app-title" content="Recruitment">' : ''}
+  ${staff ? '<link rel="manifest" href="manifest.webmanifest">\n  <meta name="apple-mobile-web-app-capable" content="yes">\n  <meta name="apple-mobile-web-app-title" content="' + APP_NAME + '">\n  <meta name="application-name" content="' + APP_NAME + '">' : ''}
   ${og}
   <link rel="stylesheet" href="app.css?v=${v}">
 </head>
@@ -87,9 +88,10 @@ function page(opts) {
 }
 
 const pages = [
-  { file: 'index.html', mode: 'staff', title: 'LINK × JUSS Recruitment' },
-  { file: 'checkin.html', mode: 'checkin', title: 'Check in · LINK × JUSS' },
-  { file: 'eval.html', mode: 'eval', title: 'Your evaluation · LINK × JUSS' },
+  { file: 'index.html', mode: 'staff', title: APP_NAME,
+    og: { title: APP_NAME, desc: 'Bookers, presenters & admins: log in with your work email.', img: 'og-app.jpg' } },
+  { file: 'checkin.html', mode: 'checkin', title: 'Check in · Juss & Link' },
+  { file: 'eval.html', mode: 'eval', title: 'Your evaluation · Juss & Link' },
   { file: 'welcome-link.html', mode: 'welcome', title: "You're in! · LINK Marketing BA Academy",
     og: { title: "You're IN 🎉 LINK Marketing BA Academy", desc: 'Your Week 1 game plan + confirm your spot', img: 'og-link.jpg' } },
   { file: 'welcome-juss.html', mode: 'welcome', title: "You're in! · JUSS Marketing BA Academy",
@@ -98,7 +100,7 @@ const pages = [
 pages.forEach(p => write(p.file, page(p)));
 
 write('manifest.webmanifest', JSON.stringify({
-  name: 'LINK × JUSS Recruitment', short_name: 'Recruitment',
+  name: APP_NAME, short_name: APP_NAME,
   start_url: './index.html', scope: './', display: 'standalone',
   background_color: '#F6F4F1', theme_color: '#F15A24',
   icons: [
@@ -151,7 +153,7 @@ self.addEventListener('fetch', e => {
 `);
 
 ['icon-180.png', 'icon-192.png', 'icon-512.png'].forEach(f => copy(path.join(ASSETS, f), 'icons/' + f));
-['poster-link.jpg', 'poster-juss.jpg', 'og-link.jpg', 'og-juss.jpg', 'logo-juss.png', 'logo-link.png'].forEach(f => copy(path.join(ASSETS, f), 'img/' + f));
+['poster-link.jpg', 'poster-juss.jpg', 'og-link.jpg', 'og-juss.jpg', 'og-app.jpg', 'logo-juss.png', 'logo-link.png'].forEach(f => copy(path.join(ASSETS, f), 'img/' + f));
 // Bulletin fonts (Oswald + Anton, SIL Open Font License, see fonts/OFL.txt)
 fs.readdirSync(path.join(ASSETS, 'fonts')).forEach(f => copy(path.join(ASSETS, 'fonts', f), 'fonts/' + f));
 

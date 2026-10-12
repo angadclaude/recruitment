@@ -525,7 +525,7 @@ function startStaff() {
 
 function renderLogin() {
   stopTimer(); scrollTop();
-  $app.innerHTML = '<div class="login">' + logos(60) + '<div class="card"><h1>Staff login</h1><p class="muted">We\'ll email you a 6-digit code. No password needed.</p>' +
+  $app.innerHTML = '<div class="login">' + logos(60) + '<p class="appname">Juss &amp; Link Recruitment App</p><div class="card"><h1>Staff login</h1><p class="muted">We\'ll email you a 6-digit code. No password needed.</p>' +
     '<label class="q">Work email</label><input type="email" id="em" autocomplete="email" value="' + h(store.get('lastEmail') || '') + '">' +
     '<div id="codeBox" hidden><label class="q">6-digit code</label><input type="text" id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6"></div>' +
     '<div id="err"></div><button class="btn block" id="go" style="margin-top:14px">Email me a code</button></div></div>';
@@ -755,7 +755,7 @@ function refreshBars() {
   } else if (!IS_STANDALONE && INSTALL_EVT && !dismissed) {
     html = '<div class="pushbar"><div><b>📲 Install the app</b> for full screen + alerts.</div><button class="btn sm" id="barInstall">Install</button><button class="x" id="barX">✕</button></div>';
   } else if (PUSH.os && !PUSH.granted && pushBlocked()) {
-    html = '<div class="pushbar"><div>🔕 <b>Alerts are blocked.</b> Phone Settings → Notifications → Recruitment → Allow Notifications.</div></div>';
+    html = '<div class="pushbar"><div>🔕 <b>Alerts are blocked.</b> Phone Settings → Notifications → Juss &amp; Link Recruitment App → Allow Notifications.</div></div>';
   } else if (PUSH.os && !PUSH.granted) {
     html = '<div class="pushbar"><div>🔔 Turn on alerts so you never miss a check-in or evaluation.</div><button class="btn sm" id="pushon">Turn on</button></div>';
   }
