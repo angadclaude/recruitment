@@ -316,10 +316,11 @@ async function fillEval(p) {
   await ap.click('.tabs button[data-tab=pay]'); await ap.waitForSelector('table.t');
   await shot(ap, '14-admin-pay', true);
 
-  // ── 8. Check-in outside hours is refused (stops evening fake check-ins) ──
+  // ── 8. Check-in outside hours: accepted, flagged amber for admins only ──
   await setTime('2026-10-19T21:00:00+01:00');
-  let off = null; try { await ci({ full_name: 'Night Owl', mobile: '07700900111', email: 'n@example.com', booker_id: fiza.id }); } catch (e) { off = e.message; }
-  ok(/Check-in is open/.test(off || ''), 'check-in refused outside 07:00–17:00');
+  const owl = await ci({ full_name: 'Night Owl', mobile: '07700900111', email: 'n@example.com', booker_id: fiza.id });
+  ok(!!owl.id, 'check-in after 17:00 still goes through (candidate just sees "checked in")');
+  ok((await api(admin, 'getCandidate', { id: owl.id })).flags.some(f => /outside office hours/.test(f.text)), 'admin sees amber "checked in at 21:00 (outside office hours)"');
 
   // ── 9. Rejected person returns next week → red; scheduled pushes ──
   await setTime('2026-10-20T10:00:00+01:00');

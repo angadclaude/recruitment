@@ -16,7 +16,7 @@ const CONFIG = {
   REPEAT_DAYS: 183,               // "seen before" window: 6 months
   REPEAT_COUNTS_FOR_PAY: false,   // a repeat attendee (within REPEAT_DAYS) does not count
   RETENTION_DAYS: 365,            // candidate data auto-deleted after this
-  CHECKIN_FROM: '07:00',          // check-ins only accepted between these times (UK)
+  CHECKIN_FROM: '07:00',          // check-ins outside these times are flagged amber for admins (never blocked)
   CHECKIN_TO: '17:00',
   // Where the app lives for staff and candidates (the GitHub Pages / custom domain address, ending in /).
   // Leave '' to use the Google Apps Script link instead (no push notifications).
@@ -248,6 +248,8 @@ function flagsFor(c, isAdmin) {
   if (c.q11_coach && (c.q11_coach.indexOf('B)') === 0 || c.q11_coach.indexOf('C)') === 0)) amber('Coachability answer: ' + c.q11_coach.slice(3));
   if (!c.booker_id) amber('Booker not confirmed' + (c.booker_typed ? ' (typed "' + c.booker_typed + '")' : ''));
   if (isAdmin && c.q13_unspent === 'Yes') amber('Declared an unspent conviction');
+  const at = String(c.created_at || '').slice(11, 16);
+  if (isAdmin && at && (at < CONFIG.CHECKIN_FROM || at > CONFIG.CHECKIN_TO)) amber('Checked in at ' + at + ' (outside office hours)');
   if (truthy(c.outcome_late)) amber('Outcome logged late (after Sat ' + CONFIG.OUTCOME_DEADLINE_TIME + ')');
   if (c.q12_bdp_stage && c.q12_bdp_stage.indexOf('Ownership') >= 0) green('Future owner ambition');
   if (Number(c.stars) >= 4) green(c.stars + '★ from presenter');
@@ -344,13 +346,7 @@ function publicConfig(req) {
   return { today: todayStr(), bookers: bookers, rtw: RTW.map(r => ({ label: r[0], level: r[1] })) };
 }
 
-function checkinOpen() {
-  const t = nowStr().slice(11);
-  return t >= CONFIG.CHECKIN_FROM && t <= CONFIG.CHECKIN_TO;
-}
-
 function checkin(req) {
-  if (!checkinOpen()) throw new Error('Check-in is open ' + CONFIG.CHECKIN_FROM + '–' + CONFIG.CHECKIN_TO + ' on the day of your appointment.');
   const f = req.form || {};
   const name = cleanName(f.full_name);
   const mobile = normMobile(f.mobile);
