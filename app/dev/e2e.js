@@ -41,9 +41,9 @@ async function loginUi(page, email, url) {
   await page.waitForSelector('#codeBox:not([hidden])');
   await page.fill('#code', await lastCode(email));
   await page.click('#go');
-  await page.waitForSelector('.tabs');
+  await page.waitForSelector('.tabbar button');
 }
-const shot = (page, name, full) => page.screenshot({ path: `${SHOTS}/${name}.png`, fullPage: !!full });
+const shot = async (page, name, full) => { await page.waitForTimeout(300); return page.screenshot({ path: `${SHOTS}/${name}.png`, fullPage: !!full }); };
 const setTime = iso => post('/dev/time', { iso });
 const ok = (cond, msg) => { assert.ok(cond, msg); console.log('  ✓ ' + msg); };
 const pushesTo = async id => (await getJson('/dev/pushes')).filter(p => p.body.include_aliases.external_id.includes(id));
@@ -162,7 +162,7 @@ async function fillEval(p) {
   await pp.click('.chips[data-name=tags] .chip:has-text("Future owner")');
   await pp.fill('#notes', 'Southall. Likes performance-based earnings, looking for personal development + environment. Strong.');
   await pp.click('#savenotes');
-  await pp.waitForSelector('text=Last saved');
+  await pp.waitForSelector('text=In the room · saved');
   await shot(pp, '04-presenter-notes', true);
   ok((await api(admin, 'getCandidate', { id: (await api(admin, 'search', { q: 'Jasraj' })).items[0].id })).in_room === 'TRUE', 'rating Jasraj automatically confirmed "in the room"');
   for (const [c, rag] of [[ishita, 'R'], [adham, 'G'], [ali, 'A'], [jag, 'A'], [kid, 'R']]) {
@@ -215,6 +215,20 @@ async function fillEval(p) {
   await ev(ishita, { q13_unspent: 'Yes', q10_door: 'C) "Maybe this isn\'t for me."', q1_excitement: '5' });
   await ev(adham); await ev(ali); await ev(jag); await ev(kid);
 
+  // Speed: once loaded, switching tabs and opening a candidate needs no waiting on Google
+  await post('/dev/delay', { ms: 1500 });  // Google-like latency
+  let t0 = Date.now(); await pp.click('.tabbar button[data-tab=pay]'); await pp.waitForSelector('.payrow, .empty');
+  const tPay = Date.now() - t0;
+  t0 = Date.now(); await pp.click('.tabbar button[data-tab=today]'); await pp.waitForSelector('.kpis');
+  const tToday = Date.now() - t0;
+  ok(tPay < 500 && tToday < 500, 'tabs switch instantly even with 1.5s Google delay (Pay ' + tPay + 'ms, Today ' + tToday + 'ms)');
+  t0 = Date.now(); await pp.click('.item:has-text("Adham Soliman")'); await pp.waitForSelector('.profile h1:has-text("Adham Soliman")');
+  const tCand = Date.now() - t0;
+  ok(tCand < 500, 'candidate page opens instantly from the phone\'s copy (' + tCand + 'ms)');
+  await pp.goBack(); await pp.waitForSelector('.kpis');
+  await post('/dev/delay', { ms: 0 });
+  ok(true, 'phone back button returns to the list');
+
   // ── 4. Booker: snapshot → outcome → Gen Z WhatsApp with welcome link ──
   console.log('booker');
   const bk = await browser.newContext(PHONE);
@@ -224,7 +238,7 @@ async function fillEval(p) {
   await shot(bp, '08-booker-my-candidates', true);
   const mineTxt = await bp.innerText('body');
   ok(!/Adham|Ishita/.test(mineTxt), 'booker only sees their own candidates');
-  ok(/1\s*\/5/.test(mineTxt.replace(/\s+/g, ' ')), 'net attended 1/5 (under-18 not counted)');
+  ok(/4 more to hit 5/.test(mineTxt) && /1 don't count/.test(mineTxt), 'net attended 1/5 (under-18 not counted)');
   await bp.click('.item:has-text("Jasraj Bhuller")');
   await bp.waitForSelector('#saveout');
   const snap = await bp.innerText('body');
@@ -258,7 +272,7 @@ async function fillEval(p) {
   await wp.waitForSelector('text=You\'re locked in');
   await shot(wp, '11-welcome-confirmed');
   ok((await pushesTo(fiza.id)).some(p => /confirmed Day 1/.test(p.body.headings.en)), 'PUSH → booker: "Jasraj confirmed Day 1!"');
-  await bp.reload(); await bp.waitForSelector('.tabs');
+  await bp.reload(); await bp.waitForSelector('.tabbar button');
   await bp.click('.item:has-text("Jasraj Bhuller")');
   await bp.waitForSelector('text=confirmed Day 1 on their welcome page');
   ok(true, 'booker snapshot shows ✅ confirmed');
@@ -292,7 +306,7 @@ async function fillEval(p) {
   await ap.click('#reject');
   await ap.waitForSelector('text=Rejected by');
 
-  await ap.click('.tabs button[data-tab=team]');
+  await ap.click('.tabbar button[data-tab=team]');
   await ap.waitForSelector('#slideqr');
   await ap.click('#slideqr');
   await ap.waitForSelector('.qrcard img');
@@ -312,8 +326,8 @@ async function fillEval(p) {
   ok(prow('Fiza Iqbal').net === 2 && prow('Fiza Iqbal').late === 1, 'pay: Fiza net 2, 1 late');
   ok(prow('Mo Aden').net === 0, 'pay: Mo net 0 (Tier 4 excluded; Seven + Late Arrival not rated by presenter)');
   ok(prow('Abdullahi Ahmed').net === 1, 'pay: Abdullahi net 1 (Jagpreet repeat + removed)');
-  await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabs');
-  await ap.click('.tabs button[data-tab=pay]'); await ap.waitForSelector('table.t');
+  await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button');
+  await ap.click('.tabbar button[data-tab=pay]'); await ap.waitForSelector('.payrow');
   await shot(ap, '14-admin-pay', true);
 
   // ── 8. Check-in outside hours: accepted, flagged amber for admins only ──

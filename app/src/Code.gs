@@ -119,6 +119,7 @@ function include(name) {
 
 /** Single entry point for the browser: google.script.run.api({action, token, ...}) */
 function api(req) {
+  MEMO = {};
   try {
     const fn = PUBLIC_ACTIONS[req.action];
     if (fn) return { ok: true, data: fn(req) };
@@ -139,20 +140,25 @@ function ss() {
 }
 function sheet(name) { return ss().getSheetByName(name); }
 
+let MEMO = {};  // sheet reads cached for the length of one request
 function readTable(name) {
+  if (MEMO[name]) return MEMO[name];
   const sh = sheet(name);
   const values = sh.getDataRange().getValues();
   const headers = values.shift().map(String);
-  return values.map((r, i) => {
+  const rows = values.map((r, i) => {
     const o = { _row: i + 2 };
     headers.forEach((h, j) => { o[h] = r[j] === null || r[j] === undefined ? '' : String(r[j]); });
     return o;
   });
+  MEMO[name] = rows;
+  return rows;
 }
 function writeRow(name, obj) {
   const cols = SHEETS[name];
   const row = cols.map(c => (obj[c] === undefined || obj[c] === null) ? '' : String(obj[c]));
   sheet(name).getRange(obj._row, 1, 1, cols.length).setValues([row]);
+  delete MEMO[name];
 }
 function appendRow(name, obj) {
   const cols = SHEETS[name];
@@ -161,6 +167,7 @@ function appendRow(name, obj) {
   const r = sh.getLastRow() + 1;
   ensureRows(sh, r, cols.length);
   sh.getRange(r, 1, 1, cols.length).setValues([row]);
+  delete MEMO[name];
   obj._row = r;
   return obj;
 }
@@ -531,6 +538,15 @@ function listWeek(req, u) {
   return { weekEnding: we, items: rows.sort((a, b) => a.created_at.localeCompare(b.created_at)).map(c => shape(c, u)) };
 }
 
+/** Everything the staff app needs for a week in ONE request (the phone caches it). */
+function bundle(req, u) {
+  const we = req.weekEnding || weekEnding(todayStr());
+  const out = { weekEnding: we, items: listWeek({ weekEnding: we }, u).items, pay: payReport({ weekEnding: we }, u) };
+  if (req.withMe) out.me = me(req, u);
+  if (req.withUsers && isAdmin(u)) out.users = listUsers(req, u).users;
+  return out;
+}
+
 function search(req, u) {
   const q = String(req.q || '').trim().toLowerCase();
   if (q.length < 2) return { items: [] };
@@ -732,6 +748,7 @@ function deleteUser(req, u) {
       return { deleted: false, deactivated: true };
     }
     sheet('Users').deleteRow(rec._row);
+    delete MEMO.Users;
     log(u, 'user_delete', '', rec.name);
     return { deleted: true };
   });
@@ -743,7 +760,7 @@ const PUBLIC_ACTIONS = {
   welcomeInfo: welcomeInfo, confirmAcademy: confirmAcademy,
 };
 const STAFF_ACTIONS = {
-  me: me, listDay: listDay, listWeek: listWeek, search: search, getCandidate: getCandidate,
+  me: me, bundle: bundle, listDay: listDay, listWeek: listWeek, search: search, getCandidate: getCandidate,
   saveNotes: saveNotes, markInRoom: markInRoom, saveOutcome: saveOutcome,
   adminDecision: adminDecision, setPayExcluded: setPayExcluded, reassignBooker: reassignBooker,
   markSent: markSent, payReport: payReport, listUsers: listUsers, saveUser: saveUser, deleteUser: deleteUser,
@@ -863,6 +880,7 @@ function deleteWhere(name, pred) {
   const rows = readTable(name).filter(pred).map(r => r._row).sort((a, b) => b - a);
   const sh = sheet(name);
   rows.forEach(r => sh.deleteRow(r));
+  delete MEMO[name];
   return rows.length;
 }
 

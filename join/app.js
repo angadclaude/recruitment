@@ -418,29 +418,102 @@ function burst() {
 }
 
 // ═════════════════════════ STAFF ═════════════════════════
+// Speed: the week's data comes down in ONE request, is kept on the phone, and refreshes quietly
+// in the background. Tabs and candidate pages render instantly from that copy.
 function roles() { return (S.me && S.me.user.roles) || []; }
 function isAdmin() { return roles().indexOf('admin') >= 0; }
 function isPresenter() { return isAdmin() || roles().indexOf('presenter') >= 0; }
 function isBooker() { return roles().indexOf('booker') >= 0; }
 
+Object.assign(S, { data: {}, inflight: {}, view: '', params: {}, viewId: 0, booted: false, syncing: 0 });
+const STALE_MS = 20000, POLL_MS = 30000;
+
+function weekEndingOf(ymd) { const w = D(ymd).getUTCDay(); return addDays(ymd, w === 0 ? 0 : 7 - w); }
+function saveCache() {
+  const keep = {};
+  Object.keys(S.data).sort().slice(-3).forEach(k => { keep[k] = S.data[k]; });
+  store.set('cache', { me: S.me, data: keep, users: S.users });
+}
+function setSync(d) {
+  S.syncing = Math.max(0, S.syncing + d);
+  const el = document.getElementById('sync'); if (el) el.classList.toggle('on', S.syncing > 0);
+}
+function fetchWeek(we, extra) {
+  if (S.inflight[we] && !extra) return S.inflight[we];
+  setSync(1);
+  const req = Object.assign({ weekEnding: we }, extra || {});
+  const p = call('bundle', req).catch(e => {
+    if (!/Unknown action/.test(e.message)) throw e;
+    // Google code not updated yet: build the same bundle from the older requests (slower, still works).
+    return Promise.all([req.withMe ? call('me') : null, call('listWeek', { weekEnding: we }), call('payReport', { weekEnding: we })]).then(r => {
+      const b = { weekEnding: r[1].weekEnding, items: r[1].items, pay: r[2] };
+      if (r[0]) b.me = r[0];
+      return (req.withUsers && b.me && b.me.user.roles.indexOf('admin') >= 0 ? call('listUsers').then(u => { b.users = u.users; return b; }) : b);
+    });
+  }).then(b => {
+    S.data[b.weekEnding] = { items: b.items, pay: b.pay, at: Date.now() };
+    if (b.users) S.users = b.users;
+    if (b.me) {
+      const old = S.me;
+      S.me = b.me;
+      if (!S.day || (old && S.day === old.today)) S.day = b.me.today;
+      if (!S.week || (old && S.week === old.weekEnding)) S.week = b.me.weekEnding;
+    }
+    saveCache();
+    return b;
+  });
+  const done = () => { delete S.inflight[we]; setSync(-1); };
+  p.then(done, done);
+  S.inflight[we] = p;
+  return p;
+}
+/** Cached week (or null) for the current view; refreshes it in the background when stale. */
+function want(we) {
+  const d = S.data[we], id = S.viewId;
+  if (!d || Date.now() - d.at > STALE_MS) {
+    fetchWeek(we).then(() => { if (S.viewId === id) render(true); })
+      .catch(e => { if (!S.data[we] && S.viewId === id) paint(titleOf(S.view), '<div class="err">' + h(e.message) + '</div>'); else if (!/connection/i.test(e.message)) toast(e.message); });
+  }
+  return d || null;
+}
+function findCand(id) {
+  for (const k of Object.keys(S.data)) { const c = S.data[k].items.filter(x => x.id === id)[0]; if (c) return c; }
+  return null;
+}
+function upsert(c) {
+  const d = S.data[c.week_ending];
+  if (d) {
+    const i = d.items.findIndex(x => x.id === c.id);
+    if (i >= 0) d.items[i] = c; else d.items.push(c);
+    d.at = 0;  // pay summary may have changed → refresh next time
+  }
+  saveCache();
+}
+
 function startStaff() {
   stopTimer();
   S.token = store.get('tok') || '';
   if (!S.token) return renderLogin();
-  call('me').then(m => {
-    S.me = m; S.week = S.week || m.weekEnding; S.day = S.day || m.today;
-    initPush();
-    if (BOOT.cid) { const id = BOOT.cid; BOOT.cid = ''; S.tab = isBooker() ? 'mine' : (isAdmin() ? 'all' : 'today'); return openCandidate(id); }
-    go(S.tab || (isPresenter() ? 'today' : 'mine'));
-  }).catch(e => { if (S.token) $app.innerHTML = '<div class="err">' + h(e.message) + '</div>'; });
+  const cached = store.get('cache');
+  const first = fetchWeek(weekEndingOf(cached && cached.me ? cached.me.today : new Date().toISOString().slice(0, 10)), { withMe: true, withUsers: true });
+  if (cached && cached.me) {
+    S.me = cached.me; S.data = Object.assign(cached.data || {}, S.data); S.users = cached.users || null;
+    Object.keys(S.data).forEach(k => { if (!S.inflight[k]) S.data[k].at = 0; });
+    boot();
+  } else {
+    $app.innerHTML = '<div class="splash">' + logos(56) + '<div class="spinner"></div></div>';
+  }
+  first
+    .then(() => { if (!S.booted) boot(); else render(true); })
+    .catch(e => { if (!S.booted && S.token) $app.innerHTML = logos(48) + '<div class="err">' + h(e.message) + '</div><button class="btn block" onclick="location.reload()">Try again</button>'; });
 }
 
 function renderLogin() {
-  scrollTop();
-  $app.innerHTML = logos(56) + '<div class="card"><h1>Staff login</h1><p class="muted">We\'ll email you a 6-digit code. No password needed.</p>' +
+  stopTimer(); scrollTop();
+  $app.innerHTML = '<div class="login">' + logos(60) + '<div class="card"><h1>Staff login</h1><p class="muted">We\'ll email you a 6-digit code. No password needed.</p>' +
     '<label class="q">Work email</label><input type="email" id="em" autocomplete="email" value="' + h(store.get('lastEmail') || '') + '">' +
     '<div id="codeBox" hidden><label class="q">6-digit code</label><input type="text" id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6"></div>' +
-    '<div id="err"></div><button class="btn block" id="go" style="margin-top:14px">Email me a code</button></div>';
+    '<div id="err"></div><button class="btn block" id="go" style="margin-top:14px">Email me a code</button></div></div>';
   let sent = false;
   const btn = document.getElementById('go');
   btn.onclick = () => {
@@ -458,34 +531,147 @@ function renderLogin() {
     } else {
       busy(btn, true, 'Checking…');
       call('verifyCode', { email: email, code: document.getElementById('code').value }).then(r => {
-        S.token = r.token; store.set('tok', r.token); startStaff();
+        S.token = r.token; store.set('tok', r.token); store.del('cache'); S.data = {}; S.users = null; startStaff();
       }).catch(ex => { busy(btn, false); showErr(err, ex.message); });
     }
   };
 }
 
-function shell(content) {
-  const tabs = [];
-  if (isPresenter()) tabs.push(['today', '🎤', 'Today']);
-  if (isBooker()) tabs.push(['mine', '📞', 'My candidates']);
-  if (isAdmin()) tabs.push(['all', '📋', 'All']);
-  tabs.push(['pay', '💷', 'Pay']);
-  if (isAdmin()) tabs.push(['team', '👥', 'Team']);
-  const u = S.me.user;
-  return '<div class="topbar"><img src="' + LOGOS.LINK + '" alt="LINK"><img src="' + LOGOS.JUSS + '" alt="JUSS">' +
-    '<div class="who">' + h(u.name) + '<br><a href="#" id="logout">Log out</a></div></div>' + pushBar() + content +
-    '<nav class="tabs">' + tabs.map(t => '<button data-tab="' + t[0] + '" class="' + (S.tab === t[0] ? 'on' : '') + '"><b>' + t[1] + '</b>' + t[2] + '</button>').join('') + '</nav>';
+function boot() {
+  S.booted = true;
+  S.week = S.week || S.me.weekEnding; S.day = S.day || S.me.today;
+  initPush();
+  S.tab = S.tab || (isPresenter() ? 'today' : isBooker() ? 'mine' : 'all');
+  hist('replace', { v: S.tab, p: {} });
+  if (BOOT.cid) { const id = BOOT.cid; BOOT.cid = ''; nav('cand', { id: id }, true); } else nav(S.tab, {}, false);
+  stopTimer();
+  S.timer = setInterval(() => { if (document.visibilityState === 'visible') refreshQuiet(); }, POLL_MS);
 }
-function bindShell() {
-  document.querySelectorAll('.tabs button').forEach(b => { b.onclick = () => go(b.dataset.tab); });
-  const lo = document.getElementById('logout');
-  if (lo) lo.onclick = e => {
-    e.preventDefault(); store.del('tok'); S.token = ''; S.me = null;
+function refreshQuiet() {
+  if (!S.me) return;
+  const we = S.view === 'today' ? weekEndingOf(S.day) : S.week;
+  fetchWeek(we).then(() => {
+    const typing = document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
+    if (['today', 'mine', 'all', 'pay'].indexOf(S.view) >= 0 && !typing) render(true);
+  }).catch(() => {});
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && S.booted) refreshQuiet(); });
+window.addEventListener('popstate', e => {
+  if (BOOT.mode !== 'staff' || !S.booted) return;
+  const st = e.state || { v: S.tab, p: {} };
+  S.view = st.v; S.params = st.p || {}; S.viewId++;
+  render();
+});
+
+function nav(view, params, push) {
+  if (['today', 'mine', 'all', 'pay', 'team'].indexOf(view) >= 0) S.tab = view;
+  S.view = view; S.params = params || {}; S.viewId++;
+  hist(push ? 'push' : 'replace', { v: view, p: S.params });
+  render();
+}
+function hist(kind, st) { try { kind === 'push' ? history.pushState(st, '') : history.replaceState(st, ''); S.hist = kind === 'push' ? (S.hist || 0) + 1 : (S.hist || 0); } catch (e) { /* not allowed in this frame */ } }
+function back() { if (S.hist > 0 && history.state && ['cand', 'user', 'slideqr'].indexOf(history.state.v) >= 0) { S.hist--; history.back(); } else nav(S.tab); }
+function go(tab) { nav(tab, {}, false); }
+function titleOf(v) { return { today: 'Today', mine: 'My candidates', all: 'All candidates', pay: 'Pay', team: 'Team', slideqr: 'Slide QR codes', user: 'Team' }[v] || ''; }
+
+function render(quiet) {
+  const v = S.view;
+  if (v === 'cand') return viewCandidate(S.params.id);
+  if (v === 'user') return editUser(S.params.id ? (S.users || []).filter(u => u.id === S.params.id)[0] : null);
+  if (v === 'slideqr') return viewSlideQR();
+  ({ today: viewToday, mine: viewMine, all: viewAll, pay: viewPay, team: viewTeam }[v] || viewToday)(quiet);
+}
+
+// ───── App shell: top bar, page, tab bar ─────
+const ICONS = {
+  today: '<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+  mine: '<path d="M5 4h3.5l2 5-2.4 1.6a11 11 0 0 0 5.3 5.3L15 13.5l5 2V19a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/>',
+  all: '<path d="M9 6h12M9 12h12M9 18h12"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/>',
+  pay: '<path d="M17 7.5A4.5 4.5 0 0 0 9 10v9M6 13.5h8M6 19h12"/>',
+  team: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17.5" cy="9" r="2.5"/><path d="M16.5 14.6A5 5 0 0 1 21.5 19.5"/>',
+  back: '<path d="M15 5l-7 7 7 7"/>',
+  phone: '<path d="M5 4h3.5l2 5-2.4 1.6a11 11 0 0 0 5.3 5.3L15 13.5l5 2V19a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/>',
+  mail: '<rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M4 7l8 6 8-6"/>',
+  chat: '<path d="M4 19.5l1.4-4A8 8 0 1 1 8.6 19z"/>',
+};
+function icon(n, size) { return '<svg width="' + (size || 22) + '" height="' + (size || 22) + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + ICONS[n] + '</svg>'; }
+function initials(name) { return String(name || '?').split(' ').filter(String).slice(0, 2).map(p => p[0].toUpperCase()).join(''); }
+function tabs() {
+  const t = [];
+  if (isPresenter()) t.push(['today', 'Today']);
+  if (isBooker()) t.push(['mine', 'Mine']);
+  if (isAdmin()) t.push(['all', 'All']);
+  t.push(['pay', 'Pay']);
+  if (isAdmin()) t.push(['team', 'Team']);
+  return t;
+}
+function ensureShell() {
+  if (document.getElementById('page')) return;
+  $app.innerHTML =
+    '<header class="appbar"><div class="appbar-in">' +
+      '<button class="iconbtn light" id="abBack" hidden aria-label="Back">' + icon('back') + '</button>' +
+      '<div class="ab-brand" id="abBrand"><img src="' + LOGOS.LINK + '" alt="LINK"><img src="' + LOGOS.JUSS + '" alt="JUSS"></div>' +
+      '<div class="ab-title" id="abTitle"></div><span class="sync" id="sync"></span>' +
+      '<button class="avatar-btn" id="abMe">' + h(initials(S.me.user.name)) + '</button>' +
+    '</div></header>' +
+    '<div id="bars"></div><main id="page"></main><div id="menu" hidden></div>' +
+    '<nav class="tabbar" id="tabbar"></nav>';
+  document.getElementById('abBack').onclick = back;
+  document.getElementById('abMe').onclick = toggleMenu;
+  document.getElementById('tabbar').onclick = e => { const b = e.target.closest('button[data-tab]'); if (b) { if (b.dataset.tab === S.view) window.scrollTo({ top: 0, behavior: 'smooth' }); else go(b.dataset.tab); } };
+}
+function paint(title, html, quiet, sub) {
+  ensureShell();
+  const y = window.scrollY;
+  document.getElementById('abTitle').textContent = title;
+  document.getElementById('abBack').hidden = !sub;
+  document.getElementById('abBrand').hidden = !!sub;
+  document.getElementById('tabbar').innerHTML = tabs().map(t => '<button data-tab="' + t[0] + '" class="' + (S.tab === t[0] ? 'on' : '') + '">' + icon(t[0]) + '<span>' + t[1] + '</span></button>').join('');
+  document.getElementById('sync').classList.toggle('on', S.syncing > 0);
+  refreshBars();
+  const page = document.getElementById('page');
+  page.innerHTML = html;
+  if (quiet) window.scrollTo(0, y);
+  else { window.scrollTo(0, 0); page.classList.remove('enter', 'enter-sub'); void page.offsetWidth; page.classList.add(sub ? 'enter-sub' : 'enter'); }
+  return page;
+}
+function toggleMenu() {
+  const m = document.getElementById('menu');
+  if (!m.hidden) { m.hidden = true; return; }
+  const u = S.me.user;
+  m.innerHTML = '<div class="menu-card"><div class="row"><span class="av lg">' + h(initials(u.name)) + '</span><div><b>' + h(u.name) + '</b><div class="small muted">' + h(u.email) + '</div>' +
+    '<div class="small muted">' + h(u.company) + ' · ' + h(u.roles.join(', ')) + '</div></div></div>' +
+    '<button class="btn ghost block" id="mRefresh" style="margin-top:12px">↻ Refresh now</button>' +
+    '<button class="btn ghost block" id="mLogout" style="margin-top:8px;color:var(--red)">Log out</button></div>';
+  m.hidden = false;
+  m.onclick = e => { if (e.target === m) m.hidden = true; };
+  document.getElementById('mRefresh').onclick = () => { m.hidden = true; Object.keys(S.data).forEach(k => { S.data[k].at = 0; }); render(true); };
+  document.getElementById('mLogout').onclick = () => {
+    store.del('tok'); store.del('cache'); S.token = ''; S.me = null; S.data = {}; S.users = null; S.booted = false; S.tab = '';
     if (PUSH.os) PUSH.os.logout().catch(() => {});
     startStaff();
   };
-  const pb = document.getElementById('pushon');
-  if (pb) pb.onclick = () => PUSH.os.Notifications.requestPermission().then(() => { PUSH.granted = PUSH.os.Notifications.permission; go(S.tab); });
+}
+function skeleton(n) { let s = ''; for (let i = 0; i < (n || 4); i++) s += '<div class="item sk"><span class="av"></span><div class="main"><div class="sk-line w60"></div><div class="sk-line w40"></div></div></div>'; return '<div class="list">' + s + '</div>'; }
+
+// ───── Install + alerts banners ─────
+let INSTALL_EVT = null;
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); INSTALL_EVT = e; refreshBars(); });
+function refreshBars() {
+  const el = document.getElementById('bars'); if (!el) return;
+  const dismissed = (store.get('barsHidden') || 0) > Date.now();
+  let html = '';
+  if (!IS_STANDALONE && IS_IOS && !dismissed) {
+    html = '<div class="pushbar"><div><b>📲 Make it an app:</b> tap <b>Share</b> → <b>Add to Home Screen</b>, then open it from the icon. Full screen, faster, and you get alerts.</div><button class="x" id="barX">✕</button></div>';
+  } else if (!IS_STANDALONE && INSTALL_EVT && !dismissed) {
+    html = '<div class="pushbar"><div><b>📲 Install the app</b> for full screen + alerts.</div><button class="btn sm" id="barInstall">Install</button><button class="x" id="barX">✕</button></div>';
+  } else if (PUSH.os && !PUSH.granted) {
+    html = '<div class="pushbar"><div>🔔 Turn on alerts so you never miss a check-in or evaluation.</div><button class="btn sm" id="pushon">Turn on</button></div>';
+  }
+  el.innerHTML = html;
+  const x = document.getElementById('barX'); if (x) x.onclick = () => { store.set('barsHidden', Date.now() + 3 * 86400000); refreshBars(); };
+  const ins = document.getElementById('barInstall'); if (ins) ins.onclick = () => { INSTALL_EVT.prompt(); INSTALL_EVT = null; refreshBars(); };
+  const pb = document.getElementById('pushon'); if (pb) pb.onclick = () => PUSH.os.Notifications.requestPermission().then(() => { PUSH.granted = PUSH.os.Notifications.permission; refreshBars(); });
 }
 
 // ───── Phone push notifications (OneSignal, only in the installable app) ─────
@@ -505,88 +691,209 @@ function initPush() {
     }).then(() => OneSignal.login(S.me.user.id)).then(() => {
       PUSH.os = OneSignal; PUSH.granted = OneSignal.Notifications.permission;
       OneSignal.Notifications.addEventListener('permissionChange', g => { PUSH.granted = g; });
-      if (!PUSH.granted && S.me) go(S.tab);  // show the "turn on" bar
+      refreshBars();  // show the "turn on" bar if needed
     }).catch(e => console.warn('push init', e));
   });
 }
-function pushBar() {
-  if (!CFG.ONESIGNAL_APP_ID) return '';
-  if (IS_IOS && !IS_STANDALONE) {
-    return '<div class="pushbar">📲 <b>Get candidate alerts on your iPhone:</b> tap <b>Share</b> <span style="font-size:16px">⎋</span> → <b>Add to Home Screen</b>, then open the app from your home screen.</div>';
-  }
-  if (PUSH.os && !PUSH.granted) {
-    return '<div class="pushbar row between"><span>🔔 Turn on alerts so you never miss a check-in or evaluation.</span><button class="btn sm" id="pushon">Turn on</button></div>';
-  }
-  return '';
-}
-function go(tab) {
-  stopTimer(); S.tab = tab; scrollTop();
-  ({ today: viewToday, mine: viewMine, all: viewAll, pay: viewPay, team: viewTeam }[tab] || viewMine)();
-}
-function loadingView() { $app.innerHTML = shell('<div class="loading">Loading…</div>'); bindShell(); }
-function errorView(e) { $app.innerHTML = shell('<div class="err">' + h(e.message) + '</div>'); bindShell(); }
 
+
+// ───── Shared list bits ─────
 function flagCounts(c) {
   const r = c.flags.filter(f => f.level === 'red').length, a = c.flags.filter(f => f.level === 'amber').length;
-  return (r ? '<span class="pill red">' + r + ' red</span> ' : '') + (a ? '<span class="pill amber">' + a + ' amber</span>' : '');
+  return (r ? '<span class="pill red">' + r + ' red</span>' : '') + (a ? '<span class="pill amber">' + a + ' amber</span>' : '');
 }
 function statusPill(c) {
   if (c.admin_status === 'pending') return '<span class="pill red">Awaiting admin</span>';
-  if (c.outcome) return '<span class="pill ' + (c.outcome === 'Academy booked' ? 'green' : 'blue') + '">' + h(c.outcome) + (c.outcome_late ? ' · late' : '') + '</span>';
-  if (c.eval_at) return '<span class="pill amber">📞 Call needed</span>';
-  return '<span class="pill">Waiting for evaluation</span>';
+  if (c.outcome === 'Academy booked') return '<span class="pill green">' + (c.academy_confirmed_at ? '✅ Day 1 confirmed' : 'Academy ' + fmt(c.academy_date)) + (c.outcome_late ? ' · late' : '') + '</span>';
+  if (c.outcome) return '<span class="pill blue">' + h(c.outcome) + (c.outcome_late ? ' · late' : '') + '</span>';
+  if (c.eval_at) return '<span class="pill orange">📞 Call needed</span>';
+  return '<span class="pill">Awaiting evaluation</span>';
 }
+function avatar(c, cls) { return '<span class="av ' + (cls || '') + ' rag-' + (c.rag || 'X') + '">' + h(initials(c.full_name)) + '</span>'; }
 function item(c, showStatus) {
-  return '<div class="item" data-id="' + h(c.id) + '"><span class="dot ' + h(c.rag) + '"></span><div class="main">' +
-    '<div class="name">' + h(c.full_name) + (c.stars ? ' <span style="color:#F2A900">' + '★'.repeat(Number(c.stars)) + '</span>' : '') + '</div>' +
+  return '<button class="item" data-id="' + h(c.id) + '">' + avatar(c) + '<div class="main">' +
+    '<div class="name">' + h(c.full_name) + (c.stars ? ' <span class="stars-sm">' + '★'.repeat(Number(c.stars)) + '</span>' : '') + '</div>' +
     '<div class="sub">' + (c.booker_name ? h(c.booker_name) + ' <span class="co ' + h(c.company) + '">' + h(c.company) + '</span>' : '<i>Booker not confirmed' + (c.booker_typed ? ': "' + h(c.booker_typed) + '"' : '') + '</i>') + '</div>' +
-    '<div class="row" style="margin-top:4px;gap:4px">' + (showStatus ? statusPill(c) + ' ' : '') + (c.in_room ? '' : '<span class="pill">Not rated yet</span> ') + flagCounts(c) + '</div>' +
-    '</div><span class="muted">›</span></div>';
+    '<div class="pills">' + (showStatus ? statusPill(c) : '') + (c.in_room ? '' : '<span class="pill">Not rated yet</span>') + flagCounts(c) + '</div>' +
+    '</div><span class="chev">›</span></button>';
 }
-function bindItems() {
-  document.querySelectorAll('.item[data-id]').forEach(el => { el.onclick = () => openCandidate(el.dataset.id); });
+function bindItems(root) {
+  (root || document).querySelectorAll('.item[data-id]').forEach(el => { el.onclick = () => nav('cand', { id: el.dataset.id }, true); });
 }
 function groupByDate(items) {
   const g = {};
   items.forEach(c => { (g[c.attended_date] = g[c.attended_date] || []).push(c); });
-  return Object.keys(g).sort().map(d => '<div class="datehead">' + fmt(d) + ' · ' + g[d].length + '</div><div class="list">' + g[d].map(c => item(c, true)).join('') + '</div>').join('');
+  return Object.keys(g).sort().reverse().map(d => '<div class="datehead">' + fmt(d) + '<span>' + g[d].length + '</span></div><div class="list">' + g[d].map(c => item(c, true)).join('') + '</div>').join('');
 }
 function weekNav() {
-  return '<div class="weeknav"><button class="btn ghost sm" id="wprev">‹</button><div class="lbl">Week ending ' + fmt(S.week) + '</div>' +
-    '<button class="btn ghost sm" id="wnext"' + (S.week >= S.me.weekEnding ? ' disabled' : '') + '>›</button></div>';
+  return '<div class="seg-nav"><button class="iconbtn" id="wprev" aria-label="Previous week">‹</button><div class="lbl"><b>Week ending</b><span>' + fmt(S.week) + '</span></div>' +
+    '<button class="iconbtn" id="wnext" aria-label="Next week"' + (S.week >= S.me.weekEnding ? ' disabled' : '') + '>›</button></div>';
 }
-function bindWeekNav(reload) {
-  document.getElementById('wprev').onclick = () => { S.week = addDays(S.week, -7); reload(); };
-  document.getElementById('wnext').onclick = () => { S.week = addDays(S.week, 7); reload(); };
+function bindWeekNav() {
+  document.getElementById('wprev').onclick = () => { S.week = addDays(S.week, -7); render(); };
+  document.getElementById('wnext').onclick = () => { S.week = addDays(S.week, 7); render(); };
+}
+function empty(icon_, text) { return '<div class="empty"><div class="big-emoji">' + icon_ + '</div><p>' + text + '</p></div>'; }
+function kpis(list) { return '<div class="kpis">' + list.map(k => '<div class="kpi k-' + k[2] + '"><b>' + k[0] + '</b><span>' + k[1] + '</span></div>').join('') + '</div>'; }
+function ring(n, target) {
+  const pct = Math.min(1, n / target), r = 42, c = 2 * Math.PI * r;
+  return '<svg class="ring" viewBox="0 0 100 100"><circle cx="50" cy="50" r="' + r + '" class="ring-bg"/><circle cx="50" cy="50" r="' + r + '" class="ring-fg' + (n >= target ? ' done' : '') + '" stroke-dasharray="' + (c * pct) + ' ' + c + '"/>' +
+    '<text x="50" y="54" text-anchor="middle">' + n + '<tspan>/' + target + '</tspan></text></svg>';
 }
 
 // ───── Today (presenter) ─────
-function viewToday() {
-  loadingView();
-  call('listDay', { date: S.day }).then(d => {
-    const inRoom = d.items.filter(c => c.in_room).length, evals = d.items.filter(c => c.eval_at).length;
-    const isToday = S.day === S.me.today;
-    $app.innerHTML = shell(
-      '<h1>' + (isToday ? 'Today' : fmt(S.day)) + '</h1>' +
-      '<div class="row"><input type="date" id="day" value="' + h(S.day) + '" style="max-width:180px"></div>' +
-      '<div class="card tight row between"><div><div class="stat">' + d.items.length + '</div><div class="small muted">checked in</div></div>' +
-      '<div><div class="stat">' + inRoom + '</div><div class="small muted">in room</div></div>' +
-      '<div><div class="stat">' + evals + '</div><div class="small muted">evaluations</div></div></div>' +
-      '<p class="small muted">Tap a name to rate them. Rating someone confirms they were in the room (that\'s what counts for pay).</p>' +
-      '<div class="list">' + (d.items.length ? d.items.map(c => item(c, false)).join('') : '<p class="muted center" style="padding:24px 0">No check-ins yet. They appear here as people scan the check-in QR on your first slide.</p>') + '</div>'
-    );
-    bindShell(); bindItems();
-    document.getElementById('day').onchange = e => { S.day = e.target.value || S.me.today; viewToday(); };
-    if (isToday) S.timer = setInterval(() => { if (S.tab === 'today') viewTodayQuiet(); }, 20000);
-  }).catch(errorView);
+function viewToday(quiet) {
+  const d = want(weekEndingOf(S.day));
+  const isToday = S.day === S.me.today;
+  const head = '<div class="seg-nav"><button class="iconbtn" id="dprev" aria-label="Previous day">‹</button><div class="lbl"><b>' + (isToday ? 'Today' : DAYS_LONG[D(S.day).getUTCDay()]) + '</b><span>' + fmt(S.day) + '</span></div>' +
+    '<button class="iconbtn" id="dnext" aria-label="Next day"' + (isToday ? ' disabled' : '') + '>›</button></div>';
+  let body;
+  if (!d) body = skeleton();
+  else {
+    const items = d.items.filter(c => c.attended_date === S.day).sort((a, b) => a.created_at.localeCompare(b.created_at));
+    body = kpis([[items.length, 'Checked in', 'ink'], [items.filter(c => c.in_room).length, 'Rated', 'green'], [items.filter(c => c.eval_at).length, 'Evaluated', 'teal'], [items.filter(c => c.eval_at && !c.outcome).length, 'To call', 'orange']]) +
+      '<p class="hint">Tap a name to rate them. Rating = they were in the room (that\'s what counts for pay).</p>' +
+      (items.length ? '<div class="list">' + items.map(c => item(c, false)).join('') + '</div>' : empty('📷', 'No check-ins yet. They appear here live as people scan the check-in QR on your first slide.'));
+  }
+  const page = paint('Today', head + body, quiet);
+  bindItems(page);
+  document.getElementById('dprev').onclick = () => { S.day = addDays(S.day, -1); render(); };
+  document.getElementById('dnext').onclick = () => { if (S.day < S.me.today) { S.day = addDays(S.day, 1); render(); } };
 }
-function viewTodayQuiet() {
-  call('listDay', { date: S.day }).then(d => {
-    const list = document.querySelector('.list'); if (!list || S.tab !== 'today') return;
-    list.innerHTML = d.items.length ? d.items.map(c => item(c, false)).join('') : list.innerHTML;
-    bindItems();
-  }).catch(() => {});
+
+// ───── My candidates (booker) ─────
+function viewMine(quiet) {
+  const d = want(S.week);
+  let body;
+  if (!d) body = skeleton();
+  else {
+    const me = S.me.user.id;
+    const items = d.items.filter(c => c.booker_id === me);
+    const r = d.pay.rows.filter(x => x.booker_id === me)[0] || { net: 0, attended: 0, excluded: [], late: 0, missing: 0 };
+    const toCall = items.filter(c => c.eval_at && !c.outcome);
+    const left = Math.max(0, d.pay.target - r.net);
+    body = '<div class="hero"><div>' + ring(r.net, d.pay.target) + '</div><div class="hero-txt"><b>' + (left ? left + ' more to hit ' + d.pay.target : 'Target smashed 🔥') + '</b>' +
+      '<span>' + r.attended + ' attended · ' + r.excluded.length + ' don\'t count</span>' +
+      (r.excluded.length ? '<span class="small">' + r.excluded.map(x => h(x.name) + ' (' + h(x.why) + ')').join(' · ') + '</span>' : '') + '</div></div>' +
+      (toCall.length ? '<div class="section-h">📞 To call <span>log by Sat ' + h(S.me.deadlineTime) + '</span></div><div class="list">' + toCall.map(c => item(c, true)).join('') + '</div>' : '') +
+      (items.length > toCall.length ? '<div class="section-h">' + (toCall.length ? 'Everyone else' : 'This week') + '</div>' + groupByDate(items.filter(c => toCall.indexOf(c) < 0))
+        : items.length ? '' : empty('🗓️', 'No candidates this week yet.'));
+  }
+  const page = paint('My candidates', weekNav() + body, quiet);
+  bindItems(page); bindWeekNav();
 }
+
+// ───── All (admin) ─────
+function viewAll(quiet) {
+  const d = want(S.week);
+  const F = {
+    all: ['All', () => true],
+    call: ['Needs outcome', c => !c.outcome],
+    pending: ['Awaiting admin', c => c.admin_status === 'pending'],
+    red: ['Red flags', c => c.flags.some(f => f.level === 'red')],
+    nobooker: ['No booker', c => !c.booker_id],
+    late: ['Late', c => !!c.outcome_late],
+  };
+  let body;
+  if (!d) body = skeleton();
+  else {
+    const items = d.items.filter(F[S.filter][1]);
+    body = '<div class="chips scroll" id="flt">' + Object.keys(F).map(k => '<button class="chip' + (S.filter === k ? ' on' : '') + '" data-f="' + k + '">' + F[k][0] + ' <b>' + d.items.filter(F[k][1]).length + '</b></button>').join('') + '</div>' +
+      (items.length ? groupByDate(items) : empty('✨', 'Nothing here.'));
+  }
+  const page = paint('All candidates', '<div class="search"><input type="search" id="q" placeholder="Search name, mobile or email" value="' + h(S.q || '') + '"></div><div id="sr"></div>' + weekNav() + body, quiet);
+  bindItems(page); bindWeekNav();
+  page.querySelectorAll('#flt .chip').forEach(b => { b.onclick = () => { S.filter = b.dataset.f; render(true); }; });
+  let t;
+  const q = document.getElementById('q');
+  const run = () => {
+    const sr = document.getElementById('sr');
+    if ((S.q || '').trim().length < 2) { sr.innerHTML = ''; return; }
+    call('search', { q: S.q }).then(r => { sr.innerHTML = '<div class="list">' + (r.items.length ? r.items.map(c => item(c, true)).join('') : '<p class="muted">No matches.</p>') + '</div>'; bindItems(sr); });
+  };
+  q.oninput = e => { S.q = e.target.value; clearTimeout(t); t = setTimeout(run, 300); };
+  if (S.q) run();
+}
+
+// ───── Pay (leaderboard) ─────
+function viewPay(quiet) {
+  const d = want(S.week);
+  let body;
+  if (!d) body = skeleton(5);
+  else {
+    const p = d.pay;
+    const rows = p.rows.filter(r => r.attended > 0 || isAdmin());
+    const hit = rows.filter(r => r.net >= p.target).length;
+    body = (isAdmin() ? kpis([[rows.reduce((n, r) => n + r.net, 0), 'Net', 'ink'], [hit + '/' + rows.filter(r => r.attended).length, 'Hit ' + p.target, 'green'],
+      [rows.reduce((n, r) => n + r.late, 0), 'Late', 'orange'], [rows.reduce((n, r) => n + r.missing, 0), 'No outcome', 'red']]) : '') +
+      '<div class="list">' + (rows.length ? rows.map((r, i) => '<div class="payrow" data-i="' + i + '"><div class="rank' + (i < 3 && r.net ? ' top' + (i + 1) : '') + '">' + (i + 1) + '</div>' +
+        '<div class="main"><div class="name">' + h(r.name) + ' <span class="co ' + h(r.company) + '">' + h(r.company) + '</span></div>' +
+        '<div class="bar' + (r.net >= p.target ? ' done' : '') + '"><i style="width:' + Math.min(100, r.net / p.target * 100) + '%"></i></div>' +
+        '<div class="pills">' + (r.late ? '<span class="pill amber">' + r.late + ' late</span>' : '') + (r.missing ? '<span class="pill red">' + r.missing + ' no outcome</span>' : '') + '<span class="pill">' + r.attended + ' attended</span></div>' +
+        '<div class="small muted excl" hidden>' + (r.excluded.length ? r.excluded.map(x => h(x.name) + ': ' + h(x.why)).join('<br>') : 'Nothing excluded') + '</div></div>' +
+        '<div class="net"><b>' + r.net + '</b><span>/' + p.target + '</span></div></div>').join('') : empty('💷', 'No appointments this week.')) + '</div>' +
+      '<p class="hint">Mon–Fri, rated by the presenter. Doesn\'t count: under 18, not eligible to work self-employed, seen in the last 6 months, removed by admin. Tap a row for details. Outcomes due ' + fmtTs(p.deadline) + '.</p>' +
+      (p.unassigned.length ? '<div class="section-h">No confirmed booker <span>' + p.unassigned.length + '</span></div><div class="list">' + p.unassigned.map(x => '<button class="item" data-id="' + h(x.id) + '"><span class="av">?</span><div class="main"><div class="name">' + h(x.name) + '</div><div class="sub">Typed "' + h(x.typed || '—') + '" · tap to assign</div></div><span class="chev">›</span></button>').join('') + '</div>' : '');
+  }
+  const page = paint('Pay', weekNav() + body, quiet);
+  bindItems(page); bindWeekNav();
+  page.querySelectorAll('.payrow').forEach(r => { r.onclick = () => { const x = r.querySelector('.excl'); x.hidden = !x.hidden; }; });
+}
+
+// ───── Team (admin) ─────
+function viewTeam() {
+  if (!S.users) {
+    paint('Team', skeleton(5));
+    const id = S.viewId;
+    call('listUsers').then(r => { S.users = r.users; saveCache(); if (S.viewId === id) viewTeam(); }).catch(e => toast(e.message));
+    return;
+  }
+  const us = S.users;
+  const row = u => '<button class="item" data-u="' + h(u.id) + '"><span class="av co-' + h(u.company) + '">' + h(initials(u.name)) + '</span><div class="main"><div class="name">' + h(u.name) + ' <span class="co ' + h(u.company) + '">' + h(u.company) + '</span>' +
+    (u.active ? '' : ' <span class="pill red">No access</span>') + '</div><div class="sub">' + h(u.email) + '</div><div class="pills">' + u.roles.map(r => '<span class="pill">' + h(r) + '</span>').join('') + '</div></div><span class="chev">›</span></button>';
+  const page = paint('Team', '<div class="row" style="gap:8px;margin:4px 0 12px"><button class="btn grow" id="add">＋ Add person</button><button class="btn ghost grow" id="slideqr">📲 Slide QR codes</button></div>' +
+    '<p class="hint">' + us.filter(u => u.active).length + ' people with access. Bookers appear in the check-in type-ahead.</p>' +
+    '<div class="list">' + us.map(row).join('') + '</div>');
+  document.getElementById('add').onclick = () => nav('user', {}, true);
+  document.getElementById('slideqr').onclick = () => nav('slideqr', {}, true);
+  page.querySelectorAll('.item[data-u]').forEach(el => { el.onclick = () => nav('user', { id: el.dataset.u }, true); });
+}
+
+function editUser(u) {
+  const x = u || { name: '', email: '', company: 'LINK', roles: ['booker'], active: true };
+  const page = paint(u ? u.name : 'Add a person', '<div class="card" id="uf">' +
+    '<label class="q">Full name</label><input type="text" id="un" value="' + h(x.name) + '">' +
+    '<label class="q">Email (used to log in)</label><input type="email" id="ue" value="' + h(x.email) + '">' +
+    '<label class="q">Company</label>' + chips('company', ['LINK', 'JUSS'], x.company) +
+    '<div class="help" style="margin-top:6px">Decides which WhatsApp welcome message (LINK or JUSS) they send.</div>' +
+    '<label class="q">Access</label><div class="chips" data-name="roles" data-multi="1">' +
+    [['booker', 'Booker'], ['presenter', 'Presenter'], ['admin', 'Admin (adds/removes people, sees everything)']].map(r => '<button type="button" class="chip' + (x.roles.indexOf(r[0]) >= 0 ? ' on' : '') + '" data-v="' + r[0] + '">' + r[1] + '</button>').join('') + '</div>' +
+    '<label class="check"><input type="checkbox" id="ua"' + (x.active ? ' checked' : '') + '> Has access (untick to switch off instantly)</label>' +
+    '<div id="uerr"></div><button class="btn block" id="usave">Save</button>' +
+    (u && u.id !== S.me.user.id ? '<button class="btn ghost block" id="udel" style="margin-top:8px;color:var(--red)">Delete person</button>' : '') + '</div>', false, true);
+  const uf = page.querySelector('#uf'); bindChips(uf);
+  document.getElementById('usave').onclick = e => {
+    const btn = e.currentTarget; busy(btn, true);
+    call('saveUser', { user: { id: u ? u.id : '', name: document.getElementById('un').value, email: document.getElementById('ue').value, company: chipVal(uf, 'company'), roles: chipVals(uf, 'roles'), active: document.getElementById('ua').checked } })
+      .then(saved => {
+        S.users = (S.users || []).filter(o => o.id !== saved.id).concat([saved]).sort((a, b) => a.name.localeCompare(b.name));
+        if (saved.id === S.me.user.id) { S.me.user = saved; }
+        saveCache(); toast('Saved ✓'); back();
+      }).catch(x2 => { busy(btn, false); showErr(document.getElementById('uerr'), x2.message); });
+  };
+  const del = document.getElementById('udel');
+  if (del) {
+    let armed = false;
+    del.onclick = () => {
+      if (!armed) { armed = true; del.textContent = 'Tap again to confirm delete'; setTimeout(() => { armed = false; if (del.isConnected) del.textContent = 'Delete person'; }, 4000); return; }
+      call('deleteUser', { id: u.id }).then(r => {
+        if (r.deleted) S.users = S.users.filter(o => o.id !== u.id); else u.active = false;
+        saveCache(); toast(r.deleted ? 'Deleted' : 'Access switched off (they have candidates)'); back();
+      }).catch(x2 => toast(x2.message));
+    };
+  }
+}
+
 // ───── QR codes for the presentation slides (admin) ─────
 /** Slide-ready PNG: title, big QR, caption. Same code forever, so it can live on the slides. */
 function slideQR(url, title, caption, colour) {
@@ -606,8 +913,8 @@ function slideQR(url, title, caption, colour) {
   x.fillText(caption, W / 2, oy + size + 80);
   return cv.toDataURL('image/png');
 }
+
 function viewSlideQR() {
-  stopTimer(); scrollTop();
   const L = S.me.links;
   const card = (url, title, cap, col, file, where) => {
     const png = slideQR(url, title, cap, col);
@@ -615,80 +922,36 @@ function viewSlideQR() {
       '<div class="row" style="justify-content:center;margin-top:10px"><a class="btn sm" href="' + png + '" download="' + file + '">⬇️ Download PNG</a></div>' +
       '<p class="small muted" style="word-break:break-all">' + h(url) + '</p></div>';
   };
-  $app.innerHTML = shell('<button class="btn ghost sm" id="back" style="margin-top:6px">‹ Team</button><h1>QR codes for your slides</h1>' +
-    '<p class="muted">These never change. Put them on the presentation once and you\'re done. No presenter taps needed.</p>' +
+  paint('Slide QR codes', '<p class="hint">These never change. Put them on the presentation once and you\'re done.</p>' +
     card(L.checkin, 'SCAN TO CHECK IN', 'Takes 1 minute · do it now 👋', '#F15A24', 'qr-1-checkin.png', '1 · First slide: Check-in') +
     card(L.eval, 'SCAN FOR YOUR EVALUATION', '4 minutes · be honest, no wrong answers', '#2FB5C0', 'qr-2-evaluation.png', '2 · Last slide: Evaluation') +
-    '<p class="small muted">If Download doesn\'t work on your phone, press and hold the image → Save. On a laptop, right-click → Save image.</p>');
-  bindShell();
-  document.getElementById('back').onclick = () => go('team');
-}
-
-// ───── My candidates (booker) ─────
-function viewMine() {
-  loadingView();
-  const reload = viewMine;
-  Promise.all([call('listWeek', { weekEnding: S.week, mine: true }), call('payReport', { weekEnding: S.week })]).then(([w, p]) => {
-    const me = p.rows.filter(r => r.booker_id === S.me.user.id)[0] || { net: 0, attended: 0, excluded: [] };
-    const pct = Math.min(100, Math.round(me.net / p.target * 100));
-    const toCall = w.items.filter(c => c.eval_at && !c.outcome);
-    $app.innerHTML = shell(
-      '<h1>My candidates</h1>' + weekNav() +
-      '<div class="card"><div class="row between"><div><div class="stat">' + me.net + '<span class="muted" style="font-size:20px">/' + p.target + '</span></div>' +
-      '<div class="small muted">net attended (Mon–Fri)</div></div><div class="small muted" style="text-align:right">' + me.attended + ' attended<br>' + me.excluded.length + ' don\'t count</div></div>' +
-      '<div class="progress' + (me.net >= p.target ? ' done' : '') + '"><i style="width:' + pct + '%"></i></div>' +
-      (me.excluded.length ? '<div class="small muted">Not counted: ' + me.excluded.map(x => h(x.name) + ' (' + h(x.why) + ')').join('; ') + '</div>' : '') + '</div>' +
-      (toCall.length ? '<div class="flag amber">📞 ' + toCall.length + ' to call — log outcomes by Sat ' + h(S.me.deadlineTime) + '</div>' : '') +
-      (w.items.length ? groupByDate(w.items) : '<p class="muted center" style="padding:24px 0">No candidates this week yet.</p>')
-    );
-    bindShell(); bindItems(); bindWeekNav(reload);
-  }).catch(errorView);
-}
-
-// ───── All (admin) ─────
-function viewAll() {
-  loadingView();
-  call('listWeek', { weekEnding: S.week }).then(w => {
-    const F = {
-      all: ['All', () => true],
-      call: ['Needs outcome', c => !c.outcome],
-      pending: ['Awaiting admin', c => c.admin_status === 'pending'],
-      red: ['Red flags', c => c.flags.some(f => f.level === 'red')],
-      nobooker: ['No booker', c => !c.booker_id],
-      late: ['Late', c => !!c.outcome_late],
-    };
-    const items = w.items.filter(F[S.filter][1]);
-    $app.innerHTML = shell(
-      '<h1>All candidates</h1><input type="text" id="q" placeholder="Search name, mobile or email (last 12 months)">' +
-      '<div id="sr"></div>' + weekNav() +
-      '<div class="chips" id="flt">' + Object.keys(F).map(k => '<button class="chip' + (S.filter === k ? ' on' : '') + '" data-f="' + k + '">' + F[k][0] + ' (' + w.items.filter(F[k][1]).length + ')</button>').join('') + '</div>' +
-      (items.length ? groupByDate(items) : '<p class="muted center" style="padding:24px 0">Nothing here.</p>')
-    );
-    bindShell(); bindItems(); bindWeekNav(viewAll);
-    document.querySelectorAll('#flt .chip').forEach(b => { b.onclick = () => { S.filter = b.dataset.f; viewAll(); }; });
-    let t;
-    document.getElementById('q').oninput = e => {
-      clearTimeout(t); const q = e.target.value;
-      t = setTimeout(() => {
-        const sr = document.getElementById('sr');
-        if (q.trim().length < 2) { sr.innerHTML = ''; return; }
-        call('search', { q: q }).then(r => {
-          sr.innerHTML = '<div class="list">' + (r.items.length ? r.items.map(c => item(c, true)).join('') : '<p class="muted">No matches.</p>') + '</div><hr>';
-          bindItems();
-        });
-      }, 350);
-    };
-  }).catch(errorView);
+    '<p class="hint">If Download doesn\'t work on your phone, press and hold the image → Save.</p>', false, true);
 }
 
 // ───── Candidate snapshot (the one page) ─────
 const TAGS = ['Learn new skills', 'Earnings driven', 'Personal development', 'Sales experience', 'Customer service exp', 'Confident', 'Quiet', 'Great energy', 'Holiday booked', 'Leadership potential', 'Future owner'];
 
-function openCandidate(id) {
-  stopTimer(); scrollTop(); loadingView();
+function viewCandidate(id) {
+  const c = findCand(id);
+  if (c) {
+    renderCandidate(c);
+    const vid = S.viewId;
+    call('getCandidate', { id: id }).then(x => {
+      if (JSON.stringify(x) === JSON.stringify(c)) return;
+      const d = S.data[x.week_ending]; if (d) { const i = d.items.findIndex(y => y.id === x.id); if (i >= 0) d.items[i] = x; }
+      saveCache();
+      const typing = document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
+      if (S.viewId === vid && !typing) renderCandidate(x, true);
+    }).catch(() => {});
+    return;
+  }
+  paint('', skeleton(3), false, true);
+  const vid = S.viewId;
   const need = isAdmin() && !S.users ? call('listUsers').then(r => { S.users = r.users; }) : Promise.resolve();
-  Promise.all([call('getCandidate', { id: id }), need]).then(([c]) => renderCandidate(c)).catch(errorView);
+  Promise.all([call('getCandidate', { id: id }), need]).then(([x]) => { if (S.viewId === vid) renderCandidate(x); })
+    .catch(e => { if (S.viewId === vid) paint('', '<div class="err">' + h(e.message) + '</div>', false, true); });
 }
+function saved(nc, msg) { upsert(nc); toast(msg); if (S.view === 'cand' && S.params.id === nc.id) renderCandidate(nc, true); }
 
 function brandOf(c) { return c.company === 'JUSS' ? 'JUSS Marketing' : 'LINK Marketing'; }
 function waUrl(mobile, text) { return 'https://wa.me/44' + String(mobile).slice(1) + '?text=' + encodeURIComponent(text); }
@@ -724,11 +987,11 @@ function msgAcademy(c) {
   return lines.join('\n');
 }
 
-function renderCandidate(c) {
+
+function renderCandidate(c, quiet) {
   const canNotes = isPresenter();
   const canOutcome = isAdmin() || c.booker_id === S.me.user.id;
-  const red = c.flags.filter(f => f.level === 'red'), amber = c.flags.filter(f => f.level === 'amber'), green = c.flags.filter(f => f.level === 'green');
-  const flags = red.concat(amber, green);
+  const flags = c.flags.filter(f => f.level === 'red').concat(c.flags.filter(f => f.level === 'amber'), c.flags.filter(f => f.level === 'green'));
   const kv = (k, v) => v ? '<dt>' + h(k) + '</dt><dd>' + h(v) + '</dd>' : '';
   const qa = (q, a) => '<div class="qa"><div class="qq">' + h(q) + '</div><div class="aa">' + (a ? h(a) : '<span class="muted">—</span>') + '</div></div>';
   const evalHtml = c.eval_at
@@ -740,50 +1003,45 @@ function renderCandidate(c) {
       qa('2-year ambition (BDP)', c.q12_bdp_stage + (c.q12_bdp_why ? ' — ' + c.q12_bdp_why : '')) +
       (isAdmin() ? qa('Unspent convictions (admin only)', c.q13_unspent) : '') + qa('Questions for us', c.q14_questions)
     : '<p class="muted">Not submitted yet.</p>';
-
   const academyDefault = c.academy_date || nextMonday(S.me.today);
   const offerReady = c.outcome === 'Academy booked' && c.admin_status !== 'pending' && c.admin_status !== 'rejected';
+  const waMain = canOutcome && offerReady ? waUrl(c.mobile, msgAcademy(c)) : canNotes ? waUrl(c.mobile, msgThanks(c)) : waUrl(c.mobile, '');
 
-  let html = '<button class="btn ghost sm" id="back" style="margin-top:6px">‹ Back</button>' +
-    '<div class="card"><div class="row between"><h1 style="margin:0">' + h(c.full_name) + '</h1><span class="dot ' + h(c.rag) + '" style="width:20px;height:20px"></span></div>' +
-    '<p class="muted small">Attended ' + fmt(c.attended_date) + ' · w/e ' + fmt(c.week_ending) + '</p>' +
-    '<p>' + (c.booker_name ? 'Booked by <b>' + h(c.booker_name) + '</b> <span class="co ' + h(c.company) + '">' + h(c.company) + '</span>' : '<b class="muted">Booker not confirmed</b>' + (c.booker_typed ? ' (typed "' + h(c.booker_typed) + '")' : '')) + '</p>' +
-    '<div class="row"><a class="btn sm" href="tel:' + h(c.mobile) + '">📞 ' + h(c.mobile) + '</a><a class="btn ghost sm" href="mailto:' + h(c.email) + '">✉️ Email</a></div>' +
-    (c.stars ? '<p style="color:#F2A900;font-size:20px;margin-top:10px">' + '★'.repeat(Number(c.stars)) + '<span style="color:#D5D3CF">' + '★'.repeat(5 - Number(c.stars)) + '</span></p>' : '') +
-    '</div>' +
-    (flags.length ? '<div class="flags">' + flags.map(f => '<div class="flag ' + f.level + '">' + (f.level === 'red' ? '🔴 ' : f.level === 'amber' ? '🟠 ' : '🟢 ') + h(f.text) + '</div>').join('') + '</div>' : '');
+  let html = '<div class="profile">' + avatar(c, 'xl') + '<h1>' + h(c.full_name) + '</h1>' +
+    '<div class="muted small">Attended ' + fmt(c.attended_date) + ' · ' + (c.booker_name ? 'booked by <b>' + h(c.booker_name) + '</b> <span class="co ' + h(c.company) + '">' + h(c.company) + '</span>' : '<b>booker not confirmed</b>' + (c.booker_typed ? ' ("' + h(c.booker_typed) + '")' : '')) + '</div>' +
+    (c.stars ? '<div class="stars-lg">' + '★'.repeat(Number(c.stars)) + '<span>' + '★'.repeat(5 - Number(c.stars)) + '</span></div>' : '') +
+    '<div class="pills center-pills">' + statusPill(c) + '</div>' +
+    '<div class="actions"><a href="tel:' + h(c.mobile) + '">' + icon('phone') + '<span>Call</span></a>' +
+    '<a href="' + h(waMain) + '" target="_blank" rel="noopener">' + icon('chat') + '<span>WhatsApp</span></a>' +
+    '<a href="mailto:' + h(c.email) + '">' + icon('mail') + '<span>Email</span></a></div></div>' +
+    (flags.length ? '<div class="flags">' + flags.map(f => '<div class="flag ' + f.level + '">' + h(f.text) + '</div>').join('') + '</div>' : '');
 
   // Presenter
-  html += '<h3>Presenter</h3><div class="card" id="pres">';
+  html += '<div class="section-h">Presenter</div><div class="card" id="pres">';
   if (canNotes) {
-    html += '<button type="button" class="toggle' + (c.in_room ? ' on' : '') + '" id="inroom">' + (c.in_room ? '✅ In the room' : '⬜ Tap to confirm they\'re in the room') + '</button>' +
-      '<label class="q">Recommendation</label><div class="rag"><button type="button" class="G' + (c.rag === 'G' ? ' on' : '') + '" data-r="G">Green</button>' +
+    html += '<div class="rag"><button type="button" class="G' + (c.rag === 'G' ? ' on' : '') + '" data-r="G">Green</button>' +
       '<button type="button" class="A' + (c.rag === 'A' ? ' on' : '') + '" data-r="A">Amber</button><button type="button" class="R' + (c.rag === 'R' ? ' on' : '') + '" data-r="R">Red</button></div>' +
-      '<label class="q">Stars</label><div class="stars">' + [1, 2, 3, 4, 5].map(n => '<button type="button" data-s="' + n + '" class="' + (Number(c.stars) >= n ? 'on' : '') + '">★</button>').join('') + '</div>' +
-      '<label class="q">Quick tags</label><div class="chips" data-name="tags" data-multi="1">' + TAGS.map(t => '<button type="button" class="chip' + ((c.tags || '').split(', ').indexOf(t) >= 0 ? ' on' : '') + '" data-v="' + h(t) + '">' + h(t) + '</button>').join('') + '</div>' +
-      '<label class="q">Notes</label><textarea id="notes" placeholder="e.g. Done sales in Turkey, likes speaking to people. Loves football.">' + h(c.notes) + '</textarea>' +
+      '<div class="stars">' + [1, 2, 3, 4, 5].map(n => '<button type="button" data-s="' + n + '" class="' + (Number(c.stars) >= n ? 'on' : '') + '">★</button>').join('') + '</div>' +
+      '<div class="chips" data-name="tags" data-multi="1">' + TAGS.map(t => '<button type="button" class="chip' + ((c.tags || '').split(', ').indexOf(t) >= 0 ? ' on' : '') + '" data-v="' + h(t) + '">' + h(t) + '</button>').join('') + '</div>' +
+      '<textarea id="notes" placeholder="Notes, e.g. Done sales in Turkey, likes speaking to people. Loves football." style="margin-top:12px">' + h(c.notes) + '</textarea>' +
       '<div id="perr"></div><button class="btn block" id="savenotes" style="margin-top:10px">Save notes</button>' +
-      (c.notes_at ? '<p class="small muted">Last saved ' + fmtTs(c.notes_at) + ' by ' + h(c.presenter_name) + '</p>' : '');
+      '<p class="small muted center">' + (c.in_room ? '✅ In the room · ' : '') + (c.notes_at ? 'saved ' + fmtTs(c.notes_at) + ' by ' + h(c.presenter_name) : 'Rating them confirms they were in the room') + '</p>';
   } else {
-    html += '<dl class="kv">' + kv('In the room', c.in_room ? 'Yes' : 'Not confirmed') + kv('Recommendation', { G: 'Green', A: 'Amber', R: 'Red' }[c.rag] || '') +
+    html += '<dl class="kv">' + kv('In the room', c.in_room ? 'Yes' : 'Not rated yet') + kv('Recommendation', { G: 'Green', A: 'Amber', R: 'Red' }[c.rag] || '') +
       kv('Stars', c.stars ? c.stars + ' / 5' : '') + kv('Tags', c.tags) + kv('Presenter', c.presenter_name) + '</dl>' +
       (c.notes ? '<p style="white-space:pre-wrap;margin-top:10px">' + h(c.notes) + '</p>' : '<p class="muted">No notes yet.</p>');
   }
   html += '</div>';
 
-  // Check-in
-  html += '<h3>Check-in</h3><div class="card"><dl class="kv">' + kv('Email', c.email) + kv('18 or over', c.over18) + kv('Right to work', c.rtw) +
+  html += '<div class="section-h">Check-in</div><div class="card"><dl class="kv">' + kv('Mobile', c.mobile) + kv('Email', c.email) + kv('18 or over', c.over18) + kv('Right to work', c.rtw) +
     kv('Visa expiry', c.visa_expiry ? fmt(c.visa_expiry) : '') + kv('Found us via', c.source) + kv('Typed booker', c.booker_typed) + kv('Checked in', fmtTs(c.created_at)) + '</dl></div>';
 
-  // Evaluation
-  html += '<h3>Evaluation' + (c.eval_at ? ' · ' + fmtTs(c.eval_at) : '') + '</h3><div class="card">' + evalHtml + '</div>';
+  html += '<div class="section-h">Evaluation' + (c.eval_at ? '<span>' + fmtTs(c.eval_at) + '</span>' : '') + '</div><div class="card">' + evalHtml + '</div>';
 
-  // Outcome
-  html += '<h3>Call outcome</h3><div class="card" id="out">';
+  html += '<div class="section-h">Call outcome<span>due ' + fmtTs(c.deadline) + '</span></div><div class="card" id="out">';
   if (c.outcome) {
-    html += '<p><span class="pill ' + (c.outcome === 'Academy booked' ? 'green' : 'blue') + '">' + h(c.outcome) + '</span>' +
-      (c.academy_date ? ' <b>Day 1: ' + fmtLong(c.academy_date) + '</b>' : '') + '</p>' +
-      '<p class="small muted">Logged ' + fmtTs(c.outcome_at) + ' by ' + h(c.outcome_by) + (c.outcome_late ? ' · <b style="color:var(--amber)">LATE (after deadline ' + fmtTs(c.deadline) + ')</b>' : '') + '</p>' +
+    html += '<p>' + statusPill(c) + (c.academy_date ? ' <b>Day 1: ' + fmtLong(c.academy_date) + '</b>' : '') + '</p>' +
+      '<p class="small muted">Logged ' + fmtTs(c.outcome_at) + ' by ' + h(c.outcome_by) + (c.outcome_late ? ' · <b style="color:var(--amber)">LATE</b>' : '') + '</p>' +
       (c.outcome_notes ? '<p style="white-space:pre-wrap">' + h(c.outcome_notes) + '</p>' : '') +
       (c.outcome === 'Academy booked' && offerReady ? (c.academy_confirmed_at
         ? '<div class="flag green">✅ ' + h(c.first_name) + ' confirmed Day 1 on their welcome page · ' + fmtTs(c.academy_confirmed_at) + '</div>'
@@ -792,17 +1050,16 @@ function renderCandidate(c) {
       (c.admin_status === 'approved' ? '<div class="flag green">Approved by ' + h(c.admin_by) + (c.admin_note ? ': ' + h(c.admin_note) : '') + '</div>' : '') +
       (c.admin_status === 'rejected' ? '<div class="flag red">Rejected by ' + h(c.admin_by) + (c.admin_note ? ': ' + h(c.admin_note) : '') + '</div>' : '');
     if (canOutcome) html += '<hr>';
-  } else if (!canOutcome) html += '<p class="muted">Not logged yet. Deadline ' + fmtTs(c.deadline) + '.</p>';
+  } else if (!canOutcome) html += '<p class="muted">Not logged yet.</p>';
   if (canOutcome) {
-    html += '<p class="small muted">Deadline: ' + fmtTs(c.deadline) + '. Logging after this is allowed but flagged late.</p>' +
-      '<label class="q">' + (c.outcome ? 'Update outcome' : 'How did the call go?') + '</label>' + chips('outcome', S.me.outcomes, c.outcome, true) +
+    html += '<label class="q" style="margin-top:0">' + (c.outcome ? 'Update outcome' : 'How did the call go?') + '</label>' + chips('outcome', S.me.outcomes, c.outcome, true) +
       '<div id="acad"' + (c.outcome === 'Academy booked' ? '' : ' hidden') + '><label class="q">BA Academy Day 1 date</label><input type="date" id="adate" value="' + h(academyDefault) + '"></div>' +
       '<label class="q">Notes from the call</label><textarea id="onotes" placeholder="Anything the team should know">' + h(c.outcome_notes) + '</textarea>' +
-      '<div id="oerr"></div><button class="btn block" id="saveout" style="margin-top:10px">Save outcome</button>';
+      '<div id="oerr"></div><button class="btn block" id="saveout" style="margin-top:10px">Save outcome</button>' +
+      '<p class="small muted center">Logging after the deadline is allowed but shows as late.</p>';
   }
   html += '</div>';
 
-  // WhatsApp
   const wa = [];
   if (canNotes) wa.push('<a class="btn wa block" target="_blank" rel="noopener" data-kind="thanks" href="' + h(waUrl(c.mobile, msgThanks(c))) + '">💬 Send thank-you message</a>' +
     (c.thanks_sent_at ? '<p class="small muted center">Opened ' + fmtTs(c.thanks_sent_at) + '</p>' : ''));
@@ -810,11 +1067,10 @@ function renderCandidate(c) {
     (c.offer_sent_at ? '<p class="small muted center">Opened ' + fmtTs(c.offer_sent_at) + '</p>' : '') +
     (c.welcome_url ? '<a class="btn ghost sm" target="_blank" rel="noopener" href="' + h(c.welcome_url) + '">👀 Preview their welcome page</a>' : ''));
   if (canOutcome && c.outcome === 'No answer') wa.push('<a class="btn wa block" target="_blank" rel="noopener" data-kind="noanswer" href="' + h(waUrl(c.mobile, msgNoAnswer(c))) + '">📞 Send "missed you" message</a>');
-  if (wa.length) html += '<h3>WhatsApp</h3><div class="card" style="display:grid;gap:8px">' + wa.join('') + '<p class="small muted center">Opens WhatsApp with the message ready, then just tap send.</p></div>';
+  if (wa.length) html += '<div class="section-h">WhatsApp</div><div class="card" style="display:grid;gap:8px">' + wa.join('') + '<p class="small muted center">Opens WhatsApp with the message ready, then just tap send.</p></div>';
 
-  // Admin
   if (isAdmin()) {
-    html += '<h3>Admin</h3><div class="card">';
+    html += '<div class="section-h">Admin</div><div class="card">';
     if (c.admin_status === 'pending') {
       html += '<p><b>Decision needed:</b> ' + h(c.outcome_by) + ' wants to book BA Academy.</p><input type="text" id="anote" placeholder="Note (optional)">' +
         '<div class="row" style="margin-top:8px"><button class="btn green grow" id="approve">Approve</button><button class="btn red grow" id="reject">Reject</button></div><hr>';
@@ -822,134 +1078,54 @@ function renderCandidate(c) {
     html += '<p><b>Pay count:</b> ' + (c.pay_reason ? '<span style="color:var(--red)">Doesn\'t count — ' + h(c.pay_reason) + '</span>' : '<span style="color:var(--green)">Counts towards ' + h(c.booker_name || 'booker') + '\'s net ' + S.me.payTarget + '</span>') + '</p>' +
       (c.pay_excluded
         ? '<button class="btn ghost sm" id="incl">Count it again</button>'
-        : '<div class="row"><input type="text" id="exr" class="grow" placeholder="Reason, e.g. share code failed" style="flex:1"><button class="btn ghost sm" id="excl">Remove from pay</button></div>') +
+        : '<div class="row"><input type="text" id="exr" placeholder="Reason, e.g. share code failed" style="flex:1"><button class="btn ghost sm" id="excl">Remove from pay</button></div>') +
       '<hr><label class="q" style="margin-top:0">Booker</label><div class="row"><select id="rb" style="flex:1"><option value="">Choose booker…</option>' +
       (S.users || []).filter(u => u.active && (u.roles.indexOf('booker') >= 0 || u.roles.indexOf('admin') >= 0)).map(u => '<option value="' + h(u.id) + '"' + (u.id === c.booker_id ? ' selected' : '') + '>' + h(u.name) + ' (' + h(u.company) + ')</option>').join('') +
       '</select><button class="btn ghost sm" id="reas">Save</button></div></div>';
   }
 
-  $app.innerHTML = shell(html);
-  bindShell();
-  document.getElementById('back').onclick = () => go(S.tab);
+  paint(c.first_name, html, quiet, true);
 
-  // presenter bindings
   if (canNotes) {
-    const st = { rag: c.rag, stars: Number(c.stars) || 0, in_room: !!c.in_room };
+    const st = { rag: c.rag, stars: Number(c.stars) || 0 };
     const pres = document.getElementById('pres');
     bindChips(pres);
-    document.getElementById('inroom').onclick = e => {
-      st.in_room = !st.in_room;
-      e.currentTarget.classList.toggle('on', st.in_room);
-      e.currentTarget.textContent = st.in_room ? '✅ In the room' : '⬜ Tap to confirm they\'re in the room';
-      call('markInRoom', { id: c.id, in_room: st.in_room }).then(() => toast(st.in_room ? 'Marked in the room' : 'Unmarked')).catch(x => toast(x.message));
-    };
     pres.querySelectorAll('.rag button').forEach(b => { b.onclick = () => { st.rag = st.rag === b.dataset.r ? '' : b.dataset.r; pres.querySelectorAll('.rag button').forEach(x => x.classList.toggle('on', x.dataset.r === st.rag)); }; });
     pres.querySelectorAll('.stars button').forEach(b => { b.onclick = () => { st.stars = Number(b.dataset.s); pres.querySelectorAll('.stars button').forEach(x => x.classList.toggle('on', Number(x.dataset.s) <= st.stars)); }; });
     document.getElementById('savenotes').onclick = e => {
       const btn = e.currentTarget; busy(btn, true);
-      call('saveNotes', { id: c.id, in_room: st.in_room, rag: st.rag || '', stars: st.stars, tags: chipVals(pres, 'tags'), notes: document.getElementById('notes').value })
-        .then(nc => { toast('Notes saved'); renderCandidate(nc); }).catch(x => { busy(btn, false); showErr(document.getElementById('perr'), x.message); });
+      call('saveNotes', { id: c.id, in_room: !!c.in_room, rag: st.rag || '', stars: st.stars, tags: chipVals(pres, 'tags'), notes: document.getElementById('notes').value })
+        .then(nc => saved(nc, 'Notes saved ✓')).catch(x => { busy(btn, false); showErr(document.getElementById('perr'), x.message); });
     };
   }
-  // outcome bindings
   if (canOutcome) {
     const out = document.getElementById('out');
     bindChips(out, (n, v) => { if (n === 'outcome') document.getElementById('acad').hidden = v !== 'Academy booked'; });
     document.getElementById('saveout').onclick = e => {
       const btn = e.currentTarget; busy(btn, true);
       call('saveOutcome', { id: c.id, outcome: chipVal(out, 'outcome'), academy_date: document.getElementById('adate').value, outcome_notes: document.getElementById('onotes').value })
-        .then(nc => { toast(nc.outcome_late ? 'Saved — flagged late' : 'Outcome saved'); renderCandidate(nc); }).catch(x => { busy(btn, false); showErr(document.getElementById('oerr'), x.message); });
+        .then(nc => saved(nc, nc.outcome_late ? 'Saved — flagged late' : 'Outcome saved ✓')).catch(x => { busy(btn, false); showErr(document.getElementById('oerr'), x.message); });
     };
   }
-  // whatsapp: record that it was opened
   document.querySelectorAll('a.wa[data-kind]').forEach(a => {
     a.addEventListener('click', () => { if (a.dataset.kind !== 'noanswer') call('markSent', { id: c.id, kind: a.dataset.kind }).catch(() => {}); });
   });
-  // admin bindings
   if (isAdmin()) {
-    const dec = d => () => call('adminDecision', { id: c.id, decision: d, note: (document.getElementById('anote') || {}).value || '' }).then(nc => { toast('Decision saved'); renderCandidate(nc); }).catch(x => toast(x.message));
+    const dec = d => () => call('adminDecision', { id: c.id, decision: d, note: (document.getElementById('anote') || {}).value || '' }).then(nc => saved(nc, 'Decision saved ✓')).catch(x => toast(x.message));
     const ap = document.getElementById('approve'); if (ap) { ap.onclick = dec('approved'); document.getElementById('reject').onclick = dec('rejected'); }
     const ex = document.getElementById('excl');
     if (ex) ex.onclick = () => {
       const r = document.getElementById('exr').value.trim();
       if (!r) return toast('Add a reason first');
-      call('setPayExcluded', { id: c.id, excluded: true, reason: r }).then(nc => { toast('Removed from pay count'); renderCandidate(nc); }).catch(x => toast(x.message));
+      call('setPayExcluded', { id: c.id, excluded: true, reason: r }).then(nc => saved(nc, 'Removed from pay count')).catch(x => toast(x.message));
     };
     const inc = document.getElementById('incl');
-    if (inc) inc.onclick = () => call('setPayExcluded', { id: c.id, excluded: false }).then(nc => { toast('Counted again'); renderCandidate(nc); }).catch(x => toast(x.message));
+    if (inc) inc.onclick = () => call('setPayExcluded', { id: c.id, excluded: false }).then(nc => saved(nc, 'Counted again')).catch(x => toast(x.message));
     document.getElementById('reas').onclick = () => {
       const v = document.getElementById('rb').value; if (!v) return toast('Choose a booker');
-      call('reassignBooker', { id: c.id, booker_id: v }).then(nc => { toast('Booker updated'); renderCandidate(nc); }).catch(x => toast(x.message));
+      call('reassignBooker', { id: c.id, booker_id: v }).then(nc => saved(nc, 'Booker updated ✓')).catch(x => toast(x.message));
     };
   }
-}
-
-// ───── Pay ─────
-function viewPay() {
-  loadingView();
-  call('payReport', { weekEnding: S.week }).then(p => {
-    const rows = p.rows.filter(r => r.attended > 0 || isAdmin());
-    $app.innerHTML = shell(
-      '<h1>Pay — net attended</h1>' + weekNav() +
-      '<p class="small muted">Counts Mon–Fri appointments confirmed in the room by the presenter. Doesn\'t count: under 18, not eligible to work self-employed (incl. Tier 4), repeats within 12 months, or removed by admin. Target: <b>' + p.target + '</b>. Outcome deadline: ' + fmtTs(p.deadline) + '.</p>' +
-      '<div class="card" style="padding:8px 12px"><table class="t"><tr><th>Booker</th><th class="n">Att.</th><th class="n">Net</th><th class="n">Late</th><th class="n">No outcome</th></tr>' +
-      (rows.length ? rows.map((r, i) => '<tr data-i="' + i + '" style="cursor:pointer"><td><b>' + h(r.name) + '</b> <span class="co ' + h(r.company) + '">' + h(r.company) + '</span>' +
-        '<div class="small muted" hidden>' + (r.excluded.length ? r.excluded.map(x => h(x.name) + ': ' + h(x.why)).join('<br>') : 'Nothing excluded') + '</div></td>' +
-        '<td class="n">' + r.attended + '</td><td class="n"><b>' + r.net + '</b> ' + (r.net >= p.target ? '✅' : '') + '</td>' +
-        '<td class="n">' + (r.late ? '<span class="pill amber">' + r.late + '</span>' : '0') + '</td><td class="n">' + (r.missing ? '<span class="pill red">' + r.missing + '</span>' : '0') + '</td></tr>').join('')
-        : '<tr><td colspan="5" class="muted">No appointments this week.</td></tr>') +
-      '</table><p class="small muted">Tap a row to see what didn\'t count.</p></div>' +
-      (p.unassigned.length ? '<h3>No confirmed booker (' + p.unassigned.length + ')</h3><div class="list">' + p.unassigned.map(x => '<div class="item" data-id="' + h(x.id) + '"><div class="main"><div class="name">' + h(x.name) + '</div><div class="sub">Typed: "' + h(x.typed || '—') + '" — tap to assign</div></div>›</div>').join('') + '</div>' : '')
-    );
-    bindShell(); bindItems(); bindWeekNav(viewPay);
-    document.querySelectorAll('tr[data-i]').forEach(tr => { tr.onclick = () => { const d = tr.querySelector('div.small'); d.hidden = !d.hidden; }; });
-  }).catch(errorView);
-}
-
-// ───── Team (admin) ─────
-function viewTeam() {
-  loadingView();
-  call('listUsers').then(r => {
-    S.users = r.users;
-    const row = u => '<div class="item" data-u="' + h(u.id) + '"><div class="main"><div class="name">' + h(u.name) + ' <span class="co ' + h(u.company) + '">' + h(u.company) + '</span>' +
-      (u.active ? '' : ' <span class="pill red">No access</span>') + '</div><div class="sub">' + h(u.email) + ' · ' + h(u.roles.join(', ')) + '</div></div>›</div>';
-    $app.innerHTML = shell('<div class="row between"><h1>Team</h1><button class="btn sm" id="add">+ Add person</button></div>' +
-      '<button class="btn ghost block" id="slideqr" style="margin:4px 0 8px">📲 QR codes for the presentation slides</button>' +
-      '<p class="small muted">' + r.users.filter(u => u.active).length + ' with access. Bookers appear in the candidate check-in list.</p>' +
-      '<div class="list">' + r.users.map(row).join('') + '</div>');
-    bindShell();
-    document.getElementById('add').onclick = () => editUser(null);
-    document.getElementById('slideqr').onclick = viewSlideQR;
-    document.querySelectorAll('.item[data-u]').forEach(el => { el.onclick = () => editUser(r.users.filter(u => u.id === el.dataset.u)[0]); });
-  }).catch(errorView);
-}
-
-function editUser(u) {
-  scrollTop();
-  const x = u || { name: '', email: '', company: 'LINK', roles: ['booker'], active: true };
-  $app.innerHTML = shell('<button class="btn ghost sm" id="back" style="margin-top:6px">‹ Team</button><div class="card" id="uf"><h2>' + (u ? 'Edit ' + h(u.name) : 'Add a person') + '</h2>' +
-    '<label class="q">Full name</label><input type="text" id="un" value="' + h(x.name) + '">' +
-    '<label class="q">Email (used to log in)</label><input type="email" id="ue" value="' + h(x.email) + '">' +
-    '<label class="q">Company</label>' + chips('company', ['LINK', 'JUSS'], x.company) +
-    '<div class="help" style="margin-top:6px">Decides which WhatsApp welcome message (LINK or JUSS) they send.</div>' +
-    '<label class="q">Access</label><div class="chips" data-name="roles" data-multi="1">' +
-    [['booker', 'Booker'], ['presenter', 'Presenter'], ['admin', 'Admin (adds/removes people, sees everything)']].map(r => '<button type="button" class="chip' + (x.roles.indexOf(r[0]) >= 0 ? ' on' : '') + '" data-v="' + r[0] + '">' + r[1] + '</button>').join('') + '</div>' +
-    '<label class="check"><input type="checkbox" id="ua"' + (x.active ? ' checked' : '') + '> Has access (untick to switch off instantly)</label>' +
-    '<div id="uerr"></div><button class="btn block" id="usave">Save</button>' +
-    (u && u.id !== S.me.user.id ? '<button class="btn ghost block" id="udel" style="margin-top:8px;color:var(--red)">Delete person</button>' : '') + '</div>');
-  bindShell();
-  const uf = document.getElementById('uf'); bindChips(uf);
-  document.getElementById('back').onclick = () => go('team');
-  document.getElementById('usave').onclick = e => {
-    const btn = e.currentTarget; busy(btn, true);
-    call('saveUser', { user: { id: u ? u.id : '', name: document.getElementById('un').value, email: document.getElementById('ue').value, company: chipVal(uf, 'company'), roles: chipVals(uf, 'roles'), active: document.getElementById('ua').checked } })
-      .then(() => { toast('Saved'); go('team'); }).catch(x2 => { busy(btn, false); showErr(document.getElementById('uerr'), x2.message); });
-  };
-  const del = document.getElementById('udel');
-  if (del) del.onclick = () => {
-    if (!confirm('Delete ' + u.name + '? If they have candidates, their access is switched off instead so pay history stays correct.')) return;
-    call('deleteUser', { id: u.id }).then(r => { toast(r.deleted ? 'Deleted' : 'Access switched off (they have candidates)'); go('team'); }).catch(x2 => toast(x2.message));
-  };
 }
 
 // ───────────── go ─────────────
