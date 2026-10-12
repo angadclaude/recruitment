@@ -180,6 +180,16 @@ details.card summary::-webkit-details-marker { display: none; }
 .confetti { position: fixed; top: -40px; font-size: 28px; z-index: 40; animation: fall 2.2s ease-in forwards; pointer-events: none; }
 @keyframes fall { to { transform: translateY(110vh) rotate(540deg); opacity: .2; } }
 .pushbar { background: var(--tint); border: 1.5px solid var(--orange); border-radius: 12px; padding: 12px 14px; margin: 8px 0; font-size: 14px; }
+.bullbtns { display: flex; gap: 8px; margin: 12px 0 4px; }
+.bullbtns .btn { flex: 1; padding: 12px 10px; }
+.bullbtns #bshare { flex: 2; }
+.bullseg { display: flex; margin: 4px 0 10px; }
+.bullseg button { flex: 1; }
+.bullimg { position: relative; min-height: 200px; margin-bottom: 12px; }
+.bullimg img { width: 100%; display: block; border-radius: 12px; box-shadow: var(--shadow); }
+.bullimg img:not([src]) { display: none; }
+.bullimg .loading { padding: 60px 0; text-align: center; }
+.bullopts { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
 .qrcard { text-align: center; }
 .qrcard img { width: 100%; max-width: 360px; border: 1px solid var(--line); border-radius: 10px; }
 hr { border: 0; border-top: 1px solid var(--line); margin: 14px 0; }

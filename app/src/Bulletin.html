@@ -1,0 +1,418 @@
+<script>
+/* Team bulletins in the JUSS & LINK poster style: the daily recruitment stats and the Friday "top 5 recruiters".
+   Drawn on a canvas so admins can share the finished image to WhatsApp in one tap. */
+(function () {
+  'use strict';
+  const W = 1024, H = 1536, FOOT = H - 172;  // FOOT = top of the "Mission" footer
+  const NAVY = '#141c3b', ORANGE = '#f04e23', TEAL = '#1b8fa3', BLUE = '#1f5fc8', GREEN = '#1f7a3a', RED = '#e3342f';
+  const EMOJI = '"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
+  const FONT = 'Oswald, "Arial Narrow", Arial, sans-serif', BIG = 'Anton, Impact, "Arial Black", sans-serif';
+  const DAY_TITLES = ['Super Sunday', 'Marvellous Monday', 'Terrific Tuesday', 'Wonderful Wednesday', 'Thrilling Thursday', 'Fun Friday', 'Super Saturday'];
+  let X;  // the canvas context being drawn
+
+  // ── Format rules (same as the hand-made posters) ──
+  /** Daily list: gold for the top booker, silver/bronze only with 2+, a 💪 for everyone else. 🔔 = 2, gong (💿) = 3+. */
+  function dailyRows(list) {
+    return list.slice(0, 6).map(r => {
+      const rank = list.filter(o => o.n > r.n).length + 1;
+      const medal = rank === 1 ? '🥇' : rank === 2 && r.n >= 2 ? '🥈' : rank === 3 && r.n >= 2 ? '🥉' : '💪';
+      let icons;
+      if (r.n >= 3) icons = ['💿'].concat(alt(['🔥', '💥'], Math.min(r.n, 5)));
+      else if (r.n === 2) icons = ['🔔', '👏', '👏'];
+      else icons = ['👏'];
+      return Object.assign({}, r, { medal: medal, icons: icons });
+    });
+  }
+  /** Weekly top 5 (ties share a medal) plus a 💪 row for anyone one short of the incentive. */
+  function weeklyRows(list, target) {
+    const top = list.slice(0, 5);
+    const rows = top.map(r => {
+      const pos = list.filter(o => o.n > r.n).length;  // people strictly ahead
+      return Object.assign({}, r, { medal: ['🥇', '🥈', '🥉', '💿', '💿'][pos] || '💿', icons: weekIcons(r.n, target) });
+    });
+    const close = list.slice(5).filter(r => r.n === target - 1);
+    if (close.length) rows.push({ name: joinNames(close.map(r => r.name)), n: target - 1, medal: '💪', icons: ['👏', '👏'], close: true });
+    return rows;
+  }
+  function weekIcons(n, target) {
+    if (n >= 12) return alt(['🔥', '🤩'], 6);
+    if (n >= 10) return alt(['🔥', '🤩'], 4);
+    if (n >= 8) return alt(['🔥', '💥'], 4);
+    if (n >= 6) return ['🔥', '🔥', '🔥'];
+    if (n >= target) return ['🔥', '🔥'];
+    return ['👏', '👏'];
+  }
+  function alt(pair, n) { const out = []; for (let i = 0; i < n; i++) out.push(pair[i % 2]); return out; }
+  function joinNames(a) { return a.length < 2 ? a.join('') : a.slice(0, -1).join(', ') + ' & ' + a[a.length - 1]; }
+  function ddmmyyyy(ymd) { return ymd.slice(8, 10) + '/' + ymd.slice(5, 7) + '/' + ymd.slice(0, 4); }
+
+  // ── Drawing helpers ──
+  function rng(seed) { let s = seed >>> 0 || 1; return () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296; }
+  function font(size, weight, fam) { X.font = (weight || 700) + ' ' + size + 'px ' + (fam || FONT); }
+  function fit(t, size, weight, maxW, fam) { font(size, weight, fam); while (size > 12 && X.measureText(t).width > maxW) font(--size, weight, fam); return size; }
+  function measure(t, size, weight, fam) { font(size, weight, fam); return X.measureText(t).width; }
+  function text(t, x, y, o) {
+    o = o || {};
+    X.save();
+    const size = o.maxW ? fit(t, o.size, o.weight, o.maxW, o.fam) : o.size;
+    font(size, o.weight, o.fam);
+    X.textAlign = o.align || 'left'; X.textBaseline = o.base || 'alphabetic';
+    X.translate(x, y); if (o.italic) X.transform(1, 0, -0.18, 1, 0, 0);
+    if (o.shadow) { X.shadowColor = o.shadow; X.shadowOffsetY = o.sy || 5; X.shadowBlur = o.blur || 0; }
+    if (o.stroke) { X.lineJoin = 'round'; X.lineWidth = o.strokeW || 8; X.strokeStyle = o.stroke; X.strokeText(t, 0, 0); X.shadowColor = 'transparent'; }
+    X.fillStyle = o.color || NAVY; X.fillText(t, 0, 0);
+    X.restore();
+    return size;
+  }
+  function emoji(e, x, y, size, align) { X.save(); X.font = size + 'px ' + EMOJI; X.textAlign = align || 'center'; X.textBaseline = 'middle'; X.fillStyle = '#000'; X.fillText(e, x, y); X.restore(); }
+  function rr(x, y, w, h, r) { X.beginPath(); X.moveTo(x + r, y); X.arcTo(x + w, y, x + w, y + h, r); X.arcTo(x + w, y + h, x, y + h, r); X.arcTo(x, y + h, x, y, r); X.arcTo(x, y, x + w, y, r); X.closePath(); }
+  function grad(x0, y0, x1, y1, cols) { const g = X.createLinearGradient(x0, y0, x1, y1); cols.forEach((c, i) => g.addColorStop(i / (cols.length - 1), c)); return g; }
+  function poly(pts) { X.beginPath(); pts.forEach((p, i) => (i ? X.lineTo(p[0], p[1]) : X.moveTo(p[0], p[1]))); X.closePath(); }
+  function panel(x, y, w, h, border) {
+    X.save(); X.shadowColor = 'rgba(20,28,59,.10)'; X.shadowBlur = 14; X.shadowOffsetY = 4;
+    rr(x, y, w, h, 18); X.fillStyle = '#fff'; X.fill(); X.restore();
+    rr(x, y, w, h, 18); X.lineWidth = 3; X.strokeStyle = border; X.stroke();
+  }
+  /** Slanted ribbon header (the coloured tab at the top of each panel). */
+  function ribbon(x, y, w, h, fill) { poly([[x + 14, y], [x + w, y], [x + w - 14, y + h], [x, y + h]]); X.fillStyle = fill; X.fill(); }
+  /** Ragged "paint brush" banner. */
+  function brushBanner(x, y, w, h, fill, seed) {
+    const r = rng(seed), pts = [];
+    for (let i = 0; i <= 24; i++) pts.push([x + w * i / 24, y + (r() - 0.5) * 6]);
+    for (let i = 0; i <= 8; i++) pts.push([x + w + (r() - 0.3) * 18, y + h * i / 8]);
+    for (let i = 24; i >= 0; i--) pts.push([x + w * i / 24, y + h + (r() - 0.5) * 6]);
+    for (let i = 8; i >= 0; i--) pts.push([x - (r() - 0.3) * 18, y + h * i / 8]);
+    poly(pts); X.fillStyle = fill; X.fill();
+  }
+  /** A painterly stroke made of many thin, slightly random lines. */
+  function stroke(x, y, len, wid, ang, cols, seed) {
+    const r = rng(seed);
+    X.save(); X.translate(x, y); X.rotate(ang); X.lineCap = 'round';
+    const g = X.createLinearGradient(0, 0, len, 0); cols.forEach((c, i) => g.addColorStop(i / (cols.length - 1), c));
+    X.strokeStyle = g;
+    for (let i = 0; i < 90; i++) {
+      const oy = (r() - 0.5) * wid, a = r() * len * 0.18, b = len * (0.75 + r() * 0.25);
+      X.globalAlpha = 0.25 + r() * 0.6; X.lineWidth = 1.5 + r() * wid * 0.1;
+      X.beginPath(); X.moveTo(a, oy); X.lineTo(b, oy + (r() - 0.5) * wid * 0.15); X.stroke();
+    }
+    X.restore();
+  }
+  function squares(cx, cy, s, seed) {
+    const r = rng(seed), cols = [ORANGE, '#2f80ed', '#f6b91e', '#e94e77'];
+    for (let i = 0; i < 5; i++) {
+      X.save(); X.translate(cx + (r() - 0.5) * s * 1.4, cy + (r() - 0.5) * s * 1.4); X.rotate(0.6 + r() * 0.3);
+      X.globalAlpha = 0.65; X.strokeStyle = cols[i % 4]; X.lineWidth = 3; X.strokeRect(-s / 2, -s / 2, s * (0.6 + r() * 0.5), s * (0.6 + r() * 0.5)); X.restore();
+    }
+  }
+  function dots(x, y, cols, rows, col) { X.save(); X.fillStyle = col; X.globalAlpha = 0.35; for (let i = 0; i < cols; i++) for (let j = 0; j < rows; j++) { X.beginPath(); X.arc(x + i * 12, y + j * 12, 2.4, 0, 7); X.fill(); } X.restore(); }
+  function decor() {
+    stroke(-60, 120, 360, 110, -0.62, ['#ffd84a', '#f7931e', ORANGE], 3);
+    stroke(-40, 230, 300, 60, -0.62, ['#f7931e', ORANGE, '#d7263d'], 5);
+    stroke(150, -20, 230, 40, -0.55, ['#ffe27a', '#f7931e'], 7);
+    stroke(780, 1560, 340, 90, -0.6, ['#8fdcf7', '#2f80ed', '#1b4fbf'], 9);
+    stroke(880, 1470, 260, 40, -0.6, ['#bdeaff', '#2f80ed'], 11);
+    squares(960, 80, 70, 13); dots(900, 120, 10, 6, '#2f80ed');
+    squares(45, 1440, 60, 17); dots(20, 1370, 8, 6, '#2f80ed');
+  }
+  function gong(cx, cy, r) {
+    X.save();
+    X.strokeStyle = '#4a3220'; X.lineWidth = r * 0.14; X.lineCap = 'round';
+    X.beginPath(); X.moveTo(cx - r * 1.3, cy + r * 1.35); X.lineTo(cx - r * 1.3, cy - r * 1.3); X.lineTo(cx + r * 1.3, cy - r * 1.3); X.lineTo(cx + r * 1.3, cy + r * 1.35); X.stroke();
+    X.lineWidth = 2; X.beginPath(); X.moveTo(cx - r * 0.55, cy - r * 1.3); X.lineTo(cx - r * 0.4, cy - r * 0.9); X.moveTo(cx + r * 0.55, cy - r * 1.3); X.lineTo(cx + r * 0.4, cy - r * 0.9); X.stroke();
+    const g = X.createRadialGradient(cx - r * 0.3, cy - r * 0.3, r * 0.1, cx, cy, r);
+    g.addColorStop(0, '#fff3b0'); g.addColorStop(0.55, '#e8b23a'); g.addColorStop(1, '#9c6512');
+    X.fillStyle = g; X.beginPath(); X.arc(cx, cy, r, 0, 7); X.fill();
+    X.strokeStyle = 'rgba(110,60,10,.55)'; X.lineWidth = 3; X.beginPath(); X.arc(cx, cy, r * 0.55, 0, 7); X.stroke();
+    X.restore();
+  }
+  function moneyBag(cx, cy, s) {
+    const r = s * 0.36, by = cy + s * 0.12;
+    X.save();
+    const g = X.createRadialGradient(cx - r * 0.35, by - r * 0.3, r * 0.15, cx, by, r * 1.15);
+    g.addColorStop(0, '#f6d898'); g.addColorStop(1, '#b8792a');
+    X.fillStyle = g;
+    X.beginPath(); X.ellipse(cx, by, r * 1.05, r, 0, 0, 7); X.fill();
+    X.beginPath(); X.moveTo(cx - r * 0.32, by - r * 0.9); X.lineTo(cx - r * 0.62, by - r * 1.45); X.quadraticCurveTo(cx, by - r * 1.2, cx + r * 0.62, by - r * 1.45); X.lineTo(cx + r * 0.32, by - r * 0.9); X.closePath(); X.fill();
+    X.strokeStyle = '#6b4416'; X.lineWidth = s * 0.04; X.lineCap = 'round';
+    X.beginPath(); X.moveTo(cx - r * 0.42, by - r * 0.92); X.quadraticCurveTo(cx, by - r * 0.78, cx + r * 0.42, by - r * 0.92); X.stroke();
+    X.restore();
+    text('£', cx, by + r * 0.42, { size: r * 1.2, weight: 700, align: 'center', color: '#5a3510' });
+  }
+  function badge(cx, cy, r, col, tick) {
+    X.save(); X.fillStyle = col; X.strokeStyle = '#fff'; X.lineWidth = 5; X.beginPath(); X.arc(cx, cy, r, 0, 7); X.fill(); X.stroke();
+    X.lineWidth = r * 0.3; X.lineCap = 'round'; X.lineJoin = 'round'; X.beginPath();
+    if (tick) { X.moveTo(cx - r * 0.45, cy + r * 0.02); X.lineTo(cx - r * 0.1, cy + r * 0.36); X.lineTo(cx + r * 0.48, cy - r * 0.34); }
+    else { X.moveTo(cx - r * 0.36, cy - r * 0.36); X.lineTo(cx + r * 0.36, cy + r * 0.36); X.moveTo(cx + r * 0.36, cy - r * 0.36); X.lineTo(cx - r * 0.36, cy + r * 0.36); }
+    X.stroke(); X.restore();
+  }
+  /** Number in a small coloured square, e.g. [5]. */
+  function numBox(t, x, y, size, fill, color) {
+    font(size, 700); const w = Math.max(size * 0.95, X.measureText(t).width + size * 0.4), h = size * 1.12;
+    X.save(); rr(x, y - h * 0.82, w, h, size * 0.16); X.fillStyle = fill; X.fill(); X.restore();
+    text(t, x + w / 2, y, { size: size, weight: 700, align: 'center', color: color || '#fff' });
+    return w;
+  }
+  /** "Text with {highlighted} words", wrapped to a width. Returns the lines (arrays of {t, hl}). */
+  function wrapRich(s, size, weight, maxW) {
+    font(size, weight);
+    const lines = [];
+    String(s || '').split('\n').forEach(par => {
+      const words = [];
+      par.split(/(\{[^}]*\})/).forEach(p => {
+        if (!p) return;
+        const hl = p[0] === '{' && p.slice(-1) === '}';
+        (hl ? p.slice(1, -1) : p).split(/(\s+)/).forEach(w => { if (w) words.push({ t: w, hl: hl }); });
+      });
+      let line = [], w = 0;
+      words.forEach(wd => {
+        const ww = X.measureText(wd.t).width, space = /^\s+$/.test(wd.t);
+        if (space) { if (line.length) { line.push(wd); w += ww; } return; }
+        if (w + ww > maxW && line.length) { while (line.length && /^\s+$/.test(line[line.length - 1].t)) line.pop(); lines.push(line); line = []; w = 0; }
+        line.push(wd); w += ww;
+      });
+      if (line.length) lines.push(line);
+    });
+    return lines;
+  }
+  function drawRich(line, x, y, size, weight, color, hlColor, align) {
+    font(size, weight);
+    const total = line.reduce((a, s) => a + X.measureText(s.t).width, 0);
+    let cx = align === 'center' ? x - total / 2 : x;
+    line.forEach(s => { const w = measure(s.t, size, weight); text(s.t, cx, y, { size: size, weight: weight, italic: true, color: s.hl ? hlColor : color }); cx += w; });
+  }
+
+  // ── Shared pieces ──
+  function logos(assets, y, h) {
+    const j = assets.juss, l = assets.link;
+    const jw = j ? h * j.width / j.height : 0, lw = l ? h * 0.9 * l.width / l.height : 0, gap = 44;
+    const x0 = (W - (jw + gap + lw)) / 2;
+    if (j) X.drawImage(j, x0, y, jw, h);
+    X.fillStyle = '#2b2b33'; X.fillRect(x0 + jw + gap / 2 - 1.5, y + h * 0.06, 3, h * 0.86);
+    if (l) X.drawImage(l, x0 + jw + gap, y + h * 0.05, lw, h * 0.9);
+    if (!j && !l) text('JUSS  |  LINK', W / 2, y + h * 0.65, { size: 90, align: 'center' });
+  }
+  function footer(o) {
+    const y = FOOT;
+    text("LET'S BUILD TOWARD", W / 2, y + 28, { size: 30, weight: 700, italic: true, align: 'center' });
+    const t = 'MISSION ' + o.mission;
+    const size = fit(t, 92, 400, 700, BIG), tw = measure(t, size, 400, BIG);
+    text(t, W / 2 - 30, y + 112, { fam: BIG, weight: 400, size: size, italic: true, align: 'center', color: grad(0, y + 36, 0, y + 112, ['#ffc02e', '#f7931e', ORANGE, '#d9381c']), stroke: '#fff', strokeW: 8, shadow: 'rgba(160,50,0,.45)', sy: 5 });
+    emoji('🚀', W / 2 - 30 + tw / 2 + 48, y + 72, 58);
+    // LET'S SMASH PLAN [8][0]   ·   # PLAN [1]
+    const by = y + 120, bh = 48;
+    brushBanner(70, by, 600, bh, grad(70, 0, 670, 0, ['#f7931e', ORANGE, '#d7263d']), 21);
+    brushBanner(700, by, 265, bh, NAVY, 23);
+    let cx = 100;
+    text("LET'S SMASH", cx, by + 40, { size: 36, weight: 700, italic: true, color: '#fff' }); cx += measure("LET'S SMASH", 36, 700) + 18;
+    text('PLAN', cx, by + 40, { size: 36, weight: 700, italic: true, color: NAVY }); cx += measure('PLAN', 36, 700) + 12;
+    String(o.plan).split('').forEach(d => { cx += numBox(d, cx, by + 40, 34, NAVY) + 4; });
+    const m = String(o.tag || '').match(/^(.*?)(\d+)$/) || [o.tag, o.tag, ''];
+    text(m[1], 730, by + 40, { size: 36, weight: 700, italic: true, color: '#fff', maxW: 150 });
+    if (m[2]) numBox(m[2], 730 + Math.min(150, measure(m[1], 36, 700)) + 10, by + 40, 34, BLUE);
+  }
+  function begin(canvas, scale) {
+    canvas.width = W * scale; canvas.height = H * scale;
+    X = canvas.getContext('2d');
+    X.setTransform(scale, 0, 0, scale, 0, 0);
+    X.fillStyle = '#fff'; X.fillRect(0, 0, W, H);
+    decor();
+  }
+
+  // ── Daily stats poster ──
+  function drawDaily(canvas, d, o, assets) {
+    begin(canvas, o.scale || 1.5);
+    logos(assets, 16, 168);
+    emoji('🚀', 92, 236, 66);
+    text('JUSS & LINK PR RECRUITMENT STATS', 560, 266, { size: 64, weight: 700, align: 'center', maxW: 820 });
+    // ⭐ TERRIFIC TUESDAY | 16/06/2026
+    const day = DAY_TITLES[d.weekday].toUpperCase(), date = ddmmyyyy(d.day);
+    let k = 1;
+    const widthAt = f => 70 * f + measure(day, 70 * f, 700) + 50 * f + measure(date, 54 * f, 600);
+    while (widthAt(k) > 900 && k > 0.6) k -= 0.02;
+    const dw = measure(day, 70 * k, 700);
+    let x = (W - widthAt(k)) / 2;
+    emoji('⭐', x + 28 * k, 326, 52 * k); x += 70 * k;
+    text(day, x, 350, { size: 70 * k, weight: 700, color: ORANGE }); x += dw + 22 * k;
+    X.fillStyle = '#9aa0ad'; X.fillRect(x, 350 - 50 * k, 3, 56 * k); x += 25 * k;
+    text(date, x, 348, { size: 54 * k, weight: 600 });
+    // tagline (1–2 lines) with orange rules either side
+    let y = 400;
+    const tl = wrapRich('👏 ' + (o.tagline || ''), 28, 600, 820);
+    tl.forEach((line, i) => { drawRich(line, W / 2, y + i * 38, 28, 600, NAVY, ORANGE, 'center'); });
+    X.fillStyle = ORANGE; X.fillRect(36, y - 10, 58, 3); X.fillRect(W - 94, y - 10, 58, 3);
+    y += (tl.length - 1) * 38 + 22;
+    if (d.attended > 0 && d.nonQual === 0) {
+      brushBanner(130, y, 764, 66, NAVY, 31);
+      const a = 'ZERO NON QUALIFIERS', b = ' TODAY!', aw = measure(a, 44, 700), bw = measure(b, 44, 700);
+      const sx = W / 2 - (aw + bw) / 2;
+      emoji('🎉', sx - 40, y + 33, 40); emoji('🎉', sx + aw + bw + 40, y + 33, 40);
+      text(a, sx, y + 50, { size: 44, weight: 700, italic: true, color: '#ffd23f' });
+      text(b, sx + aw, y + 50, { size: 44, weight: 700, italic: true, color: '#fff' });
+      y += 80;
+    } else y += 8;
+
+    // Row 1: today we achieved · top performers
+    const rows = d.rows, avail = FOOT - 14 - y - 14, row2Min = 330;
+    const need1 = Math.max(d.weekTotal != null ? 440 : 400, 120 + rows.length * 54);
+    let h1 = Math.max(need1, avail - 400), h2 = avail - h1;
+    if (h2 > 400) { h1 += (h2 - 400) / 2; h2 = avail - h1; }
+    if (h2 < row2Min) { h1 = Math.max(120 + rows.length * 50, avail - row2Min); h2 = avail - h1; }
+    const lx = 22, lw = 460, rx = 496, rw = 506;
+    panel(lx, y, lw, h1, TEAL);
+    ribbon(lx + 26, y + 16, lw - 52, 66, grad(0, y + 16, 0, y + 82, ['#25a5b8', TEAL]));
+    text('TODAY WE ACHIEVED', lx + lw / 2, y + 66, { size: 42, weight: 700, align: 'center', color: '#fff', maxW: lw - 90 });
+    const ovTop = y + 112, ovH = Math.min(h1 - 140 - (d.weekTotal != null ? 70 : 0), 330), ovW = 196;
+    [[lx + 20, d.attended, 'FIRST APPOINTMENTS', 'ATTENDED', TEAL, '#25a5b8', true], [lx + lw - 20 - ovW, d.nonQual, 'NON', 'QUALIFIERS', '#ef6a2b', ORANGE, false]].forEach(v => {
+      const ox = v[0], cx = ox + ovW / 2, cy = ovTop + ovH / 2;
+      X.save(); X.beginPath(); X.ellipse(cx, cy, ovW / 2, ovH / 2, 0, 0, 7); X.fillStyle = '#fff'; X.fill(); X.clip();
+      X.fillStyle = grad(0, ovTop, 0, ovTop + ovH * 0.62, [v[5], v[4]]); X.fillRect(ox, ovTop, ovW, ovH * 0.62); X.restore();
+      X.beginPath(); X.ellipse(cx, cy, ovW / 2, ovH / 2, 0, 0, 7); X.lineWidth = 3; X.strokeStyle = v[4]; X.stroke();
+      text(String(v[1]), cx, ovTop + ovH * 0.555, { fam: BIG, weight: 400, size: Math.min(150, ovH * 0.4), align: 'center', color: '#fff', maxW: ovW - 30, shadow: 'rgba(0,0,0,.18)', sy: 4 });
+      text(v[2], cx, ovTop + ovH * 0.74, { size: 22, weight: 700, align: 'center', maxW: ovW - 40 });
+      text(v[3], cx, ovTop + ovH * 0.74 + 28, { size: 22, weight: 700, align: 'center', maxW: ovW - 60 });
+      badge(cx, ovTop + 6, 30, v[6] ? '#2eaa4a' : RED, v[6]);
+    });
+    if (d.weekTotal != null) {
+      const py = y + h1 - 70;
+      rr(lx + 18, py, lw - 36, 54, 14); X.fillStyle = grad(0, py, 0, py + 54, ['#25a5b8', TEAL]); X.fill();
+      const a = 'WEEKLY TOTAL', b = 'APPOINTMENTS!', n = String(d.weekTotal);
+      let fs = 30;
+      const tot = f => measure(a, f, 700) + measure(b, f, 700) + measure(n, f, 700) + 22 + 24;
+      while (tot(fs) > lw - 70 && fs > 16) fs--;
+      const aw = measure(a, fs, 700), nw = measure(n, fs, 700) + 22;
+      let sx = lx + lw / 2 - tot(fs) / 2;
+      text(a, sx, py + 38, { size: fs, weight: 700, color: '#fff' }); sx += aw + 12;
+      rr(sx, py + 27 - fs * 0.6, nw, fs * 1.2, 8); X.fillStyle = '#fff'; X.fill(); text(n, sx + nw / 2, py + 38, { size: fs, weight: 700, align: 'center', color: TEAL }); sx += nw + 12;
+      text(b, sx, py + 38, { size: fs, weight: 700, color: '#fff' });
+    }
+    panel(rx, y, rw, h1, '#f2b33d');
+    ribbon(rx + 26, y + 16, rw - 52, 66, grad(0, y + 16, 0, y + 82, ['#ffd85a', '#f6b21e']));
+    const th = 'TOP PERFORMERS', thw = measure(th, 42, 700);
+    emoji('🏆', rx + rw / 2 - thw / 2 - 30, y + 50, 40);
+    text(th, rx + rw / 2 + 14, y + 66, { size: 42, weight: 700, align: 'center' });
+    const space = h1 - 118, rh = Math.max(48, Math.min(84, space / Math.max(rows.length, 1)));
+    const top = y + 104 + Math.max(0, (space - rh * rows.length) * 0.3);
+    if (!rows.length) text('First results coming soon…', rx + rw / 2, y + h1 / 2 + 50, { size: 30, weight: 500, italic: true, align: 'center', color: '#6b7280' });
+    rows.forEach((r, i) => {
+      const ry = top + i * rh, mid = ry + rh / 2, k = Math.min(1.3, rh / 62);
+      if (i) { X.fillStyle = '#e7e9ef'; X.fillRect(rx + 18, ry, rw - 36, 2); }
+      if (!i && rows.length <= 3) { rr(rx + 14, ry + 4, rw - 28, rh - 8, 14); X.fillStyle = '#fff8e1'; X.fill(); X.lineWidth = 2; X.strokeStyle = '#f6d27a'; X.stroke(); }
+      emoji(r.medal, rx + 44, mid, 40 * k);
+      const right = rx + rw - 22, barW = r.bar ? 66 : 0, nsize = 46 * k;
+      text(String(r.n), right - barW, mid + nsize * 0.37, { size: nsize, weight: 700, align: 'right' });
+      if (r.bar) { rr(right - 58, mid - 15, 58, 30, 8); X.fillStyle = NAVY; X.fill(); text('(BAR)', right - 29, mid + 7, { size: 18, weight: 700, align: 'center', color: '#fff' }); }
+      const nx = rx + 54 + 26 * k, nsz = fit(r.name, 38 * k, 600, 210), nw = measure(r.name, nsz, 600);
+      text(r.name, nx, mid + nsz * 0.37, { size: nsz, weight: 600 });
+      const iconsRoom = right - barW - measure(String(r.n), nsize, 700) - 16 - (nx + nw + 14);
+      const isz = Math.max(14, Math.min(30 * k, iconsRoom / Math.max(r.icons.length, 1)));
+      r.icons.forEach((e, j) => emoji(e, nx + nw + 14 + isz / 2 + j * isz, mid, isz * 0.95));
+    });
+
+    // Row 2: reminder · incentives
+    const y2 = y + h1 + 14;
+    panel(lx, y2, lw, h2, BLUE);
+    X.save(); rr(lx, y2, lw, 104, 18); X.clip(); X.fillStyle = grad(0, y2, 0, y2 + 104, ['#2a74e0', '#1b4fbf']); X.fillRect(lx, y2, lw, 104); X.restore();
+    emoji('🔔', lx + 74, y2 + 38, 34); emoji('🔔', lx + lw - 74, y2 + 38, 34);
+    text('REMINDER:', lx + lw / 2, y2 + 54, { size: 42, weight: 700, align: 'center', color: '#fff' });
+    text('RECRUITMENT BELL AND GONG', lx + lw / 2, y2 + 92, { size: 28, weight: 600, align: 'center', color: '#fff' });
+    const bh = (h2 - 112) / 2;
+    [['BELL', '2', true], ['GONG', '3+', false]].forEach((v, i) => {
+      const by = y2 + 108 + i * bh, mid = by + bh / 2;
+      if (i) { X.fillStyle = '#d6def0'; X.fillRect(lx + 20, by, lw - 40, 2); }
+      if (v[2]) emoji('🔔', lx + 72, mid, 74); else gong(lx + 72, mid + 4, 36);
+      text('RECRUITMENT ' + v[0], lx + 140, mid - 12, { size: 30, weight: 600, maxW: 270 });
+      text('=', lx + 140, mid + 34, { size: 32, weight: 700 });
+      const bw = numBox(v[1], lx + 168, mid + 34, 30, BLUE);
+      text('EVALUATION FORMS', lx + 168 + bw + 10, mid + 32, { size: 22, weight: 600, maxW: 200 });
+      if (v[2]) emoji('🔔', lx + lw - 44, mid - 10, 30); else emoji('💿', lx + lw - 44, mid - 10, 30);
+    });
+    panel(rx, y2, rw, h2, '#2f9e4f');
+    ribbon(rx + 26, y2 + 16, rw - 52, 62, grad(0, y2 + 16, 0, y2 + 78, ['#2a9a4a', GREEN]));
+    emoji('💸', rx + 92, y2 + 47, 36); emoji('💸', rx + rw - 92, y2 + 47, 36);
+    text('INCENTIVES', rx + rw / 2, y2 + 64, { size: 44, weight: 700, italic: true, align: 'center', color: '#fff' });
+    const ix = rx + 30, itop = y2 + 84, ibot = y2 + h2 - 40, sc = Math.min(1.1, (ibot - itop) / 262);
+    let iy = itop + (ibot - itop - 262 * sc) / 2 + 46 * sc;
+    text('UP FOR GRABS!', ix, iy, { size: 46 * sc, weight: 700, italic: true, color: '#1f8a40' }); iy += 42 * sc;
+    text('HIT', ix, iy, { size: 29 * sc, weight: 700 });
+    const hw = measure('HIT', 29 * sc, 700) + 10, nb = numBox(String(d.target), ix + hw, iy, 28 * sc, '#2eaa4a');
+    text('QUALIFYING', ix + hw + nb + 10, iy, { size: 29 * sc, weight: 700 }); iy += 35 * sc;
+    text('EVALUATION FORMS', ix, iy, { size: 29 * sc, weight: 700 }); iy += 35 * sc;
+    text('RECEIVED THIS WEEK', ix, iy, { size: 29 * sc, weight: 700 }); iy += 60 * sc;
+    text('= £' + o.cash + ' CASH', ix, iy, { fam: BIG, weight: 400, size: 56 * sc, color: ORANGE, maxW: 300 }); iy += 40 * sc;
+    text('IN YOUR POCKET!', ix, iy, { size: 29 * sc, weight: 700 });
+    moneyBag(rx + rw - 92, itop + (ibot - itop) * 0.5, 150 * Math.min(sc, 1));
+    emoji('💷', rx + rw - 40, y2 + 108, 34); emoji('💷', rx + rw - 160, ibot - 6, 30);
+    emoji('⚠️', ix + 10, y2 + h2 - 22, 22);
+    text("Under 18s & Tier 4 / Tier 2 Visas don't count.", ix + 28, y2 + h2 - 14, { size: 19, weight: 500, maxW: rw - 70 });
+    footer(o);
+  }
+
+  // ── Weekly top 5 poster ──
+  function drawWeekly(canvas, d, o, assets) {
+    begin(canvas, o.scale || 1.5);
+    logos(assets, 16, 168);
+    emoji('🚀', 92, 240, 66);
+    const t = 'JUSS & LINK', tsz = 96, tw = measure(t, tsz, 700);
+    text(t, W / 2, 292, { size: tsz, weight: 700, align: 'center' });
+    X.fillStyle = ORANGE; X.fillRect(W / 2 - tw / 2 - 74, 252, 46, 6); X.fillRect(W / 2 + tw / 2 + 28, 252, 46, 6);
+    // ⭐ THIS WEEKS TOP 5 RECRUITERS: ⭐
+    const by = 312;
+    X.save(); X.shadowColor = 'rgba(160,40,0,.35)'; X.shadowOffsetY = 5; rr(56, by, W - 112, 84, 26); X.fillStyle = grad(56, 0, W - 56, 0, [ORANGE, '#f7931e', ORANGE]); X.fill(); X.restore();
+    emoji('⭐', 104, by + 42, 48); emoji('⭐', W - 104, by + 42, 48);
+    text('THIS WEEKS TOP 5 RECRUITERS:', W / 2, by + 64, { size: 56, weight: 700, italic: true, align: 'center', color: '#fff', maxW: W - 260 });
+    // leaderboard
+    const rows = d.rows, msgsH = 3 * 108 + 2 * 16, footTop = FOOT - 12;
+    const avail = footTop - (by + 104) - msgsH - 30, rh = Math.max(70, Math.min(104, (avail - 20) / Math.max(rows.length, 1)));
+    const lh = rh * Math.max(rows.length, 1) + 20, spare = Math.max(0, avail - lh);  // a quiet week: spread out, don't leave a hole
+    const ly = by + 104 + spare * 0.3;
+    panel(30, ly, W - 60, lh, '#f5b08a');
+    if (!rows.length) text('No qualifying appointments yet this week', W / 2, ly + lh / 2 + 12, { size: 34, weight: 500, italic: true, align: 'center', color: '#6b7280' });
+    rows.forEach((r, i) => {
+      const ry = ly + 10 + i * rh, mid = ry + rh / 2;
+      if (i) { X.fillStyle = '#e7e9ef'; X.fillRect(60, ry, W - 120, 2); }
+      emoji(r.medal, 118, mid, rh * 0.62);
+      const nsz = fit(r.name, r.close ? 54 : 64, 700, r.close ? 360 : 250);
+      text(r.name, 182, mid + nsz * 0.36, { size: nsz, weight: 700 });
+      const bx = r.close ? 560 : 450, bs = rh * 0.74;
+      X.save(); rr(bx, mid - bs / 2, bs, bs, 12); X.fillStyle = grad(0, mid - bs / 2, 0, mid + bs / 2, ['#3b82f6', '#1747a6']); X.fill(); X.restore();
+      text(String(r.n), bx + bs / 2, mid + bs * 0.27, { size: bs * 0.72, weight: 700, align: 'center', color: '#fff' });
+      const isz = Math.min(rh * 0.56, (W - 70 - (bx + bs + 30)) / Math.max(r.icons.length, 1));
+      r.icons.forEach((e, k) => emoji(e, bx + bs + 30 + isz / 2 + k * isz * 1.05, mid, isz));
+    });
+    // the three message boxes
+    const boxes = [['🏆', '#fff7d6', '#f2c94c', ORANGE], ['🎯', '#e8f0ff', '#8db4f2', BLUE], ['🚀', '#e6f6e4', '#9fd49a', BLUE]];
+    let my = ly + lh + 22 + spare * 0.4;
+    boxes.forEach((b, i) => {
+      const bx = 112, bw = W - 112 - 30, bh = 108;
+      rr(bx, my, bw, bh, 20); X.fillStyle = b[1]; X.fill(); X.lineWidth = 2; X.strokeStyle = b[2]; X.stroke();
+      X.save(); X.beginPath(); X.arc(86, my + bh / 2, 56, 0, 7); X.fillStyle = grad(0, my, 0, my + bh, ['#24346b', NAVY]); X.fill(); X.lineWidth = 4; X.strokeStyle = '#fff'; X.stroke(); X.restore();
+      emoji(b[0], 86, my + bh / 2 + 2, 54);
+      let size = 31, lines = wrapRich(d.msgs[i], size, 600, bw - 90);
+      while (lines.length > 2 && size > 20) lines = wrapRich(d.msgs[i], --size, 600, bw - 90);
+      const lh2 = size * 1.25, top = my + bh / 2 - (lines.length * lh2) / 2 + size * 0.95;
+      lines.slice(0, 3).forEach((ln, k) => drawRich(ln, bx + 66, top + k * lh2, size, 600, NAVY, b[3], 'left'));
+      my += bh + 16;
+    });
+    footer(o);
+  }
+
+  // ── Assets (fonts + logos), loaded once ──
+  let ready = null;
+  function load(base) {
+    if (ready) return ready;
+    const img = src => new Promise(res => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; });
+    const fonts = !window.FontFace ? Promise.resolve() : Promise.all([
+      ['Oswald', 'oswald-latin-500-normal.woff2', '500'], ['Oswald', 'oswald-latin-600-normal.woff2', '600'],
+      ['Oswald', 'oswald-latin-700-normal.woff2', '700'], ['Anton', 'anton-latin-400-normal.woff2', '400'],
+    ].map(f => new FontFace(f[0], 'url(' + base + 'fonts/' + f[1] + ')', { weight: f[2] }).load().then(ff => document.fonts.add(ff)).catch(() => {})));
+    ready = Promise.all([fonts, img(base + 'img/logo-juss.png'), img(base + 'img/logo-link.png')]).then(r => ({ juss: r[1], link: r[2] }));
+    return ready;
+  }
+
+  window.JLBulletin = {
+    DAY_TITLES: DAY_TITLES, dailyRows: dailyRows, weeklyRows: weeklyRows, load: load,
+    /** kind 'daily' | 'weekly' → draws onto canvas. */
+    draw: function (canvas, kind, d, o, assets) { (kind === 'weekly' ? drawWeekly : drawDaily)(canvas, d, o, assets || {}); return canvas; },
+  };
+})();
+</script>
