@@ -53,6 +53,7 @@ function load(opts) {
       return new Range(this, r, c, nr || 1, nc || 1);
     }
     deleteRow(r) { this.data.splice(r - 1, 1); }
+    deleteRows(r, n) { this.data.splice(r - 1, n); }
     setFrozenRows() {}
     getName() { return this.name; }
   }

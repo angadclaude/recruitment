@@ -113,7 +113,7 @@ async function fillEval(p) {
   ok(fiza.name === 'Fiza Iqbal', 'names are tidied (fiza iqbal → Fiza Iqbal)');
   const nathan = await loginApi('nathan@example.com');
 
-  // Old Google Form history (12 months imported; repeat window is 6 months)
+  // Old Google Form history (last 6 months imported = the repeat window)
   await post('/dev/eval', { js: `
     const s = SpreadsheetApp.getActive().insertSheet('Form Responses 1');
     s.data = [['Timestamp','FOR OFFICE USE ONLY :','Full Name :','Phone number : ','Email ID :','Please tell us who booked you in to meet with us today?','Earliest start date : ','Who was the presentation run by today? '],
@@ -122,7 +122,7 @@ async function fillEval(p) {
       [new Date('2025-01-05T10:00:00Z'),'','Too Old','07700 900888','old@example.com','X','asap','Y']];
     importHistory();` });
   const hist = await getJson('/dev/sheet?name=History');
-  ok(hist.length === 3, 'history import keeps last 12 months only');
+  ok(hist.length === 2, 'history import keeps the last 6 months only');
 
   const browser = await chromium.launch();
 
@@ -585,9 +585,17 @@ async function fillEval(p) {
   await gp.waitForSelector('text=Evaluation time');
   ok(true, 'Google Apps Script link still works as a fallback');
 
+  // GDPR, as the check-in page says: full details 12 weeks → only the basics → deleted after 6 months
+  await setTime('2027-01-20T03:00:00+00:00');  // ~14 weeks after the Monday check-ins
+  await post('/dev/run', { fn: 'dailyMaintenance' });
+  const tsheet = await getJson('/dev/sheet?name=Candidates'), th = tsheet[0];
+  const trow = tsheet.find(r => r[th.indexOf('full_name')] === 'Jasraj Bhuller');
+  const trimmed = trow && Object.fromEntries(th.map((k, i) => [k, trow[i] === undefined ? '' : trow[i]]));
+  ok(trimmed && trimmed.full_name === 'Jasraj Bhuller' && trimmed.mobile === '07700900123' && trimmed.outcome && !trimmed.q1_excitement && !trimmed.notes && !trimmed.q13_unspent && !trimmed.p_interesting,
+    'after 12 weeks: name, mobile and outcome kept; evaluation answers, convictions answer and presenter notes wiped');
   await setTime('2027-10-25T03:00:00+01:00');
   await post('/dev/run', { fn: 'dailyMaintenance' });
-  ok((await getJson('/dev/sheet?name=Candidates')).length === 1, 'records older than 12 months deleted automatically');
+  ok((await getJson('/dev/sheet?name=Candidates')).length === 1, 'records older than 6 months deleted automatically');
 
   await browser.close();
   console.log('\nALL CHECKS PASSED');

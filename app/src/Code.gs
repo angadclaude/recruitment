@@ -15,7 +15,8 @@ const CONFIG = {
   OUTCOME_DEADLINE_TIME: '18:00', // outcomes logged after this are flagged LATE
   REPEAT_DAYS: 183,               // "seen before" window: 6 months
   REPEAT_COUNTS_FOR_PAY: false,   // a repeat attendee (within REPEAT_DAYS) does not count
-  RETENTION_DAYS: 365,            // candidate data auto-deleted after this
+  FULL_DETAILS_DAYS: 84,          // 12 weeks: full application details, then trimmed to the basics (name, contact, result)
+  RETENTION_DAYS: 183,            // 6 months: everything deleted (= the repeat-candidate window). Matches the check-in notice.
   CHECKIN_FROM: '07:00',          // check-ins outside these times are flagged amber for admins (never blocked)
   CHECKIN_TO: '17:00',
   // Where the app lives for staff and candidates (the GitHub Pages / custom domain address, ending in /).
@@ -1073,21 +1074,43 @@ function teamRoundup(stats) {
   return { title: '📋 Team week: ' + sum('all') + ' appointments · ' + sum('booked') + ' booked', body: lines.join('\n') };
 }
 
-/** Daily 02:00 — GDPR: delete anything older than 12 months; tidy expired sessions/codes. */
+/** Daily 02:00 — GDPR, as promised on the check-in page: full details for 12 weeks, then only the basics,
+ *  everything deleted after 6 months. Also tidies expired sessions/codes. */
 function dailyMaintenance() {
-  const cutoff = addDays(todayStr(), -CONFIG.RETENTION_DAYS);
+  const today = todayStr(), cutoff = addDays(today, -CONFIG.RETENTION_DAYS), trim = addDays(today, -CONFIG.FULL_DETAILS_DAYS);
   withLock(() => {
     deleteWhere('Candidates', r => r.attended_date && r.attended_date < cutoff);
     deleteWhere('History', r => r.attended_date && r.attended_date < cutoff);
     deleteWhere('Sessions', r => r.expires < nowStr());
     deleteWhere('Codes', r => r.expires < nowStr());
     deleteWhere('Log', r => r.at.slice(0, 10) < cutoff);
+    trimOldDetails(trim);
   });
+}
+/** After 12 weeks: keep name, contact, booker, result and what pay needs (to spot repeat applicants); wipe the rest,
+ *  including evaluation answers (and the convictions answer), presenter notes and comments. */
+const TRIM_FIELDS = ['resume_token', 'booker_typed', 'visa_expiry', 'rag', 'stars', 'tags', 'notes',
+  'q1_excitement', 'q2_stood_out', 'q3_reason', 'q4_situation', 'q4_looking_for', 'q5_start_date', 'q6_days', 'q7_commute',
+  'q8_resilience', 'q9_results_paid', 'q9_results_detail', 'q10_door', 'q11_coach', 'q12_bdp_stage', 'q12_bdp_why',
+  'q13_unspent', 'q14_questions', 'outcome_notes', 'admin_note', 'welcome_token', 'p_why_sales', 'p_why_sales_note', 'p_interesting'];
+function trimOldDetails(before) {
+  let n = 0;
+  readTable('Candidates').forEach(r => {
+    if (!r.attended_date || r.attended_date >= before || !TRIM_FIELDS.some(k => r[k])) return;
+    TRIM_FIELDS.forEach(k => { r[k] = ''; });
+    writeRow('Candidates', r); n++;
+  });
+  return n;
 }
 function deleteWhere(name, pred) {
   const rows = readTable(name).filter(pred).map(r => r._row).sort((a, b) => b - a);
   const sh = sheet(name);
-  rows.forEach(r => sh.deleteRow(r));
+  // Delete runs of neighbouring rows in one go (an old history import can be a block of 1,000+ rows)
+  for (let i = 0; i < rows.length;) {
+    let j = i; while (j + 1 < rows.length && rows[j + 1] === rows[j] - 1) j++;
+    sh.deleteRows(rows[j], j - i + 1);
+    i = j + 1;
+  }
   delete MEMO[name];
   return rows.length;
 }
@@ -1130,7 +1153,7 @@ function setup() {
 }
 
 /**
- * Imports the last 12 months of the old Google Form sheet into the History tab,
+ * Imports the last 6 months of the old Google Form sheet into the History tab,
  * so repeat candidates are spotted from day one. Run once from the editor.
  */
 function importHistory() {
@@ -1153,5 +1176,5 @@ function importHistory() {
   if (h.getLastRow() > 1) h.getRange(2, 1, h.getLastRow() - 1, SHEETS.History.length).clearContent();
   ensureRows(h, out.length + 1, SHEETS.History.length);
   if (out.length) h.getRange(2, 1, out.length, SHEETS.History.length).setValues(out);
-  return 'Imported ' + out.length + ' rows from the last 12 months.';
+  return 'Imported ' + out.length + ' rows from the last 6 months.';
 }
