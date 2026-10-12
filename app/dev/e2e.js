@@ -419,6 +419,22 @@ async function fillEval(p) {
   await api(admin, 'reassignBooker', { id: ali.id, booker_id: fiza.id });
   await api(admin, 'setPayExcluded', { id: jag.id, excluded: true, reason: 'Share code failed at Academy' });
 
+  // ── Daily 18:00 round-up for every booker (runs from the 5-minute keep-warm, no extra trigger) ──
+  await setTime('2026-10-12T17:55:00+01:00');
+  let before18 = (await getJson('/dev/pushes')).length;
+  await post('/dev/run', { fn: 'keepWarm' });
+  ok((await getJson('/dev/pushes')).length === before18, 'no round-up before 18:00');
+  await setTime('2026-10-12T18:05:00+01:00');
+  await post('/dev/run', { fn: 'keepWarm' });
+  const digests = (await getJson('/dev/pushes')).slice(before18);
+  const dFiza = digests.find(p => p.body.include_aliases.external_id.includes(fiza.id));
+  ok(dFiza && /^📊 Today: \d+ in · \d+ evaluations?/.test(dFiza.body.headings.en) && /Week: \d+\/5 net attended/.test(dFiza.body.contents.en),
+    '18:00 round-up → Fiza: "' + (dFiza ? dFiza.body.headings.en + ' | ' + dFiza.body.contents.en.replace(/\n/g, ' | ') : 'none') + '"');
+  const jessId = (await api(admin, 'listUsers', {})).users.find(u => /Jess/.test(u.name)).id;
+  ok(!digests.some(p => p.body.include_aliases.external_id.includes(jessId)), 'no round-up for someone with no appointments (no spam)');
+  await post('/dev/run', { fn: 'keepWarm' });
+  ok((await getJson('/dev/pushes')).length === before18 + digests.length, 'sent once a day only (the next run 5 minutes later sends nothing)');
+
   // ── 7. Sunday close → logged but LATE; pay ──
   await setTime('2026-10-18T15:00:00+01:00');
   const late = await api(await loginApi('fiza@example.com'), 'saveOutcome', { id: ali.id, outcome: 'No answer', outcome_notes: '' });

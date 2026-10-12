@@ -108,6 +108,7 @@ Put the two QR codes on the presentation once. They never change:
 | Candidate confirms Day 1 | their booker |
 | Booker books a 🔴 candidate | all admins |
 | Wed + Fri 10:00: "3/5 net attended" | every booker |
+| Mon–Fri 18:00: your day (who came in, evaluations) + who still needs closing, sending Day 1 details or confirming. **Friday = week wrap** with net vs target | every booker who had appointments (nothing to say = no message) |
 | Sat 14:00: "2 outcomes due by 19:00" | bookers with calls outstanding |
 | Mon 09:00: pay report ready | admins |
 

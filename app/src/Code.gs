@@ -22,6 +22,7 @@ const CONFIG = {
   // Leave '' to use the Google Apps Script link instead (no push notifications).
   PUBLIC_URL: 'https://angadclaude.github.io/recruitment/join/',
   ACADEMY_SIGNOFF: { LINK: 'Jess', JUSS: 'Rubal' }, // who signs the BA Academy WhatsApp, whoever sends it
+  DIGEST_TIME: '18:00',           // Mon–Fri: each booker's round-up of their day (Friday = week wrap)
   EMAIL_ALERTS: false,            // true = also email every alert. Push is used when OneSignal keys are set.
   SESSION_DAYS: 30,               // staff stay logged in for this long
   SHEET_ID: '',                   // the data Sheet; only needed if this script isn't opened from the Sheet itself
@@ -851,7 +852,7 @@ function notify(users, title, body, cid) {
   const url = staffUrl(cid || '');
   const reached = pushTo(list.map(u => u.id), title, body, url);
   list.filter(u => CONFIG.EMAIL_ALERTS || reached.indexOf(u.id) < 0)
-    .forEach(u => mail(u.email, title, '<p>' + esc(body) + '</p><p><a href="' + url + '">Open the app</a></p>'));
+    .forEach(u => mail(u.email, title, '<p>' + esc(body).replace(/\n/g, '<br>') + '</p><p><a href="' + url + '">Open the app</a></p>'));
 }
 
 /** Wed + Fri 10:00 — progress nudge to every active booker. */
@@ -895,6 +896,53 @@ function mondayPayReportEmail() {
 function keepWarm() {
   const t = nowStr().slice(11, 13);
   if (t >= '07' && t <= '20') usersAll();
+  maybeDailyDigest();
+}
+
+/** Runs from keepWarm (every 5 min), so no extra trigger to install: sends the round-up once, at DIGEST_TIME. */
+function maybeDailyDigest() {
+  const now = nowStr(), today = now.slice(0, 10), wd = weekday(today), hm = now.slice(11, 16);
+  if (wd === 0 || wd === 6 || hm < CONFIG.DIGEST_TIME || hm > '20:59') return;
+  const p = PropertiesService.getScriptProperties();
+  if (p.getProperty('DIGEST_SENT') === today) return;
+  p.setProperty('DIGEST_SENT', today);  // claim it first so an overlapping run can't send twice
+  dailyDigests(today);
+}
+
+/** Mon–Fri 18:00: every booker with appointments gets their day (who came in, evaluations) and who still needs closing. Friday = week wrap. */
+function dailyDigests(today) {
+  const rows = readTable('Candidates').filter(c => c.week_ending === weekEnding(today));
+  usersAll().filter(u => truthy(u.active) && has(u, 'booker')).forEach(u => {
+    const d = digestFor(u, rows, today);
+    if (d) notify([u], d.title, d.body, '');
+  });
+}
+function digestFor(u, rows, today) {
+  const mine = rows.filter(c => c.booker_id === u.id);
+  const first = c => c.full_name.split(' ')[0];
+  const names = list => list.slice(0, 3).map(first).join(', ') + (list.length > 3 ? ' +' + (list.length - 3) : '');
+  const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
+  const came = mine.filter(c => c.attended_date === today && truthy(c.in_room));
+  const evals = mine.filter(c => c.attended_date === today && c.eval_at);
+  // Still to close: in the room this week, no outcome yet (evaluated ones first: they're the hottest)
+  const toClose = mine.filter(c => truthy(c.in_room) && !c.outcome).sort((a, b) => (b.eval_at ? 1 : 0) - (a.eval_at ? 1 : 0));
+  const toSend = mine.filter(c => c.outcome === 'Academy booked' && c.welcome_token && !c.offer_sent_at && c.admin_status !== 'pending' && c.admin_status !== 'rejected');
+  const toConfirm = mine.filter(c => c.outcome === 'Academy booked' && c.offer_sent_at && !c.academy_confirmed_at);
+  if (!came.length && !evals.length && !toClose.length && !toSend.length) return null;  // nothing to say: no message
+  const net = mine.filter(c => !payExclusion(c)).length, target = CONFIG.PAY_TARGET, fri = weekday(today) === 5;
+  const day = 'Today: ' + came.length + ' in · ' + plural(evals.length, 'evaluation');
+  const title = fri ? '🏁 Week wrap: ' + net + '/' + target + ' net' + (net >= target ? ' ✅' : '')
+    : came.length || evals.length ? '📊 ' + day + (toClose.length ? ' · ' + toClose.length + ' to close' : '')
+    : '📞 ' + toClose.length + ' still to close this week';
+  const lines = [];
+  if (fri) lines.push(day);
+  if (toClose.length) lines.push('📞 Close: ' + names(toClose));
+  if (toSend.length) lines.push('🎉 Send Day 1 details: ' + names(toSend));
+  if (toConfirm.length) lines.push('⏳ Day 1 not confirmed yet: ' + names(toConfirm));
+  if (!toClose.length && !toSend.length) lines.push('✅ All closed. Nice work.');
+  lines.push(fri ? (toClose.length ? 'Outcomes due Sat ' + CONFIG.OUTCOME_DEADLINE_TIME + '. ' : '') + (net >= target ? 'Target hit 🔥' : (target - net) + ' short of ' + target + ' this week')
+    : 'Week: ' + net + '/' + target + ' net attended');
+  return { title: title, body: lines.join('\n') };
 }
 
 /** Daily 02:00 — GDPR: delete anything older than 12 months; tidy expired sessions/codes. */
