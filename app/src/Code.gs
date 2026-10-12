@@ -22,7 +22,9 @@ const CONFIG = {
   // Leave '' to use the Google Apps Script link instead (no push notifications).
   PUBLIC_URL: 'https://angadclaude.github.io/recruitment/join/',
   ACADEMY_SIGNOFF: { LINK: 'Jess', JUSS: 'Rubal' }, // who signs the BA Academy WhatsApp, whoever sends it
-  DIGEST_TIME: '18:00',           // Mon–Fri: each booker's round-up of their day (Friday = week wrap)
+  DIGEST_TIME: '18:00',           // Mon–Thu: each booker's round-up of their day
+  ROUNDUP_TIME: '15:00',          // Friday: week roundup to each booker + a team roundup to admins
+  TEAM_ROUNDUP: true,             // false = admins don't get the Friday team roundup
   EMAIL_ALERTS: false,            // true = also email every alert. Push is used when OneSignal keys are set.
   SESSION_DAYS: 30,               // staff stay logged in for this long
   SHEET_ID: '',                   // the data Sheet; only needed if this script isn't opened from the Sheet itself
@@ -899,17 +901,22 @@ function keepWarm() {
   maybeDailyDigest();
 }
 
-/** Runs from keepWarm (every 5 min), so no extra trigger to install: sends the round-up once, at DIGEST_TIME. */
+/** Runs from keepWarm (every 5 min), so no extra trigger to install: one message a day, Mon–Thu at DIGEST_TIME, Friday at ROUNDUP_TIME. */
 function maybeDailyDigest() {
-  const now = nowStr(), today = now.slice(0, 10), wd = weekday(today), hm = now.slice(11, 16);
-  if (wd === 0 || wd === 6 || hm < CONFIG.DIGEST_TIME || hm > '20:59') return;
+  const now = nowStr(), today = now.slice(0, 10), wd = weekday(today), hm = now.slice(11, 16), fri = wd === 5;
+  if (wd === 0 || wd === 6 || hm < (fri ? CONFIG.ROUNDUP_TIME : CONFIG.DIGEST_TIME) || hm > '20:59') return;
   const p = PropertiesService.getScriptProperties();
   if (p.getProperty('DIGEST_SENT') === today) return;
   p.setProperty('DIGEST_SENT', today);  // claim it first so an overlapping run can't send twice
-  dailyDigests(today);
+  if (fri) weeklyRoundups(today); else dailyDigests(today);
 }
+function firstNames(list, max) {
+  const f = list.map(c => c.full_name.split(' ')[0]);
+  return f.slice(0, max || 4).join(', ') + (f.length > (max || 4) ? ' +' + (f.length - (max || 4)) : '');
+}
+function plural(n, w) { return n + ' ' + w + (n === 1 ? '' : 's'); }
 
-/** Mon–Fri 18:00: every booker with appointments gets their day (who came in, evaluations) and who still needs closing. Friday = week wrap. */
+/** Mon–Thu 18:00: every booker with appointments gets their day (who came in, evaluations) and who still needs closing. */
 function dailyDigests(today) {
   const rows = readTable('Candidates').filter(c => c.week_ending === weekEnding(today));
   usersAll().filter(u => truthy(u.active) && has(u, 'booker')).forEach(u => {
@@ -919,9 +926,7 @@ function dailyDigests(today) {
 }
 function digestFor(u, rows, today) {
   const mine = rows.filter(c => c.booker_id === u.id);
-  const first = c => c.full_name.split(' ')[0];
-  const names = list => list.slice(0, 3).map(first).join(', ') + (list.length > 3 ? ' +' + (list.length - 3) : '');
-  const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
+  const names = list => firstNames(list, 3);
   const came = mine.filter(c => c.attended_date === today && truthy(c.in_room));
   const evals = mine.filter(c => c.attended_date === today && c.eval_at);
   // Still to close: in the room this week, no outcome yet (evaluated ones first: they're the hottest)
@@ -929,20 +934,63 @@ function digestFor(u, rows, today) {
   const toSend = mine.filter(c => c.outcome === 'Academy booked' && c.welcome_token && !c.offer_sent_at && c.admin_status !== 'pending' && c.admin_status !== 'rejected');
   const toConfirm = mine.filter(c => c.outcome === 'Academy booked' && c.offer_sent_at && !c.academy_confirmed_at);
   if (!came.length && !evals.length && !toClose.length && !toSend.length) return null;  // nothing to say: no message
-  const net = mine.filter(c => !payExclusion(c)).length, target = CONFIG.PAY_TARGET, fri = weekday(today) === 5;
+  const net = mine.filter(c => !payExclusion(c)).length, target = CONFIG.PAY_TARGET;
   const day = 'Today: ' + came.length + ' in · ' + plural(evals.length, 'evaluation');
-  const title = fri ? '🏁 Week wrap: ' + net + '/' + target + ' net' + (net >= target ? ' ✅' : '')
-    : came.length || evals.length ? '📊 ' + day + (toClose.length ? ' · ' + toClose.length + ' to close' : '')
+  const title = came.length || evals.length ? '📊 ' + day + (toClose.length ? ' · ' + toClose.length + ' to close' : '')
     : '📞 ' + toClose.length + ' still to close this week';
   const lines = [];
-  if (fri) lines.push(day);
   if (toClose.length) lines.push('📞 Close: ' + names(toClose));
   if (toSend.length) lines.push('🎉 Send Day 1 details: ' + names(toSend));
   if (toConfirm.length) lines.push('⏳ Day 1 not confirmed yet: ' + names(toConfirm));
   if (!toClose.length && !toSend.length) lines.push('✅ All closed. Nice work.');
-  lines.push(fri ? (toClose.length ? 'Outcomes due Sat ' + CONFIG.OUTCOME_DEADLINE_TIME + '. ' : '') + (net >= target ? 'Target hit 🔥' : (target - net) + ' short of ' + target + ' this week')
-    : 'Week: ' + net + '/' + target + ' net attended');
+  lines.push('Week: ' + net + '/' + target + ' net attended');
   return { title: title, body: lines.join('\n') };
+}
+
+/** One booker's week (Mon–Fri, rated by the presenter): booked, not booked, no outcome yet, Day 1 WhatsApp sent or not. */
+function weekStats(u, rows) {
+  const mine = rows.filter(c => c.booker_id === u.id && truthy(c.in_room));
+  const booked = mine.filter(c => c.outcome === 'Academy booked' && c.admin_status !== 'rejected');
+  return {
+    user: u, name: u.name, all: mine, booked: booked,
+    notBooked: mine.filter(c => c.outcome && booked.indexOf(c) < 0),
+    open: mine.filter(c => !c.outcome),
+    sent: booked.filter(c => c.offer_sent_at), unsent: booked.filter(c => !c.offer_sent_at),
+    net: rows.filter(c => c.booker_id === u.id && !payExclusion(c)).length,
+  };
+}
+/** Friday 15:00: each booker's week roundup, then the team roundup to admins. */
+function weeklyRoundups(today) {
+  const rows = readTable('Candidates').filter(c => c.week_ending === weekEnding(today));
+  const users = usersAll().filter(u => truthy(u.active));
+  const stats = users.filter(u => has(u, 'booker')).map(u => weekStats(u, rows)).filter(s => s.all.length);
+  stats.forEach(s => { const r = roundupFor(s); notify([s.user], r.title, r.body, ''); });
+  const admins = users.filter(isAdmin);
+  if (CONFIG.TEAM_ROUNDUP && admins.length && stats.length) { const t = teamRoundup(stats); notify(admins, t.title, t.body, ''); }
+}
+function roundupFor(s) {
+  const target = CONFIG.PAY_TARGET, lines = [];
+  if (s.booked.length) lines.push('✅ Booked: ' + firstNames(s.booked));
+  if (s.notBooked.length) lines.push('❌ Not booked: ' + firstNames(s.notBooked));
+  if (s.open.length) lines.push('📞 No outcome yet: ' + firstNames(s.open) + ' (due Sat ' + CONFIG.OUTCOME_DEADLINE_TIME + ')');
+  if (s.sent.length) lines.push('📲 Day 1 text sent: ' + firstNames(s.sent));
+  if (s.unsent.length) lines.push('⚠️ Day 1 text NOT sent: ' + firstNames(s.unsent));
+  lines.push('Net ' + s.net + '/' + target + (s.net >= target ? ' ✅ target hit 🔥' : ' · ' + (target - s.net) + ' short'));
+  return { title: '🏁 Week roundup: ' + plural(s.all.length, 'appointment') + ' · ' + s.booked.length + ' booked', body: lines.join('\n') };
+}
+function teamRoundup(stats) {
+  const sum = k => stats.reduce((n, s) => n + s[k].length, 0);
+  const lines = [
+    '✅ Booked ' + sum('booked') + ' · ❌ Not booked ' + sum('notBooked') + ' · 📞 No outcome ' + sum('open'),
+    '📲 Day 1 texts sent ' + sum('sent') + '/' + sum('booked'),
+  ];
+  // Anyone with loose ends first, then the rest by appointments
+  stats.slice().sort((a, b) => (b.open.length + b.unsent.length > 0) - (a.open.length + a.unsent.length > 0) || b.all.length - a.all.length).forEach(s => {
+    const loose = s.open.length + s.unsent.length > 0;
+    lines.push((loose ? '⚠️ ' : '') + s.name + ': ' + s.all.length + ' in · ' + s.booked.length + ' booked · ' + s.notBooked.length + ' not' +
+      (s.open.length ? ' · ' + s.open.length + ' no outcome' : '') + ' · texts ' + s.sent.length + '/' + s.booked.length);
+  });
+  return { title: '📋 Team week: ' + sum('all') + ' appointments · ' + sum('booked') + ' booked', body: lines.join('\n') };
 }
 
 /** Daily 02:00 — GDPR: delete anything older than 12 months; tidy expired sessions/codes. */
