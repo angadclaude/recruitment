@@ -18,17 +18,23 @@ function toast(msg) {
   t.textContent = msg; t.hidden = false;
   clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, 2600);
 }
+const CFG = window.APP_CONFIG || {};
 function call(action, payload) {
-  return new Promise((resolve, reject) => {
-    google.script.run
-      .withSuccessHandler(res => {
-        if (res && res.ok) return resolve(res.data);
-        if (res && res.auth) { store.del('tok'); S.token = ''; S.me = null; return startStaff(); } // session expired → back to login
-        reject(new Error((res && res.error) || 'Something went wrong'));
-      })
-      .withFailureHandler(err => reject(new Error((err && err.message) || 'Network error — try again')))
-      .api(Object.assign({}, payload || {}, { action: action, token: S.token }));
-  });
+  const req = Object.assign({}, payload || {}, { action: action, token: S.token });
+  let p;
+  if (CFG.API_URL) {
+    // Installable app (GitHub Pages): plain-text POST to the Apps Script /exec URL.
+    p = fetch(CFG.API_URL, { method: 'POST', body: JSON.stringify(req) }).then(r => r.json());
+  } else if (window.google && google.script) {
+    p = new Promise((res, rej) => google.script.run.withSuccessHandler(res).withFailureHandler(rej).api(req));
+  } else {
+    return Promise.reject(new Error('This app is not connected yet (admin: add the Apps Script link to config.js).'));
+  }
+  return p.then(res => {
+    if (res && res.ok) return res.data;
+    if (res && res.auth) { store.del('tok'); S.token = ''; S.me = null; startStaff(); return new Promise(() => {}); } // session expired → login
+    throw new Error((res && res.error) || 'Something went wrong');
+  }, err => { throw new Error((err && err.message && !/fetch/i.test(err.message)) ? err.message : 'No connection — check your signal and try again'); });
 }
 function stopTimer() { if (S.timer) { clearInterval(S.timer); S.timer = null; } }
 function scrollTop() { window.scrollTo(0, 0); }
@@ -83,33 +89,35 @@ function showErr(el, msg) { el.innerHTML = msg ? '<div class="err">' + h(msg) + 
 const C = { cfg: null, rec: null };
 
 function startCandidate() {
+  if (BOOT.mode === 'welcome') return startWelcome();
   const saved = store.get('cand');
-  if (saved && saved.id) {
-    call('candidateStatus', { id: saved.id, resume: saved.resume })
-      .then(st => { C.rec = saved; C.rec.first_name = st.first_name; afterCheckin(st); })
-      .catch(() => { store.del('cand'); loadCheckin(); });
-  } else loadCheckin();
+  const known = saved && saved.id
+    ? call('candidateStatus', { id: saved.id, resume: saved.resume }).then(st => (st.attended_date === st.today ? st : null)).catch(() => null)
+    : Promise.resolve(null);
+  known.then(st => {
+    if (st) { C.rec = saved; C.rec.first_name = st.first_name; } else store.del('cand');
+    if (BOOT.mode === 'eval') {
+      if (st) return st.evalDone ? renderDone() : renderEval();
+      return renderFind();
+    }
+    if (st) return renderCheckedIn(st.first_name, st.evalDone);
+    loadCheckin('');
+  });
 }
 
-function loadCheckin() {
-  if (!BOOT.k) return renderScanPrompt();
-  call('publicConfig', { k: BOOT.k }).then(cfg => {
-    if (!cfg.valid) return renderScanPrompt(true);
-    C.cfg = cfg; renderCheckin();
-  }).catch(e => { $app.innerHTML = logos(48) + '<div class="err">' + h(e.message) + '</div>'; });
+/** then = 'eval' when someone scans the evaluation QR without having checked in. */
+function loadCheckin(then) {
+  $app.innerHTML = '<div class="loading">Loading…</div>';
+  call('publicConfig').then(cfg => { C.cfg = cfg; renderCheckin(then); })
+    .catch(e => { $app.innerHTML = logos(48) + '<div class="err">' + h(e.message) + '</div>'; });
 }
 
-function renderScanPrompt(expired) {
-  $app.innerHTML = logos(56) +
-    '<div class="card center"><div class="big-emoji">📷</div><h1>' + (expired ? 'This QR code has expired' : 'Welcome!') + '</h1>' +
-    '<p class="muted">Please scan the QR code on the screen in the room to check in.</p></div>';
-}
-
-function renderCheckin() {
+function renderCheckin(then) {
   scrollTop();
   const sources = ['Indeed', 'TikTok', 'Instagram', 'Facebook', 'LinkedIn', 'Friend / referral', 'Other'];
   $app.innerHTML = logos(56) +
-    '<h1>Welcome — let\'s check you in 👋</h1><p class="muted">Takes about a minute.</p>' +
+    (then === 'eval' ? '<h1>Quick check-in first 👋</h1><p class="muted">We couldn\'t find you, so fill this in, then your evaluation opens straight after.</p>'
+      : '<h1>Welcome — let\'s check you in 👋</h1><p class="muted">Takes about a minute.</p>') +
     '<form id="f" class="card" novalidate autocomplete="on">' +
     '<label class="q">Full name <span class="req">*</span></label><input type="text" name="full_name" autocomplete="name" placeholder="First and last name">' +
     '<label class="q">Mobile number <span class="req">*</span></label><input type="tel" name="mobile" autocomplete="tel" inputmode="tel" placeholder="07…">' +
@@ -126,8 +134,7 @@ function renderCheckin() {
     '<label class="check"><input type="checkbox" name="privacy_ok"> <span>I agree that LINK Marketing and JUSS Marketing can use these details to assess my application and contact me about it. They are kept for a maximum of 12 months.</span></label>' +
     '<div id="err"></div>' +
     '<button class="btn block" id="go" type="submit">Check in</button>' +
-    '</form>' +
-    '<p class="center small"><a href="#" id="found">Already checked in? Find my check-in</a></p>';
+    '</form>';
 
   const f = document.getElementById('f');
   bindChips(f);
@@ -192,42 +199,44 @@ function renderCheckin() {
     if (!form.privacy_ok) return showErr(err, 'Please tick the privacy box to continue.');
     showErr(err, '');
     const btn = document.getElementById('go'); busy(btn, true, 'Checking in…');
-    call('checkin', { k: BOOT.k, form: form }).then(r => {
+    call('checkin', { form: form }).then(r => {
       C.rec = { id: r.id, resume: r.resume, first_name: r.first_name };
       store.set('cand', C.rec);
-      afterCheckin({ evalOpen: false, evalDone: false, first_name: r.first_name });
+      if (r.evalDone) return renderDone();
+      if (then === 'eval') return renderEval();
+      renderCheckedIn(r.first_name);
     }).catch(ex => { busy(btn, false); showErr(err, ex.message); });
   });
-
-  document.getElementById('found').onclick = e => { e.preventDefault(); renderFind(); };
 }
 
-function renderFind() {
+/** Evaluation QR scanned on a phone we don't recognise: find today's check-in by mobile. */
+function renderFind(notFound) {
   scrollTop();
-  $app.innerHTML = logos(48) + '<div class="card"><h2>Find my check-in</h2><p class="muted">Enter the mobile number you checked in with today.</p>' +
-    '<input type="tel" id="m" inputmode="tel" placeholder="07…"><div id="err"></div>' +
-    '<div class="row" style="margin-top:12px"><button class="btn ghost" id="back">Back</button><button class="btn grow" id="go">Find me</button></div></div>';
-  document.getElementById('back').onclick = renderCheckin;
+  $app.innerHTML = logos(56) + '<div class="card"><div class="big-emoji">📝</div><h1 class="center">Evaluation time</h1>' +
+    '<p class="muted center">Enter the mobile number you checked in with this morning.</p>' +
+    '<input type="tel" id="m" inputmode="tel" autocomplete="tel" placeholder="07…" value="' + h(store.get('lastMobile') || '') + '"><div id="err">' +
+    (notFound ? '<div class="err">We can\'t find a check-in for that number today. Check the number, or check in now.</div>' : '') + '</div>' +
+    '<button class="btn block" id="go" style="margin-top:12px">Start my evaluation</button>' +
+    (notFound ? '<button class="btn ghost block" id="ci" style="margin-top:8px">I didn\'t check in — do it now</button>' : '') + '</div>';
   document.getElementById('go').onclick = () => {
     const btn = document.getElementById('go'); busy(btn, true, 'Looking…');
-    call('resumeByMobile', { k: BOOT.k, mobile: document.getElementById('m').value }).then(r => {
+    const mobile = document.getElementById('m').value;
+    store.set('lastMobile', mobile);
+    call('resumeByMobile', { mobile: mobile }).then(r => {
+      if (!r.found) return renderFind(true);
       C.rec = { id: r.id, resume: r.resume, first_name: r.first_name }; store.set('cand', C.rec);
-      return call('candidateStatus', { id: r.id, resume: r.resume });
-    }).then(afterCheckin).catch(ex => { busy(btn, false); showErr(document.getElementById('err'), ex.message); });
+      r.evalDone ? renderDone() : renderEval();
+    }).catch(ex => { busy(btn, false); showErr(document.getElementById('err'), ex.message); });
   };
+  const ci = document.getElementById('ci'); if (ci) ci.onclick = () => loadCheckin('eval');
 }
 
-function afterCheckin(st) {
-  stopTimer();
-  if (st.evalDone) return renderDone();
-  if (st.evalOpen) return renderEval();
+function renderCheckedIn(first, evalDone) {
+  if (evalDone) return renderDone();
   scrollTop();
-  $app.innerHTML = logos(56) + '<div class="card center"><div class="big-emoji">✅</div><h1>You\'re checked in, ' + h(st.first_name) + '!</h1>' +
-    '<p>Enjoy the presentation.</p><p class="muted"><b>Keep this page open.</b> Your evaluation form will appear here automatically at the end.</p>' +
-    '<p class="small muted" id="poll">Waiting for the presentation to finish…</p></div>';
-  S.timer = setInterval(() => {
-    call('candidateStatus', { id: C.rec.id, resume: C.rec.resume }).then(s => { if (s.evalOpen || s.evalDone) afterCheckin(s); }).catch(() => {});
-  }, 10000);
+  $app.innerHTML = logos(56) + '<div class="card center"><div class="big-emoji">✅</div><h1>You\'re checked in, ' + h(first) + '!</h1>' +
+    '<p>Sit back and enjoy the presentation 🙌</p>' +
+    '<div class="ok" style="text-align:left">📝 <b>At the end</b>, scan the second QR code on the screen (<b>Evaluation</b>) to fill in your evaluation.</div></div>';
 }
 
 const EVAL = [
@@ -313,6 +322,101 @@ function renderDone(bookerFirst) {
     '<p class="muted">Keep your phone close — and check WhatsApp.</p></div>';
 }
 
+// ═════════════════════════ WELCOME PAGE (link in the WhatsApp) ═════════════════════════
+const WEEK1 = {
+  LINK: [
+    ['🗓️', 'Monday', 'Induction Day', '1:30pm – 6:00pm', 'Meet the team and learn more about the industry'],
+    ['👣', 'Tuesday', 'Sales Coaching', '1:00pm – 6:00pm', 'Deep dive into office-based sales coaching'],
+    ['🏢', 'Wednesday', 'Practical Learning Day', '10:00am – 8:30pm', 'Meet your 1-on-1 coach & mentor and shadow them'],
+    ['💰', 'Thursday', 'Sales Day', '10:30am – 8:30pm', '1st day on badge! Your coach is side by side with you. Apply what you\'ve learnt and bag your incentives'],
+  ],
+  JUSS: [
+    ['🗓️', 'Monday', 'Induction Day', '1:30pm – 6:00pm', 'Meet the team and learn more about the industry'],
+    ['👣', 'Tuesday', 'Sales Coaching', '1:00pm – 6:00pm', 'Deep dive into in-house sales coaching'],
+    ['🏢', 'Wednesday', 'Practical Learning Day', '10:00am – 8:30pm', 'Meet your 1-on-1 coach & mentor and shadow them'],
+    ['💰', 'Thursday onwards', 'Sales Days', '10:30am – 8:30pm', '1st day on badge! Your coach is side by side with you. Apply what you\'ve learnt and bag your incentives'],
+  ],
+};
+const MAPS = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent('Automotive House, Grays Place, Slough SL2 5AF');
+
+function startWelcome() {
+  call('welcomeInfo', { t: BOOT.k }).then(renderWelcome)
+    .catch(e => { $app.innerHTML = logos(56) + '<div class="card center"><div class="big-emoji">🔗</div><p>' + h(e.message) + '</p></div>'; });
+}
+
+function renderWelcome(w) {
+  scrollTop();
+  const co = w.company === 'JUSS' ? 'JUSS' : 'LINK';
+  const brand = co + ' Marketing';
+  const days = Math.round((D(w.academy_date) - D(w.today)) / 86400000);
+  const when = days > 1 ? 'Day 1 is in ' + days + ' days' : days === 1 ? 'Day 1 is TOMORROW 👀' : days === 0 ? 'Day 1 is TODAY 🔥' : 'Day 1 was ' + fmt(w.academy_date);
+  const mon = D(w.academy_date).getUTCDay() === 1;
+  const ymd = w.academy_date.replace(/-/g, '');
+  const title = 'BA Academy Day 1 – ' + brand;
+  const gcal = 'https://calendar.google.com/calendar/render?action=TEMPLATE&text=' + encodeURIComponent(title) +
+    '&dates=' + ymd + 'T133000/' + ymd + 'T180000&ctz=Europe/London&location=' + encodeURIComponent(w.address) +
+    '&details=' + encodeURIComponent('Induction Day 1:30pm – 6:00pm. Bring photo ID + your right-to-work share code.');
+  const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//LINK x JUSS//Recruitment//EN', 'BEGIN:VEVENT', 'UID:' + BOOT.k + '@recruit',
+    'DTSTAMP:' + ymd + 'T090000', 'DTSTART:' + ymd + 'T133000', 'DTEND:' + ymd + 'T180000', 'SUMMARY:' + title,
+    'LOCATION:' + w.address.replace(/,/g, '\\,'), 'DESCRIPTION:Bring photo ID + your right-to-work share code.', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+  const steps = WEEK1[co].map((r, i) => '<div class="wk"><div class="wk-ic">' + r[0] + '</div><div><div class="wk-d">' + h(mon ? r[1] : 'Day ' + (i + 1) + (i === 3 && co === 'JUSS' ? ' onwards' : '')) +
+    ' · <b>' + h(r[2]) + '</b></div><div class="wk-t">' + h(r[3]) + '</div><div class="wk-x">' + h(r[4]) + '</div></div></div>').join('');
+
+  $app.innerHTML = '<div class="wl wl-' + co + '">' +
+    '<div class="wl-hero"><img class="wl-logo" src="' + LOGOS[co] + '" alt="' + h(brand) + '">' +
+    '<h1>You\'re in, ' + h(w.first_name) + ' 🎉</h1><p>Welcome to the <b>' + h(brand) + ' BA Academy</b></p>' +
+    '<span class="wl-pill">' + h(when) + '</span></div>' +
+
+    '<div class="card"><div class="small muted">DAY 1 · INDUCTION</div><div class="wl-date">' + h(fmtLong(w.academy_date)) + '</div>' +
+    '<div class="wl-time">⏰ 1:30pm – 6:00pm</div><p>📍 ' + h(w.address) + '<br><span class="muted small">2 mins from Slough station</span></p>' +
+    '<div class="row"><a class="btn sm" href="' + MAPS + '" target="_blank" rel="noopener">🗺️ Directions</a>' +
+    '<a class="btn ghost sm" href="' + h(gcal) + '" target="_blank" rel="noopener">📅 Google Calendar</a>' +
+    '<a class="btn ghost sm" id="ics" href="#" download="ba-academy-day1.ics">🍏 Apple / Outlook</a></div></div>' +
+
+    (co === 'LINK' ? '<div class="wl-alert">⚡ <b>Before Day 1:</b> finish the <b>Pre-Coaching Module</b> attached in your welcome email.</div>' : '') +
+    '<div class="card"><div class="small muted">BRING WITH YOU</div><p style="font-size:17px;margin:8px 0 0">🪪 Photo ID<br>🔑 Your right-to-work share code</p></div>' +
+
+    '<h3>Your Week 1 game plan</h3><div class="card wl-week">' + steps + '</div>' +
+
+    '<details class="card"><summary><b>🚀 Where this can take you</b></summary><div class="ladder" style="margin-top:10px">' +
+    LADDER.map(l => '<div style="background:' + l[0] + '">' + h(l[1]) + ' <span>— ' + h(l[2]) + '</span></div>').join('') + '</div></details>' +
+
+    '<details class="card"><summary><b>🖼️ View the Week 1 poster</b></summary><img src="img/poster-' + co.toLowerCase() + '.jpg" alt="Week 1 schedule poster" style="width:100%;border-radius:10px;margin-top:10px" onerror="this.parentNode.hidden=true"></details>' +
+
+    '<p class="center muted small" style="margin:18px 0 110px">Questions? Just reply to ' + h(w.booker_first || 'us') + ' on WhatsApp 💬</p>' +
+    '<div class="wl-cta" id="cta"></div></div>';
+
+  const icsA = document.getElementById('ics');
+  icsA.onclick = e => {
+    e.preventDefault();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([ics], { type: 'text/calendar' })); a.download = 'ba-academy-day1.ics';
+    document.body.appendChild(a); a.click(); a.remove();
+  };
+  const cta = document.getElementById('cta');
+  const drawCta = (confirmed) => {
+    cta.innerHTML = confirmed
+      ? '<div class="wl-done">✅ You\'re locked in. See you ' + h(mon ? 'Monday' : fmt(w.academy_date)) + '! 🔥</div>'
+      : '<button class="btn block wl-btn" id="conf">🔒 Confirm I\'m coming</button>';
+    const b = document.getElementById('conf');
+    if (b) b.onclick = () => {
+      busy(b, true, 'Locking in…');
+      call('confirmAcademy', { t: BOOT.k }).then(() => { drawCta(true); burst(); }).catch(ex => { busy(b, false); toast(ex.message); });
+    };
+  };
+  drawCta(!!w.confirmed_at);
+}
+
+function burst() {
+  const em = ['🎉', '🔥', '🧡', '💙', '✨', '🙌'];
+  for (let i = 0; i < 28; i++) {
+    const sp = document.createElement('span');
+    sp.className = 'confetti'; sp.textContent = em[i % em.length];
+    sp.style.left = Math.random() * 100 + 'vw'; sp.style.animationDelay = (Math.random() * 0.6) + 's';
+    document.body.appendChild(sp); setTimeout(() => sp.remove(), 2600);
+  }
+}
+
 // ═════════════════════════ STAFF ═════════════════════════
 function roles() { return (S.me && S.me.user.roles) || []; }
 function isAdmin() { return roles().indexOf('admin') >= 0; }
@@ -325,6 +429,7 @@ function startStaff() {
   if (!S.token) return renderLogin();
   call('me').then(m => {
     S.me = m; S.week = S.week || m.weekEnding; S.day = S.day || m.today;
+    initPush();
     if (BOOT.cid) { const id = BOOT.cid; BOOT.cid = ''; S.tab = isBooker() ? 'mine' : (isAdmin() ? 'all' : 'today'); return openCandidate(id); }
     go(S.tab || (isPresenter() ? 'today' : 'mine'));
   }).catch(e => { if (S.token) $app.innerHTML = '<div class="err">' + h(e.message) + '</div>'; });
@@ -368,13 +473,51 @@ function shell(content) {
   if (isAdmin()) tabs.push(['team', '👥', 'Team']);
   const u = S.me.user;
   return '<div class="topbar"><img src="' + LOGOS.LINK + '" alt="LINK"><img src="' + LOGOS.JUSS + '" alt="JUSS">' +
-    '<div class="who">' + h(u.name) + '<br><a href="#" id="logout">Log out</a></div></div>' + content +
+    '<div class="who">' + h(u.name) + '<br><a href="#" id="logout">Log out</a></div></div>' + pushBar() + content +
     '<nav class="tabs">' + tabs.map(t => '<button data-tab="' + t[0] + '" class="' + (S.tab === t[0] ? 'on' : '') + '"><b>' + t[1] + '</b>' + t[2] + '</button>').join('') + '</nav>';
 }
 function bindShell() {
   document.querySelectorAll('.tabs button').forEach(b => { b.onclick = () => go(b.dataset.tab); });
   const lo = document.getElementById('logout');
-  if (lo) lo.onclick = e => { e.preventDefault(); store.del('tok'); S.token = ''; S.me = null; startStaff(); };
+  if (lo) lo.onclick = e => {
+    e.preventDefault(); store.del('tok'); S.token = ''; S.me = null;
+    if (PUSH.os) PUSH.os.logout().catch(() => {});
+    startStaff();
+  };
+  const pb = document.getElementById('pushon');
+  if (pb) pb.onclick = () => PUSH.os.Notifications.requestPermission().then(() => { PUSH.granted = PUSH.os.Notifications.permission; go(S.tab); });
+}
+
+// ───── Phone push notifications (OneSignal, only in the installable app) ─────
+const PUSH = { os: null, granted: false };
+const IS_IOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+const IS_STANDALONE = window.navigator.standalone === true || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+function initPush() {
+  if (!CFG.ONESIGNAL_APP_ID || !window.OneSignalDeferred || PUSH.started) return;
+  PUSH.started = true;
+  const base = location.pathname.replace(/[^/]*$/, '');  // e.g. /recruitment/join/
+  window.OneSignalDeferred.push(function (OneSignal) {
+    return OneSignal.init({
+      appId: CFG.ONESIGNAL_APP_ID,
+      serviceWorkerPath: base.slice(1) + 'OneSignalSDKWorker.js',
+      serviceWorkerParam: { scope: base },
+      notifyButton: { enable: false },
+    }).then(() => OneSignal.login(S.me.user.id)).then(() => {
+      PUSH.os = OneSignal; PUSH.granted = OneSignal.Notifications.permission;
+      OneSignal.Notifications.addEventListener('permissionChange', g => { PUSH.granted = g; });
+      if (!PUSH.granted && S.me) go(S.tab);  // show the "turn on" bar
+    }).catch(e => console.warn('push init', e));
+  });
+}
+function pushBar() {
+  if (!CFG.ONESIGNAL_APP_ID) return '';
+  if (IS_IOS && !IS_STANDALONE) {
+    return '<div class="pushbar">📲 <b>Get candidate alerts on your iPhone:</b> tap <b>Share</b> <span style="font-size:16px">⎋</span> → <b>Add to Home Screen</b>, then open the app from your home screen.</div>';
+  }
+  if (PUSH.os && !PUSH.granted) {
+    return '<div class="pushbar row between"><span>🔔 Turn on alerts so you never miss a check-in or evaluation.</span><button class="btn sm" id="pushon">Turn on</button></div>';
+  }
+  return '';
 }
 function go(tab) {
   stopTimer(); S.tab = tab; scrollTop();
@@ -397,7 +540,7 @@ function item(c, showStatus) {
   return '<div class="item" data-id="' + h(c.id) + '"><span class="dot ' + h(c.rag) + '"></span><div class="main">' +
     '<div class="name">' + h(c.full_name) + (c.stars ? ' <span style="color:#F2A900">' + '★'.repeat(Number(c.stars)) + '</span>' : '') + '</div>' +
     '<div class="sub">' + (c.booker_name ? h(c.booker_name) + ' <span class="co ' + h(c.company) + '">' + h(c.company) + '</span>' : '<i>Booker not confirmed' + (c.booker_typed ? ': "' + h(c.booker_typed) + '"' : '') + '</i>') + '</div>' +
-    '<div class="row" style="margin-top:4px;gap:4px">' + (showStatus ? statusPill(c) + ' ' : '') + (c.in_room ? '' : '<span class="pill">Not confirmed in room</span> ') + flagCounts(c) + '</div>' +
+    '<div class="row" style="margin-top:4px;gap:4px">' + (showStatus ? statusPill(c) + ' ' : '') + (c.in_room ? '' : '<span class="pill">Not rated yet</span> ') + flagCounts(c) + '</div>' +
     '</div><span class="muted">›</span></div>';
 }
 function bindItems() {
@@ -425,22 +568,16 @@ function viewToday() {
     const isToday = S.day === S.me.today;
     $app.innerHTML = shell(
       '<h1>' + (isToday ? 'Today' : fmt(S.day)) + '</h1>' +
-      '<div class="row"><input type="date" id="day" value="' + h(S.day) + '" style="max-width:180px">' +
-      (isToday ? '<button class="btn ghost sm" id="qr">📷 Show check-in QR</button>' : '') + '</div>' +
+      '<div class="row"><input type="date" id="day" value="' + h(S.day) + '" style="max-width:180px"></div>' +
       '<div class="card tight row between"><div><div class="stat">' + d.items.length + '</div><div class="small muted">checked in</div></div>' +
       '<div><div class="stat">' + inRoom + '</div><div class="small muted">in room</div></div>' +
       '<div><div class="stat">' + evals + '</div><div class="small muted">evaluations</div></div></div>' +
-      (isToday ? '<button class="btn block ' + (d.evalOpen ? 'ghost' : 'green') + '" id="ev">' +
-        (d.evalOpen ? '🔒 Close evaluations' : '✅ Presentation finished — open evaluations') + '</button>' +
-        '<p class="small muted center">' + (d.evalOpen ? 'Evaluations are open on candidates\' phones.' : 'Candidates see the evaluation form on their phone once you open it.') + '</p>' : '') +
-      '<div class="list">' + (d.items.length ? d.items.map(c => item(c, false)).join('') : '<p class="muted center" style="padding:24px 0">No check-ins yet. Show the QR code on the screen.</p>') + '</div>'
+      '<p class="small muted">Tap a name to rate them. Rating someone confirms they were in the room (that\'s what counts for pay).</p>' +
+      '<div class="list">' + (d.items.length ? d.items.map(c => item(c, false)).join('') : '<p class="muted center" style="padding:24px 0">No check-ins yet. They appear here as people scan the check-in QR on your first slide.</p>') + '</div>'
     );
     bindShell(); bindItems();
     document.getElementById('day').onchange = e => { S.day = e.target.value || S.me.today; viewToday(); };
-    const qr = document.getElementById('qr'); if (qr) qr.onclick = showQR;
-    const ev = document.getElementById('ev');
-    if (ev) ev.onclick = () => { busy(ev, true); call('setEvalOpen', { date: S.day, open: !d.evalOpen }).then(viewToday).catch(e => { busy(ev, false); toast(e.message); }); };
-    if (isToday) S.timer = setInterval(() => { if (S.tab === 'today' && !document.querySelector('.overlay')) viewTodayQuiet(); }, 20000);
+    if (isToday) S.timer = setInterval(() => { if (S.tab === 'today') viewTodayQuiet(); }, 20000);
   }).catch(errorView);
 }
 function viewTodayQuiet() {
@@ -450,21 +587,41 @@ function viewTodayQuiet() {
     bindItems();
   }).catch(() => {});
 }
-function showQR() {
-  call('qrInfo').then(q => {
-    const o = document.createElement('div'); o.className = 'overlay';
-    o.innerHTML = '<button class="btn ghost sm close">✕ Close</button>' + logos(64) + '<h1 style="font-size:34px">Scan to check in</h1>' +
-      '<p class="muted">Open your phone camera and point it at the code</p><div class="qr" id="qrc"></div><p class="small muted">' + fmtLong(q.date) + ' · code changes daily</p>';
-    document.body.appendChild(o);
-    o.querySelector('.close').onclick = () => o.remove();
-    const el = document.getElementById('qrc');
-    const size = Math.min(340, window.innerWidth - 64, window.innerHeight - 330);
-    try {
-      const code = qrcode(0, 'M'); code.addData(q.url); code.make();
-      el.innerHTML = code.createSvgTag({ cellSize: 8, margin: 2, scalable: true });
-      el.firstChild.setAttribute('width', size); el.firstChild.setAttribute('height', size);
-    } catch (e) { el.innerHTML = '<p style="word-break:break-all">' + h(q.url) + '</p>'; }
-  }).catch(e => toast(e.message));
+// ───── QR codes for the presentation slides (admin) ─────
+/** Slide-ready PNG: title, big QR, caption. Same code forever, so it can live on the slides. */
+function slideQR(url, title, caption, colour) {
+  const qr = qrcode(0, 'M'); qr.addData(url); qr.make();
+  const n = qr.getModuleCount(), cell = Math.floor(860 / (n + 4)), size = cell * (n + 4);
+  const W = 1000, H = size + 300;
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const x = cv.getContext('2d');
+  x.fillStyle = '#fff'; x.fillRect(0, 0, W, H);
+  x.fillStyle = colour; x.fillRect(0, 0, W, 150);
+  x.fillStyle = '#fff'; x.font = '800 64px -apple-system, Segoe UI, Roboto, Arial'; x.textAlign = 'center';
+  x.fillText(title, W / 2, 98);
+  const ox = Math.floor((W - size) / 2), oy = 170;
+  x.fillStyle = '#111';
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (qr.isDark(r, c)) x.fillRect(ox + (c + 2) * cell, oy + (r + 2) * cell, cell, cell);
+  x.fillStyle = '#2F2F38'; x.font = '600 38px -apple-system, Segoe UI, Roboto, Arial';
+  x.fillText(caption, W / 2, oy + size + 80);
+  return cv.toDataURL('image/png');
+}
+function viewSlideQR() {
+  stopTimer(); scrollTop();
+  const L = S.me.links;
+  const card = (url, title, cap, col, file, where) => {
+    const png = slideQR(url, title, cap, col);
+    return '<div class="card qrcard"><h2>' + h(where) + '</h2><img src="' + png + '" alt="' + h(title) + ' QR">' +
+      '<div class="row" style="justify-content:center;margin-top:10px"><a class="btn sm" href="' + png + '" download="' + file + '">⬇️ Download PNG</a></div>' +
+      '<p class="small muted" style="word-break:break-all">' + h(url) + '</p></div>';
+  };
+  $app.innerHTML = shell('<button class="btn ghost sm" id="back" style="margin-top:6px">‹ Team</button><h1>QR codes for your slides</h1>' +
+    '<p class="muted">These never change. Put them on the presentation once and you\'re done. No presenter taps needed.</p>' +
+    card(L.checkin, 'SCAN TO CHECK IN', 'Takes 1 minute · do it now 👋', '#F15A24', 'qr-1-checkin.png', '1 · First slide: Check-in') +
+    card(L.eval, 'SCAN FOR YOUR EVALUATION', '4 minutes · be honest, no wrong answers', '#2FB5C0', 'qr-2-evaluation.png', '2 · Last slide: Evaluation') +
+    '<p class="small muted">If Download doesn\'t work on your phone, press and hold the image → Save. On a laptop, right-click → Save image.</p>');
+  bindShell();
+  document.getElementById('back').onclick = () => go('team');
 }
 
 // ───── My candidates (booker) ─────
@@ -536,34 +693,33 @@ function openCandidate(id) {
 function brandOf(c) { return c.company === 'JUSS' ? 'JUSS Marketing' : 'LINK Marketing'; }
 function waUrl(mobile, text) { return 'https://wa.me/44' + String(mobile).slice(1) + '?text=' + encodeURIComponent(text); }
 
+const HEART = { LINK: '🧡', JUSS: '🧡💙' };
+function heartOf(c) { return HEART[c.company === 'JUSS' ? 'JUSS' : 'LINK']; }
 function msgThanks(c) {
   const b = c.booker_name ? c.booker_name.split(' ')[0] : '';
-  return 'Hi ' + c.first_name + '! 👋 Thanks for coming in to meet the ' + brandOf(c) + ' team today — it was great having you in the room.\n\n' +
-    (b ? b + ' will' : 'We\'ll') + ' give you a call shortly to talk about your next steps. Any questions before then, just reply here 🙌';
+  return 'Hey ' + c.first_name + '! 👋\n\n' +
+    'Thanks for coming through to ' + brandOf(c) + ' today ' + heartOf(c) + ' Loved having you in the room.\n\n' +
+    (b ? b + ' will' : 'We\'ll') + ' hit you up shortly about your next steps 📲 Keep your phone close!';
 }
 function msgNoAnswer(c) {
-  return 'Hi ' + c.first_name + ', it\'s ' + S.me.user.name.split(' ')[0] + ' from ' + brandOf(c) + ' 👋 I just tried calling you about your presentation with us. When\'s a good time to chat? 📞';
+  return 'Hey ' + c.first_name + ' 👋 it\'s ' + S.me.user.name.split(' ')[0] + ' from ' + brandOf(c) + '!\n\n' +
+    'Just tried calling about today\'s presentation 📞 When\'s good for a quick 2-min chat? Drop me a time 👇';
 }
+/** Short, scannable, one link. The link opens their personal page (schedule, poster, map, calendar, CONFIRM). */
 function msgAcademy(c) {
   const juss = c.company === 'JUSS';
-  const mon = D(c.academy_date).getUTCDay() === 1;
-  const day = (i, name) => mon ? name : 'Day ' + i;
   const lines = [
-    'Hi ' + c.first_name + '! 🎉 Congratulations — you\'ve been offered a place on the *' + (juss ? 'JUSS' : 'LINK') + ' Marketing BA Academy*!',
+    c.first_name.toUpperCase() + '!! 🎉 You\'re IN.',
     '',
-    '📅 *Day 1: ' + fmtLong(c.academy_date) + '*',
-    '⏰ Induction Day, 1:30pm – 6:00pm',
-    '📍 ' + S.me.address,
+    'Welcome to the *' + brandOf(c) + ' BA Academy* ' + heartOf(c),
     '',
-    '*Your Week 1 Coaching & Field Schedule*',
-    '1️⃣ *' + day(1, 'Monday') + ': Induction Day* (1:30pm – 6:00pm) — meet the team and learn more about the industry',
-    '2️⃣ *' + day(2, 'Tuesday') + ': Sales Coaching* (1:00pm – 6:00pm) — deep dive into ' + (juss ? 'in-house' : 'office-based') + ' sales coaching',
-    '3️⃣ *' + day(3, 'Wednesday') + ': Practical Learning Day* (10:00am – 8:30pm) — meet your 1-on-1 coach and mentor and shadow them',
-    '4️⃣ *' + (juss ? day(4, 'Thursday') + ' onwards: Sales Days' : day(4, 'Thursday') + ': Sales Day') + '* (10:30am – 8:30pm) — 1ST DAY ON BADGE! Your coach is side by side with you. Apply what you\'ve learnt and bag your incentives! 💰',
+    '📅 *Day 1: ' + fmt(c.academy_date) + ' · 1:30pm*',
+    '📍 Automotive House, Slough (2 mins from the station)',
     '',
   ];
-  if (!juss) lines.push('⚠️ Before Induction Day, please finish the *PRE-COACHING MODULE* attached in your Welcome email.', '');
-  lines.push('🪪 Please bring your photo ID and your right-to-work share code.', '', 'Reply *YES* to confirm your place 👍', '— ' + S.me.user.name.split(' ')[0]);
+  if (c.welcome_url) lines.push('👇 Your Week 1 game plan + tap *CONFIRM* to lock in your spot:', c.welcome_url, '');
+  if (!juss) lines.push('⚡ Before Day 1: finish the *Pre-Coaching Module* in your welcome email');
+  lines.push('🪪 Bring photo ID + your right-to-work share code', '', 'Let\'s get it 🔥', '– ' + S.me.user.name.split(' ')[0]);
   return lines.join('\n');
 }
 
@@ -628,6 +784,9 @@ function renderCandidate(c) {
       (c.academy_date ? ' <b>Day 1: ' + fmtLong(c.academy_date) + '</b>' : '') + '</p>' +
       '<p class="small muted">Logged ' + fmtTs(c.outcome_at) + ' by ' + h(c.outcome_by) + (c.outcome_late ? ' · <b style="color:var(--amber)">LATE (after deadline ' + fmtTs(c.deadline) + ')</b>' : '') + '</p>' +
       (c.outcome_notes ? '<p style="white-space:pre-wrap">' + h(c.outcome_notes) + '</p>' : '') +
+      (c.outcome === 'Academy booked' && offerReady ? (c.academy_confirmed_at
+        ? '<div class="flag green">✅ ' + h(c.first_name) + ' confirmed Day 1 on their welcome page · ' + fmtTs(c.academy_confirmed_at) + '</div>'
+        : '<div class="flag amber">⏳ Not confirmed yet. They confirm by tapping the link in your WhatsApp.</div>') : '') +
       (c.admin_status === 'pending' ? '<div class="flag red">Waiting for admin to approve this Academy booking (presenter marked RED or previously not suitable).</div>' : '') +
       (c.admin_status === 'approved' ? '<div class="flag green">Approved by ' + h(c.admin_by) + (c.admin_note ? ': ' + h(c.admin_note) : '') + '</div>' : '') +
       (c.admin_status === 'rejected' ? '<div class="flag red">Rejected by ' + h(c.admin_by) + (c.admin_note ? ': ' + h(c.admin_note) : '') + '</div>' : '');
@@ -647,7 +806,8 @@ function renderCandidate(c) {
   if (canNotes) wa.push('<a class="btn wa block" target="_blank" rel="noopener" data-kind="thanks" href="' + h(waUrl(c.mobile, msgThanks(c))) + '">💬 Send thank-you message</a>' +
     (c.thanks_sent_at ? '<p class="small muted center">Opened ' + fmtTs(c.thanks_sent_at) + '</p>' : ''));
   if (canOutcome && offerReady) wa.push('<a class="btn wa block" target="_blank" rel="noopener" data-kind="offer" href="' + h(waUrl(c.mobile, msgAcademy(c))) + '">🎉 Send BA Academy Day 1 details (' + h(c.company || 'LINK') + ')</a>' +
-    (c.offer_sent_at ? '<p class="small muted center">Opened ' + fmtTs(c.offer_sent_at) + '</p>' : ''));
+    (c.offer_sent_at ? '<p class="small muted center">Opened ' + fmtTs(c.offer_sent_at) + '</p>' : '') +
+    (c.welcome_url ? '<a class="btn ghost sm" target="_blank" rel="noopener" href="' + h(c.welcome_url) + '">👀 Preview their welcome page</a>' : ''));
   if (canOutcome && c.outcome === 'No answer') wa.push('<a class="btn wa block" target="_blank" rel="noopener" data-kind="noanswer" href="' + h(waUrl(c.mobile, msgNoAnswer(c))) + '">📞 Send "missed you" message</a>');
   if (wa.length) html += '<h3>WhatsApp</h3><div class="card" style="display:grid;gap:8px">' + wa.join('') + '<p class="small muted center">Opens WhatsApp with the message ready, then just tap send.</p></div>';
 
@@ -753,10 +913,12 @@ function viewTeam() {
     const row = u => '<div class="item" data-u="' + h(u.id) + '"><div class="main"><div class="name">' + h(u.name) + ' <span class="co ' + h(u.company) + '">' + h(u.company) + '</span>' +
       (u.active ? '' : ' <span class="pill red">No access</span>') + '</div><div class="sub">' + h(u.email) + ' · ' + h(u.roles.join(', ')) + '</div></div>›</div>';
     $app.innerHTML = shell('<div class="row between"><h1>Team</h1><button class="btn sm" id="add">+ Add person</button></div>' +
+      '<button class="btn ghost block" id="slideqr" style="margin:4px 0 8px">📲 QR codes for the presentation slides</button>' +
       '<p class="small muted">' + r.users.filter(u => u.active).length + ' with access. Bookers appear in the candidate check-in list.</p>' +
       '<div class="list">' + r.users.map(row).join('') + '</div>');
     bindShell();
     document.getElementById('add').onclick = () => editUser(null);
+    document.getElementById('slideqr').onclick = viewSlideQR;
     document.querySelectorAll('.item[data-u]').forEach(el => { el.onclick = () => editUser(r.users.filter(u => u.id === el.dataset.u)[0]); });
   }).catch(errorView);
 }

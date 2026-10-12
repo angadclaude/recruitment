@@ -1,98 +1,118 @@
-# Setting up the Recruitment App (about 20 minutes, one time)
+# Setting up the Recruitment App (about 40 minutes, one time)
 
-Everything runs inside your Google account: no new accounts, no monthly fees.
-Data sits in a private Google Sheet that only you can open. Nobody else needs access to the Sheet; everyone uses the app.
+**How it fits together:**
 
-> **Tip:** Do this on a laptop, logged into the Google account the alert emails should come from
-> (e.g. `angad@linkmarketing.org.uk`, or a shared `recruitment@` account if you have one).
+| Piece | What it does | Cost |
+|---|---|---|
+| **Google Sheet + Apps Script** | Stores the data (private) and runs the rules, logins and alerts | £0 |
+| **GitHub Pages** (this repo, already on) | Hosts the app people open: the slide QR codes, welcome pages, staff app | £0 |
+| **OneSignal** | Sends the phone push notifications | £0 (free plan) |
+
+Your app's address: **https://angadclaude.github.io/recruitment/join/**
 
 ---
 
-## Step 1. Create the Sheet
-1. Go to **sheets.new**.
-2. Name it **Recruitment App — DO NOT EDIT**.
+## Part A. Google: the data and the brain (20 min)
 
-## Step 2. Paste in the app
-1. In the Sheet: **Extensions → Apps Script**. A new tab opens.
-2. You'll see a file called `Code.gs`. Delete what's in it and paste in everything from [`src/Code.gs`](src/Code.gs).
-3. Add five HTML files. For each one, click **＋ → HTML**, type the name exactly as shown (without `.html`), delete what's inside, and paste the file's contents:
+### A1. Create the Sheet
+Go to **sheets.new** → name it **Recruitment App — DO NOT EDIT**.
 
-   | Name to type | Paste from |
-   |---|---|
-   | `Index` | [`src/Index.html`](src/Index.html) |
-   | `Styles` | [`src/Styles.html`](src/Styles.html) |
-   | `JS` | [`src/JS.html`](src/JS.html) |
-   | `Logos` | [`src/Logos.html`](src/Logos.html) |
-   | `QR` | [`src/QR.html`](src/QR.html) |
+### A2. Paste in the code
+1. In the Sheet: **Extensions → Apps Script**.
+2. Replace everything in `Code.gs` with [`src/Code.gs`](src/Code.gs).
+3. Add five HTML files (**＋ → HTML**, type the name exactly, paste the contents):
+   `Index` ← [`src/Index.html`](src/Index.html) · `Styles` ← [`src/Styles.html`](src/Styles.html) · `JS` ← [`src/JS.html`](src/JS.html) · `Logos` ← [`src/Logos.html`](src/Logos.html) · `QR` ← [`src/QR.html`](src/QR.html)
+4. ⚙️ **Project Settings → Time zone → London**. 💾 **Save**.
 
-4. Click the ⚙️ **Project Settings** cog (left side) and set **Time zone → (GMT+00:00) London**.
-5. Click 💾 **Save**.
+### A3. Run setup
+Choose **`setup`** in the dropdown → **▶ Run** → allow the permissions (**Advanced → Go to project → Allow**).
+This creates the tabs, the 4 admins (Angad, Jess, Satpal, Rubal) and the scheduled alerts.
 
-## Step 3. Run setup (creates the tabs, the 4 admins and the reminders)
-1. Back in the editor (`< >` icon), in the dropdown at the top choose **`setup`** and click **▶ Run**.
-2. Google asks for permission. Click **Review permissions**, choose your account, then **Advanced → Go to project (unsafe) → Allow**.
-   *(It says "unsafe" only because you wrote the app yourself rather than Google checking it.)*
-3. Wait for "Execution completed". Your Sheet now has the tabs `Users, Candidates, History, Codes, Sessions, Log`.
+### A4. Import the last 12 months (for repeat candidates)
+Choose **`importHistory`** → **▶ Run**.
 
-## Step 4. Bring in the last 12 months from the old form (for repeat candidates)
-1. In the dropdown choose **`importHistory`** → **▶ Run**.
-2. It copies name, mobile, email and booker from **Evaluation form → Form Responses 1** (last 12 months only) into the `History` tab.
+### A5. Publish
+**Deploy → New deployment → ⚙️ Web app** → Execute as **Me**, Who has access **Anyone** → **Deploy**.
+Copy the **Web app URL** (ends in `/exec`). You need it in B2.
 
-## Step 5. Publish the app
-1. Top right: **Deploy → New deployment**.
-2. Click the ⚙️ next to "Select type" → **Web app**.
-3. Set **Execute as: Me** and **Who has access: Anyone**. *(Candidates have no Google login, so this has to be "Anyone". Staff still log in with an emailed code.)*
-4. **Deploy** → copy the **Web app URL** (ends in `/exec`).
+---
 
-You now have **two links**:
+## Part B. GitHub: the app people open (5 min)
 
-| Who | Link |
-|---|---|
-| **Staff** (admins, presenters, bookers) | your URL + `?app=staff` (e.g. `https://script.google.com/macros/s/AKfy…/exec?app=staff`) |
-| **Candidates** | Don't share a link. They scan the **QR code** the presenter shows. It changes every day, so nobody can check in from home. |
+### B1. Put the app live
+The app lives in the `join/` folder on the `recruitment-app` branch. GitHub Pages publishes `main`, so merge the branch into `main`. *(Ask Claude to open the pull request, then click **Merge**.)*
+Then check **repo → Settings → Pages → Source: Deploy from a branch → `main` / root**.
 
-## Step 6. Add your team
-1. Open the **staff link** on your phone → enter your email → type the 6-digit code from your inbox.
-2. Go to **👥 Team → + Add person**: name, email, **LINK or JUSS** (this decides which welcome message they send) and access:
-   - **Booker**: sees only their own candidates, logs outcomes, sends WhatsApps
-   - **Presenter**: today's list, notes, stars, opens evaluations
-   - **Admin**: everything, plus adding and removing people
-3. Send each person the staff link and tell them: *"Open it → Share → **Add to Home Screen**."* It then works like an app.
+### B2. Connect it to Google
+Open [`join/config.js`](../join/config.js) on GitHub → ✏️ edit → paste the URL from A5 between the quotes on `API_URL:` → **Commit**.
+*(Or just send Claude the URL.)*
 
-Angad, Jess, Satpal and Rubal are already admins.
+---
+
+## Part C. OneSignal: phone notifications (10 min)
+
+1. Sign up free at **onesignal.com** → **New App** → name it *LINK × JUSS Recruitment* → choose **Web**.
+2. **Typical Site** setup:
+   - Site name: `Recruitment` · Site URL: `https://angadclaude.github.io`
+   - Default icon: upload [`assets/icon-192.png`](assets/icon-192.png)
+   - **Advanced → Service worker:** path `/recruitment/join/`, filename `OneSignalSDKWorker.js`, scope `/recruitment/join/`
+   - Skip the "add code to site" step. It's already built in.
+3. **Settings → Keys & IDs** → copy the **App ID** and the **REST API Key**.
+4. Paste the **App ID** into [`join/config.js`](../join/config.js) after `ONESIGNAL_APP_ID:` → Commit.
+5. In Apps Script: ⚙️ **Project Settings → Script properties → Add**:
+   - `ONESIGNAL_APP_ID` = the App ID
+   - `ONESIGNAL_API_KEY` = the REST API Key *(this one is secret, so it lives only in Google, never on GitHub)*
+
+Until Part C is done, alerts go by email instead. Nothing breaks.
+
+---
+
+## Part D. Get the team on it
+
+1. Open **https://angadclaude.github.io/recruitment/join/** → log in with your email and the 6-digit code.
+2. **👥 Team → + Add person** for every booker and presenter: name, email, **LINK or JUSS**, access.
+3. Send everyone the link with this message:
+
+> 📲 Our new recruitment app is live. Open https://angadclaude.github.io/recruitment/join/ → log in with your email.
+> **iPhone:** tap Share ⎋ → *Add to Home Screen* → open it from the icon → tap **Turn on** for alerts.
+> **Android:** Chrome menu ⋮ → *Install app* → tap **Turn on** for alerts.
+
+**iPhone users must open it from the home-screen icon.** Apple only allows notifications for web apps added to the home screen (iOS 16.4+).
+
+## Part E. The slides
+Put the two QR codes on the presentation once. They never change:
+- **First slide:** [`docs/qr-1-checkin.png`](docs/qr-1-checkin.png) → check-in
+- **Last slide:** [`docs/qr-2-evaluation.png`](docs/qr-2-evaluation.png) → evaluation
+
+(Also downloadable any time from **Team → 📲 QR codes for the presentation slides**.)
 
 ---
 
 ## Daily routine
-1. **Presenter**: open the app → **Today → 📷 Show check-in QR** on the room screen or laptop.
-2. Candidates scan it and check in (about a minute). They appear on the presenter's list straight away.
-3. During the talk: tap each name → **In the room ✅**, Green/Amber/Red, ★1–5, tags, notes → **Save**.
-4. End of the talk: tap **✅ Presentation finished — open evaluations**. The form appears on every candidate's phone automatically.
-5. **Booker** gets an email the moment an evaluation lands → opens the one-page snapshot → calls → logs the outcome → taps **🎉 Send BA Academy Day 1 details** (WhatsApp opens with the LINK or JUSS message ready, then they just hit send).
+1. Candidates scan the **check-in QR** on the first slide. The booker gets a push: *"🙌 Jasraj just checked in"*.
+2. **Presenter** taps each name on their phone → Green/Amber/Red, ★1–5, tags, notes. **Rating someone confirms they were in the room** (that's what counts for pay).
+3. Last slide: candidates scan the **evaluation QR**. Same phone → straight in. Different phone → they type their mobile. Missed check-in → they check in there and then.
+4. **Booker** gets *"📋 Jasraj's evaluation is in"* → one-page snapshot → call → log outcome → tap **🎉 Send BA Academy Day 1 details**.
+5. Candidate taps the link in WhatsApp → their **personal welcome page** (Week 1 plan, poster, directions, add to calendar) → taps **🔒 Confirm I'm coming** → booker gets *"✅ Jasraj confirmed Day 1!"*
 
-## Automatic emails (free, sent through your Gmail)
-| When | Who | What |
-|---|---|---|
-| The moment an evaluation is submitted | the booker | "📋 X's evaluation is in — call them" + link |
-| A booker books a 🔴 candidate | all admins | "Needs your decision" |
-| Wed + Fri 10:00 | every booker | "You're on 3/5 net attended this week" |
-| Sat 14:00 | bookers with calls outstanding | "⚠️ 2 outcomes to log by 19:00" |
-| Mon 09:00 | admins | last week's pay report |
-| Every night 02:00 | — | deletes anything older than 12 months (GDPR) |
+## Push alerts
+| When | Who |
+|---|---|
+| Candidate checks in | their booker |
+| Evaluation submitted | their booker |
+| Candidate confirms Day 1 | their booker |
+| Booker books a 🔴 candidate | all admins |
+| Wed + Fri 10:00: "3/5 net attended" | every booker |
+| Sat 14:00: "2 outcomes due by 19:00" | bookers with calls outstanding |
+| Mon 09:00: pay report ready | admins |
 
-## The rules built in (change any of them at the top of `Code.gs`)
-- **Net attended** (pay): Mon–Fri, **confirmed in the room by the presenter**, 18+, eligible to work self-employed (Tier 4, Skilled Worker, asylum-pending and needs-sponsorship don't count), not a repeat within 12 months, and not removed by an admin (e.g. failed share code). Target **5**.
-- **Outcome deadline: Saturday 19:00.** Outcomes logged on Sunday are accepted but marked **LATE**, and the pay report shows each booker's late count.
-- **Presenter marks RED** → the booker can't send the Academy message until an admin approves.
-- **Rejected in the last 12 months and comes back** → red banner "do not progress", and admin decides.
-- **Conviction answer**: only admins see it.
+## Rules built in (top of `Code.gs`)
+- **Net attended:** Mon–Fri, **rated by the presenter**, 18+, eligible to work self-employed, not seen in the last **6 months**, not removed by admin. Target 5.
+- **Check-in only 07:00–17:00.** Combined with "presenter must rate them", nobody can be checked in from home for pay.
+- **Outcome deadline Saturday 19:00.** Sunday outcomes are accepted and marked LATE.
+- **Presenter RED / previously rejected** → admin decides before the Academy message unlocks.
+- **12-month auto-delete** (GDPR). Conviction answer is admin-only.
 
 ## Changing something later
-Edit the code in Apps Script → **Save** → **Deploy → Manage deployments → ✏️ Edit → Version: New version → Deploy**. The links stay the same.
-
-## Good to know
-- People outside your Google Workspace may see a small grey Google banner at the top ("created by a Google Apps Script user"). That's normal.
-- Pages take 1–2 seconds to load. Google's free hosting is slower than a paid server.
-- Bookers on iPhone may occasionally need to log in again (Safari clears logins inside embedded pages). It's a 10-second email code.
-- WhatsApp links can't attach the poster image. The message contains the full Week 1 schedule as text instead. Bookers can still forward the poster if they want.
-- Gmail sending limit is 1,500 emails/day on Google Workspace. You'll use about 50.
+Apps Script: edit → Save → **Deploy → Manage deployments → ✏️ → New version → Deploy**. The URL stays the same.
+App screens: Claude edits `app/src`, runs `node app/build.js`, and pushes. GitHub Pages updates in about a minute.

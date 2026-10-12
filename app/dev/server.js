@@ -8,6 +8,7 @@ const { load } = require('./gas');
 
 const PORT = Number(process.argv[2] || 8787);
 const SRC = path.join(__dirname, '..', 'src');
+const JOIN = path.join(__dirname, '..', '..', 'join');
 const gas = load({ url: `http://localhost:${PORT}/exec` });
 
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -20,7 +21,8 @@ const SHIM = `<script>
 </script>`;
 
 function render(params) {
-  const vars = { mode: params.get('app') === 'staff' ? 'staff' : 'candidate', k: params.get('k') || '', cid: params.get('c') || '' };
+  const go = params.get('go');
+  const vars = { mode: params.get('app') === 'staff' ? 'staff' : (['eval', 'welcome'].indexOf(go) >= 0 ? go : 'checkin'), k: params.get('t') || '', cid: params.get('c') || '' };
   let html = fs.readFileSync(path.join(SRC, 'Index.html'), 'utf8');
   html = html.replace(/<\?!= include\('(\w+)'\) \?>/g, (m, n) => (n === 'JS' ? SHIM : '') + fs.readFileSync(path.join(SRC, n + '.html'), 'utf8'));
   html = html.replace(/<\?= (\w+) \?>/g, (m, n) => esc(vars[n]));
@@ -43,6 +45,17 @@ http.createServer(async (req, res) => {
       res.writeHead(200, { 'content-type': 'application/json' });
       return res.end(JSON.stringify(r));
     }
+    if (u.pathname.startsWith('/join/')) {
+      // The installable app (what GitHub Pages serves), wired to this dev API.
+      const rel = u.pathname.slice(6) || 'index.html';
+      if (rel === 'config.js') { res.writeHead(200, { 'content-type': 'text/javascript' }); return res.end("window.APP_CONFIG={API_URL:'/api',ONESIGNAL_APP_ID:''};"); }
+      const f = path.join(JOIN, path.normalize(rel).replace(/^(\.\.[\/])+/, ''));
+      if (!f.startsWith(JOIN) || !fs.existsSync(f)) { res.writeHead(404); return res.end('not found'); }
+      const type = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.jpg': 'image/jpeg', '.webmanifest': 'application/manifest+json' }[path.extname(f)] || 'application/octet-stream';
+      res.writeHead(200, { 'content-type': type }); return res.end(fs.readFileSync(f));
+    }
+    if (u.pathname === '/dev/pushes') { res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify(gas.state.pushes)); }
+    if (u.pathname === '/dev/props' && req.method === 'POST') { Object.assign(gas.state.props, await body(req)); res.writeHead(200, { 'content-type': 'application/json' }); return res.end('{}'); }
     if (u.pathname === '/dev/mail') { res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify(gas.state.outbox)); }
     if (u.pathname === '/dev/run' && req.method === 'POST') {
       const b = await body(req);

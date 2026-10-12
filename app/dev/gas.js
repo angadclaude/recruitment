@@ -7,7 +7,7 @@ const vm = require('vm');
 const crypto = require('crypto');
 
 function load(opts) {
-  const state = { offsetMs: 0, outbox: [], props: {}, cache: {}, sheets: {}, triggers: [] };
+  const state = { offsetMs: 0, outbox: [], pushes: [], props: {}, cache: {}, sheets: {}, triggers: [] };
   const url = opts.url;
 
   class Range {
@@ -78,6 +78,8 @@ function load(opts) {
       computeDigest: (alg, s) => Array.from(crypto.createHash(alg).update(String(s), 'utf8').digest()).map(b => (b > 127 ? b - 256 : b)),
     },
     MailApp: { sendEmail: o => { state.outbox.push(Object.assign({ at: new Date().toISOString() }, o)); } },
+    UrlFetchApp: { fetch: (url, o) => { state.pushes.push({ url, headers: o.headers, body: JSON.parse(o.payload) }); return { getResponseCode: () => 200, getContentText: () => '{"id":"x"}' }; } },
+    ContentService: { MimeType: { JSON: 'json' }, createTextOutput: t => ({ setMimeType: () => t }) },
     ScriptApp: {
       getService: () => ({ getUrl: () => url }),
       getProjectTriggers: () => state.triggers, deleteTrigger: () => {},

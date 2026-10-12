@@ -13,8 +13,15 @@ const CONFIG = {
   PAY_TARGET: 5,                  // net attended appointments per booker, Mon–Fri
   OUTCOME_DEADLINE_DAY: 6,        // 6 = Saturday (days after Monday: Mon=1 … Sat=6)
   OUTCOME_DEADLINE_TIME: '19:00', // outcomes logged after this are flagged LATE
-  REPEAT_COUNTS_FOR_PAY: false,   // a repeat attendee (within 12 months) does not count
+  REPEAT_DAYS: 183,               // "seen before" window: 6 months
+  REPEAT_COUNTS_FOR_PAY: false,   // a repeat attendee (within REPEAT_DAYS) does not count
   RETENTION_DAYS: 365,            // candidate data auto-deleted after this
+  CHECKIN_FROM: '07:00',          // check-ins only accepted between these times (UK)
+  CHECKIN_TO: '17:00',
+  // Where the app lives for staff and candidates (the GitHub Pages / custom domain address, ending in /).
+  // Leave '' to use the Google Apps Script link instead (no push notifications).
+  PUBLIC_URL: 'https://angadclaude.github.io/recruitment/join/',
+  EMAIL_ALERTS: false,            // true = also email every alert. Push is used when OneSignal keys are set.
   SESSION_DAYS: 30,               // staff stay logged in for this long
   HISTORY_SOURCE_ID: '1SjfhyQw-mnJY3iT8Q7p50795kP4DySJFx9fVcEEB_P8', // old Google Form sheet
   HISTORY_SOURCE_TAB: 'Form Responses 1',
@@ -64,6 +71,7 @@ const SHEETS = {
     'outcome', 'academy_date', 'outcome_notes', 'outcome_by', 'outcome_at', 'outcome_late',
     'admin_status', 'admin_note', 'admin_by', 'admin_at',
     'pay_excluded', 'pay_excluded_reason', 'thanks_sent_at', 'offer_sent_at',
+    'welcome_token', 'academy_confirmed_at',
   ],
   History: ['attended_date', 'full_name', 'mobile', 'email', 'booker_raw', 'presenter_raw'],
   Codes: ['email', 'code_hash', 'expires', 'attempts'],
@@ -75,13 +83,20 @@ const SHEETS = {
 function doGet(e) {
   const p = (e && e.parameter) || {};
   const t = HtmlService.createTemplateFromFile('Index');
-  t.mode = p.app === 'staff' ? 'staff' : 'candidate';
-  t.k = p.k || '';
+  t.mode = p.app === 'staff' ? 'staff' : (['eval', 'welcome'].indexOf(p.go) >= 0 ? p.go : 'checkin');
+  t.k = p.t || '';
   t.cid = p.c || '';
   return t.evaluate()
     .setTitle(CONFIG.APP_NAME)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.DEFAULT);
+}
+
+/** JSON API for the installable app (GitHub Pages). Plain-text POST keeps it a CORS "simple request". */
+function doPost(e) {
+  let req = {};
+  try { req = JSON.parse((e && e.postData && e.postData.contents) || '{}'); } catch (err) { req = {}; }
+  return ContentService.createTextOutput(JSON.stringify(api(req))).setMimeType(ContentService.MimeType.JSON);
 }
 
 function include(name) {
@@ -194,16 +209,6 @@ function rtwLevel(rtw) {
 }
 function truthy(v) { return v === true || v === 'TRUE' || v === 'true' || v === 'Yes'; }
 
-// ───────────────────────── DAY CODE (anti-fraud QR) ─────────────────────────
-function dayCode(ymd) {
-  const props = PropertiesService.getScriptProperties();
-  let secret = props.getProperty('DAY_SECRET');
-  if (!secret) { secret = token(); props.setProperty('DAY_SECRET', secret); }
-  return sha(secret + '|' + ymd).slice(0, 8);
-}
-function validDayCode(k) { return !!k && k === dayCode(todayStr()); }
-function evalOpen(ymd) { return PropertiesService.getScriptProperties().getProperty('EVAL_OPEN_' + ymd) === '1'; }
-
 // ───────────────────────── FLAGS / RULES ─────────────────────────
 /** Traffic-light flags for a candidate. Conviction flag only for admins. */
 function flagsFor(c, isAdmin) {
@@ -237,7 +242,7 @@ function flagsFor(c, isAdmin) {
 
 /** Why a candidate does NOT count towards the booker's net attended ('' = counts). */
 function payExclusion(c) {
-  if (!truthy(c.in_room)) return 'Not confirmed in room by presenter';
+  if (!truthy(c.in_room)) return 'Not rated by the presenter (not confirmed in the room)';
   const wd = weekday(c.attended_date);
   if (wd === 0 || wd === 6) return 'Weekend appointment';
   if (c.over18 !== 'Yes') return 'Under 18';
@@ -319,15 +324,19 @@ function verifyCode(req) {
 
 // ───────────────────────── PUBLIC (candidate) ─────────────────────────
 function publicConfig(req) {
-  if (!validDayCode(req.k)) return { valid: false };
   const bookers = usersAll().filter(u => truthy(u.active) && has(u, 'booker'))
     .map(u => ({ id: u.id, name: u.name, company: u.company }))
     .sort((a, b) => a.name.localeCompare(b.name));
-  return { valid: true, date: todayStr(), bookers: bookers, rtw: RTW.map(r => ({ label: r[0], level: r[1] })) };
+  return { today: todayStr(), bookers: bookers, rtw: RTW.map(r => ({ label: r[0], level: r[1] })) };
+}
+
+function checkinOpen() {
+  const t = nowStr().slice(11);
+  return t >= CONFIG.CHECKIN_FROM && t <= CONFIG.CHECKIN_TO;
 }
 
 function checkin(req) {
-  if (!validDayCode(req.k)) throw new Error('This QR code has expired. Please scan the code on the screen.');
+  if (!checkinOpen()) throw new Error('Check-in is open ' + CONFIG.CHECKIN_FROM + '–' + CONFIG.CHECKIN_TO + ' on the day of your appointment.');
   const f = req.form || {};
   const name = cleanName(f.full_name);
   const mobile = normMobile(f.mobile);
@@ -341,11 +350,11 @@ function checkin(req) {
   const today = todayStr();
   const booker = f.booker_id ? userById(f.booker_id) : null;
 
-  return withLock(() => {
+  const res = withLock(() => {
     const all = readTable('Candidates');
-    // Already checked in today on this mobile? Return the same record (e.g. phone refreshed).
+    // Already checked in today on this mobile? Return the same record (e.g. scanned twice).
     const dupe = all.filter(c => c.mobile === mobile && c.attended_date === today)[0];
-    if (dupe) return { id: dupe.id, resume: dupe.resume_token, first_name: dupe.full_name.split(' ')[0] };
+    if (dupe) return { c: dupe, isNew: false };
 
     const rep = findRepeat(all, mobile, email, today);
     const c = {
@@ -362,13 +371,17 @@ function checkin(req) {
     };
     appendRow('Candidates', c);
     log(null, 'checkin', c.id, name);
-    return { id: c.id, resume: c.resume_token, first_name: name.split(' ')[0] };
+    return { c: c, isNew: true };
   });
+  if (res.isNew && booker) {
+    notify([booker], '🙌 ' + name.split(' ')[0] + ' just checked in', name + ' is in the room for your appointment.', res.c.id);
+  }
+  return { id: res.c.id, resume: res.c.resume_token, first_name: res.c.full_name.split(' ')[0], evalDone: !!res.c.eval_at };
 }
 
-/** Look for the same person in the last 12 months (new app records + imported history). */
+/** Look for the same person in the last 6 months (new app records + imported history). */
 function findRepeat(all, mobile, email, today) {
-  const since = addDays(today, -CONFIG.RETENTION_DAYS);
+  const since = addDays(today, -CONFIG.REPEAT_DAYS);
   const prev = all.filter(c => (c.mobile === mobile || (email && c.email === email)) && c.attended_date >= since && c.attended_date < today)
     .sort((a, b) => b.attended_date.localeCompare(a.attended_date))[0];
   if (prev) {
@@ -391,16 +404,16 @@ function candidateByResume(req) {
 
 function candidateStatus(req) {
   const c = candidateByResume(req);
-  return { first_name: c.full_name.split(' ')[0], evalOpen: evalOpen(c.attended_date), evalDone: !!c.eval_at };
+  return { first_name: c.full_name.split(' ')[0], attended_date: c.attended_date, today: todayStr(), evalDone: !!c.eval_at };
 }
 
-/** Lost the page? Re-scan the QR, enter mobile → back to your record (today only). */
+/** Evaluation QR on a different phone/page: find today's check-in by mobile number. */
 function resumeByMobile(req) {
-  if (!validDayCode(req.k)) throw new Error('Please scan the QR code on the screen.');
   const m = normMobile(req.mobile);
+  if (!m) throw new Error('Please enter a valid UK mobile number (07…).');
   const c = readTable('Candidates').filter(x => x.mobile === m && x.attended_date === todayStr())[0];
-  if (!c) throw new Error("We couldn't find a check-in for that number today.");
-  return { id: c.id, resume: c.resume_token, first_name: c.full_name.split(' ')[0] };
+  if (!c) return { found: false };
+  return { found: true, id: c.id, resume: c.resume_token, first_name: c.full_name.split(' ')[0], evalDone: !!c.eval_at };
 }
 
 const EVAL_FIELDS = ['q1_excitement', 'q2_stood_out', 'q3_reason', 'q4_situation', 'q4_looking_for', 'q5_start_date',
@@ -415,16 +428,43 @@ function submitEval(req) {
   const done = withLock(() => {
     const c = candidateByResume(req);
     if (c.eval_at) return c;
-    if (!evalOpen(c.attended_date)) throw new Error('The evaluation opens at the end of the presentation.');
+    if (c.attended_date < addDays(todayStr(), -1)) throw new Error('This evaluation link has expired. Please speak to the person who booked you in.');
     EVAL_FIELDS.forEach(k => { c[k] = String(a[k] || '').trim().slice(0, 1000); });
     c.eval_at = nowStr();
     writeRow('Candidates', c);
     log(null, 'evaluation', c.id, '');
     return c;
   });
-  notifyBookerEval(done);
-  const b = done.booker_name ? done.booker_name.split(' ')[0] : 'Our team';
-  return { booker_first: b };
+  const b = done.booker_id ? userById(done.booker_id) : null;
+  if (b) notify([b], '📋 ' + done.full_name.split(' ')[0] + "'s evaluation is in", 'Call ' + done.full_name + ' — log the outcome by Sat ' + CONFIG.OUTCOME_DEADLINE_TIME + '.', done.id);
+  return { booker_first: done.booker_name ? done.booker_name.split(' ')[0] : 'Our team' };
+}
+
+/** Candidate's personal BA Academy welcome page (link inside the WhatsApp message). */
+function welcomeByToken(t) {
+  const c = t ? readTable('Candidates').filter(x => x.welcome_token === t)[0] : null;
+  if (!c || c.outcome !== 'Academy booked' || c.admin_status === 'pending' || c.admin_status === 'rejected') {
+    throw new Error("This link isn't active. Message the person who booked you in.");
+  }
+  return c;
+}
+function welcomeInfo(req) {
+  const c = welcomeByToken(req.t);
+  return {
+    first_name: c.full_name.split(' ')[0], company: c.company || 'LINK', academy_date: c.academy_date,
+    booker_first: c.booker_name ? c.booker_name.split(' ')[0] : '', confirmed_at: c.academy_confirmed_at,
+    address: CONFIG.OFFICE_ADDRESS, today: todayStr(),
+  };
+}
+function confirmAcademy(req) {
+  const c = withLock(() => {
+    const x = welcomeByToken(req.t);
+    if (!x.academy_confirmed_at) { x.academy_confirmed_at = nowStr(); writeRow('Candidates', x); log(null, 'academy_confirmed', x.id, ''); x._new = true; }
+    return x;
+  });
+  const b = c._new && c.booker_id ? userById(c.booker_id) : null;
+  if (b) notify([b], '✅ ' + c.full_name.split(' ')[0] + ' confirmed Day 1!', c.full_name + ' locked in BA Academy for ' + c.academy_date + '.', c.id);
+  return { confirmed_at: c.academy_confirmed_at };
 }
 
 // ───────────────────────── STAFF ─────────────────────────
@@ -438,6 +478,8 @@ function shape(c, u) {
   const o = {};
   SHEETS.Candidates.forEach(k => { o[k] = c[k]; });
   delete o.resume_token;
+  delete o.welcome_token;
+  if (c.welcome_token) o.welcome_url = welcomeUrl(c);
   if (!isAdmin(u)) o.q13_unspent = '';
   o.flags = flagsFor(c, isAdmin(u));
   o.pay_reason = payExclusion(c);
@@ -461,13 +503,14 @@ function me(req, u) {
     address: CONFIG.OFFICE_ADDRESS,
     payTarget: CONFIG.PAY_TARGET,
     deadlineTime: CONFIG.OUTCOME_DEADLINE_TIME,
+    links: { checkin: publicLink('checkin'), eval: publicLink('eval'), staff: staffUrl('') },
   };
 }
 
 function listDay(req, u) {
   const d = req.date || todayStr();
   const rows = readTable('Candidates').filter(c => c.attended_date === d && canSee(u, c));
-  return { date: d, evalOpen: evalOpen(d), items: rows.sort((a, b) => a.created_at.localeCompare(b.created_at)).map(c => shape(c, u)) };
+  return { date: d, items: rows.sort((a, b) => a.created_at.localeCompare(b.created_at)).map(c => shape(c, u)) };
 }
 
 function listWeek(req, u) {
@@ -497,9 +540,10 @@ function saveNotes(req, u) {
   return withLock(() => {
     const c = getC(req.id);
     if (!canSee(u, c)) throw new Error('No access');
-    c.in_room = req.in_room ? 'TRUE' : '';
     if (['G', 'A', 'R', ''].indexOf(req.rag) >= 0) c.rag = req.rag;
     const s = Number(req.stars); c.stars = s >= 1 && s <= 5 ? String(s) : '';
+    // Rating someone = they were in the room (no extra tap needed). Untick only if explicitly set false with no rating.
+    c.in_room = (req.in_room || c.rag || c.stars) ? 'TRUE' : '';
     c.tags = (req.tags || []).join(', ').slice(0, 300);
     c.notes = String(req.notes || '').slice(0, 2000);
     c.presenter_id = u.id; c.presenter_name = u.name; c.notes_at = nowStr();
@@ -521,14 +565,6 @@ function markInRoom(req, u) {
   });
 }
 
-function setEvalOpen(req, u) {
-  if (!has(u, 'presenter')) throw new Error('Only presenters can open evaluations.');
-  const d = req.date || todayStr();
-  PropertiesService.getScriptProperties().setProperty('EVAL_OPEN_' + d, req.open ? '1' : '0');
-  log(u, 'eval_open', '', d + ' ' + !!req.open);
-  return { evalOpen: !!req.open };
-}
-
 function saveOutcome(req, u) {
   return withLock(() => {
     const c = getC(req.id);
@@ -537,8 +573,11 @@ function saveOutcome(req, u) {
     if (req.outcome === 'Academy booked') {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(req.academy_date || '')) throw new Error('Pick the BA Academy Day 1 date.');
     }
+    const newDate = req.outcome === 'Academy booked' ? req.academy_date : '';
+    if (newDate !== c.academy_date) c.academy_confirmed_at = '';   // new date → needs confirming again
     c.outcome = req.outcome;
-    c.academy_date = req.outcome === 'Academy booked' ? req.academy_date : '';
+    c.academy_date = newDate;
+    if (newDate && !c.welcome_token) c.welcome_token = token().slice(0, 20);
     c.outcome_notes = String(req.outcome_notes || '').slice(0, 2000);
     c.outcome_by = u.name; c.outcome_at = nowStr();
     c.outcome_late = c.outcome_at > outcomeDeadline(c.attended_date) ? 'TRUE' : '';
@@ -549,7 +588,10 @@ function saveOutcome(req, u) {
     } else if (c.admin_status === 'pending') c.admin_status = '';
     writeRow('Candidates', c);
     log(u, 'outcome', c.id, c.outcome + (c.outcome_late ? ' LATE' : ''));
-    if (c.admin_status === 'pending') notifyAdminsPending(c);
+    if (c.admin_status === 'pending') {
+      notify(usersAll().filter(isAdmin), '🔴 Decision needed: ' + c.full_name,
+        c.booker_name + ' wants to book BA Academy, but the presenter marked RED or they were previously not suitable.', c.id);
+    }
     return shape(c, u);
   });
 }
@@ -684,60 +726,89 @@ function deleteUser(req, u) {
   });
 }
 
-function qrInfo(req, u) {
-  if (!has(u, 'presenter')) throw new Error('Presenter only');
-  const d = todayStr();
-  return { url: ScriptApp.getService().getUrl() + '?k=' + dayCode(d), date: d };
-}
-
 const PUBLIC_ACTIONS = {
   publicConfig: publicConfig, checkin: checkin, candidateStatus: candidateStatus,
   resumeByMobile: resumeByMobile, submitEval: submitEval, requestCode: requestCode, verifyCode: verifyCode,
+  welcomeInfo: welcomeInfo, confirmAcademy: confirmAcademy,
 };
 const STAFF_ACTIONS = {
   me: me, listDay: listDay, listWeek: listWeek, search: search, getCandidate: getCandidate,
-  saveNotes: saveNotes, markInRoom: markInRoom, setEvalOpen: setEvalOpen, saveOutcome: saveOutcome,
+  saveNotes: saveNotes, markInRoom: markInRoom, saveOutcome: saveOutcome,
   adminDecision: adminDecision, setPayExcluded: setPayExcluded, reassignBooker: reassignBooker,
-  markSent: markSent, payReport: payReport, listUsers: listUsers, saveUser: saveUser, deleteUser: deleteUser, qrInfo: qrInfo,
+  markSent: markSent, payReport: payReport, listUsers: listUsers, saveUser: saveUser, deleteUser: deleteUser,
 };
 
-// ───────────────────────── EMAIL ALERTS (free, via Gmail) ─────────────────────────
-function appUrl(cid) { return ScriptApp.getService().getUrl() + '?app=staff' + (cid ? '&c=' + cid : ''); }
+// ───────────────────────── LINKS ─────────────────────────
+function scriptUrl() { return ScriptApp.getService().getUrl(); }
+/** Candidate-facing pages: the static QR codes on the slides point here. */
+function publicLink(page) {
+  if (CONFIG.PUBLIC_URL) return CONFIG.PUBLIC_URL + page + '.html';
+  return scriptUrl() + (page === 'checkin' ? '' : '?go=' + page);
+}
+function staffUrl(cid) {
+  if (CONFIG.PUBLIC_URL) return CONFIG.PUBLIC_URL + (cid ? '?c=' + cid : '');
+  return scriptUrl() + '?app=staff' + (cid ? '&c=' + cid : '');
+}
+function welcomeUrl(c) {
+  if (CONFIG.PUBLIC_URL) return CONFIG.PUBLIC_URL + 'welcome-' + (c.company === 'JUSS' ? 'juss' : 'link') + '.html?t=' + c.welcome_token;
+  return scriptUrl() + '?go=welcome&t=' + c.welcome_token;
+}
+
+// ───────────────────────── ALERTS: phone push (OneSignal, free) + optional email ─────────────────────────
 function esc(s) { return String(s || '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch])); }
 function mail(to, subject, html) {
   try { MailApp.sendEmail({ to: to, subject: subject, htmlBody: html, name: CONFIG.APP_NAME }); } catch (e) { console.error(e); }
 }
-
-function notifyBookerEval(c) {
-  const b = c.booker_id ? userById(c.booker_id) : null;
-  if (!b || !truthy(b.active)) return;
-  mail(b.email, '📋 ' + c.full_name + "'s evaluation is in — call them",
-    '<p>Hi ' + esc(b.name.split(' ')[0]) + ',</p><p><b>' + esc(c.full_name) + '</b> has finished their evaluation. ' +
-    'Their notes, evaluation and flags are on one page:</p><p><a href="' + appUrl(c.id) + '">Open ' + esc(c.full_name.split(' ')[0]) + "'s snapshot</a></p>" +
-    '<p>Log the outcome by <b>Saturday ' + CONFIG.OUTCOME_DEADLINE_TIME + '</b>.</p>');
+function pushKeys() {
+  const p = PropertiesService.getScriptProperties();
+  const app = p.getProperty('ONESIGNAL_APP_ID'), key = p.getProperty('ONESIGNAL_API_KEY');
+  return app && key ? { app: app, key: key } : null;
 }
 
-function notifyAdminsPending(c) {
-  usersAll().filter(x => isAdmin(x) && truthy(x.active)).forEach(a => {
-    mail(a.email, '🔴 Needs your decision: ' + c.full_name,
-      '<p>' + esc(c.booker_name) + ' wants to book <b>' + esc(c.full_name) + '</b> for BA Academy (' + esc(c.academy_date) + '), ' +
-      'but the presenter marked them RED or they were previously not suitable.</p><p><a href="' + appUrl(c.id) + '">Review and decide</a></p>');
+/** Push notification to staff users' phones. Each user is identified in OneSignal by their app user id. */
+function pushTo(userIds, title, body, url) {
+  const k = pushKeys();
+  if (!k || !userIds.length) return false;
+  const payload = JSON.stringify({
+    app_id: k.app, target_channel: 'push',
+    include_aliases: { external_id: userIds },
+    headings: { en: title }, contents: { en: body }, web_url: url,
   });
+  // New OneSignal keys use "Key", older ones "Basic" — try both.
+  for (const scheme of ['Key ', 'Basic ']) {
+    try {
+      const r = UrlFetchApp.fetch('https://api.onesignal.com/notifications?c=push', {
+        method: 'post', contentType: 'application/json', payload: payload,
+        headers: { Authorization: scheme + k.key }, muteHttpExceptions: true,
+      });
+      const code = r.getResponseCode();
+      if (code === 401 || code === 403) continue;
+      return code >= 200 && code < 300;
+    } catch (e) { console.error(e); return false; }
+  }
+  return false;
+}
+
+/** Send an alert: phone push when set up; email as a fallback (or always, if EMAIL_ALERTS is on). */
+function notify(users, title, body, cid) {
+  const list = users.filter(u => u && truthy(u.active));
+  if (!list.length) return;
+  const url = staffUrl(cid || '');
+  const pushed = pushTo(list.map(u => u.id), title, body, url);
+  if (!pushed || CONFIG.EMAIL_ALERTS) {
+    list.forEach(u => mail(u.email, title, '<p>' + esc(body) + '</p><p><a href="' + url + '">Open the app</a></p>'));
+  }
 }
 
 /** Wed + Fri 10:00 — progress nudge to every active booker. */
 function weeklyProgressEmails() {
   const we = weekEnding(todayStr());
   const rows = readTable('Candidates').filter(c => c.week_ending === we);
-  usersAll().filter(b => truthy(b.active) && has(b, 'booker')).forEach(b => {
-    const mine = rows.filter(c => c.booker_id === b.id);
-    const net = mine.filter(c => !payExclusion(c)).length;
+  usersAll().filter(b => truthy(b.active) && rolesOf(b).indexOf('booker') >= 0).forEach(b => {
+    const net = rows.filter(c => c.booker_id === b.id && !payExclusion(c)).length;
     const need = Math.max(0, CONFIG.PAY_TARGET - net);
-    const msg = need === 0
-      ? '🔥 You\'re on <b>' + net + '/' + CONFIG.PAY_TARGET + '</b> net attended this week. Target hit — keep going.'
-      : 'You\'re on <b>' + net + '/' + CONFIG.PAY_TARGET + '</b> net attended this week. <b>' + need + ' more</b> needed by Friday.';
-    mail(b.email, (need === 0 ? '✅ ' : '⏳ ') + net + '/' + CONFIG.PAY_TARGET + ' net attended this week',
-      '<p>Hi ' + esc(b.name.split(' ')[0]) + ',</p><p>' + msg + '</p><p><a href="' + appUrl() + '">Open the app</a></p>');
+    notify([b], need === 0 ? '🔥 ' + net + '/' + CONFIG.PAY_TARGET + ' — target smashed' : '⏳ ' + net + '/' + CONFIG.PAY_TARGET + ' net attended',
+      need === 0 ? "You've hit your " + CONFIG.PAY_TARGET + ' this week. Keep going.' : need + ' more needed by Friday. Get them booked 💪', '');
   });
 }
 
@@ -745,30 +816,25 @@ function weeklyProgressEmails() {
 function saturdayDeadlineEmails() {
   const we = weekEnding(todayStr());
   const rows = readTable('Candidates').filter(c => c.week_ending === we && !c.outcome);
-  usersAll().filter(b => truthy(b.active) && has(b, 'booker')).forEach(b => {
+  usersAll().filter(b => truthy(b.active)).forEach(b => {
     const mine = rows.filter(c => c.booker_id === b.id);
     if (!mine.length) return;
-    mail(b.email, '⚠️ ' + mine.length + ' outcome' + (mine.length > 1 ? 's' : '') + ' to log by ' + CONFIG.OUTCOME_DEADLINE_TIME + ' today',
-      '<p>Hi ' + esc(b.name.split(' ')[0]) + ',</p><p>Still to log:</p><ul>' +
-      mine.map(c => '<li><a href="' + appUrl(c.id) + '">' + esc(c.full_name) + '</a></li>').join('') +
-      '</ul><p>Anything logged after ' + CONFIG.OUTCOME_DEADLINE_TIME + ' is flagged late.</p>');
+    notify([b], '⚠️ ' + mine.length + ' call outcome' + (mine.length > 1 ? 's' : '') + ' due by ' + CONFIG.OUTCOME_DEADLINE_TIME,
+      mine.map(c => c.full_name).join(', ') + '. After ' + CONFIG.OUTCOME_DEADLINE_TIME + ' they show as late.', '');
   });
 }
 
-/** Mon 09:00 — last week's pay report to admins. */
+/** Mon 09:00 — last week's pay summary to admins. */
 function mondayPayReportEmail() {
   const lastWe = addDays(weekEnding(todayStr()), -7);
-  const admin = usersAll().filter(x => isAdmin(x) && truthy(x.active));
-  if (!admin.length) return;
-  const rep = payReport({ weekEnding: lastWe }, admin[0]);
-  const rowsHtml = rep.rows.filter(r => r.attended > 0).map(r =>
-    '<tr><td>' + esc(r.name) + '</td><td>' + r.company + '</td><td align="center">' + r.attended + '</td><td align="center"><b>' + r.net + '</b></td>' +
-    '<td align="center">' + (r.net >= rep.target ? '✅' : '❌') + '</td><td align="center">' + r.late + '</td><td align="center">' + r.missing + '</td></tr>').join('');
-  const html = '<p>Pay report — week ending ' + lastWe + ' (target ' + rep.target + ' net attended)</p>' +
-    '<table border="1" cellpadding="6" style="border-collapse:collapse"><tr><th>Booker</th><th>Co.</th><th>Attended</th><th>Net</th><th>Target</th><th>Late outcomes</th><th>No outcome</th></tr>' +
-    rowsHtml + '</table>' + (rep.unassigned.length ? '<p>⚠️ ' + rep.unassigned.length + ' candidate(s) with no confirmed booker — assign them in the app.</p>' : '') +
-    '<p><a href="' + appUrl() + '">Open the app</a></p>';
-  admin.forEach(a => mail(a.email, 'Pay report — w/e ' + lastWe, html));
+  const admins = usersAll().filter(x => isAdmin(x) && truthy(x.active));
+  if (!admins.length) return;
+  const rep = payReport({ weekEnding: lastWe }, admins[0]);
+  const active = rep.rows.filter(r => r.attended > 0);
+  const hit = active.filter(r => r.net >= rep.target).length;
+  notify(admins, '💷 Pay report ready — w/e ' + lastWe,
+    hit + ' of ' + active.length + ' bookers hit ' + rep.target + ' net. ' + active.reduce((n, r) => n + r.late, 0) + ' late outcomes.' +
+    (rep.unassigned.length ? ' ' + rep.unassigned.length + ' need a booker assigned.' : ''), '');
 }
 
 /** Daily 02:00 — GDPR: delete anything older than 12 months; tidy expired sessions/codes. */
@@ -811,7 +877,6 @@ function setup() {
     }
   });
   const email = ADMINS.map(a => a.email).join(', ');
-  dayCode(todayStr()); // creates the secret
 
   ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
   ScriptApp.newTrigger('weeklyProgressEmails').timeBased().onWeekDay(ScriptApp.WeekDay.WEDNESDAY).atHour(10).inTimezone(CONFIG.TZ).create();
