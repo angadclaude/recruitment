@@ -102,7 +102,7 @@ function startCandidate() {
   known.then(st => {
     if (st) { C.rec = saved; C.rec.first_name = st.first_name; } else store.del('cand');
     if (BOOT.mode === 'eval') {
-      if (st) return st.evalDone ? renderDone() : renderEval();
+      if (st) return st.evalDone ? renderDone(true) : renderEval();
       return renderFind();
     }
     if (st) return renderCheckedIn(st.first_name, st.evalDone);
@@ -207,7 +207,7 @@ function renderCheckin(then) {
     call('checkin', { form: form }).then(r => {
       C.rec = { id: r.id, resume: r.resume, first_name: r.first_name };
       store.set('cand', C.rec);
-      if (r.evalDone) return renderDone();
+      if (r.evalDone) return renderDone(true);
       if (then === 'eval') return renderEval();
       renderCheckedIn(r.first_name);
     }).catch(ex => { busy(btn, false); showErr(err, ex.message); });
@@ -230,14 +230,14 @@ function renderFind(notFound) {
     call('resumeByMobile', { mobile: mobile }).then(r => {
       if (!r.found) return renderFind(true);
       C.rec = { id: r.id, resume: r.resume, first_name: r.first_name }; store.set('cand', C.rec);
-      r.evalDone ? renderDone() : renderEval();
+      r.evalDone ? renderDone(true) : renderEval();
     }).catch(ex => { busy(btn, false); showErr(document.getElementById('err'), ex.message); });
   };
   const ci = document.getElementById('ci'); if (ci) ci.onclick = () => loadCheckin('eval');
 }
 
 function renderCheckedIn(first, evalDone) {
-  if (evalDone) return renderDone();
+  if (evalDone) return renderDone(true);
   scrollTop();
   $app.innerHTML = logos(56) + '<div class="card center"><div class="big-emoji">✅</div><h1>You\'re checked in, ' + h(first) + '!</h1>' +
     '<p>We aim to begin at 10 AM 🕙</p>' +
@@ -313,18 +313,21 @@ function renderEval() {
       }
       const btn = document.getElementById('go'); busy(btn, true, 'Sending…');
       call('submitEval', { id: C.rec.id, resume: C.rec.resume, answers: a })
-        .then(r => { store.del('evaldraft_' + C.rec.id); renderDone(r.booker_first); })
+        .then(r => { store.del('evaldraft_' + C.rec.id); renderDone(false); })
         .catch(ex => { busy(btn, false); showErr(err, ex.message); });
     });
   };
   draw();
 }
 
-function renderDone(bookerFirst) {
+/** already = they'd sent it before (one evaluation per person per day), so say so rather than a bare "thank you". */
+function renderDone(already) {
   stopTimer(); scrollTop();
-  $app.innerHTML = logos(56) + '<div class="card center"><div class="big-emoji">🙌</div><h1>Thank you!</h1>' +
-    '<p>' + h(bookerFirst || 'Our team') + ' will give you a call shortly to talk about your next steps.</p>' +
-    '<p class="muted">Keep your phone close — and check WhatsApp.</p></div>';
+  const first = C.rec && C.rec.first_name ? ', ' + h(C.rec.first_name) : '';
+  $app.innerHTML = logos(56) + '<div class="card center"><div class="big-emoji">' + (already ? '✅' : '🙌') + '</div>' +
+    (already ? '<h1>Already done' + first + '</h1><p>You\'ve already sent your evaluation today. No need to do it again.</p>' : '<h1>Thank you' + first + '!</h1>') +
+    '<p>Our team will contact you about your next steps by close of business on Friday 6PM at the latest 📲</p>' +
+    '<p class="muted">Keep your phone close and check WhatsApp.</p></div>';
 }
 
 // ═════════════════════════ WELCOME PAGE (link in the WhatsApp) ═════════════════════════
