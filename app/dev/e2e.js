@@ -268,8 +268,8 @@ async function fillEval(p) {
   const dark = await browser.newContext(Object.assign({ colorScheme: 'dark' }, PHONE));
   const dp = await dark.newPage();
   await loginUi(dp, 'nathan@example.com'); await dp.waitForSelector('text=Jasraj Bhuller');
-  await shot(dp, '04c-dark-today');
-  ok(await dp.evaluate(() => getComputedStyle(document.body).backgroundColor) === 'rgb(17, 17, 22)', 'dark mode follows the phone setting');
+  await shot(dp, '04c-phone-in-dark-mode');
+  ok(await dp.evaluate(() => getComputedStyle(document.body).backgroundColor) === 'rgb(243, 241, 238)', 'stays in the normal light look even when the phone is in dark mode');
   await dark.close();
 
   // ── 4. Booker: snapshot → outcome → Gen Z WhatsApp with welcome link ──

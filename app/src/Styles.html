@@ -1,5 +1,6 @@
 <style>
 :root {
+  color-scheme: only light;
   --card: #FFFFFF; --soft: #EEEBE6; --soft2: #E6E3DE; --tint: #FFEDE5; --teal-bg: #E6F4F6; --bar: rgba(255,255,255,.92);
   --orange: #F15A24;
   --orange-d: #D9481A;
@@ -323,29 +324,5 @@ button.item { width: 100%; text-align: left; font: inherit; color: inherit; }
 #ptr .spinner { opacity: .5; } #ptr.ready .spinner { opacity: 1; }
 .spinner.sm { width: 22px; height: 22px; border-width: 3px; }
 
-/* dark mode (follows the phone's setting) */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #111116; --card: #1C1C23; --ink: #F1F0ED; --muted: #A09EA8; --line: #2C2C36;
-    --soft: #2A2A33; --soft2: #30303A; --tint: #3A2219; --teal-bg: #12343A; --bar: rgba(24,24,30,.92);
-    --red-bg: #3B1B1D; --amber-bg: #3A2C10; --green-bg: #14301F; --ink2: #0A0A0E;
-    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 6px 20px rgba(0,0,0,.25);
-  }
-  body { color-scheme: dark; }
-  input, select, textarea { background: var(--card); color: var(--ink); border-color: var(--line); }
-  .hero { background: linear-gradient(135deg, #26262F, #16161B); }
-  .tabbar { border-top-color: rgba(255,255,255,.06); }
-  .tabbar button { color: #8E8C96; }
-  .rank.top1 { color: #1C1C23; } .rank.top2 { color: #1C1C23; } .rank.top3 { color: #1C1C23; }
-  .pill { color: var(--ink); }
-  .flag.red { color: #FF8A8A; } .flag.amber { color: #F5C26B; } .flag.green { color: #6EE0A0; }
-  .pill.red { color: #FF8A8A; } .pill.amber { color: #F5C26B; } .pill.green { color: #6EE0A0; } .pill.blue { color: #7FD6E0; }
-  .err { color: #FF8A8A; } .ok { color: #6EE0A0; }
-  .datehead span { color: var(--ink); }
-  .wl-alert { background: #3A2C10; border-color: #6B5310; color: #F5D58A; }
-  .seg button { background: var(--card); color: var(--ink); }
-  .stars button { color: #4A4852; } .stars button.on { color: #F2A900; }
-  .stars-lg span { color: #4A4852; }
-}
 .toast { background: #2B2B33; color: #fff; }
 </style>
