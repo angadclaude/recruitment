@@ -24,8 +24,10 @@ function call(action, payload) {
   const req = Object.assign({}, payload || {}, { action: action, token: S.token });
   let p;
   if (CFG.API_URL) {
-    // Installable app (GitHub Pages): plain-text POST to the Apps Script /exec URL.
-    p = fetch(CFG.API_URL, { method: 'POST', body: JSON.stringify(req) }).then(r => r.json());
+    // Installable app (GitHub Pages): plain-text POST to the Apps Script /exec URL. Give up on a hung request after 45s.
+    const ctl = window.AbortController ? new AbortController() : null, t = ctl && setTimeout(() => ctl.abort(), 45000);
+    p = fetch(CFG.API_URL, { method: 'POST', body: JSON.stringify(req), signal: ctl ? ctl.signal : undefined })
+      .then(r => r.json()).then(j => { clearTimeout(t); return j; }, e => { clearTimeout(t); throw e; });
   } else if (window.google && google.script) {
     p = new Promise((res, rej) => google.script.run.withSuccessHandler(res).withFailureHandler(rej).api(req));
   } else {
@@ -34,12 +36,23 @@ function call(action, payload) {
   return p.then(res => {
     if (res && res.ok) return res.data;
     if (res && res.auth) { store.del('tok'); S.token = ''; S.me = null; startStaff(); return new Promise(() => {}); } // session expired → login
-    throw new Error((res && res.error) || 'Something went wrong');
+    const e = new Error((res && res.error) || 'Something went wrong'); e.retry = !!(res && res.retry); throw e;
   }, err => {
     const m = (err && err.message) || '';
-    const offline = !err || err.name === 'TypeError' || /fetch|load failed|network|internet|offline/i.test(m);
-    throw new Error(offline ? 'No connection — check your signal and try again' : m);
+    const offline = !err || err.name === 'TypeError' || err.name === 'AbortError' || /fetch|load failed|network|internet|offline|abort|JSON/i.test(m);
+    const e = new Error(offline ? 'No connection — check your signal and try again' : m); e.retry = offline; throw e;
   });
+}
+/** Candidate pages: when Google is busy (lots sending at once) or the signal drops, quietly try again
+ *  (after 2, 4, 8, 12s) instead of showing an error. Safe: check-in and evaluation can't be sent twice. */
+function callRetry(action, payload, onWait, tries) {
+  const waits = [2000, 4000, 8000, 12000].slice(0, tries === undefined ? 4 : tries);
+  const attempt = i => call(action, payload).catch(e => {
+    if (!e.retry || i >= waits.length) throw e;
+    if (onWait) onWait(i + 1);
+    return new Promise(r => setTimeout(r, waits[i])).then(() => attempt(i + 1));
+  });
+  return attempt(0);
 }
 function stopTimer() { if (S.timer) { clearInterval(S.timer); S.timer = null; } }
 function scrollTop() { window.scrollTo(0, 0); }
@@ -97,15 +110,17 @@ function startCandidate() {
   if (BOOT.mode === 'welcome') return startWelcome();
   const saved = store.get('cand');
   const known = saved && saved.id
-    ? call('candidateStatus', { id: saved.id, resume: saved.resume }).then(st => (st.attended_date === st.today ? st : null)).catch(() => null)
+    ? callRetry('candidateStatus', { id: saved.id, resume: saved.resume }, null, 2).then(st => (st.attended_date === st.today ? st : null))
+      // Busy or no signal: carry on with what this phone already knows (only forget it if Google says it doesn't exist)
+      .catch(e => (e.retry ? { first_name: saved.first_name, unknown: true } : null))
     : Promise.resolve(null);
   known.then(st => {
-    if (st) { C.rec = saved; C.rec.first_name = st.first_name; } else store.del('cand');
+    if (st) { C.rec = saved; C.rec.first_name = st.first_name || saved.first_name; } else store.del('cand');
     if (BOOT.mode === 'eval') {
-      if (st) return st.evalDone ? renderDone(true) : renderEval();
+      if (st) return st.evalDone ? renderDone('already', st.canEdit) : renderEval();
       return renderFind();
     }
-    if (st) return renderCheckedIn(st.first_name, st.evalDone);
+    if (st) return renderCheckedIn(C.rec.first_name, st.evalDone, st.canEdit);
     loadCheckin('');
   });
 }
@@ -204,10 +219,10 @@ function renderCheckin(then) {
     if (!form.privacy_ok) return showErr(err, 'Please tick the privacy box to continue.');
     showErr(err, '');
     const btn = document.getElementById('go'); busy(btn, true, 'Checking in…');
-    call('checkin', { form: form }).then(r => {
+    callRetry('checkin', { form: form }, () => { btn.innerHTML = 'Busy, still checking you in…'; }).then(r => {
       C.rec = { id: r.id, resume: r.resume, first_name: r.first_name };
       store.set('cand', C.rec);
-      if (r.evalDone) return renderDone(true);
+      if (r.evalDone) return renderDone('already');
       if (then === 'eval') return renderEval();
       renderCheckedIn(r.first_name);
     }).catch(ex => { busy(btn, false); showErr(err, ex.message); });
@@ -227,21 +242,34 @@ function renderFind(notFound) {
     const btn = document.getElementById('go'); busy(btn, true, 'Looking…');
     const mobile = document.getElementById('m').value;
     store.set('lastMobile', mobile);
-    call('resumeByMobile', { mobile: mobile }).then(r => {
+    callRetry('resumeByMobile', { mobile: mobile }, () => { btn.innerHTML = 'Busy, still looking…'; }).then(r => {
       if (!r.found) return renderFind(true);
       C.rec = { id: r.id, resume: r.resume, first_name: r.first_name }; store.set('cand', C.rec);
-      r.evalDone ? renderDone(true) : renderEval();
+      r.evalDone ? renderDone('already', r.canEdit) : renderIsThisYou();
     }).catch(ex => { busy(btn, false); showErr(document.getElementById('err'), ex.message); });
   };
   const ci = document.getElementById('ci'); if (ci) ci.onclick = () => loadCheckin('eval');
 }
 
-function renderCheckedIn(first, evalDone) {
-  if (evalDone) return renderDone(true);
+function renderIsThisYou() {
+  scrollTop();
+  $app.innerHTML = logos(56) + '<div class="card center"><div class="big-emoji">👋</div><h1>Is this you, ' + h(C.rec.first_name) + '?</h1>' +
+    '<p class="muted">Just checking we\'ve got the right person.</p>' +
+    '<button class="btn block" id="yes">Yes, start my evaluation</button>' +
+    '<button class="btn ghost block" id="no" style="margin-top:8px">No, that\'s not me</button></div>';
+  document.getElementById('yes').onclick = () => renderEval();
+  document.getElementById('no').onclick = () => { store.del('cand'); C.rec = null; renderFind(); };
+}
+function renderCheckedIn(first, evalDone, canEdit) {
+  if (evalDone) return renderDone('already', canEdit);
   scrollTop();
   $app.innerHTML = logos(56) + '<div class="card center"><div class="big-emoji">✅</div><h1>You\'re checked in, ' + h(first) + '!</h1>' +
     '<p>We aim to begin at 10 AM 🕙</p>' +
     '<div class="ok" style="text-align:left">📝 <b>At the end</b>, scan the second QR code on the screen (<b>Evaluation</b>) to fill in your evaluation.</div></div>';
+  const nm = document.createElement('button'); nm.className = 'btn ghost sm'; nm.id = 'notme'; nm.style.marginTop = '14px';
+  nm.textContent = 'Not you? Check someone else in';
+  nm.onclick = () => { store.del('cand'); C.rec = null; loadCheckin(''); };
+  const card = $app.querySelector('.card'); if (card) card.appendChild(nm);
 }
 
 const EVAL = [
@@ -273,7 +301,7 @@ const LADDER = [
   ['#5AA05A', 'Stage 6 · Owner', 'open your own marketing company + £10k start-up investment'],
 ];
 
-function renderEval() {
+function renderEval(edit) {
   stopTimer(); scrollTop();
   const a = store.get('evaldraft_' + C.rec.id) || {};
   const qhtml = q => {
@@ -294,8 +322,10 @@ function renderEval() {
     return w + '</div>';
   };
   const draw = () => {
-    $app.innerHTML = logos(48) + '<h1>Your evaluation, ' + h(C.rec.first_name) + '</h1><p class="muted">About 4 minutes. Your answers shape your next step with us, so make them count.</p>' +
-      '<form id="f" class="card" novalidate>' + EVAL.map(qhtml).join('') + '<div id="err"></div><button class="btn block" id="go" type="submit">Submit my evaluation</button></form>';
+    $app.innerHTML = logos(48) + (edit
+      ? '<h1>Change your answers, ' + h(C.rec.first_name) + '</h1><p class="muted">Your answers are filled in. Change what you need, then save.</p>'
+      : '<h1>Your evaluation, ' + h(C.rec.first_name) + '</h1><p class="muted">About 4 minutes. Your answers shape your next step with us, so make them count.</p>') +
+      '<form id="f" class="card" novalidate>' + EVAL.map(qhtml).join('') + '<div id="err"></div><button class="btn block" id="go" type="submit">' + (edit ? 'Save my changes' : 'Submit my evaluation') + '</button></form>';
     const f = document.getElementById('f');
     bindChips(f, (name, v) => {
       a[name] = v; store.set('evaldraft_' + C.rec.id, a);
@@ -312,22 +342,34 @@ function renderEval() {
         return;
       }
       const btn = document.getElementById('go'); busy(btn, true, 'Sending…');
-      call('submitEval', { id: C.rec.id, resume: C.rec.resume, answers: a })
-        .then(r => { store.del('evaldraft_' + C.rec.id); renderDone(false); })
+      callRetry('submitEval', { id: C.rec.id, resume: C.rec.resume, answers: a, edit: !!edit }, () => { btn.innerHTML = 'Busy, still sending… (your answers are safe)'; })
+        .then(r => { store.del('evaldraft_' + C.rec.id); renderDone(r.status === 'already' ? 'already' : r.status === 'edited' ? 'updated' : 'new', r.status !== 'already'); })
         .catch(ex => { busy(btn, false); showErr(err, ex.message); });
     });
   };
   draw();
 }
 
-/** already = they'd sent it before (one evaluation per person per day), so say so rather than a bare "thank you". */
-function renderDone(already) {
+/** mode: 'new' (just sent) · 'already' (sent before: one evaluation per person per day) · 'updated' (answers changed).
+ *  canEdit: same day and the booker hasn't logged the call yet → they can fix a mistake. */
+function renderDone(mode, canEdit) {
   stopTimer(); scrollTop();
   const first = C.rec && C.rec.first_name ? ', ' + h(C.rec.first_name) : '';
-  $app.innerHTML = logos(56) + '<div class="card center"><div class="big-emoji">' + (already ? '✅' : '🙌') + '</div>' +
-    (already ? '<h1>Already done' + first + '</h1><p>You\'ve already sent your evaluation today. No need to do it again.</p>' : '<h1>Thank you' + first + '!</h1>') +
+  const top = mode === 'already' ? ['✅', 'Already done' + first, '<p>You\'ve already sent your evaluation today. No need to do it again.</p>']
+    : mode === 'updated' ? ['✅', 'Updated' + first + '!', '<p>Your changes have been saved.</p>'] : ['🙌', 'Thank you' + first + '!', ''];
+  $app.innerHTML = logos(56) + '<div class="card center"><div class="big-emoji">' + top[0] + '</div><h1>' + top[1] + '</h1>' + top[2] +
     '<p>Our team will contact you about your next steps by close of business on Friday 6PM at the latest 📲</p>' +
-    '<p class="muted">Keep your phone close and check WhatsApp.</p></div>';
+    '<p class="muted">Keep your phone close and check WhatsApp.</p>' +
+    (canEdit && C.rec ? '<div id="err"></div><button class="btn ghost block" id="edit" style="margin-top:14px">✏️ Made a mistake? Change my answers</button>' : '') +
+    (mode === 'already' ? '<button class="btn ghost sm" id="notme" style="margin-top:10px">Not you? ' + (BOOT.mode === 'eval' ? 'Enter your number again' : 'Check someone else in') + '</button>' : '') + '</div>';
+  const ed = document.getElementById('edit');
+  if (ed) ed.onclick = () => {
+    busy(ed, true, 'Opening your answers…');
+    callRetry('myEval', { id: C.rec.id, resume: C.rec.resume }).then(r => { store.set('evaldraft_' + C.rec.id, r.answers); renderEval(true); })
+      .catch(ex => { busy(ed, false); showErr(document.getElementById('err'), ex.message); });
+  };
+  const nm = document.getElementById('notme');
+  if (nm) nm.onclick = () => { store.del('cand'); C.rec = null; if (BOOT.mode === 'eval') renderFind(); else loadCheckin(''); };
 }
 
 // ═════════════════════════ WELCOME PAGE (link in the WhatsApp) ═════════════════════════
@@ -923,7 +965,7 @@ function viewMine(quiet) {
     body = '<div class="hero"><div>' + ring(r.net, d.pay.target) + '</div><div class="hero-txt"><b>' + (left ? left + ' more to hit ' + d.pay.target : 'Target smashed 🔥') + '</b>' +
       '<span>' + r.attended + ' attended · ' + r.excluded.length + ' don\'t count</span>' +
       (r.excluded.length ? '<span class="small">' + r.excluded.map(x => h(x.name) + ' (' + h(x.why) + ')').join(' · ') + '</span>' : '') + '</div></div>' +
-      (toCall.length ? '<div class="section-h">📞 To call <span>log by Sat ' + h(S.me.deadlineTime) + '</span></div><div class="list">' + toCall.map(c => item(c, true)).join('') + '</div>' : '') +
+      (toCall.length ? '<div class="section-h">📞 To call <span>log by ' + h(S.me.deadlineLabel || 'Fri ' + S.me.deadlineTime) + '</span></div><div class="list">' + toCall.map(c => item(c, true)).join('') + '</div>' : '') +
       (items.length > toCall.length ? '<div class="section-h">' + (toCall.length ? 'Everyone else' : 'This week') + '</div>' + groupByDate(items.filter(c => toCall.indexOf(c) < 0))
         : items.length ? '' : empty('🗓️', 'No candidates this week yet.'));
   }
@@ -1294,7 +1336,7 @@ function flush() {
     flush();
   }, err => {
     FLUSHING = false;
-    if (/connection|network|fetch/i.test(err.message)) { showPending(); return; }  // no signal: keep it, retry on the next tick
+    if (err.retry || /connection|network|fetch/i.test(err.message)) { showPending(); return; }  // no signal or Google busy: keep it, retry on the next tick
     setOutbox(outbox().slice(1));
     toast('Not saved: ' + err.message);
     call('getCandidate', { id: op.id }).then(nc => { upsert(nc); if (S.view === 'cand' && S.params.id === nc.id) renderCandidate(nc, true); }).catch(() => {});
