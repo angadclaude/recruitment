@@ -133,7 +133,9 @@ async function fillEval(p) {
   await cp.goto(APP + 'checkin.html');
   await cp.waitForSelector('#f');
   await shot(cp, '01-checkin-empty');
+  ok(await cp.evaluate(() => !/t-(LINK|JUSS)/.test(document.documentElement.className)), 'check-in opens in the joint LINK × JUSS look (booker not known yet)');
   await fillCheckin(cp, { name: 'jasraj bhuller', mobile: '07700 900123', email: 'jasraj@example.com', booker: 'Fiza Iqbal', rtw: 'Graduate visa (PSW)', expiry: '2027-11-30' });
+  ok(await cp.evaluate(() => document.documentElement.classList.contains('t-LINK')) && /You're with\s+LINK Marketing/.test(await cp.innerText('#with')), 'picking a LINK booker switches the page to the LINK look');
   await cp.click('#go');
   await cp.waitForSelector('text=You\'re checked in, Jasraj!');
   ok(/After the presentation, please scan the second QR code on the screen \(Evaluation form\) for us to proceed with your application\./.test(await cp.innerText('body')), 'checked-in screen: "After the presentation, please scan the second QR code… to proceed with your application."');
@@ -189,6 +191,14 @@ async function fillEval(p) {
   fs.writeFileSync(`${SHOTS}/msg-thanks.txt`, thanks);
   ok(thanks === "Hey Jasraj! 👋\n\nThanks for coming through for your Appointment Presentation today in association with LINK Marketing.\nWe loved meeting you in person.\n\nOur Team will contact you at the latest by close of business on Friday 6PM about your next steps 📲\nKeep your phone close!",
     'thank-you WhatsApp = Angad\'s wording (LINK, contact by Friday 6PM)');
+  // One tap on the Today list: Green / Amber / Red = in the room, and notes another presenter just wrote are kept
+  await api(nathan, 'saveNotes', { id: ishita.id, rag: '', stars: 0, tags: ['Quiet'], notes: 'Sat at the back' });
+  await pp.goBack(); await pp.waitForSelector('.kpis');
+  await pp.click('.quick[data-for="' + ishita.id + '"] .q-R');
+  await pp.waitForFunction(() => !JSON.parse(localStorage.getItem('lr_outbox') || '[]').length);
+  const ishNow = await api(admin, 'getCandidate', { id: ishita.id });
+  ok(ishNow.rag === 'R' && ishNow.in_room === 'TRUE' && ishNow.notes === 'Sat at the back' && ishNow.tags === 'Quiet', 'presenter taps Red on the list → in the room; notes + tags already written are kept');
+  ok(!(await pp.$('.quick[data-for="' + ishita.id + '"]')), 'rated card drops its Green / Amber / Red buttons');
   for (const [c, rag] of [[ishita, 'R'], [adham, 'G'], [ali, 'A'], [jag, 'A'], [kid, 'R']]) {
     await api(nathan, 'saveNotes', { id: c.id, rag, stars: rag === 'G' ? 3 : 2, tags: [], notes: 'test' });
   }
@@ -221,6 +231,7 @@ async function fillEval(p) {
   await p2.fill('#m', '07700 900300');
   await p2.click('#go');
   await p2.waitForSelector('text=Is this you, Adham?');
+  ok(await p2.evaluate(() => document.documentElement.classList.contains('t-JUSS')), 'evaluation on a different phone is in the booker\'s look (JUSS for Adham)');
   ok(true, 'typed mobile → "Is this you, Adham?" first (a typo can\'t open someone else\'s form)');
   await p2.click('#yes');
   await p2.waitForSelector('text=Your evaluation, Adham');
@@ -277,8 +288,9 @@ async function fillEval(p) {
   t0 = Date.now(); await pp.click('.tabbar button[data-tab=today]'); await pp.waitForSelector('.kpis');
   const tToday = Date.now() - t0;
   ok(tPay < 500 && tToday < 500, 'tabs switch instantly even with 1.5s Google delay (Pay ' + tPay + 'ms, Today ' + tToday + 'ms)');
-  t0 = Date.now(); await pp.click('.item:has-text("Adham Soliman")'); await pp.waitForSelector('.profile h1:has-text("Adham Soliman")');
-  const tCand = Date.now() - t0;
+  // Timed from the tap itself: the robot waits for the cards' entrance animation before it taps, a finger doesn't.
+  const tCand = await tapToText(pp, '.item:has-text("Adham Soliman")', 'Attended Mon 12 Oct');
+  await pp.waitForSelector('.profile h1:has-text("Adham Soliman")');
   ok(tCand < 500, 'candidate page opens instantly from the phone\'s copy (' + tCand + 'ms)');
   await pp.goBack(); await pp.waitForSelector('.kpis');
   ok(!(await pp.$('#bullDaily')), "presenters don't see the bulletin buttons (admins only)");
@@ -340,7 +352,7 @@ async function fillEval(p) {
   const dp = await dark.newPage();
   await loginUi(dp, 'nathan@example.com'); await dp.waitForSelector('text=Jasraj Bhuller');
   await shot(dp, '04c-phone-in-dark-mode');
-  ok(await dp.evaluate(() => getComputedStyle(document.body).backgroundColor) === 'rgb(243, 241, 238)', 'stays in the normal light look even when the phone is in dark mode');
+  ok(await dp.evaluate(() => getComputedStyle(document.body).backgroundColor) === 'rgb(247, 241, 236)', 'stays in the normal light (LINK) look even when the phone is in dark mode');
   await dark.close();
 
   // ── 4. Booker: snapshot → outcome → Gen Z WhatsApp with welcome link ──
@@ -373,6 +385,16 @@ async function fillEval(p) {
   await shot(bp, '09-booker-outcome', true);
   await bp.goBack(); await bp.waitForSelector('text=🎉 Send congratulations');
   ok(true, 'list shows "🎉 Send congratulations" until it\'s sent');
+  ok(/^https:\/\/wa\.me\//.test(await bp.getAttribute('.quick [data-send=offer]', 'href')), 'the card has a one-tap "🎉 Send Day 1 details on WhatsApp" button');
+  await bp.click('.quick[data-for="' + kid.id + '"] [data-out]');
+  await bp.waitForSelector('.sheet #sosave');
+  await shot(bp, '09b-booker-outcome-sheet');
+  await bp.click('.sheet .chips[data-name=outcome] .chip:has-text("Not suitable")');
+  await bp.fill('#sonotes', 'Under 18, try again next year');
+  await bp.click('#sosave');
+  await bp.waitForFunction(() => !document.querySelector('.sheet-back') && !JSON.parse(localStorage.getItem('lr_outbox') || '[]').length);
+  const kidNow = await api(admin, 'getCandidate', { id: kid.id });
+  ok(kidNow.outcome === 'Not suitable' && kidNow.outcome_notes === 'Under 18, try again next year' && kidNow.outcome_by === 'Fiza Iqbal', 'booker logs a call outcome straight from the list card (sheet), no need to open the page');
   await bp.click('.item:has-text("Jasraj Bhuller")'); await bp.waitForSelector('a.wa[data-kind=offer]');
   const msg = decodeURIComponent((await bp.getAttribute('a.wa[data-kind=offer]', 'href')).split('?text=')[1]);
   fs.writeFileSync(`${SHOTS}/msg-link.txt`, msg);

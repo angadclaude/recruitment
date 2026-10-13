@@ -462,7 +462,7 @@ function checkin(req) {
   if (res.isNew && booker) {
     notify([booker], '🙌 ' + name.split(' ')[0] + ' just checked in', name + ' is in the room for your appointment.', res.c.id);
   }
-  return { id: res.c.id, resume: res.c.resume_token, first_name: res.c.full_name.split(' ')[0], evalDone: !!res.c.eval_at };
+  return { id: res.c.id, resume: res.c.resume_token, first_name: res.c.full_name.split(' ')[0], company: res.c.company || '', evalDone: !!res.c.eval_at };
 }
 
 /** Today's check-in for a mobile, read fresh: only the first columns (id … mobile), then that one row. */
@@ -500,7 +500,7 @@ function candidateByResume(req) {
 
 function candidateStatus(req) {
   const c = candidateByResume(req);
-  return { first_name: c.full_name.split(' ')[0], attended_date: c.attended_date, today: todayStr(), evalDone: !!c.eval_at, canEdit: canEditEval(c) };
+  return { first_name: c.full_name.split(' ')[0], company: c.company || '', attended_date: c.attended_date, today: todayStr(), evalDone: !!c.eval_at, canEdit: canEditEval(c) };
 }
 /** A candidate can change their answers the same day, until their booker has logged the call outcome. */
 function canEditEval(c) { return !!c.eval_at && c.attended_date === todayStr() && !c.outcome; }
@@ -518,7 +518,7 @@ function resumeByMobile(req) {
   if (!m) throw new Error('Please enter a valid UK mobile number (07…).');
   const c = readTable('Candidates').filter(x => x.mobile === m && x.attended_date === todayStr())[0];
   if (!c) return { found: false };
-  return { found: true, id: c.id, resume: c.resume_token, first_name: c.full_name.split(' ')[0], evalDone: !!c.eval_at, canEdit: canEditEval(c) };
+  return { found: true, id: c.id, resume: c.resume_token, first_name: c.full_name.split(' ')[0], company: c.company || '', evalDone: !!c.eval_at, canEdit: canEditEval(c) };
 }
 
 const EVAL_FIELDS = ['q1_excitement', 'q2_stood_out', 'q3_reason', 'q4_situation', 'q4_looking_for', 'q5_start_date',
@@ -664,12 +664,14 @@ function saveNotes(req, u) {
   return withLock(() => {
     const c = getC(req.id);
     if (!canSee(u, c)) throw new Error('No access');
-    if (['G', 'A', 'R', ''].indexOf(req.rag) >= 0) c.rag = req.rag;
-    const s = Number(req.stars); c.stars = s >= 1 && s <= 5 ? String(s) : '';
+    // One tap on the list (Green / Amber / Red) sends only: ['rag'], so it never overwrites notes someone else just wrote.
+    const set = k => !Array.isArray(req.only) || req.only.indexOf(k) >= 0;
+    if (set('rag') && ['G', 'A', 'R', ''].indexOf(req.rag) >= 0) c.rag = req.rag;
+    if (set('stars')) { const s = Number(req.stars); c.stars = s >= 1 && s <= 5 ? String(s) : ''; }
     // Rating someone = they were in the room (no extra tap needed). Untick only if explicitly set false with no rating.
     c.in_room = (req.in_room || c.rag || c.stars) ? 'TRUE' : '';
-    c.tags = (req.tags || []).join(', ').slice(0, 300);
-    c.notes = String(req.notes || '').slice(0, 2000);
+    if (set('tags')) c.tags = (req.tags || []).join(', ').slice(0, 300);
+    if (set('notes')) c.notes = String(req.notes || '').slice(0, 2000);
     // The two questions the presenter asks in the room (only touched when sent, so older app versions can't wipe them)
     if (req.why !== undefined) c.p_why_sales = (req.why || []).join(', ').slice(0, 300);
     if (req.why_note !== undefined) c.p_why_sales_note = String(req.why_note || '').slice(0, 300);
