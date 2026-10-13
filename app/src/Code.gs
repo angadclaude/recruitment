@@ -403,8 +403,12 @@ function verifyCode(req) {
       rec.attempts = String(Number(rec.attempts) + 1); writeRow('Codes', rec);
       throw new Error("That code isn't right or has expired. Check the latest email, or request a new code.");
     }
-    rec.expires = '0000'; writeRow('Codes', rec);
     const u = usersAll().filter(x => x.email.toLowerCase() === email && truthy(x.active))[0];
+    // Two doors on the login screen: Admin login (admins) and BA login (everyone else Angad gives access).
+    // Wrong door: say which one is theirs and keep the code, so the app carries on through the right door.
+    const door = u && isAdmin(u) ? 'admin' : 'ba';
+    if (u && (req.door === 'admin' || req.door === 'ba') && req.door !== door) return { wrongDoor: door };
+    rec.expires = '0000'; writeRow('Codes', rec);
     if (!u) throw new Error('Access not active.');
     const t = token();
     appendRow('Sessions', {

@@ -363,6 +363,10 @@ textarea.short { min-height: 64px; }
 .login-hero .display { font-size: 40px; margin: 4px 0 4px; background: linear-gradient(120deg, #fff, #FFB27D 45%, #7FDDE4); -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent; }
 .t-LINK .login-hero .display { background: linear-gradient(120deg, #fff, #FF9A5C 60%); -webkit-background-clip: text; background-clip: text; }
 .login-hero .label { color: rgba(255,255,255,.7); }
+.doors { display: flex; width: 100%; margin: 0 0 2px; }
+.doors button { flex: 1; padding: 13px 8px; font-size: 15px; }
+/* Joint look (new phone, brand not known yet): the picked door is a white chip, like the tab bar */
+:root:not(.t-LINK):not(.t-JUSS) .seg button.on { background: #fff; color: var(--ink2); box-shadow: 0 8px 18px -8px rgba(0,0,0,.5); }
 .appname { text-align: center; font-weight: 800; font-size: 20px; letter-spacing: .2px; margin: 4px 0 2px; color: var(--ink); }
 
 /* Bottom sheet (log an outcome from the list) */

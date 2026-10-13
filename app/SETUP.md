@@ -71,11 +71,11 @@ Until Part C is done, alerts go by email instead. Nothing breaks.
 
 ## Part D. Get the team on it
 
-1. Open **https://angadclaude.github.io/recruitment/join/** → log in with your email and the 6-digit code.
-2. **👥 Team → + Add person** for every booker and presenter: name, email, **LINK or JUSS**, access.
+1. Open **https://angadclaude.github.io/recruitment/join/** → tap **🛡️ Admin login** (Angad, Jess, Satpal, Rubal) → your email → the 6-digit code.
+2. **👥 Team → + Add person** for every booker and presenter: name, email, **LINK or JUSS**, access. Bookers and presenters are BAs: they use **🙌 BA login**.
 3. Send everyone the link with this message:
 
-> 📲 Our new recruitment app is live. Open https://angadclaude.github.io/recruitment/join/ → log in with your email.
+> 📲 Our new recruitment app is live. Open https://angadclaude.github.io/recruitment/join/ → tap **🙌 BA login** → your email → the 6-digit code we email you.
 > **iPhone:** tap Share ⎋ → *Add to Home Screen* → open it from the icon → tap **Turn on** for alerts.
 > **Android:** Chrome menu ⋮ → *Install app* → tap **Turn on** for alerts.
 

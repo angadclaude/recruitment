@@ -1,4 +1,4 @@
-window.APP_VERSION = 'ebc2826e';
+window.APP_VERSION = '52797937';
 
 (function () {
 'use strict';
@@ -688,17 +688,39 @@ function startStaff() {
     .catch(e => { if (!S.booted && S.token) $app.innerHTML = logos(48) + '<div class="err">' + h(e.message) + '</div><button class="btn block" onclick="location.reload()">Try again</button>'; });
 }
 
+// Two doors: Admin login (the four admins) and BA login (bookers and presenters Angad gives access).
+const ADMIN_NAMES = 'Angad, Jess, Satpal and Rubal';
+const DOORS = {
+  admin: ['🛡️ Admin login', 'Admin login', 'For ' + ADMIN_NAMES + '.'],
+  ba: ['🙌 BA login', 'BA login', 'For bookers and presenters with access.'],
+};
 function renderLogin() {
   stopTimer(); scrollTop();
   setTheme(store.get('lastCo'));  // the last person on this phone's brand; co-branded on a new phone
-  $app.innerHTML = '<div class="login"><div class="login-hero">' + logos(58) + '<div class="label">Juss &amp; Link</div><div class="display">Recruitment</div>' +
-    '<div class="label" style="opacity:.8">Staff app</div></div>' +
-    '<div class="card c-form"><h1 style="margin-top:12px">Staff login</h1><p class="muted">We\'ll email you a 6-digit code. No password needed.</p>' +
+  let door = store.get('door') === 'admin' ? 'admin' : 'ba';
+  $app.innerHTML = '<div class="login"><div class="login-hero">' + logos(58) + '<div class="label">Juss &amp; Link</div><div class="display">Recruitment</div></div>' +
+    '<div class="seg doors" id="doors" role="tablist">' + Object.keys(DOORS).map(k => '<button type="button" role="tab" data-door="' + k + '">' + DOORS[k][0] + '</button>').join('') + '</div>' +
+    '<div class="card c-form"><div id="doorHead"></div>' +
     '<label class="q">Work email</label><input type="email" id="em" autocomplete="email" placeholder="you@company.co.uk" value="' + h(store.get('lastEmail') || '') + '">' +
     '<div id="codeBox" hidden><label class="q">6-digit code</label><input type="text" id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••" style="letter-spacing:.4em;font-weight:800;text-align:center"></div>' +
     '<div id="err"></div><button class="btn block" id="go" style="margin-top:16px">Email me a code</button></div></div>';
+  const drawDoor = () => {
+    document.querySelectorAll('#doors button').forEach(b => { const on = b.dataset.door === door; b.classList.toggle('on', on); b.setAttribute('aria-selected', on); });
+    document.getElementById('doorHead').innerHTML = '<h1 style="margin-top:12px">' + DOORS[door][1] + '</h1><p class="muted">' + h(DOORS[door][2]) + ' We\'ll email you a 6-digit code. No password needed.</p>';
+  };
+  document.getElementById('doors').onclick = e => { const b = e.target.closest('button[data-door]'); if (b && b.dataset.door !== door) { door = b.dataset.door; store.set('door', door); drawDoor(); } };
+  drawDoor();
   let sent = false;
   const btn = document.getElementById('go');
+  const verify = (email, note) => call('verifyCode', { email: email, code: document.getElementById('code').value, door: door }).then(r => {
+    if (r.wrongDoor && !note) {
+      // Their door is the other one: switch to it and carry on (the code is still good)
+      door = r.wrongDoor; store.set('door', door); drawDoor();
+      return verify(email, door === 'admin' ? 'You\'re an admin, so you\'re in through Admin login 👍' : 'You\'re a BA, so you\'re in through BA login 👍');
+    }
+    S.token = r.token; store.set('tok', r.token); store.del('cache'); S.data = {}; S.users = null; startStaff();
+    if (note) toast(note);
+  });
   btn.onclick = () => {
     const email = document.getElementById('em').value.trim();
     const err = document.getElementById('err');
@@ -713,9 +735,7 @@ function renderLogin() {
       }).catch(ex => { busy(btn, false); showErr(err, ex.message); });
     } else {
       busy(btn, true, 'Checking…');
-      call('verifyCode', { email: email, code: document.getElementById('code').value }).then(r => {
-        S.token = r.token; store.set('tok', r.token); store.del('cache'); S.data = {}; S.users = null; startStaff();
-      }).catch(ex => { busy(btn, false); showErr(err, ex.message); });
+      verify(email).catch(ex => { busy(btn, false); showErr(err, ex.message); });
     }
   };
 }
@@ -723,7 +743,7 @@ function renderLogin() {
 function boot() {
   S.booted = true;
   S.week = S.week || S.me.weekEnding; S.day = S.day || S.me.today;
-  setTheme(S.me.user.company); store.set('lastCo', coOf(S.me.user.company));
+  setTheme(S.me.user.company); store.set('lastCo', coOf(S.me.user.company)); store.set('door', isAdmin() ? 'admin' : 'ba');
   initPush();
   S.tab = S.tab || (isPresenter() ? 'today' : isBooker() ? 'mine' : 'all');
   hist('replace', { v: S.tab, p: {} });
@@ -906,7 +926,7 @@ function toggleMenu() {
   if (!m.hidden) { m.hidden = true; return; }
   const u = S.me.user;
   m.innerHTML = '<div class="menu-card"><div class="row" style="flex-wrap:nowrap"><span class="av lg co-' + h(coOf(u.company) || 'LINK') + '">' + h(initials(u.name)) + '</span><div style="min-width:0"><b>' + h(u.name) + '</b><div class="small muted" style="overflow:hidden;text-overflow:ellipsis">' + h(u.email) + '</div>' +
-    '<div class="small muted"><span class="co ' + h(u.company) + '">' + h(u.company) + '</span> · ' + h(u.roles.join(', ')) + '</div></div></div>' +
+    '<div class="small muted"><span class="co ' + h(u.company) + '">' + h(u.company) + '</span> · ' + (isAdmin() ? '<b>Admin</b>' : '<b>BA</b> · ' + h(u.roles.join(', '))) + '</div></div></div>' +
     '<button class="btn ghost block" id="mRefresh" style="margin-top:12px">↻ Refresh now</button>' +
     '<button class="btn ghost block" id="mLogout" style="margin-top:8px;color:var(--red)">Log out</button>' +
     '<p class="small muted center" style="margin:10px 0 0">App version ' + h(window.APP_VERSION || 'dev') + '<br>Alerts: ' + h(pushStatus()) + '</p></div>';
@@ -1371,7 +1391,7 @@ function viewTeam() {
   const us = S.users;
   const row = u => '<button class="item" data-u="' + h(u.id) + '"><span class="av co-' + h(u.company) + '">' + h(initials(u.name)) + '</span><div class="main"><div class="name">' + h(u.name) + ' <span class="co ' + h(u.company) + '">' + h(u.company) + '</span>' +
     (u.active ? '' : ' <span class="pill red">No access</span>') + '</div><div class="sub">' + h(u.email) + '</div><div class="pills">' + u.roles.map(r => '<span class="pill">' + h(r) + '</span>').join('') + '</div></div><span class="chev">›</span></button>';
-  const page = paint('Team', '<div class="tiles"><button class="tile hot" id="add"><i>＋</i><b>Add person</b><span>Booker, presenter or admin</span></button>' +
+  const page = paint('Team', '<div class="tiles"><button class="tile hot" id="add"><i>＋</i><b>Add person</b><span>BA (booker, presenter) or admin</span></button>' +
     '<button class="tile" id="slideqr"><i>📲</i><b>Slide QR codes</b><span>Check-in + evaluation</span></button></div>' +
     '<p class="hint">' + us.filter(u => u.active).length + ' people with access. Bookers appear in the check-in type-ahead.</p>' +
     '<div class="list">' + us.map(row).join('') + '</div>');
@@ -1389,6 +1409,7 @@ function editUser(u) {
     '<div class="help" style="margin-top:6px">Decides which WhatsApp welcome message (LINK or JUSS) they send.</div>' +
     '<label class="q">Access</label><div class="chips" data-name="roles" data-multi="1">' +
     [['booker', 'Booker'], ['presenter', 'Presenter'], ['admin', 'Admin (adds/removes people, sees everything)']].map(r => '<button type="button" class="chip' + (x.roles.indexOf(r[0]) >= 0 ? ' on' : '') + '" data-v="' + r[0] + '">' + r[1] + '</button>').join('') + '</div>' +
+    '<div class="help" style="margin-top:8px">Booker or presenter = they log in with <b>BA login</b>. Admin = <b>Admin login</b>.</div>' +
     '<label class="check"><input type="checkbox" id="ua"' + (x.active ? ' checked' : '') + '> Has access (untick to switch off instantly)</label>' +
     '<div id="uerr"></div><button class="btn block" id="usave">Save</button>' +
     (u && u.id !== S.me.user.id ? '<button class="btn ghost block" id="udel" style="margin-top:8px;color:var(--red)">Delete person</button>' : '') + '</div>', false, true);

@@ -34,8 +34,10 @@ async function loginApi(email) {
   await api('', 'requestCode', { email });
   return (await api('', 'verifyCode', { email, code: await lastCode(email) })).token;
 }
-async function loginUi(page, email, url) {
+/** door: which login they tap. Default = the right one (Admin login for the admins, BA login for everyone else). */
+async function loginUi(page, email, url, door) {
   await page.goto(url || APP + 'index.html');
+  await page.click('#doors button[data-door=' + (door || (/@(linkmarketing|jussmarketing)\./.test(email) ? 'admin' : 'ba')) + ']');
   await page.fill('#em', email);
   await page.click('#go');
   await page.waitForSelector('#codeBox:not([hidden])');
@@ -172,6 +174,16 @@ async function fillEval(p) {
   console.log('presenter');
   const pres = await browser.newContext(PHONE);
   const pp = await pres.newPage();
+  await pp.goto(APP + 'index.html'); await pp.waitForSelector('#doors');
+  ok((await pp.$$eval('#doors button', b => b.map(x => x.textContent.trim()))).join(' | ') === '🛡️ Admin login | 🙌 BA login' && /BA login/.test(await pp.innerText('#doorHead')),
+    'login screen: two doors, Admin login + BA login (BA picked on a new phone)');
+  await pp.click('#doors button[data-door=admin]');
+  ok(/Angad, Jess, Satpal and Rubal/.test(await pp.innerText('#doorHead')), 'Admin login says it\'s for Angad, Jess, Satpal and Rubal');
+  await api('', 'requestCode', { email: 'fiza@example.com' });
+  const fizaCode = await lastCode('fiza@example.com');
+  const wrong = await api('', 'verifyCode', { email: 'fiza@example.com', code: fizaCode, door: 'admin' });
+  const right = await api('', 'verifyCode', { email: 'fiza@example.com', code: fizaCode, door: 'ba' });
+  ok(wrong.wrongDoor === 'ba' && !wrong.token && right.token, 'a BA trying Admin login is pointed to BA login (no admin session), and the same code still works there');
   await loginUi(pp, 'nathan@example.com');
   await pp.waitForSelector('text=Jasraj Bhuller');
   ok(!(await pp.$('#qr')) && !(await pp.$('#ev')), 'presenter has no QR / "open evaluations" buttons to press');
@@ -355,7 +367,8 @@ async function fillEval(p) {
   await shot(pp, '04b-swipe');
   const dark = await browser.newContext(Object.assign({ colorScheme: 'dark' }, PHONE));
   const dp = await dark.newPage();
-  await loginUi(dp, 'nathan@example.com'); await dp.waitForSelector('text=Jasraj Bhuller');
+  await loginUi(dp, 'nathan@example.com', null, 'admin'); await dp.waitForSelector('text=Jasraj Bhuller');
+  ok(await dp.$('text=You\'re a BA, so you\'re in through BA login') && !(await dp.$('.tabbar button[data-tab=team]')), 'BA who taps Admin login by mistake lands in the BA app (no admin tabs), told to use BA login');
   await shot(dp, '04c-phone-in-dark-mode');
   ok(await dp.evaluate(() => getComputedStyle(document.body).backgroundColor) === 'rgb(247, 241, 236)', 'stays in the normal light (LINK) look even when the phone is in dark mode');
   await dark.close();
