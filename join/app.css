@@ -517,6 +517,25 @@ table.t td { padding: 9px 4px; border-bottom: 1px solid var(--line); vertical-al
 .qcard.ci label.q:first-child { margin-top: 4px; }
 .c-hero .evtags { margin-top: 14px; }
 .c-next { justify-content: center; margin: 18px 0 2px; }
+/* The company magazine: a little cover + a tap target */
+.mag { display: flex; gap: 14px; align-items: center; text-align: left; margin: 16px 0 0; padding: 12px; border-radius: 20px; background: var(--bg); border: 1px solid var(--line);
+  color: var(--ink); text-decoration: none; transition: transform .1s; }
+.mag + .mag { margin-top: 10px; }
+.mag:active { transform: scale(.98); }
+.mag-cover { position: relative; overflow: hidden; isolation: isolate; flex: none; width: 82px; height: 108px; border-radius: 10px; padding: 8px 7px; display: flex; flex-direction: column; justify-content: flex-end;
+  color: #fff; background: linear-gradient(160deg, #3A3A46, #17171D); box-shadow: 0 12px 22px -10px rgba(0,0,0,.55), 2px 0 0 rgba(255,255,255,.18) inset; transform: rotate(-3deg); }
+.mag-JUSS .mag-cover { background: linear-gradient(160deg, #154555, #0A1D26); }
+.mag-cover::after { content: ''; position: absolute; z-index: -1; right: -18px; top: -18px; width: 70px; height: 70px; background: linear-gradient(120deg, #FF8A3D, #F15A24 55%, #CF3A10); clip-path: polygon(0 0, 100% 0, 100% 100%); }
+.mag-JUSS .mag-cover::after { clip-path: none; right: -26px; top: -30px; width: 100px; height: 90px; filter: blur(4px); background: radial-gradient(closest-side at 35% 55%, rgba(237,160,58,.9), transparent), radial-gradient(closest-side at 70% 40%, rgba(52,177,192,.95), transparent); }
+.mag-cover img { position: absolute; left: 7px; top: 8px; height: 22px; border-radius: 5px; background: #fff; }
+.mag-cover span { font: 600 8.5px/1.15 var(--label); letter-spacing: .12em; text-transform: uppercase; opacity: .85; }
+.mag-cover b { font-family: var(--display); font-weight: 400; font-size: 26px; line-height: 1; margin-top: 2px; }
+.mag-txt { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.mag-txt .label { color: var(--muted); }
+.mag-txt b { font-size: 16px; line-height: 1.25; letter-spacing: -.01em; }
+.mag-go { align-self: flex-start; margin-top: 4px; padding: 7px 12px; border-radius: 999px; background: var(--grad); color: #fff; font-weight: 800; font-size: 13.5px; box-shadow: 0 8px 16px -8px rgba(var(--glow), .8); }
+.mag-LINK .mag-go { background: linear-gradient(120deg, #FF8A3D, #F15A24 55%, #CF3A10); }
+.mag-JUSS .mag-go { background: linear-gradient(120deg, #E4613F, #EDA03A 45%, #34B1C0); }
 /* ── Evaluation (Gen Z) ── */
 .evprog { position: sticky; top: 0; z-index: 20; margin: 0 -16px 10px; padding: calc(10px + env(safe-area-inset-top)) 16px 10px; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: saturate(1.4) blur(12px); -webkit-backdrop-filter: saturate(1.4) blur(12px); display: flex; align-items: center; gap: 10px; }
 .evtrack { flex: 1; height: 8px; border-radius: 99px; background: var(--soft2); overflow: hidden; }

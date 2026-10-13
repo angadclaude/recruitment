@@ -477,6 +477,7 @@ function renderDone(mode, canEdit) {
     '<div class="card c-done">' + tickSvg() + top[2] + '<div class="evsec-h c-next"><span>📲</span>What happens next</div>' +
     '<p>Our team will contact you about your next steps by close of business on Friday 6PM at the latest 📲</p>' +
     '<p class="muted">Keep your phone close and check WhatsApp.</p>' +
+    (C.co ? magCard(C.co) : magCard('LINK') + magCard('JUSS')) +
     (canEdit && C.rec ? '<div id="err"></div><button class="btn ghost block" id="edit" style="margin-top:14px">✏️ Made a mistake? Change my answers</button>' : '') +
     (mode === 'already' ? '<button class="btn ghost sm" id="notme" style="margin-top:10px">Not you? ' + (BOOT.mode === 'eval' ? 'Enter your number again' : 'Check someone else in') + '</button>' : '') + '</div>';
   if (mode === 'new') burst();
@@ -510,6 +511,17 @@ const OFFICES = {
   LINK: { address: '2nd Floor East, Automotive House, Grays Place, Slough SL2 5AF', maps: 'https://maps.app.goo.gl/f4pkh222EHHTyQSM9' },
   JUSS: { address: '2nd Floor East, Automotive House, Grays Place, Slough SL2 5AF', maps: 'https://maps.app.goo.gl/zeP4MjS2hMJzB9V9A' },
 };
+// Each company's digital magazine: in the thank-you WhatsApp and on the thank-you screen after the evaluation.
+const MAGAZINES = {
+  LINK: { title: 'LINK Organisation Magazine 2026', url: 'https://linkmagflip-74ibv4pf.manus.space' },
+  JUSS: { title: 'JUSS Marketing Organisation Magazine 2026', url: 'https://jmomagazine-gjfukcw6.manus.space/' },
+};
+function magCard(co) {
+  const m = MAGAZINES[co];
+  return '<a class="mag mag-' + co + '" href="' + h(m.url) + '" target="_blank" rel="noopener" data-mag="' + co + '">' +
+    '<div class="mag-cover"><img src="' + LOGOS[co] + '" alt=""><span>Organisation<br>Magazine</span><b>2026</b></div>' +
+    '<div class="mag-txt"><span class="label">While you wait</span><b>' + h(m.title) + '</b><span class="mag-go">Flick through it 📖</span></div></a>';
+}
 const PRE_COACHING = { LINK: 'https://forms.office.com/pages/responsepage.aspx?id=QT4blMNFxEuaVSUMKK6uNT5ZuU1A_UdDsSk-r6KY6olUQ0JEWFU0NDU1MEI5REZZRzY3WEc1SEVaTC4u&route=shorturl' };
 
 function startWelcome() {
@@ -1558,11 +1570,16 @@ function waUrl(mobile, text) { return 'https://wa.me/44' + String(mobile).slice(
 const HEART = { LINK: '🧡', JUSS: '🧡💙' };
 function heartOf(c) { return HEART[c.company === 'JUSS' ? 'JUSS' : 'LINK']; }
 function msgThanks(c) {
-  return 'Hey ' + c.first_name + '! 👋\n\n' +
-    'Thanks for coming through for your Appointment Presentation today in association with ' + brandOf(c) + '.\n' +
+  const co = c.company === 'JUSS' ? 'JUSS' : 'LINK', mag = MAGAZINES[co];
+  return 'Hey ' + c.first_name + '! 👋' + heartOf(c) + '\n\n' +
+    'Thanks for coming through for your *Appointment Presentation* today in association with *' + brandOf(c) + '* 🙌\n' +
     'We loved meeting you in person.\n\n' +
-    'Our Team will contact you at the latest by close of business on Friday 6PM about your next steps 📲\n' +
-    'Keep your phone close!';
+    '📲 *What happens next*\n' +
+    'Our Team will contact you at the latest by *close of business on Friday 6PM* about your next steps.\n' +
+    'Keep your phone close! 👀\n\n' +
+    '📖 *While you wait*, flick through the *' + mag.title + '* 👇\n' +
+    mag.url + '\n\n' +
+    '*Team ' + co + '* ' + heartOf(c);
 }
 function msgNoAnswer(c) {
   return 'Hey ' + c.first_name + ' 👋 it\'s ' + S.me.user.name.split(' ')[0] + ' from ' + brandOf(c) + '!\n\n' +
