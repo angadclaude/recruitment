@@ -198,6 +198,76 @@ details.card summary::-webkit-details-marker { display: none; }
 .daybar .dweek { flex: 1; text-align: center; font-weight: 700; }
 .bullopts { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
 .appname { text-align: center; font-weight: 800; font-size: 20px; letter-spacing: .2px; margin: 4px 0 2px; color: var(--ink); }
+/* ── Evaluation form (Gen Z) ── */
+.evprog { position: sticky; top: 0; z-index: 20; margin: 0 -16px 10px; padding: calc(10px + env(safe-area-inset-top)) 16px 10px; background: rgba(246,244,241,.88); backdrop-filter: saturate(1.4) blur(12px); -webkit-backdrop-filter: saturate(1.4) blur(12px); display: flex; align-items: center; gap: 10px; }
+.evtrack { flex: 1; height: 8px; border-radius: 99px; background: #E9E5DF; overflow: hidden; }
+.evtrack i { display: block; height: 100%; width: 0; border-radius: 99px; background: linear-gradient(90deg, #FF8A3D, #F15A24); transition: width .35s cubic-bezier(.2,.8,.2,1); }
+#evcount { font-size: 12px; font-weight: 700; color: var(--muted); white-space: nowrap; }
+.evhero { position: relative; border-radius: 22px; padding: 20px 18px 16px; margin: 6px 0 14px; color: #fff; overflow: hidden;
+  background: linear-gradient(135deg, #FF8A3D 0%, #F15A24 55%, #D9481A 100%); box-shadow: 0 14px 30px -14px rgba(241,90,36,.55); }
+.evhero h1 { color: #fff; margin: 0 0 6px; font-size: 26px; letter-spacing: -.3px; }
+.evhero p { margin: 0; opacity: .95; }
+.evtags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.evtags span { background: rgba(255,255,255,.2); border: 1px solid rgba(255,255,255,.35); border-radius: 99px; padding: 5px 10px; font-size: 12.5px; font-weight: 700; }
+.evsec { margin: 18px 0 6px; }
+.evsec-h { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 13px; letter-spacing: .9px; text-transform: uppercase; color: var(--ink); margin: 0 2px 10px; }
+.evsec-h span { width: 34px; height: 34px; border-radius: 11px; display: grid; place-items: center; font-size: 18px; background: var(--tint); }
+.qcard { background: #fff; border-radius: 20px; padding: 14px 16px 16px; margin: 0 0 12px; box-shadow: 0 1px 0 rgba(0,0,0,.03), 0 8px 24px -16px rgba(47,47,56,.35); border: 1.5px solid transparent; transition: border-color .2s, box-shadow .2s; }
+.qcard:focus-within { border-color: #FFD2BF; box-shadow: 0 10px 28px -14px rgba(241,90,36,.4); }
+.qcard.miss { border-color: #F2A3A3; background: #FFF8F8; }
+.qhead { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
+.qn { font-size: 11px; font-weight: 800; letter-spacing: .6px; color: var(--orange-d); background: var(--tint); border-radius: 99px; padding: 3px 8px; }
+.qe { font-size: 18px; }
+.qcard label.q { margin: 8px 0 10px; font-size: 16.5px; line-height: 1.35; font-weight: 700; }
+.qcard label.q .opt { font-size: 11px; font-weight: 700; color: var(--muted); background: var(--soft); border-radius: 99px; padding: 2px 7px; vertical-align: 2px; }
+.evform .chip { padding: 11px 16px; font-weight: 600; transition: transform .12s, background .2s, color .2s, border-color .2s; }
+.evform .chip.on { background: linear-gradient(135deg, #F15A24, #FF8A3D); border-color: transparent; color: #fff; box-shadow: 0 8px 18px -8px rgba(241,90,36,.7); animation: pop .22s ease; }
+.evform .chips.stack .chip { position: relative; padding: 14px 16px 14px 46px; border-radius: 16px; }
+.evform .chips.stack .chip::before { content: ''; position: absolute; left: 15px; top: 50%; width: 18px; height: 18px; margin-top: -9px; border-radius: 50%; border: 2px solid #CFCAC3; background: #fff; }
+.evform .chips.stack .chip.on::before { border-color: #fff; background: #fff; box-shadow: inset 0 0 0 4px #F15A24; }
+.evform .scale { gap: 5px; }
+.evform .scale .chip { padding: 12px 0; border-radius: 12px; font-weight: 800; }
+.evform .scale .chip.lit:not(.on) { background: #FFE1D3; border-color: #FFC8AF; color: var(--orange-d); }
+.react { margin-top: 10px; text-align: center; font-weight: 800; font-size: 17px; }
+.evform input[type=text], .evform input[type=date], .evform textarea { border-radius: 14px; background: #FAF9F7; }
+.evsubmit { margin-top: 8px; padding: 17px; font-size: 17px; border-radius: 18px; background: linear-gradient(135deg, #FF8A3D, #F15A24 55%, #D9481A); box-shadow: 0 14px 28px -12px rgba(241,90,36,.6); }
+@keyframes pop { 0% { transform: scale(.94); } 60% { transform: scale(1.04); } 100% { transform: scale(1); } }
+/* Sales Skill Ladder: swipeable cards, stepping up like the slide */
+.sl-wrap, .bdp { background: #fff; border-radius: 20px; padding: 16px; margin: 0 0 12px; box-shadow: 0 8px 24px -16px rgba(47,47,56,.35); }
+.sl-h { font-weight: 800; font-size: 18px; letter-spacing: -.2px; }
+.sl-sub { color: var(--muted); font-size: 13.5px; margin: 4px 0 10px; }
+.sl-goal { display: inline-block; font-weight: 800; font-size: 13.5px; color: var(--orange-d); background: var(--tint); border-radius: 99px; padding: 6px 12px; }
+.sl { display: flex; align-items: flex-end; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; margin: 12px -16px 0; padding: 4px 16px 10px; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+.sl::-webkit-scrollbar { display: none; }
+.slc { flex: 0 0 72%; max-width: 270px; scroll-snap-align: start; border-radius: 18px; padding: 14px 14px 12px; color: var(--ink); min-height: calc(214px + var(--i) * 16px);
+  background: #fff; border: 1.5px solid #FFE1D3; box-shadow: 0 10px 22px -16px rgba(241,90,36,.55); }
+.slc-meter { display: flex; gap: 3px; margin-bottom: 10px; }
+.slc-meter i { flex: 1; height: 5px; border-radius: 99px; background: #FFE1D3; }
+.slc-meter i.on { background: linear-gradient(90deg, #FF8A3D, #F15A24); }
+.slc-n { font-size: 28px; font-weight: 900; color: var(--orange); line-height: 1; }
+.slc-name { font-size: 20px; font-weight: 800; margin-top: 4px; }
+.slc-time { display: inline-block; margin-top: 6px; font-size: 12px; font-weight: 800; color: var(--orange-d); background: var(--tint); border-radius: 99px; padding: 3px 9px; }
+.slc-money { margin-top: 8px; font-size: 17px; font-weight: 900; color: var(--orange-d); }
+.slc-sub { font-size: 12px; color: var(--muted); font-weight: 600; }
+.slc ul { margin: 8px 0 0; padding-left: 16px; font-size: 12.5px; line-height: 1.45; color: var(--muted); }
+.slc.top { background: linear-gradient(160deg, #FF8A3D 0%, #F15A24 55%, #D9481A 100%); border-color: transparent; color: #fff; box-shadow: 0 14px 28px -12px rgba(241,90,36,.7); }
+.slc.top .slc-n, .slc.top .slc-money, .slc.top .slc-sub, .slc.top ul { color: #fff; }
+.slc.top .slc-time { color: #fff; background: rgba(255,255,255,.22); }
+.slc.top .slc-meter i { background: rgba(255,255,255,.95); }
+.sl-swipe { text-align: right; font-size: 12px; font-weight: 800; color: var(--orange-d); margin-top: 2px; }
+.sl-note { font-size: 11.5px; color: var(--muted); margin: 6px 0 0; font-style: italic; }
+/* Business Development Programme: level-up steps */
+.steps { list-style: none; margin: 4px 0 0; padding: 0; position: relative; }
+.steps::before { content: ''; position: absolute; left: 17px; top: 18px; bottom: 18px; width: 3px; border-radius: 3px; background: linear-gradient(#FFD2BF, #F15A24); }
+.steps li { position: relative; display: flex; gap: 12px; align-items: center; padding: 7px 0; }
+.steps li b { flex: none; width: 37px; height: 37px; border-radius: 12px; display: grid; place-items: center; color: #fff; font-weight: 900; z-index: 1;
+  background: linear-gradient(135deg, #FF8A3D, #F15A24); box-shadow: 0 6px 14px -6px rgba(241,90,36,.7); }
+.steps li:nth-child(n+4) b { background: linear-gradient(135deg, #F15A24, #D9481A); }
+.steps li div { display: flex; flex-direction: column; line-height: 1.3; }
+.steps li strong { font-size: 15px; }
+.steps li span { font-size: 13px; color: var(--muted); }
+.steps li:last-child b { width: 41px; height: 41px; font-size: 18px; box-shadow: 0 0 0 4px var(--tint), 0 8px 18px -6px rgba(217,72,26,.8); }
+@media (prefers-reduced-motion: reduce) { .evform .chip.on { animation: none; } .evtrack i { transition: none; } }
 .qrcard { text-align: center; }
 .qrcard img { width: 100%; max-width: 360px; border: 1px solid var(--line); border-radius: 10px; }
 hr { border: 0; border-top: 1px solid var(--line); margin: 14px 0; }
