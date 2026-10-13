@@ -94,6 +94,7 @@ Put the two QR codes on the presentation once. They never change:
 
 ## Daily routine
 1. Candidates scan the **check-in QR** on the first slide. The booker gets a push: *"🙌 Jasraj just checked in"*.
+   - **⛔ Non-qualifiers** (under 18, or a right-to-work answer that rules them out: Student visa (Tier 4), Skilled Worker / Health & Care, asylum pending, needs sponsorship, or a visa that's already expired): Jess, Rubal and their booker get *"⛔ Non-qualifier checked in: …"* straight away. They get **no evaluation form**, never count for the incentive or as a top performer on the bulletin (only in its Non-qualifiers number), and nobody is chased for their outcome. **All → Non-qualifiers** lists them. Tapped the wrong answer? An admin fixes it on their page (**Admin → Ticked the wrong answer at check-in?**), then they can do the evaluation.
 2. **Presenter** taps each name on their phone → Green/Amber/Red, ★1–5, tags, notes. **Rating someone confirms they were in the room** (that's what counts for the recruitment incentive).
 3. Last slide: candidates scan the **evaluation QR**. Same phone → straight in. Different phone → they type their mobile. Missed check-in → they check in there and then.
 4. **Booker** gets *"📋 Jasraj's evaluation is in"* → one-page snapshot → call → log outcome → tap **🎉 Send BA Academy Day 1 details**.
@@ -104,6 +105,7 @@ Put the two QR codes on the presentation once. They never change:
 | When | Who |
 |---|---|
 | Candidate checks in | their booker |
+| ⛔ Non-qualifier checks in | Jess, Rubal and their booker |
 | Evaluation submitted | their booker |
 | Candidate confirms Day 1 | their booker |
 | Booker books a 🔴 candidate | all admins |
