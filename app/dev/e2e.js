@@ -201,6 +201,7 @@ async function fillEval(p) {
   const q3 = await cp.$$eval('.chips[data-name=q3_reason] .chip', els => els.map(e => e.textContent));
   ok(['Uncapped earnings', 'Career progression', 'Learn new skills'].every(x => q3.includes(x)), 'evaluation keeps the standard options: earnings, career progression, learn new skills');
   ok((await cp.$$('.sl .slc')).length === 6 && /Mastery/.test(await cp.innerText('.sl')) && !/£10k/.test(await cp.innerText('body')), 'evaluation shows the Sales Skill Ladder (6 levels); Stage 6 has no £10k line');
+  ok(/£400\+ OTE in 30 days/.test(await cp.innerText('.sl-wrap')) && /OTE = On Target Earnings/.test(await cp.innerText('.sl-wrap')) && !/ABAE/.test(await cp.innerText('body')), 'ladder says OTE (On Target Earnings), not ABAE');
   await fillEval(cp);
   ok(/All done/.test(await cp.innerText('#evcount')), 'progress bar fills as they answer → "All done. Hit submit 🚀"');
   await shot(cp, '05-evaluation', true);
