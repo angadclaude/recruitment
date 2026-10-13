@@ -1,4 +1,4 @@
-window.APP_VERSION = '3e9c1b9e';
+window.APP_VERSION = '03b777f1';
 
 (function () {
 'use strict';
@@ -58,6 +58,7 @@ function callRetry(action, payload, onWait, tries) {
 function stopTimer() { if (S.timer) { clearInterval(S.timer); S.timer = null; } }
 function scrollTop() { window.scrollTo(0, 0); }
 function logos(size) {
+  if (C.co) return '<div class="brandbar"><img alt="' + C.co + ' Marketing" src="' + LOGOS[C.co] + '" style="height:' + size + 'px"></div>';
   return '<div class="brandbar"><img alt="LINK Marketing" src="' + LOGOS.LINK + '" style="height:' + size + 'px">' +
     '<span class="x">×</span><img alt="JUSS Marketing" src="' + LOGOS.JUSS + '" style="height:' + size + 'px"></div>';
 }
@@ -105,7 +106,15 @@ function busy(btn, on, label) {
 function showErr(el, msg) { el.innerHTML = msg ? '<div class="err">' + h(msg) + '</div>' : ''; if (msg) el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
 
 // ═════════════════════════ CANDIDATE ═════════════════════════
-const C = { cfg: null, rec: null };
+const C = { cfg: null, rec: null, co: '' };
+
+/** Candidate pages wear the booker's company colours: LINK = orange + charcoal, JUSS = sunset + teal.
+ *  '' = not known yet (no booker picked, or "not sure"): the shared orange look with both logos. */
+function brandTheme(co) {
+  C.co = co === 'LINK' || co === 'JUSS' ? co : '';
+  if (C.co) document.body.dataset.co = C.co; else delete document.body.dataset.co;
+  const m = document.querySelector('meta[name=theme-color]'); if (m) m.content = C.co === 'JUSS' ? '#22A9B5' : '#F15A24';
+}
 
 function startCandidate() {
   if (BOOT.mode === 'welcome') return startWelcome();
@@ -116,7 +125,7 @@ function startCandidate() {
       .catch(e => (e.retry ? { first_name: saved.first_name, unknown: true } : null))
     : Promise.resolve(null);
   known.then(st => {
-    if (st) { C.rec = saved; C.rec.first_name = st.first_name || saved.first_name; } else store.del('cand');
+    if (st) { C.rec = saved; C.rec.first_name = st.first_name || saved.first_name; C.rec.company = st.company || saved.company || ''; brandTheme(C.rec.company); } else store.del('cand');
     if (BOOT.mode === 'eval') {
       if (st) return st.evalDone ? renderDone('already', st.canEdit) : renderEval();
       return renderFind();
@@ -134,27 +143,33 @@ function loadCheckin(then) {
 }
 
 function renderCheckin(then) {
-  scrollTop();
+  scrollTop(); brandTheme('');
   const sources = ['Indeed', 'TikTok', 'Instagram', 'Facebook', 'LinkedIn', BA_REFERRAL, 'Other'];
+  const sec = (icon, title) => '<section class="evsec"><div class="evsec-h"><span>' + icon + '</span>' + title + '</div><div class="qcard ci">';
   $app.innerHTML = logos(56) +
-    (then === 'eval' ? '<h1>Quick check-in first 👋</h1><p class="muted">We couldn\'t find you, so fill this in, then your evaluation opens straight after.</p>'
-      : '<h1>Welcome — let\'s check you in 👋</h1><p class="muted">Takes about a minute.</p>') +
-    '<form id="f" class="card" novalidate autocomplete="on">' +
+    '<div class="evhero">' + (then === 'eval' ? '<h1>Quick check-in first 👋</h1><p>We couldn\'t find you, so fill this in, then your evaluation opens straight after.</p>'
+      : '<h1>Welcome — let\'s check you in 👋</h1><p>Takes about a minute.</p>') +
+    '<div class="evtags"><span>⏱ 1 min</span><span>🔒 Private</span></div></div>' +
+    '<form id="f" class="evform" novalidate autocomplete="on">' +
+    sec('🙋', 'About you') +
     '<label class="q">Full name <span class="req">*</span></label><input type="text" name="full_name" autocomplete="name" placeholder="First and last name">' +
     '<label class="q">Mobile number <span class="req">*</span></label><input type="tel" name="mobile" autocomplete="tel" inputmode="tel" placeholder="07…">' +
     '<label class="q">Email <span class="req">*</span></label><input type="email" name="email" autocomplete="email" placeholder="you@email.com">' +
-    '<label class="q">Are you 18 or over? <span class="req">*</span></label>' + chips('over18', ['Yes', 'No']) +
+    '<label class="q">Are you 18 or over? <span class="req">*</span></label>' + chips('over18', ['Yes', 'No']) + '</div></section>' +
+    sec('🤝', 'Your booking') +
     '<label class="q">Who booked you in today? <span class="req">*</span></label>' +
     '<div class="help">Start typing their name, then tap it.</div>' +
     '<div id="bk"></div>' +
     '<label class="check"><input type="checkbox" id="unsure"> I\'m not sure who booked me</label>' +
-    '<label class="q">Where did you find us?</label>' + chips('source', sources) +
+    '<label class="q">Where did you find us?</label>' + chips('source', sources) + '</div></section>' +
+    sec('🛂', 'Right to work') +
     '<label class="q">Your right to work in the UK <span class="req">*</span></label>' +
     '<select name="rtw"><option value="">Choose one…</option>' + C.cfg.rtw.map(r => '<option>' + h(r.label) + '</option>').join('') + '</select>' +
     '<div id="exp" hidden><label class="q">Visa expiry date <span class="req">*</span></label><input type="date" name="visa_expiry"></div>' +
     '<label class="check"><input type="checkbox" name="privacy_ok"> <span>I agree that LINK Marketing and JUSS Marketing can use these details to assess my application and contact me about it. They are kept in full for 12 weeks. After that, only basic details and the result of my application are kept, for up to 6 months, then deleted.</span></label>' +
+    '</div></section>' +
     '<div id="err"></div>' +
-    '<button class="btn block" id="go" type="submit">Check in</button>' +
+    '<button class="btn block evsubmit" id="go" type="submit">Check me in ✅</button>' +
     '</form>';
 
   const f = document.getElementById('f');
@@ -165,7 +180,8 @@ function renderCheckin(then) {
     if (booker) {
       bk.innerHTML = '<div class="picked"><span>✓ ' + h(booker.name) + ' <span class="co ' + h(booker.company) + '">' + h(booker.company) + '</span></span>' +
         '<button type="button" class="btn ghost sm" id="chg">Change</button></div>';
-      document.getElementById('chg').onclick = () => { booker = null; drawBooker(''); bk.querySelector('input').focus(); };
+      document.getElementById('chg').onclick = () => { booker = null; brandTheme(''); drawBooker(''); bk.querySelector('input').focus(); };
+      brandTheme(booker.company);
       return;
     }
     bk.innerHTML = '<input type="text" id="bkq" autocomplete="off" placeholder="Type their name…" value="' + h(typed || '') + '"><div id="sg"></div>';
@@ -221,8 +237,8 @@ function renderCheckin(then) {
     showErr(err, '');
     const btn = document.getElementById('go'); busy(btn, true, 'Checking in…');
     callRetry('checkin', { form: form }, () => { btn.innerHTML = 'Busy, still checking you in…'; }).then(r => {
-      C.rec = { id: r.id, resume: r.resume, first_name: r.first_name };
-      store.set('cand', C.rec);
+      C.rec = { id: r.id, resume: r.resume, first_name: r.first_name, company: r.company || (booker ? booker.company : '') };
+      store.set('cand', C.rec); brandTheme(C.rec.company);
       if (r.evalDone) return renderDone('already');
       if (then === 'eval') return renderEval();
       renderCheckedIn(r.first_name);
@@ -232,20 +248,20 @@ function renderCheckin(then) {
 
 /** Evaluation QR scanned on a phone we don't recognise: find today's check-in by mobile. */
 function renderFind(notFound) {
-  scrollTop();
-  $app.innerHTML = logos(56) + '<div class="card"><div class="big-emoji">📝</div><h1 class="center">Evaluation time</h1>' +
-    '<p class="muted center">Enter the mobile number you checked in with this morning.</p>' +
+  scrollTop(); brandTheme('');
+  $app.innerHTML = logos(56) + '<div class="evhero center"><div class="hero-emoji">📝</div><h1>Evaluation time</h1>' +
+    '<p>Enter the mobile number you checked in with this morning.</p></div><div class="evform"><div class="qcard">' +
     '<input type="tel" id="m" inputmode="tel" autocomplete="tel" placeholder="07…" value="' + h(store.get('lastMobile') || '') + '"><div id="err">' +
     (notFound ? '<div class="err">We can\'t find a check-in for that number today. Check the number, or check in now.</div>' : '') + '</div>' +
-    '<button class="btn block" id="go" style="margin-top:12px">Start my evaluation</button>' +
-    (notFound ? '<button class="btn ghost block" id="ci" style="margin-top:8px">I didn\'t check in — do it now</button>' : '') + '</div>';
+    '<button class="btn block evsubmit" id="go" style="margin-top:12px">Start my evaluation 🚀</button>' +
+    (notFound ? '<button class="btn ghost block" id="ci" style="margin-top:8px">I didn\'t check in — do it now</button>' : '') + '</div></div>';
   document.getElementById('go').onclick = () => {
     const btn = document.getElementById('go'); busy(btn, true, 'Looking…');
     const mobile = document.getElementById('m').value;
     store.set('lastMobile', mobile);
     callRetry('resumeByMobile', { mobile: mobile }, () => { btn.innerHTML = 'Busy, still looking…'; }).then(r => {
       if (!r.found) return renderFind(true);
-      C.rec = { id: r.id, resume: r.resume, first_name: r.first_name }; store.set('cand', C.rec);
+      C.rec = { id: r.id, resume: r.resume, first_name: r.first_name, company: r.company || '' }; store.set('cand', C.rec); brandTheme(C.rec.company);
       r.evalDone ? renderDone('already', r.canEdit) : renderIsThisYou();
     }).catch(ex => { busy(btn, false); showErr(document.getElementById('err'), ex.message); });
   };
@@ -254,9 +270,9 @@ function renderFind(notFound) {
 
 function renderIsThisYou() {
   scrollTop();
-  $app.innerHTML = logos(56) + '<div class="card center"><div class="big-emoji">👋</div><h1>Is this you, ' + h(C.rec.first_name) + '?</h1>' +
-    '<p class="muted">Just checking we\'ve got the right person.</p>' +
-    '<button class="btn block" id="yes">Yes, start my evaluation</button>' +
+  $app.innerHTML = logos(56) + '<div class="evhero center"><div class="hero-emoji">👋</div><h1>Is this you, ' + h(C.rec.first_name) + '?</h1>' +
+    '<p>Just checking we\'ve got the right person.</p></div><div class="qcard">' +
+    '<button class="btn block evsubmit" id="yes">Yes, start my evaluation 🚀</button>' +
     '<button class="btn ghost block" id="no" style="margin-top:8px">No, that\'s not me</button></div>';
   document.getElementById('yes').onclick = () => renderEval();
   document.getElementById('no').onclick = () => { store.del('cand'); C.rec = null; renderFind(); };
@@ -264,13 +280,14 @@ function renderIsThisYou() {
 function renderCheckedIn(first, evalDone, canEdit) {
   if (evalDone) return renderDone('already', canEdit);
   scrollTop();
-  $app.innerHTML = logos(56) + '<div class="card center"><div class="big-emoji">✅</div><h1>You\'re checked in, ' + h(first) + '!</h1>' +
-    '<p>We aim to begin at 10 AM 🕙</p>' +
-    '<div class="ok" style="text-align:left">📝 <b>After the presentation</b>, please scan the second QR code on the screen (<b>Evaluation form</b>) for us to proceed with your application.</div></div>';
-  const nm = document.createElement('button'); nm.className = 'btn ghost sm'; nm.id = 'notme'; nm.style.marginTop = '14px';
+  $app.innerHTML = logos(56) + '<div class="evhero center"><div class="hero-emoji">✅</div><h1>You\'re checked in, ' + h(first) + '!</h1>' +
+    '<p>We aim to begin at 10 AM 🕙</p></div>' +
+    '<div class="qcard nextup" id="next"><div class="evsec-h"><span>📝</span>Your next step</div>' +
+    '<p><b>After the presentation</b>, please scan the second QR code on the screen (<b>Evaluation form</b>) for us to proceed with your application.</p></div>';
+  const nm = document.createElement('button'); nm.className = 'btn ghost sm'; nm.id = 'notme'; nm.style.marginTop = '6px';
   nm.textContent = 'Not you? Check someone else in';
   nm.onclick = () => { store.del('cand'); C.rec = null; loadCheckin(''); };
-  const card = $app.querySelector('.card'); if (card) card.appendChild(nm);
+  document.getElementById('next').appendChild(nm);
 }
 
 const EVAL = [
@@ -326,15 +343,18 @@ function excitementReact(v) {
   const n = Number(v);
   return !n ? 'Tap a number 👆' : n <= 3 ? '😴 Not feeling it yet' : n <= 5 ? '🤔 Curious' : n <= 7 ? '🙂 Into it' : n <= 9 ? '😍 Hyped' : '🔥 Can\'t wait!';
 }
-function evalLadders() {
+/** Shown on the evaluation form and again on the welcome page (congratulations link). */
+function salesLadderHtml() {
   return '<div class="sl-wrap"><div class="sl-h">💷 The Sales Skill Ladder</div>' +
     '<p class="sl-sub">Beginner → Mastery, through practice and coaching</p><div class="sl-goal">🎯 Goal: £400+ OTE in 30 days</div>' +
     '<div class="sl">' + SALES_LADDER.map((l, i) => '<div class="slc' + (i === 5 ? ' top' : '') + '" style="--i:' + i + '"><div class="slc-meter">' + [0, 1, 2, 3, 4, 5].map(j => '<i' + (j <= i ? ' class="on"' : '') + '></i>').join('') + '</div><div class="slc-n">' + l[0] + '</div>' +
       '<div class="slc-name">' + h(l[1]) + '</div><div class="slc-time">' + h(l[2]) + '</div><div class="slc-money">' + h(l[3]) + '</div>' +
       (l[4] ? '<div class="slc-sub">' + h(l[4]) + '</div>' : '') + '<ul>' + l[5].map(b => '<li>' + h(b) + '</li>').join('') + '</ul></div>').join('') + '</div>' +
     '<div class="sl-swipe">Swipe to level up →</div>' +
-    '<p class="sl-note">OTE = On Target Earnings. Illustrative timeframes, to be confirmed. Progress depends on practice and coaching.</p></div>' +
-    '<div class="bdp"><div class="sl-h">🪜 Business Development Programme</div>' +
+    '<p class="sl-note">OTE = On Target Earnings. Illustrative timeframes, to be confirmed. Progress depends on practice and coaching.</p></div>';
+}
+function bdpHtml() {
+  return '<div class="bdp"><div class="sl-h">🪜 Business Development Programme</div>' +
     '<p class="sl-sub">Start with no experience and progress all the way to running your own marketing company. We are actively looking for future business owners.</p>' +
     '<ol class="steps">' + LADDER.map((l, i) => '<li><b>' + (i + 1) + '</b><div><strong>' + h(l[1].split(' · ')[1] || l[1]) + '</strong><span>' + h(l[2]) + '</span></div></li>').join('') + '</ol></div>';
 }
@@ -375,7 +395,7 @@ function renderEval(edit) {
         : '<h1>Your evaluation, ' + h(C.rec.first_name) + ' 👋</h1><p>About 4 minutes. Your answers shape your next step with us, so make them count.</p>') +
       '<div class="evtags"><span>⏱ 4 min</span><span>🔒 Private</span><span>📲 Saves as you go</span></div></div>' +
       '<form id="f" class="evform" novalidate>' + EVAL_SECTIONS.map(sec => '<section class="evsec"><div class="evsec-h"><span>' + sec[0] + '</span>' + h(sec[1]) + '</div>' +
-        (sec[3] === 'ladders' ? evalLadders() : '') + sec[2].map(k => qhtml(byKey[k])).join('') + '</section>').join('') +
+        (sec[3] === 'ladders' ? salesLadderHtml() + bdpHtml() : '') + sec[2].map(k => qhtml(byKey[k])).join('') + '</section>').join('') +
       '<div id="err"></div><button class="btn block evsubmit" id="go" type="submit">' + (edit ? 'Save my changes ✅' : 'Submit my evaluation 🚀') + '</button></form>';
     const f = document.getElementById('f');
     bindChips(f, (name, v) => {
@@ -411,12 +431,14 @@ function renderDone(mode, canEdit) {
   stopTimer(); scrollTop();
   const first = C.rec && C.rec.first_name ? ', ' + h(C.rec.first_name) : '';
   const top = mode === 'already' ? ['✅', 'Already done' + first, '<p>You\'ve already sent your evaluation today. No need to do it again.</p>']
-    : mode === 'updated' ? ['✅', 'Updated' + first + '!', '<p>Your changes have been saved.</p>'] : ['🙌', 'Thank you' + first + '!', ''];
-  $app.innerHTML = logos(56) + '<div class="card center"><div class="big-emoji">' + top[0] + '</div><h1>' + top[1] + '</h1>' + top[2] +
+    : mode === 'updated' ? ['✅', 'Updated' + first + '!', '<p>Your changes have been saved.</p>'] : ['🙌', 'Thank you' + first + '!', '<p>Your evaluation is in 🚀</p>'];
+  $app.innerHTML = logos(56) + '<div class="evhero center"><div class="hero-emoji">' + top[0] + '</div><h1>' + top[1] + '</h1>' + top[2] + '</div>' +
+    '<div class="qcard"><div class="evsec-h"><span>📲</span>What happens next</div>' +
     '<p>Our team will contact you about your next steps by close of business on Friday 6PM at the latest 📲</p>' +
     '<p class="muted">Keep your phone close and check WhatsApp.</p>' +
     (canEdit && C.rec ? '<div id="err"></div><button class="btn ghost block" id="edit" style="margin-top:14px">✏️ Made a mistake? Change my answers</button>' : '') +
     (mode === 'already' ? '<button class="btn ghost sm" id="notme" style="margin-top:10px">Not you? ' + (BOOT.mode === 'eval' ? 'Enter your number again' : 'Check someone else in') + '</button>' : '') + '</div>';
+  if (mode === 'new') burst();
   const ed = document.getElementById('edit');
   if (ed) ed.onclick = () => {
     busy(ed, true, 'Opening your answers…');
@@ -457,6 +479,7 @@ function startWelcome() {
 function renderWelcome(w) {
   scrollTop();
   const co = w.company === 'JUSS' ? 'JUSS' : 'LINK';
+  brandTheme(co);
   const brand = co + ' Marketing';
   const office = OFFICES[co];
   w.address = office.address;
@@ -471,30 +494,29 @@ function renderWelcome(w) {
   const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//LINK x JUSS//Recruitment//EN', 'BEGIN:VEVENT', 'UID:' + BOOT.k + '@recruit',
     'DTSTAMP:' + ymd + 'T090000', 'DTSTART:' + ymd + 'T133000', 'DTEND:' + ymd + 'T180000', 'SUMMARY:' + title,
     'LOCATION:' + w.address.replace(/,/g, '\\,'), 'DESCRIPTION:Bring photo ID + your right-to-work share code.', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
-  const steps = WEEK1[co].map((r, i) => '<div class="wk"><div class="wk-ic">' + r[0] + '</div><div><div class="wk-d">' + h(mon ? r[1] : 'Day ' + (i + 1) + (i === 3 && co === 'JUSS' ? ' onwards' : '')) +
-    ' · <b>' + h(r[2]) + '</b></div><div class="wk-t">' + h(r[3]) + '</div><div class="wk-x">' + h(r[4]) + '</div></div></div>').join('');
+  const steps = WEEK1[co].map((r, i) => '<div class="wk"><div class="wk-ic">' + r[0] + '</div><div class="wk-b"><span class="wk-d">' + h(mon ? r[1] : 'Day ' + (i + 1) + (i === 3 && co === 'JUSS' ? ' onwards' : '')) +
+    '</span><div class="wk-n">' + h(r[2]) + '</div><div class="wk-t">⏰ ' + h(r[3]) + '</div><div class="wk-x">' + h(r[4]) + '</div></div></div>').join('');
+  const sec = (icon, title) => '<section class="evsec"><div class="evsec-h"><span>' + icon + '</span>' + title + '</div>';
 
   $app.innerHTML = '<div class="wl wl-' + co + '">' +
-    '<div class="wl-hero"><img class="wl-logo" src="' + LOGOS[co] + '" alt="' + h(brand) + '">' +
+    '<div class="evhero wl-hero"><img class="wl-logo" src="' + LOGOS[co] + '" alt="' + h(brand) + '">' +
     '<h1>You\'re in, ' + h(w.first_name) + ' 🎉</h1><p>Welcome to the <b>' + h(brand) + ' BA Academy</b></p>' +
     '<span class="wl-pill">' + h(when) + '</span></div>' +
 
-    '<div class="card"><div class="small muted">DAY 1 · INDUCTION</div><div class="wl-date">' + h(fmtLong(w.academy_date)) + '</div>' +
+    sec('📅', 'Day 1 · Induction') + '<div class="qcard"><div class="wl-date">' + h(fmtLong(w.academy_date)) + '</div>' +
     '<div class="wl-time">⏰ 1:30pm – 6:00pm</div><p>📍 ' + h(w.address) + '<br><span class="muted small">2 mins from Slough station</span></p>' +
     '<div class="row"><a class="btn sm" href="' + h(office.maps) + '" target="_blank" rel="noopener">🗺️ Google Maps</a>' +
     '<a class="btn ghost sm" href="' + h(gcal) + '" target="_blank" rel="noopener">📅 Google Calendar</a>' +
-    '<a class="btn ghost sm" id="ics" href="#" download="ba-academy-day1.ics">🍏 Apple / Outlook</a></div></div>' +
+    '<a class="btn ghost sm" id="ics" href="#" download="ba-academy-day1.ics">🍏 Apple / Outlook</a></div></div></section>' +
 
-    (PRE_COACHING[co] ? '<div class="wl-alert">⚡ <b>Before Day 1:</b> complete your <b>Pre-Coaching Module</b>.' +
-      '<a class="btn block" style="margin-top:10px" href="' + h(PRE_COACHING[co]) + '" target="_blank" rel="noopener">📝 Open the Pre-Coaching Module</a></div>' : '') +
-    '<div class="card"><div class="small muted">BRING WITH YOU</div><p style="font-size:17px;margin:8px 0 0">🪪 Photo ID<br>🔑 Your right-to-work share code</p></div>' +
+    (PRE_COACHING[co] ? sec('⚡', 'Before Day 1') + '<div class="qcard wl-alert">Complete your <b>Pre-Coaching Module</b> before Day 1.' +
+      '<a class="btn block evsubmit" href="' + h(PRE_COACHING[co]) + '" target="_blank" rel="noopener">📝 Open the Pre-Coaching Module</a></div></section>' : '') +
+    sec('🎒', 'Bring with you') + '<div class="wl-bring"><div><span>🪪</span>Photo ID</div><div><span>🔑</span>Your right-to-work share code</div></div></section>' +
 
-    '<h3>Your Week 1 game plan</h3><div class="card wl-week">' + steps + '</div>' +
-    '<div class="card wl-poster"><img src="img/poster-' + co.toLowerCase() + '.jpg" alt="' + h(brand) + ' Week 1 Coaching & Field Schedule" onerror="this.parentNode.hidden=true"></div>' +
+    sec('🗓️', 'Your Week 1 game plan') + '<div class="qcard wl-week">' + steps + '</div>' +
+    '<div class="qcard wl-poster"><img src="img/poster-' + co.toLowerCase() + '.jpg" alt="' + h(brand) + ' Week 1 Coaching & Field Schedule" onerror="this.parentNode.hidden=true"></div></section>' +
 
-    '<details class="card"><summary><b>🚀 Where this can take you</b></summary><div class="ladder" style="margin-top:10px">' +
-    LADDER.map(l => '<div style="background:' + l[0] + '">' + h(l[1]) + ' <span>— ' + h(l[2]) + '</span></div>').join('') + '</div></details>' +
-
+    sec('🚀', 'Where this can take you') + salesLadderHtml() + bdpHtml() + '</section>' +
 
     '<p class="center muted small" style="margin:18px 0 110px">Questions? Just reply to the WhatsApp message 💬</p>' +
     '<div class="wl-cta" id="cta"></div></div>';
@@ -510,7 +532,7 @@ function renderWelcome(w) {
   const drawCta = (confirmed) => {
     cta.innerHTML = confirmed
       ? '<div class="wl-done">✅ You\'re locked in. See you ' + h(mon ? 'Monday' : fmt(w.academy_date)) + '! 🔥</div>'
-      : '<button class="btn block wl-btn" id="conf">🔒 Confirm I\'m coming</button>';
+      : '<button class="btn block evsubmit wl-btn" id="conf">🔒 Confirm I\'m coming</button>';
     const b = document.getElementById('conf');
     if (b) b.onclick = () => {
       busy(b, true, 'Locking in…');
@@ -521,7 +543,7 @@ function renderWelcome(w) {
 }
 
 function burst() {
-  const em = ['🎉', '🔥', '🧡', '💙', '✨', '🙌'];
+  const em = ['🎉', '🔥', '🧡', C.co === 'LINK' ? '🖤' : '💙', '✨', '🙌'];
   for (let i = 0; i < 28; i++) {
     const sp = document.createElement('span');
     sp.className = 'confetti'; sp.textContent = em[i % em.length];
@@ -1430,7 +1452,7 @@ function msgAcademy(c) {
   ];
   const co = juss ? 'JUSS' : 'LINK';
   // Welcome link first: WhatsApp previews the first link, which is the poster card.
-  if (c.welcome_url) lines.push('👇 Your Week 1 game plan + tap *CONFIRM* to lock in your spot:', c.welcome_url, '');
+  if (c.welcome_url) lines.push('👇 Your Week 1 game plan + Sales Skill Ladder 📈 + tap *CONFIRM* to lock in your spot:', c.welcome_url, '');
   if (PRE_COACHING[co]) lines.push('⚡ *Before Day 1:* complete your *Pre-Coaching Module* 👇', PRE_COACHING[co], '');
   lines.push('🗺️ Find us on Google Maps:', OFFICES[co].maps, '');
   const sign = (S.me.signoff || {})[co] || S.me.user.name.split(' ')[0];
