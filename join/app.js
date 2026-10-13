@@ -1,4 +1,4 @@
-window.APP_VERSION = '44f2c80d';
+window.APP_VERSION = 'ebc2826e';
 
 (function () {
 'use strict';
@@ -58,6 +58,7 @@ function callRetry(action, payload, onWait, tries) {
 function stopTimer() { if (S.timer) { clearInterval(S.timer); S.timer = null; } }
 function scrollTop() { window.scrollTo(0, 0); }
 function logos(size) {
+  if (C.co) return '<div class="brandbar"><img alt="' + C.co + ' Marketing" src="' + LOGOS[C.co] + '" style="height:' + size + 'px"></div>';
   return '<div class="brandbar"><img alt="LINK Marketing" src="' + LOGOS.LINK + '" style="height:' + size + 'px">' +
     '<span class="x">×</span><img alt="JUSS Marketing" src="' + LOGOS.JUSS + '" style="height:' + size + 'px"></div>';
 }
@@ -70,13 +71,15 @@ function setTheme(co, dark) {
   const root = document.documentElement;
   root.classList.toggle('t-LINK', co === 'LINK');
   root.classList.toggle('t-JUSS', co === 'JUSS');
+  if (document.body) { if (co) document.body.dataset.co = co; else delete document.body.dataset.co; }
   let m = document.querySelector('meta[name=theme-color]');
   if (!m) { m = document.createElement('meta'); m.name = 'theme-color'; document.head.appendChild(m); }
   m.content = dark ? (co === 'JUSS' ? '#123A48' : '#26262F') : (co === 'JUSS' ? '#EDF5F5' : co === 'LINK' ? '#F7F1EC' : '#F4F2EF');
 }
-/** Co-branded logos for the candidate pages: the booker's company stands out once we know it (CSS dims the other). */
+/** Candidate page logos: both until we know the booker's company (on check-in the other one dims the moment they pick), then just theirs. */
 function heroLogos() {
-  return '<div class="c-logos"><img class="lg-LINK" alt="LINK Marketing" src="' + LOGOS.LINK + '"><span class="x">×</span><img class="lg-JUSS" alt="JUSS Marketing" src="' + LOGOS.JUSS + '"></div>';
+  if (C.co) return '<div class="brandbar c-logos"><img class="lg-' + C.co + '" alt="' + C.co + ' Marketing" src="' + LOGOS[C.co] + '"></div>';
+  return '<div class="brandbar c-logos"><img class="lg-LINK" alt="LINK Marketing" src="' + LOGOS.LINK + '"><span class="x">×</span><img class="lg-JUSS" alt="JUSS Marketing" src="' + LOGOS.JUSS + '"></div>';
 }
 function tickSvg() { return '<div class="tick"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>'; }
 function greeting() { const hr = Number(londonNow().slice(11, 13)); return hr < 12 ? 'Good morning,' : hr < 17 ? 'Good afternoon,' : 'Good evening,'; }
@@ -142,7 +145,11 @@ function busy(btn, on, label) {
 function showErr(el, msg) { el.innerHTML = msg ? '<div class="err">' + h(msg) + '</div>' : ''; if (msg) el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
 
 // ═════════════════════════ CANDIDATE ═════════════════════════
-const C = { cfg: null, rec: null };
+const C = { cfg: null, rec: null, co: '' };
+
+/** Candidate pages wear the booker's company look: LINK = orange + charcoal, JUSS = coral → amber → teal (from their logos).
+ *  '' = not known yet (no booker picked, or "not sure"): the joint LINK × JUSS look with both logos. */
+function brandTheme(co) { C.co = coOf(co); setTheme(C.co, true); }
 
 function startCandidate() {
   if (BOOT.mode === 'welcome') return startWelcome();
@@ -154,7 +161,7 @@ function startCandidate() {
     : Promise.resolve(null);
   known.then(st => {
     if (st) { C.rec = saved; C.rec.first_name = st.first_name || saved.first_name; C.rec.company = coOf(st.company) || coOf(saved.company); store.set('cand', C.rec); } else store.del('cand');
-    setTheme(C.rec && C.rec.company, true);
+    brandTheme(C.rec && C.rec.company);
     if (BOOT.mode === 'eval') {
       if (st) return st.evalDone ? renderDone('already', st.canEdit) : renderEval();
       return renderFind();
@@ -166,36 +173,40 @@ function startCandidate() {
 
 /** then = 'eval' when someone scans the evaluation QR without having checked in. */
 function loadCheckin(then) {
-  setTheme('', true);
+  brandTheme('');
   $app.innerHTML = '<div class="splash">' + logos(56) + '<div class="spinner"></div></div>';
   call('publicConfig').then(cfg => { C.cfg = cfg; renderCheckin(then); })
     .catch(e => { $app.innerHTML = logos(48) + '<div class="err">' + h(e.message) + '</div>'; });
 }
 
 function renderCheckin(then) {
-  scrollTop();
+  scrollTop(); brandTheme('');
   const sources = ['Indeed', 'TikTok', 'Instagram', 'Facebook', 'LinkedIn', BA_REFERRAL, 'Other'];
-  setTheme('', true);
+  const sec = (icon, title) => '<section class="evsec"><div class="evsec-h"><span>' + icon + '</span>' + title + '</div><div class="qcard ci">';
   $app.innerHTML = '<div class="c-hero">' + heroLogos() + '<span class="label">Recruitment day' + (C.cfg.today ? ' · ' + h(fmtLong(C.cfg.today)) : '') + '</span>' +
     (then === 'eval' ? '<h1>Quick <span class="gtext">check-in</span> first 👋</h1><p>We couldn\'t find you, so fill this in, then your evaluation opens straight after.</p>'
       : '<h1><span class="gtext">Welcome</span> 👋</h1><p>Let\'s check you in. Takes about a minute.</p>') +
-    '<div id="with"></div></div>' +
-    '<form id="f" class="card c-form" novalidate autocomplete="on">' +
+    '<div class="evtags"><span>⏱ 1 min</span><span>🔒 Private</span></div><div id="with"></div></div>' +
+    '<form id="f" class="evform" novalidate autocomplete="on">' +
+    sec('🙋', 'About you') +
     '<label class="q">Full name <span class="req">*</span></label><input type="text" name="full_name" autocomplete="name" placeholder="First and last name">' +
     '<label class="q">Mobile number <span class="req">*</span></label><input type="tel" name="mobile" autocomplete="tel" inputmode="tel" placeholder="07…">' +
     '<label class="q">Email <span class="req">*</span></label><input type="email" name="email" autocomplete="email" placeholder="you@email.com">' +
-    '<label class="q">Are you 18 or over? <span class="req">*</span></label>' + chips('over18', ['Yes', 'No']) +
+    '<label class="q">Are you 18 or over? <span class="req">*</span></label>' + chips('over18', ['Yes', 'No']) + '</div></section>' +
+    sec('🤝', 'Your booking') +
     '<label class="q">Who booked you in today? <span class="req">*</span></label>' +
     '<div class="help">Start typing their name, then tap it.</div>' +
     '<div id="bk"></div>' +
     '<label class="check"><input type="checkbox" id="unsure"> I\'m not sure who booked me</label>' +
-    '<label class="q">Where did you find us?</label>' + chips('source', sources) +
+    '<label class="q">Where did you find us?</label>' + chips('source', sources) + '</div></section>' +
+    sec('🛂', 'Right to work') +
     '<label class="q">Your right to work in the UK <span class="req">*</span></label>' +
     '<select name="rtw"><option value="">Choose one…</option>' + C.cfg.rtw.map(r => '<option>' + h(r.label) + '</option>').join('') + '</select>' +
     '<div id="exp" hidden><label class="q">Visa expiry date <span class="req">*</span></label><input type="date" name="visa_expiry"></div>' +
     '<label class="check"><input type="checkbox" name="privacy_ok"> <span>I agree that LINK Marketing and JUSS Marketing can use these details to assess my application and contact me about it. They are kept in full for 12 weeks. After that, only basic details and the result of my application are kept, for up to 6 months, then deleted.</span></label>' +
+    '</div></section>' +
     '<div id="err"></div>' +
-    '<button class="btn block" id="go" type="submit">Check in</button>' +
+    '<button class="btn block evsubmit" id="go" type="submit">Check me in ✅</button>' +
     '</form>';
 
   const f = document.getElementById('f');
@@ -207,7 +218,7 @@ function renderCheckin(then) {
   const drawBooker = (typed) => {
     // Picking the booker switches the page to their company's look (LINK or JUSS)
     const co = booker ? coOf(booker.company) : '';
-    setTheme(co, true);
+    brandTheme(co);
     withEl.innerHTML = co ? '<div class="c-with"><img src="' + LOGOS[co] + '" alt="">You\'re with <b>' + co + ' Marketing</b></div>' : '';
     if (booker) {
       bk.innerHTML = '<div class="picked"><span>✓ ' + h(booker.name) + ' <span class="co ' + h(booker.company) + '">' + h(booker.company) + '</span></span>' +
@@ -269,7 +280,7 @@ function renderCheckin(then) {
     const btn = document.getElementById('go'); busy(btn, true, 'Checking in…');
     callRetry('checkin', { form: form }, () => { btn.innerHTML = 'Busy, still checking you in…'; }).then(r => {
       C.rec = { id: r.id, resume: r.resume, first_name: r.first_name, company: coOf(r.company) || (booker ? coOf(booker.company) : '') };
-      store.set('cand', C.rec);
+      store.set('cand', C.rec); brandTheme(C.rec.company);
       if (r.evalDone) return renderDone('already');
       if (then === 'eval') return renderEval();
       renderCheckedIn(r.first_name);
@@ -279,8 +290,7 @@ function renderCheckin(then) {
 
 /** Evaluation QR scanned on a phone we don't recognise: find today's check-in by mobile. */
 function renderFind(notFound) {
-  scrollTop();
-  setTheme('', true);
+  scrollTop(); brandTheme('');
   $app.innerHTML = '<div class="c-hero">' + heroLogos() + '<span class="label">Last slide · evaluation</span><h1><span class="gtext">Evaluation</span> time 📝</h1>' +
     '<p>Enter the mobile number you checked in with this morning.</p></div>' +
     '<div class="card c-form"><label class="q">Your mobile</label><input type="tel" id="m" inputmode="tel" autocomplete="tel" placeholder="07…" value="' + h(store.get('lastMobile') || '') + '"><div id="err">' +
@@ -293,7 +303,7 @@ function renderFind(notFound) {
     store.set('lastMobile', mobile);
     callRetry('resumeByMobile', { mobile: mobile }, () => { btn.innerHTML = 'Busy, still looking…'; }).then(r => {
       if (!r.found) return renderFind(true);
-      C.rec = { id: r.id, resume: r.resume, first_name: r.first_name, company: coOf(r.company) }; store.set('cand', C.rec);
+      C.rec = { id: r.id, resume: r.resume, first_name: r.first_name, company: coOf(r.company) }; store.set('cand', C.rec); brandTheme(C.rec.company);
       r.evalDone ? renderDone('already', r.canEdit) : renderIsThisYou();
     }).catch(ex => { busy(btn, false); showErr(document.getElementById('err'), ex.message); });
   };
@@ -301,8 +311,7 @@ function renderFind(notFound) {
 }
 
 function renderIsThisYou() {
-  scrollTop();
-  setTheme(C.rec.company, true);
+  scrollTop(); brandTheme(C.rec.company);
   $app.innerHTML = '<div class="c-hero">' + heroLogos() + '<span class="label">Evaluation</span><h1>Is this you, <span class="gname">' + h(C.rec.first_name) + '</span>?</h1>' +
     '<p>Just checking we\'ve got the right person.</p></div><div class="card c-form" style="padding-top:18px">' +
     '<button class="btn block" id="yes">Yes, start my evaluation</button>' +
@@ -312,8 +321,7 @@ function renderIsThisYou() {
 }
 function renderCheckedIn(first, evalDone, canEdit) {
   if (evalDone) return renderDone('already', canEdit);
-  scrollTop();
-  setTheme(C.rec && C.rec.company, true);
+  scrollTop(); brandTheme(C.rec && C.rec.company);
   $app.innerHTML = '<div class="c-hero">' + heroLogos() + '<span class="label">Checked in</span><h1>You\'re checked in, <span class="gname">' + h(first) + '</span>!</h1>' +
     '<p>We aim to begin at 10 AM 🕙</p></div><div class="card c-done">' + tickSvg() +
     '<div class="ok">📝 <b>After the presentation</b>, please scan the second QR code on the screen (<b>Evaluation form</b>) for us to proceed with your application.</div></div>';
@@ -376,15 +384,18 @@ function excitementReact(v) {
   const n = Number(v);
   return !n ? 'Tap a number 👆' : n <= 3 ? '😴 Not feeling it yet' : n <= 5 ? '🤔 Curious' : n <= 7 ? '🙂 Into it' : n <= 9 ? '😍 Hyped' : '🔥 Can\'t wait!';
 }
-function evalLadders() {
+/** Shown on the evaluation form and again on the welcome page (congratulations link). */
+function salesLadderHtml() {
   return '<div class="sl-wrap"><div class="sl-h">💷 The Sales Skill Ladder</div>' +
     '<p class="sl-sub">Beginner → Mastery, through practice and coaching</p><div class="sl-goal">🎯 Goal: £400+ OTE in 30 days</div>' +
     '<div class="sl">' + SALES_LADDER.map((l, i) => '<div class="slc' + (i === 5 ? ' top' : '') + '" style="--i:' + i + '"><div class="slc-meter">' + [0, 1, 2, 3, 4, 5].map(j => '<i' + (j <= i ? ' class="on"' : '') + '></i>').join('') + '</div><div class="slc-n">' + l[0] + '</div>' +
       '<div class="slc-name">' + h(l[1]) + '</div><div class="slc-time">' + h(l[2]) + '</div><div class="slc-money">' + h(l[3]) + '</div>' +
       (l[4] ? '<div class="slc-sub">' + h(l[4]) + '</div>' : '') + '<ul>' + l[5].map(b => '<li>' + h(b) + '</li>').join('') + '</ul></div>').join('') + '</div>' +
     '<div class="sl-swipe">Swipe to level up →</div>' +
-    '<p class="sl-note">OTE = On Target Earnings. Illustrative timeframes, to be confirmed. Progress depends on practice and coaching.</p></div>' +
-    '<div class="bdp"><div class="sl-h">🪜 Business Development Programme</div>' +
+    '<p class="sl-note">OTE = On Target Earnings. Illustrative timeframes, to be confirmed. Progress depends on practice and coaching.</p></div>';
+}
+function bdpHtml() {
+  return '<div class="bdp"><div class="sl-h">🪜 Business Development Programme</div>' +
     '<p class="sl-sub">Start with no experience and progress all the way to running your own marketing company. We are actively looking for future business owners.</p>' +
     '<ol class="steps">' + LADDER.map((l, i) => '<li><b>' + (i + 1) + '</b><div><strong>' + h(l[1].split(' · ')[1] || l[1]) + '</strong><span>' + h(l[2]) + '</span></div></li>').join('') + '</ol></div>';
 }
@@ -417,7 +428,7 @@ function renderEval(edit) {
     r.forEach(q => { const c = document.querySelector('.qcard[data-k="' + q.k + '"]'); if (c && String(a[q.k] || '').trim()) c.classList.remove('miss'); });
   };
   const meter = () => { const v = Number(a.q1_excitement) || 0; document.querySelectorAll('.chips.scale .chip').forEach(c => c.classList.toggle('lit', Number(c.dataset.v) <= v)); };
-  setTheme(C.rec.company);
+  C.co = coOf(C.rec.company); setTheme(C.co);  // light page top (progress bar), so a light status bar
   const draw = () => {
     num = 0;
     $app.innerHTML = '<div class="evprog"><div class="evtrack"><i id="evbar"></i></div><span id="evcount"></span></div>' +
@@ -426,7 +437,7 @@ function renderEval(edit) {
         : '<h1>Your evaluation, <span class="gname">' + h(C.rec.first_name) + '</span> 👋</h1><p>About 4 minutes. Your answers shape your next step with us, so make them count.</p>') +
       '<div class="evtags"><span>⏱ 4 min</span><span>🔒 Private</span><span>📲 Saves as you go</span></div></div>' +
       '<form id="f" class="evform" novalidate>' + EVAL_SECTIONS.map(sec => '<section class="evsec"><div class="evsec-h"><span>' + sec[0] + '</span>' + h(sec[1]) + '</div>' +
-        (sec[3] === 'ladders' ? evalLadders() : '') + sec[2].map(k => qhtml(byKey[k])).join('') + '</section>').join('') +
+        (sec[3] === 'ladders' ? salesLadderHtml() + bdpHtml() : '') + sec[2].map(k => qhtml(byKey[k])).join('') + '</section>').join('') +
       '<div id="err"></div><button class="btn block evsubmit" id="go" type="submit">' + (edit ? 'Save my changes ✅' : 'Submit my evaluation 🚀') + '</button></form>';
     const f = document.getElementById('f');
     bindChips(f, (name, v) => {
@@ -459,17 +470,17 @@ function renderEval(edit) {
 /** mode: 'new' (just sent) · 'already' (sent before: one evaluation per person per day) · 'updated' (answers changed).
  *  canEdit: same day and the booker hasn't logged the call yet → they can fix a mistake. */
 function renderDone(mode, canEdit) {
-  stopTimer(); scrollTop();
-  setTheme(C.rec && C.rec.company, true);
+  stopTimer(); scrollTop(); brandTheme(C.rec && C.rec.company);
   const first = C.rec && C.rec.first_name ? ', <span class="gname">' + h(C.rec.first_name) + '</span>' : '';
   const top = mode === 'already' ? ['Evaluation', 'Already done' + first, '<p>You\'ve already sent your evaluation today. No need to do it again.</p>']
-    : mode === 'updated' ? ['Evaluation', 'Updated' + first + '!', '<p>Your changes have been saved.</p>'] : ['Evaluation sent 🙌', 'Thank you' + first + '!', ''];
+    : mode === 'updated' ? ['Evaluation', 'Updated' + first + '!', '<p>Your changes have been saved.</p>'] : ['Evaluation sent 🙌', 'Thank you' + first + '!', '<p>Your evaluation is in 🚀</p>'];
   $app.innerHTML = '<div class="c-hero">' + heroLogos() + '<span class="label">' + top[0] + '</span><h1>' + top[1] + '</h1></div>' +
-    '<div class="card c-done">' + tickSvg() + top[2] +
+    '<div class="card c-done">' + tickSvg() + top[2] + '<div class="evsec-h c-next"><span>📲</span>What happens next</div>' +
     '<p>Our team will contact you about your next steps by close of business on Friday 6PM at the latest 📲</p>' +
     '<p class="muted">Keep your phone close and check WhatsApp.</p>' +
     (canEdit && C.rec ? '<div id="err"></div><button class="btn ghost block" id="edit" style="margin-top:14px">✏️ Made a mistake? Change my answers</button>' : '') +
     (mode === 'already' ? '<button class="btn ghost sm" id="notme" style="margin-top:10px">Not you? ' + (BOOT.mode === 'eval' ? 'Enter your number again' : 'Check someone else in') + '</button>' : '') + '</div>';
+  if (mode === 'new') burst();
   const ed = document.getElementById('edit');
   if (ed) ed.onclick = () => {
     busy(ed, true, 'Opening your answers…');
@@ -510,6 +521,7 @@ function startWelcome() {
 function renderWelcome(w) {
   scrollTop();
   const co = w.company === 'JUSS' ? 'JUSS' : 'LINK';
+  brandTheme(co);
   const brand = co + ' Marketing';
   const office = OFFICES[co];
   w.address = office.address;
@@ -524,31 +536,29 @@ function renderWelcome(w) {
   const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//LINK x JUSS//Recruitment//EN', 'BEGIN:VEVENT', 'UID:' + BOOT.k + '@recruit',
     'DTSTAMP:' + ymd + 'T090000', 'DTSTART:' + ymd + 'T133000', 'DTEND:' + ymd + 'T180000', 'SUMMARY:' + title,
     'LOCATION:' + w.address.replace(/,/g, '\\,'), 'DESCRIPTION:Bring photo ID + your right-to-work share code.', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
-  const steps = WEEK1[co].map((r, i) => '<div class="wk"><div class="wk-ic">' + r[0] + '</div><div><div class="wk-d">' + h(mon ? r[1] : 'Day ' + (i + 1) + (i === 3 && co === 'JUSS' ? ' onwards' : '')) +
-    ' · <b>' + h(r[2]) + '</b></div><div class="wk-t">' + h(r[3]) + '</div><div class="wk-x">' + h(r[4]) + '</div></div></div>').join('');
+  const steps = WEEK1[co].map((r, i) => '<div class="wk"><div class="wk-ic">' + r[0] + '</div><div class="wk-b"><span class="wk-d">' + h(mon ? r[1] : 'Day ' + (i + 1) + (i === 3 && co === 'JUSS' ? ' onwards' : '')) +
+    '</span><div class="wk-n">' + h(r[2]) + '</div><div class="wk-t">⏰ ' + h(r[3]) + '</div><div class="wk-x">' + h(r[4]) + '</div></div></div>').join('');
+  const sec = (icon, title) => '<section class="evsec"><div class="evsec-h"><span>' + icon + '</span>' + title + '</div>';
 
-  setTheme(co, true);
   $app.innerHTML = '<div class="wl wl-' + co + '">' +
     '<div class="wl-hero"><img class="wl-logo" src="' + LOGOS[co] + '" alt="' + h(brand) + '">' +
     '<h1>You\'re in, <span class="gname">' + h(w.first_name) + '</span> 🎉</h1><p>Welcome to the <b>' + h(brand) + ' BA Academy</b></p>' +
     '<span class="wl-pill">' + h(when) + '</span></div>' +
 
-    '<div class="card"><div class="label muted">Day 1 · Induction</div><div class="wl-date">' + h(fmtLong(w.academy_date)) + '</div>' +
+    sec('📅', 'Day 1 · Induction') + '<div class="qcard"><div class="wl-date">' + h(fmtLong(w.academy_date)) + '</div>' +
     '<div class="wl-time">⏰ 1:30pm – 6:00pm</div><p>📍 ' + h(w.address) + '<br><span class="muted small">2 mins from Slough station</span></p>' +
     '<div class="row"><a class="btn sm" href="' + h(office.maps) + '" target="_blank" rel="noopener">🗺️ Google Maps</a>' +
     '<a class="btn ghost sm" href="' + h(gcal) + '" target="_blank" rel="noopener">📅 Google Calendar</a>' +
-    '<a class="btn ghost sm" id="ics" href="#" download="ba-academy-day1.ics">🍏 Apple / Outlook</a></div></div>' +
+    '<a class="btn ghost sm" id="ics" href="#" download="ba-academy-day1.ics">🍏 Apple / Outlook</a></div></div></section>' +
 
-    (PRE_COACHING[co] ? '<div class="wl-alert">⚡ <b>Before Day 1:</b> complete your <b>Pre-Coaching Module</b>.' +
-      '<a class="btn block" style="margin-top:10px" href="' + h(PRE_COACHING[co]) + '" target="_blank" rel="noopener">📝 Open the Pre-Coaching Module</a></div>' : '') +
-    '<div class="card"><div class="label muted">Bring with you</div><p style="font-size:17px;margin:8px 0 0">🪪 Photo ID<br>🔑 Your right-to-work share code</p></div>' +
+    (PRE_COACHING[co] ? sec('⚡', 'Before Day 1') + '<div class="qcard wl-alert">Complete your <b>Pre-Coaching Module</b> before Day 1.' +
+      '<a class="btn block evsubmit" href="' + h(PRE_COACHING[co]) + '" target="_blank" rel="noopener">📝 Open the Pre-Coaching Module</a></div></section>' : '') +
+    sec('🎒', 'Bring with you') + '<div class="wl-bring"><div><span>🪪</span>Photo ID</div><div><span>🔑</span>Your right-to-work share code</div></div></section>' +
 
-    '<h3>Your Week 1 game plan</h3><div class="card wl-week">' + steps + '</div>' +
-    '<div class="card wl-poster"><img src="img/poster-' + co.toLowerCase() + '.jpg" alt="' + h(brand) + ' Week 1 Coaching & Field Schedule" onerror="this.parentNode.hidden=true"></div>' +
+    sec('🗓️', 'Your Week 1 game plan') + '<div class="qcard wl-week">' + steps + '</div>' +
+    '<div class="qcard wl-poster"><img src="img/poster-' + co.toLowerCase() + '.jpg" alt="' + h(brand) + ' Week 1 Coaching & Field Schedule" onerror="this.parentNode.hidden=true"></div></section>' +
 
-    '<details class="card"><summary><b>🚀 Where this can take you</b></summary><div class="ladder" style="margin-top:10px">' +
-    LADDER.map(l => '<div style="background:' + l[0] + '">' + h(l[1]) + ' <span>— ' + h(l[2]) + '</span></div>').join('') + '</div></details>' +
-
+    sec('🚀', 'Where this can take you') + salesLadderHtml() + bdpHtml() + '</section>' +
 
     '<p class="center muted small" style="margin:18px 0 110px">Questions? Just reply to the WhatsApp message 💬</p>' +
     '<div class="wl-cta" id="cta"></div></div>';
@@ -564,7 +574,7 @@ function renderWelcome(w) {
   const drawCta = (confirmed) => {
     cta.innerHTML = confirmed
       ? '<div class="wl-done">✅ You\'re locked in. See you ' + h(mon ? 'Monday' : fmt(w.academy_date)) + '! 🔥</div>'
-      : '<button class="btn block wl-btn" id="conf">🔒 Confirm I\'m coming</button>';
+      : '<button class="btn block evsubmit wl-btn" id="conf">🔒 Confirm I\'m coming</button>';
     const b = document.getElementById('conf');
     if (b) b.onclick = () => {
       busy(b, true, 'Locking in…');
@@ -575,7 +585,7 @@ function renderWelcome(w) {
 }
 
 function burst() {
-  const em = ['🎉', '🔥', '🧡', '💙', '✨', '🙌'];
+  const em = ['🎉', '🔥', '🧡', C.co === 'LINK' ? '🖤' : '💙', '✨', '🙌'];
   for (let i = 0; i < 28; i++) {
     const sp = document.createElement('span');
     sp.className = 'confetti'; sp.textContent = em[i % em.length];
@@ -1552,7 +1562,7 @@ function msgAcademy(c) {
   ];
   const co = juss ? 'JUSS' : 'LINK';
   // Welcome link first: WhatsApp previews the first link, which is the poster card.
-  if (c.welcome_url) lines.push('👇 Your Week 1 game plan + tap *CONFIRM* to lock in your spot:', c.welcome_url, '');
+  if (c.welcome_url) lines.push('👇 Your Week 1 game plan + Sales Skill Ladder 📈 + tap *CONFIRM* to lock in your spot:', c.welcome_url, '');
   if (PRE_COACHING[co]) lines.push('⚡ *Before Day 1:* complete your *Pre-Coaching Module* 👇', PRE_COACHING[co], '');
   lines.push('🗺️ Find us on Google Maps:', OFFICES[co].maps, '');
   const sign = (S.me.signoff || {})[co] || S.me.user.name.split(' ')[0];
