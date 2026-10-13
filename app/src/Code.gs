@@ -25,7 +25,7 @@ const CONFIG = {
   ACADEMY_SIGNOFF: { LINK: 'Jess', JUSS: 'Rubal' }, // who signs the BA Academy WhatsApp, whoever sends it
   // Who sends the thank-you WhatsApp to every appointment (their company's candidates), and gets the reminder.
   // The same email for both = one person sends them all.
-  THANKS_TEAM: { LINK: 'jess@linkmarketing.org.uk', JUSS: 'rubal@jussmarketing.co.uk' },  // recruitment team: thank-yous + non-qualifier alerts
+  THANKS_TEAM: { LINK: 'jess@linkmarketing.org.uk', JUSS: 'rubal@jussmarketing.co.uk' },  // recruitment team: thank-yous (either can send LINK or JUSS) + non-qualifier alerts
   THANKS_TIME: '12:00',           // every day: "N thank-you messages to send" to Jess / Rubal (only if there are any)
   DIGEST_TIME: '18:00',           // Mon–Thu: each booker's round-up of their day
   ROUNDUP_TIME: '15:00',          // Friday: week roundup to each booker + a team roundup to admins
@@ -833,8 +833,11 @@ function markSent(req, u) {
     const c = getC(req.id);
     if (!canSee(u, c)) throw new Error('No access');
     if (req.kind === 'thanks') {
-      const t = thanksTeam()[thanksCo(c)];
-      if (!t || t.id !== u.id) throw new Error('Thank-you messages are sent by ' + ((t && t.name) || 'the recruitment team') + '.');
+      // Jess and Rubal can each send any thank-you, LINK or JUSS (signed with their own name)
+      const team = thanksTeam(), cos = Object.keys(team);
+      if (!cos.some(co => team[co].id && team[co].id === u.id)) {
+        throw new Error('Thank-you messages are sent by ' + (cos.map(co => team[co].name).filter(Boolean).join(' or ') || 'the recruitment team') + '.');
+      }
       c.thanks_sent_at = nowStr(); c.thanks_by = u.name;
     }
     if (req.kind === 'offer') c.offer_sent_at = nowStr();

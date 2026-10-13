@@ -527,7 +527,8 @@ const OFFICES = {
   LINK: { address: '2nd Floor East, Automotive House, Grays Place, Slough SL2 5AF', maps: 'https://maps.app.goo.gl/f4pkh222EHHTyQSM9' },
   JUSS: { address: '2nd Floor East, Automotive House, Grays Place, Slough SL2 5AF', maps: 'https://maps.app.goo.gl/zeP4MjS2hMJzB9V9A' },
 };
-// Only the recruitment team send the thank-you WhatsApp: Jess for LINK appointments, Rubal for JUSS (THANKS_TEAM in Code.gs).
+// Only the recruitment team send the thank-you WhatsApp (THANKS_TEAM in Code.gs). Jess looks after LINK appointments and Rubal JUSS
+// (their list + 12:00 reminder), but either can send any of them, LINK or JUSS, signed with their own name.
 // This default is for Google code that predates THANKS_TEAM.
 const THANKS_DEFAULT = { LINK: { name: 'Jess Grace', email: 'jess@linkmarketing.org.uk' }, JUSS: { name: 'Rubal Oshan', email: 'rubal@jussmarketing.co.uk' } };
 function thanksTeam() { return (S.me && S.me.thanksTeam) || THANKS_DEFAULT; }
@@ -539,7 +540,12 @@ function myThanks() {
   const t = thanksTeam(), me = S.me && S.me.user;
   return me ? Object.keys(t).filter(co => (t[co].id && t[co].id === me.id) || String(t[co].email).toLowerCase() === String(me.email).toLowerCase()) : [];
 }
+/** Their own company's appointment (Jess: LINK, Rubal: JUSS). */
 function signsThanks(c) { return myThanks().indexOf(thanksCo(c)) >= 0; }
+/** Jess or Rubal: can send any thank-you, for LINK or JUSS. */
+function canThank() { return myThanks().length > 0; }
+/** The name at the bottom: whichever of Jess / Rubal is sending it (everyone else only sees who will). */
+function thanksSigner(c) { return canThank() ? S.me.user.name : thanksName(thanksCo(c)); }
 // Each company's digital magazine: in the thank-you WhatsApp and on the thank-you screen after the evaluation.
 const MAGAZINES = {
   LINK: { title: 'LINK Organisation Magazine 2026', url: 'https://linkmagflip-74ibv4pf.manus.space' },
@@ -1629,7 +1635,7 @@ function msgThanks(c) {
     'Keep your phone close! 👀\n\n' +
     '📖 *While you wait*, flick through the *' + mag.title + '* 👇\n' +
     mag.url + '\n\n' +
-    '*' + thanksName(co) + '*, on behalf of ' + co + ' Marketing recruitment team ' + heartOf(c);
+    '*' + thanksSigner(c) + '*, on behalf of ' + co + ' Marketing recruitment team ' + heartOf(c);
 }
 /** Non-qualifier's thank-you: honest about why we can't take them on (no "next steps by Friday"), and an open door to come back. */
 function msgThanksNonQual(c) {
@@ -1646,7 +1652,7 @@ function msgThanksNonQual(c) {
     '🔁 *' + why[1] + '*, message us here and we\'ll book you straight back in 💪\n\n' +
     '📖 In the meantime, flick through the *' + mag.title + '* 👇\n' +
     mag.url + '\n\n' +
-    '*' + thanksName(co) + '*, on behalf of ' + co + ' Marketing recruitment team ' + heartOf(c);
+    '*' + thanksSigner(c) + '*, on behalf of ' + co + ' Marketing recruitment team ' + heartOf(c);
 }
 function msgNoAnswer(c) {
   const co = c.company === 'JUSS' ? 'JUSS' : 'LINK';
@@ -1743,18 +1749,21 @@ function thanksButton(items) {
 function thanksSheet() {
   const d = S.data[weekEndingOf(S.day)];
   const all = d ? d.items.filter(c => c.attended_date === S.day).sort((a, b) => a.created_at.localeCompare(b.created_at)) : [];
-  const sender = myThanks().length > 0, items = sender ? all.filter(signsThanks) : all;
+  const sender = canThank(), own = all.filter(signsThanks), other = all.filter(c => !signsThanks(c));
+  const items = sender ? own.concat(other) : all;
+  const otherCo = ['LINK', 'JUSS'].filter(co => myThanks().indexOf(co) < 0)[0];
   closeSheet(true);
   const back = document.createElement('div');
   back.className = 'sheet-back';
-  const sent = c => '<span class="pill green">✓ Sent ' + h(String(c.thanks_sent_at).slice(11, 16)) + (sender || !c.thanks_by ? '' : ' · ' + h(String(c.thanks_by).split(' ')[0])) + '</span>';
+  const sent = c => '<span class="pill green">✓ Sent ' + h(String(c.thanks_sent_at).slice(11, 16)) + (!c.thanks_by || c.thanks_by === S.me.user.name ? '' : ' · ' + h(String(c.thanks_by).split(' ')[0])) + '</span>';
   const who = co => '<b>' + h(thanksName(co)) + '</b> (' + co + ')';
   back.innerHTML = '<div class="sheet" role="dialog" aria-label="Thank-you messages"><div class="grab"></div>' +
     '<div class="sheet-h"><div><div class="label muted">After the presentation</div><div class="display">' + (sender ? 'Thank everyone 💬' : 'Thank-yous 💬') + '</div></div></div>' +
     '<p class="hint" style="margin-top:-6px">' + (sender
-      ? 'Your ' + myThanks().join(' + ') + ' appointments, whoever booked them. Each one opens WhatsApp with the message ready, signed by you. Tap send, come back, next one.'
+      ? 'Your ' + myThanks().join(' + ') + ' appointments first, whoever booked them' + (otherCo && other.length ? ', then ' + otherCo + ' (' + h(thanksName(otherCo).split(' ')[0]) + '\'s): you can send those too' : '') +
+        '. Each one opens WhatsApp with the message ready, signed by you. Tap send, come back, next one.'
       : 'Sent by ' + who('LINK') + ' and ' + who('JUSS') + ' for every appointment. They get a reminder at 12:00.') + '</p>' +
-    '<div class="list">' + items.map(c => '<div class="trow">' + avatar(c) + '<div class="main"><div class="name">' + h(c.full_name) + '</div><div class="sub"><span class="co ' + thanksCo(c) + '">' + thanksCo(c) + '</span> ' +
+    '<div class="list">' + items.map(c => (sender && own.length && other.length && c === other[0] ? '<div class="datehead">' + otherCo + ' · ' + h(thanksName(otherCo).split(' ')[0]) + ' usually sends these</div>' : '') + '<div class="trow">' + avatar(c) + '<div class="main"><div class="name">' + h(c.full_name) + '</div><div class="sub"><span class="co ' + thanksCo(c) + '">' + thanksCo(c) + '</span> ' +
       (c.booker_name ? 'booked by ' + h(c.booker_name) : 'booker not confirmed') + '</div>' + (c.non_qual ? '<div class="sub nqsub">⛔ Non-qualifier message</div>' : '') + '</div>' +
       (c.thanks_sent_at ? sent(c) : sender ? '<a class="btn wa sm" data-thanks="' + h(c.id) + '" href="' + h(waUrl(c.mobile, msgThanks(c))) + '" target="_blank" rel="noopener">💬 Send</a>' : '<span class="pill amber">Not sent</span>') + '</div>').join('') + '</div>' +
     '<button class="btn ghost block" id="tdone" style="margin-top:14px">Done</button></div>';
@@ -1868,9 +1877,9 @@ function renderCandidate(c, quiet) {
 
   // WhatsApp, ready to send
   const wa = [];
-  if (signsThanks(c)) wa.push('<a class="btn wa block" target="_blank" rel="noopener" data-kind="thanks" href="' + h(waUrl(c.mobile, msgThanks(c))) + '">💬 Send thank-you message' + (c.non_qual ? ' (non-qualifier)' : '') + '</a>' +
-    (c.thanks_sent_at ? '<p class="small muted center">Opened ' + fmtTs(c.thanks_sent_at) + '</p>' : ''));
-  const thanksFlag = signsThanks(c) ? '' : c.thanks_sent_at
+  if (canThank()) wa.push('<a class="btn wa block" target="_blank" rel="noopener" data-kind="thanks" href="' + h(waUrl(c.mobile, msgThanks(c))) + '">💬 Send thank-you message' + (c.non_qual ? ' (non-qualifier)' : '') + '</a>' +
+    (c.thanks_sent_at ? '<p class="small muted center">Opened ' + fmtTs(c.thanks_sent_at) + (c.thanks_by && c.thanks_by !== S.me.user.name ? ' by ' + h(c.thanks_by) : '') + '</p>' : ''));
+  const thanksFlag = canThank() ? '' : c.thanks_sent_at
     ? '<div class="flag green">💬 Thank-you sent ' + fmtTs(c.thanks_sent_at) + (c.thanks_by ? ' by ' + h(c.thanks_by) : '') + '</div>'
     : '<div class="flag amber">💬 Thank-you not sent yet · ' + h(thanksName(thanksCo(c))) + ' sends it</div>';
   if (canOutcome && offerReady && !c.welcome_url && c._pending) wa.push('<div class="flag amber"><span class="spinner sm inline"></span> Saving to Google… the 🎉 congratulations button appears here in a few seconds.</div>');
