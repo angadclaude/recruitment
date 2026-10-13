@@ -237,6 +237,14 @@ async function fillEval(p) {
   const trows = await jsp.$$eval('.sheet .trow', r => r.map(x => x.innerText));
   ok(trows.length === 5 && trows.some(t => /Ishita/.test(t) && /Mo Aden/.test(t)) && trows.some(t => /Ali Yilmaz/.test(t) && /booker not confirmed/.test(t)) && !trows.some(t => /Adham|Jagpreet/.test(t)),
     'Jess: "Thank everyone" = all 5 LINK appointments, whatever booker (even no booker); the JUSS ones are Rubal\'s');
+  // Non-qualifiers get an honest version: why we can't take them on, no "by Friday" promise, door left open
+  const tmsg = async c => decodeURIComponent((await jsp.getAttribute('[data-thanks="' + c.id + '"]', 'href')).split('?text=')[1]);
+  const ishMsg = await tmsg(ishita), kidMsg = await tmsg(kid);
+  fs.writeFileSync(`${SHOTS}/msg-thanks-nonqual-visa.txt`, ishMsg); fs.writeFileSync(`${SHOTS}/msg-thanks-nonqual-under18.txt`, kidMsg);
+  ok(/^Hey Ishita! 👋🧡/.test(ishMsg) && /\*self-employed\*, and your current visa or status doesn't allow self-employed work/.test(ishMsg) && /🔁 \*If your status changes\*, message us here/.test(ishMsg) &&
+    !/Friday|next steps/.test(ishMsg) && /\*Jess Grace\*, on behalf of LINK Marketing recruitment team 🧡$/.test(ishMsg), 'Tier 4 thank-you: honest "visa or status doesn\'t allow self-employed work", no Friday promise, signed Jess');
+  ok(/\*18 or over\*, so we can't take you on just yet/.test(kidMsg) && /🔁 \*When you turn 18\*, message us here and we'll book you straight back in/.test(kidMsg) && !/Friday/.test(kidMsg), 'under-18 thank-you: "18 or over… When you turn 18, message us"');
+  ok(/⛔ Non-qualifier message/.test(await jsp.innerText('.sheet .trow:has-text("Ishita")')) && !/Non-qualifier/.test(await jsp.innerText('.sheet .trow:has-text("Jasraj")')), 'Jess\'s list marks which ones get the non-qualifier message');
   const thanks = decodeURIComponent((await jsp.getAttribute('[data-thanks="' + jasId + '"]', 'href')).split('?text=')[1]);
   fs.writeFileSync(`${SHOTS}/msg-thanks.txt`, thanks);
   ok(thanks === "Hey Jasraj! 👋🧡\n\nThanks for coming through for your *Appointment Presentation* today in association with *LINK Marketing* 🙌\nWe loved meeting you in person.\n\n📲 *What happens next*\nOur Team will contact you at the latest by *close of business on Friday 6PM* about your next steps.\nKeep your phone close! 👀\n\n📖 *While you wait*, flick through the *LINK Organisation Magazine 2026* 👇\nhttps://linkmagflip-74ibv4pf.manus.space\n\n*Jess Grace*, on behalf of LINK Marketing recruitment team 🧡",

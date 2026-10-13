@@ -1620,6 +1620,7 @@ const HEART = { LINK: '🧡', JUSS: '🧡💙' };
 function heartOf(c) { return HEART[c.company === 'JUSS' ? 'JUSS' : 'LINK']; }
 function msgThanks(c) {
   const co = c.company === 'JUSS' ? 'JUSS' : 'LINK', mag = MAGAZINES[co];
+  if (c.non_qual) return msgThanksNonQual(c);
   return 'Hey ' + c.first_name + '! 👋' + heartOf(c) + '\n\n' +
     'Thanks for coming through for your *Appointment Presentation* today in association with *' + brandOf(c) + '* 🙌\n' +
     'We loved meeting you in person.\n\n' +
@@ -1627,6 +1628,23 @@ function msgThanks(c) {
     'Our Team will contact you at the latest by *close of business on Friday 6PM* about your next steps.\n' +
     'Keep your phone close! 👀\n\n' +
     '📖 *While you wait*, flick through the *' + mag.title + '* 👇\n' +
+    mag.url + '\n\n' +
+    '*' + thanksName(co) + '*, on behalf of ' + co + ' Marketing recruitment team ' + heartOf(c);
+}
+/** Non-qualifier's thank-you: honest about why we can't take them on (no "next steps by Friday"), and an open door to come back. */
+function msgThanksNonQual(c) {
+  const co = c.company === 'JUSS' ? 'JUSS' : 'LINK', mag = MAGAZINES[co];
+  const why = /^Under 18/.test(c.non_qual)
+    ? ['To join us as a Brand Ambassador you need to be *18 or over*, so we can\'t take you on just yet.', 'When you turn 18']
+    : /^Visa expired/.test(c.non_qual)
+      ? ['The visa expiry date you gave us has passed, so we can\'t take you on right now.', 'Once your visa is renewed']
+      : ['Our Brand Ambassador role is *self-employed*, and your current visa or status doesn\'t allow self-employed work, so we can\'t take you on right now.', 'If your status changes'];
+  return 'Hey ' + c.first_name + '! 👋' + heartOf(c) + '\n\n' +
+    'Thanks for coming through for your *Appointment Presentation* today in association with *' + brandOf(c) + '* 🙌\n' +
+    'It was great meeting you.\n\n' +
+    why[0] + '\n\n' +
+    '🔁 *' + why[1] + '*, message us here and we\'ll book you straight back in 💪\n\n' +
+    '📖 In the meantime, flick through the *' + mag.title + '* 👇\n' +
     mag.url + '\n\n' +
     '*' + thanksName(co) + '*, on behalf of ' + co + ' Marketing recruitment team ' + heartOf(c);
 }
@@ -1737,7 +1755,7 @@ function thanksSheet() {
       ? 'Your ' + myThanks().join(' + ') + ' appointments, whoever booked them. Each one opens WhatsApp with the message ready, signed by you. Tap send, come back, next one.'
       : 'Sent by ' + who('LINK') + ' and ' + who('JUSS') + ' for every appointment. They get a reminder at 12:00.') + '</p>' +
     '<div class="list">' + items.map(c => '<div class="trow">' + avatar(c) + '<div class="main"><div class="name">' + h(c.full_name) + '</div><div class="sub"><span class="co ' + thanksCo(c) + '">' + thanksCo(c) + '</span> ' +
-      (c.booker_name ? 'booked by ' + h(c.booker_name) : 'booker not confirmed') + '</div></div>' +
+      (c.booker_name ? 'booked by ' + h(c.booker_name) : 'booker not confirmed') + '</div>' + (c.non_qual ? '<div class="sub nqsub">⛔ Non-qualifier message</div>' : '') + '</div>' +
       (c.thanks_sent_at ? sent(c) : sender ? '<a class="btn wa sm" data-thanks="' + h(c.id) + '" href="' + h(waUrl(c.mobile, msgThanks(c))) + '" target="_blank" rel="noopener">💬 Send</a>' : '<span class="pill amber">Not sent</span>') + '</div>').join('') + '</div>' +
     '<button class="btn ghost block" id="tdone" style="margin-top:14px">Done</button></div>';
   document.body.appendChild(back);
@@ -1850,7 +1868,7 @@ function renderCandidate(c, quiet) {
 
   // WhatsApp, ready to send
   const wa = [];
-  if (signsThanks(c)) wa.push('<a class="btn wa block" target="_blank" rel="noopener" data-kind="thanks" href="' + h(waUrl(c.mobile, msgThanks(c))) + '">💬 Send thank-you message</a>' +
+  if (signsThanks(c)) wa.push('<a class="btn wa block" target="_blank" rel="noopener" data-kind="thanks" href="' + h(waUrl(c.mobile, msgThanks(c))) + '">💬 Send thank-you message' + (c.non_qual ? ' (non-qualifier)' : '') + '</a>' +
     (c.thanks_sent_at ? '<p class="small muted center">Opened ' + fmtTs(c.thanks_sent_at) + '</p>' : ''));
   const thanksFlag = signsThanks(c) ? '' : c.thanks_sent_at
     ? '<div class="flag green">💬 Thank-you sent ' + fmtTs(c.thanks_sent_at) + (c.thanks_by ? ' by ' + h(c.thanks_by) : '') + '</div>'
