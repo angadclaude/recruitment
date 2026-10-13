@@ -215,7 +215,7 @@ async function fillEval(p) {
   const jasId = (await api(admin, 'search', { q: 'Jasraj' })).items[0].id;
   ok(!(await pp.$('a.wa[data-kind=thanks]')) && /Thank-you not sent yet · Jess Grace sends it/.test(await pp.innerText('body')), 'presenter has no thank-you button: "Thank-you not sent yet · Jess Grace sends it"');
   const nope = await post('/api', { action: 'markSent', token: nathan, id: jasId, kind: 'thanks' });
-  ok(!nope.ok && /sent by Jess Grace/.test(nope.error), 'server: only Jess (LINK) / Rubal (JUSS) can send a thank-you');
+  ok(!nope.ok && /sent by Jess Grace or Rubal Oshan/.test(nope.error), 'server: only Jess / Rubal can send a thank-you');
   // One tap on the Today list: Green / Amber / Red = in the room, and notes another presenter just wrote are kept
   await api(nathan, 'saveNotes', { id: ishita.id, rag: '', stars: 0, tags: ['Quiet'], notes: 'Sat at the back' });
   await pp.goBack(); await pp.waitForSelector('.kpis');
@@ -235,8 +235,13 @@ async function fillEval(p) {
   await loginUi(jsp, 'jess@linkmarketing.org.uk');
   await jsp.click('#thanksAll'); await jsp.waitForSelector('.sheet .trow');
   const trows = await jsp.$$eval('.sheet .trow', r => r.map(x => x.innerText));
-  ok(trows.length === 5 && trows.some(t => /Ishita/.test(t) && /Mo Aden/.test(t)) && trows.some(t => /Ali Yilmaz/.test(t) && /booker not confirmed/.test(t)) && !trows.some(t => /Adham|Jagpreet/.test(t)),
-    'Jess: "Thank everyone" = all 5 LINK appointments, whatever booker (even no booker); the JUSS ones are Rubal\'s');
+  const linkRows = trows.slice(0, 5), jussRows = trows.slice(5);
+  ok(trows.length === 7 && linkRows.some(t => /Ishita/.test(t) && /Mo Aden/.test(t)) && linkRows.some(t => /Ali Yilmaz/.test(t) && /booker not confirmed/.test(t)) && !linkRows.some(t => /Adham|Jagpreet/.test(t)) &&
+    jussRows.length === 2 && jussRows.every(t => /Adham|Jagpreet/.test(t)) && /JUSS · Rubal usually sends these/i.test(await jsp.innerText('.sheet')),
+    'Jess: "Thank everyone" = her 5 LINK appointments first (whatever booker, even no booker), then the 2 JUSS ones she can send too');
+  const jessJuss = decodeURIComponent((await jsp.getAttribute('[data-thanks="' + adham.id + '"]', 'href')).split('?text=')[1]);
+  ok(/in association with \*JUSS Marketing\*/.test(jessJuss) && /jmomagazine/.test(jessJuss) && /\*Jess Grace\*, on behalf of JUSS Marketing recruitment team 🧡💙$/.test(jessJuss),
+    'Jess sending a JUSS thank-you: JUSS wording + magazine, signed "*Jess Grace*, on behalf of JUSS Marketing recruitment team"');
   // Non-qualifiers get an honest version: why we can't take them on, no "by Friday" promise, door left open
   const tmsg = async c => decodeURIComponent((await jsp.getAttribute('[data-thanks="' + c.id + '"]', 'href')).split('?text=')[1]);
   const ishMsg = await tmsg(ishita), kidMsg = await tmsg(kid);
@@ -520,7 +525,14 @@ async function fillEval(p) {
   await loginUi(rbp, 'rubal@jussmarketing.co.uk', APP + 'index.html?c=' + adham.id);
   await rbp.waitForSelector('a.wa[data-kind=thanks]');
   const jthanks = decodeURIComponent((await rbp.getAttribute('a.wa[data-kind=thanks]', 'href')).split('?text=')[1]);
+  const jasT = await api(admin, 'getCandidate', { id: (await api(admin, 'search', { q: 'Jasraj' })).items[0].id });
+  await rbp.goto(APP + 'index.html?c=' + jasT.id); await rbp.waitForSelector('a.wa[data-kind=thanks]');
+  const rubLink = decodeURIComponent((await rbp.getAttribute('a.wa[data-kind=thanks]', 'href')).split('?text=')[1]);
+  ok(/in association with \*LINK Marketing\*/.test(rubLink) && /linkmagflip/.test(rubLink) && /\*Rubal Oshan\*, on behalf of LINK Marketing recruitment team 🧡$/.test(rubLink),
+    'Rubal can send a LINK thank-you too: LINK wording + magazine, signed "*Rubal Oshan*, on behalf of LINK Marketing recruitment team"');
   await rubCtx.close();
+  const rubSent = await api(await loginApi('rubal@jussmarketing.co.uk'), 'markSent', { id: jasT.id, kind: 'thanks' });
+  ok(rubSent.ok && (await api(admin, 'getCandidate', { id: jasT.id })).thanks_by === 'Rubal Oshan', 'server accepts Rubal sending a LINK thank-you and records "sent by Rubal Oshan"');
   fs.writeFileSync(`${SHOTS}/msg-thanks-juss.txt`, jthanks);
   ok(/in association with \*JUSS Marketing\*/.test(jthanks) && /\*JUSS Marketing Organisation Magazine 2026\* 👇\nhttps:\/\/jmomagazine-gjfukcw6\.manus\.space\/\n/.test(jthanks) && !/linkmagflip/.test(jthanks) && /\*Rubal Oshan\*, on behalf of JUSS Marketing recruitment team 🧡💙$/.test(jthanks),
     'JUSS thank-you WhatsApp: JUSS wording + the JUSS Marketing Organisation Magazine 2026, signed Rubal Oshan for the JUSS recruitment team');
