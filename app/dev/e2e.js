@@ -619,6 +619,10 @@ async function fillEval(p) {
   await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button');
   await ap.click('.tabbar button[data-tab=pay]'); await ap.waitForSelector('.payrow');
   await shot(ap, '14-admin-pay', true);
+  ok(await ap.$eval('.tabbar button[data-tab=pay]', b => b.textContent.trim()) === 'Incentive' && await ap.textContent('#abTitle') === 'Recruitment incentive' &&
+    !/\bpay\b/i.test(await ap.$eval('#page', e => e.innerText)), 'says "Recruitment incentive" (tab: Incentive), never "Pay"');
+  ok(!pay.rows.some(r => /Angad|Jess|Satpal|Rubal/.test(r.name)) && !(await ap.$$eval('.payrow .name', e => e.map(x => x.textContent))).some(n => /Angad|Jess|Satpal|Rubal/.test(n)),
+    'incentive board: bookers only, no admins on it');
 
   // ── Bulletins: one tap for admins, same numbers as Pay ──
   await ap.click('.tabbar button[data-tab=today]'); await ap.waitForSelector('#bullDaily');
@@ -671,10 +675,27 @@ async function fillEval(p) {
   await api(nathan, 'saveNotes', { id: back.id, rag: 'A', stars: 2, tags: [], notes: '' });
   const again = await api(admin, 'getCandidate', { id: back.id });
   ok(again.flags.some(f => f.level === 'red' && /Previously not suitable/.test(f.text)), 'rejected candidate returning shows red "do not progress"');
-  ok(/Repeat/.test(again.pay_reason), 'repeat attendee does not count for pay');
+  ok(/Repeat/.test(again.pay_reason), 'repeat attendee does not count for the incentive');
+  // Admins can book people, but don't earn the recruitment incentive
+  await api(admin, 'saveUser', { user: Object.assign({}, staffIds.find(u => u.id === jessId), { roles: ['admin', 'booker'] }) });
+  const byJess = await ci({ full_name: 'Grace Okafor', mobile: '07700900777', email: 'grace@example.com', booker_id: jessId });
+  await api(nathan, 'saveNotes', { id: byJess.id, rag: 'G', stars: 4, tags: [], notes: '' });
+  const inc = await api(admin, 'payReport', { weekEnding: '2026-10-25' });
+  ok(!inc.rows.some(r => r.booker_id === jessId) && !inc.unassigned.some(x => x.id === byJess.id) && inc.rows.some(r => r.booker_id === fiza.id),
+    'admin who also books (Jess): her bookings aren\'t on the incentive and aren\'t "no booker"; bookers still are');
   const before = (await getJson('/dev/pushes')).length;
   await post('/dev/run', { fn: 'weeklyProgressEmails' });
-  ok((await getJson('/dev/pushes')).slice(before).some(p => /net attended|target/.test(p.body.headings.en)), 'scheduled progress alert goes out as a push');
+  const prog = (await getJson('/dev/pushes')).slice(before);
+  ok(prog.some(p => /net attended|target/.test(p.body.headings.en)), 'scheduled progress alert goes out as a push');
+  ok(!prog.some(p => p.body.include_aliases.external_id.includes(jessId)), 'no incentive progress alert for an admin');
+  const jb = await browser.newContext(PHONE); const jbp = await jb.newPage();
+  await loginUi(jbp, 'jess@linkmarketing.org.uk');
+  await jbp.click('.tabbar button[data-tab=mine]'); await jbp.waitForSelector('.item:has-text("Grace Okafor")');
+  ok(!(await jbp.$('.hero .ring')) && /booked/i.test(await jbp.$eval('.hero', e => e.innerText)) && !/more to hit|target/i.test(await jbp.$eval('.hero', e => e.innerText)),
+    'admin\'s "Mine": her numbers, no incentive ring or target');
+  await jbp.click('.item:has-text("Grace Okafor")'); await jbp.waitForSelector('.profile h1');
+  ok(/Booked by Jess Grace \(admin\), so no incentive/.test(await jbp.$eval('#page', e => e.innerText)) && !(await jbp.$('#excl')), 'candidate page: "Booked by Jess Grace (admin), so no incentive"');
+  await jb.close();
   await post('/dev/eval', { js: `globalThis.__pushOff = ['${abd.id}']` });
   const mailBefore = (await getJson('/dev/mail')).length;
   await post('/dev/run', { fn: 'weeklyProgressEmails' });

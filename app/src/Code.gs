@@ -10,7 +10,7 @@ const CONFIG = {
   TZ: 'Europe/London',
   APP_NAME: 'Juss & Link Recruitment App',
   OFFICE_ADDRESS: '2nd Floor East, Automotive House, Grays Place, Slough SL2 5AF',
-  PAY_TARGET: 5,                  // net attended appointments per booker, Mon–Fri
+  PAY_TARGET: 5,                  // recruitment incentive: net attended appointments per booker, Mon–Fri (admins don't earn it)
   OUTCOME_DEADLINE_DAY: 5,        // 5 = Friday (Mon=1 … Fri=5, Sat=6). Matches the thank-you WhatsApp: "by Friday 6PM"
   OUTCOME_DEADLINE_TIME: '18:00', // outcomes logged after this are flagged LATE
   REPEAT_DAYS: 183,               // "seen before" window: 6 months
@@ -352,6 +352,8 @@ function userById(id) { return usersAll().filter(u => u.id === id)[0]; }
 function rolesOf(u) { return String(u.roles || '').split(',').map(s => s.trim()).filter(String); }
 function has(u, role) { const r = rolesOf(u); return r.indexOf('admin') >= 0 || r.indexOf(role) >= 0; }
 function isAdmin(u) { return rolesOf(u).indexOf('admin') >= 0; }
+/** Recruitment incentive: bookers only. Admins can book people, but they don't earn it. */
+function earnsIncentive(u) { return !isAdmin(u) && rolesOf(u).indexOf('booker') >= 0; }
 function publicUser(u) { return { id: u.id, name: u.name, email: u.email, company: u.company, roles: rolesOf(u), active: truthy(u.active) }; }
 
 function userFromToken(tok) {
@@ -808,17 +810,21 @@ function markSent(req, u) {
   });
 }
 
-/** Weekly pay report: net attended per booker, Mon–Fri. Bookers see only their own row. */
+/** Weekly recruitment incentive: net attended per booker, Mon–Fri. Bookers see only their own row.
+ *  Admins aren't on it (they don't earn it): people they booked are left off, not "no booker". */
 function payReport(req, u) {
   const we = req.weekEnding || weekEnding(todayStr());
   const rows = readTable('Candidates').filter(c => c.week_ending === we);
-  const by = {};
-  usersAll().filter(x => has(x, 'booker')).forEach(b => {
-    by[b.id] = { booker_id: b.id, name: b.name, company: b.company, active: truthy(b.active) && rolesOf(b).indexOf('booker') >= 0,
+  const by = {}, admin = {};
+  usersAll().forEach(b => {
+    if (isAdmin(b)) { admin[b.id] = true; return; }
+    if (!has(b, 'booker')) return;
+    by[b.id] = { booker_id: b.id, name: b.name, company: b.company, active: truthy(b.active) && earnsIncentive(b),
       attended: 0, net: 0, excluded: [], outcomes: 0, late: 0, missing: 0 };
   });
   const unassigned = [];
   rows.forEach(c => {
+    if (admin[c.booker_id]) return;
     if (!c.booker_id || !by[c.booker_id]) { unassigned.push({ id: c.id, name: c.full_name, typed: c.booker_typed }); return; }
     const r = by[c.booker_id];
     r.attended++;
@@ -966,11 +972,11 @@ function notify(users, title, body, cid) {
     .forEach(u => mail(u.email, title, '<p>' + esc(body).replace(/\n/g, '<br>') + '</p><p><a href="' + url + '">Open the app</a></p>'));
 }
 
-/** Wed + Fri 10:00 — progress nudge to every active booker. */
+/** Wed + Fri 10:00 — recruitment incentive progress nudge to every active booker (not admins: they don't earn it). */
 function weeklyProgressEmails() {
   const we = weekEnding(todayStr());
   const rows = readTable('Candidates').filter(c => c.week_ending === we);
-  usersAll().filter(b => truthy(b.active) && rolesOf(b).indexOf('booker') >= 0).forEach(b => {
+  usersAll().filter(b => truthy(b.active) && earnsIncentive(b)).forEach(b => {
     const net = rows.filter(c => c.booker_id === b.id && !payExclusion(c)).length;
     const need = Math.max(0, CONFIG.PAY_TARGET - net);
     notify([b], need === 0 ? '🔥 ' + net + '/' + CONFIG.PAY_TARGET + ' — target smashed' : '⏳ ' + net + '/' + CONFIG.PAY_TARGET + ' net attended',
@@ -990,7 +996,7 @@ function saturdayDeadlineEmails() {
   });
 }
 
-/** Mon 09:00 — last week's pay summary to admins. */
+/** Mon 09:00 — last week's recruitment incentive summary to admins. (Name kept: the Monday trigger calls it.) */
 function mondayPayReportEmail() {
   const lastWe = addDays(weekEnding(todayStr()), -7);
   const admins = usersAll().filter(x => isAdmin(x) && truthy(x.active));
@@ -998,7 +1004,7 @@ function mondayPayReportEmail() {
   const rep = payReport({ weekEnding: lastWe }, admins[0]);
   const active = rep.rows.filter(r => r.attended > 0);
   const hit = active.filter(r => r.net >= rep.target).length;
-  notify(admins, '💷 Pay report ready — w/e ' + lastWe,
+  notify(admins, '💷 Recruitment incentive report — w/e ' + lastWe,
     hit + ' of ' + active.length + ' bookers hit ' + rep.target + ' net. ' + active.reduce((n, r) => n + r.late, 0) + ' late outcomes.' +
     (rep.unassigned.length ? ' ' + rep.unassigned.length + ' need a booker assigned.' : ''), '');
 }
@@ -1075,7 +1081,7 @@ function digestFor(u, rows, today) {
   if (toSend.length) lines.push('🎉 Send Day 1 details: ' + names(toSend));
   if (toConfirm.length) lines.push('⏳ Day 1 not confirmed yet: ' + names(toConfirm));
   if (!toClose.length && !toSend.length) lines.push('✅ All closed. Nice work.');
-  lines.push('Week: ' + net + '/' + target + ' net attended');
+  if (!isAdmin(u)) lines.push('Week: ' + net + '/' + target + ' net attended');
   return { title: title, body: lines.join('\n') };
 }
 
@@ -1107,7 +1113,7 @@ function roundupFor(s) {
   if (s.open.length) lines.push('📞 No outcome yet: ' + firstNames(s.open) + ' (due ' + deadlineLabel() + ')');
   if (s.sent.length) lines.push('📲 Day 1 text sent: ' + firstNames(s.sent));
   if (s.unsent.length) lines.push('⚠️ Day 1 text NOT sent: ' + firstNames(s.unsent));
-  lines.push('Net ' + s.net + '/' + target + (s.net >= target ? ' ✅ target hit 🔥' : ' · ' + (target - s.net) + ' short'));
+  if (!isAdmin(s.user)) lines.push('Net ' + s.net + '/' + target + (s.net >= target ? ' ✅ target hit 🔥' : ' · ' + (target - s.net) + ' short'));
   return { title: '🏁 Week roundup: ' + plural(s.all.length, 'appointment') + ' · ' + s.booked.length + ' booked', body: lines.join('\n') };
 }
 function teamRoundup(stats) {

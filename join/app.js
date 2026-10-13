@@ -1,4 +1,4 @@
-window.APP_VERSION = '2f759e08';
+window.APP_VERSION = '1409ef4b';
 
 (function () {
 'use strict';
@@ -847,7 +847,7 @@ function nav(view, params, push) {
 function hist(kind, st) { try { kind === 'push' ? history.pushState(st, '') : history.replaceState(st, ''); S.hist = kind === 'push' ? (S.hist || 0) + 1 : (S.hist || 0); } catch (e) { /* not allowed in this frame */ } }
 function back() { if (S.hist > 0 && history.state && ['cand', 'user', 'slideqr', 'bulletin'].indexOf(history.state.v) >= 0) { S.hist--; history.back(); } else nav(S.tab); }
 function go(tab) { nav(tab, {}, false); }
-function titleOf(v) { return { today: 'Today', mine: 'My candidates', all: 'All candidates', pay: 'Pay', team: 'Team', slideqr: 'Slide QR codes', user: 'Team', bulletin: 'Bulletin' }[v] || ''; }
+function titleOf(v) { return { today: 'Today', mine: 'My candidates', all: 'All candidates', pay: 'Recruitment incentive', team: 'Team', slideqr: 'Slide QR codes', user: 'Team', bulletin: 'Bulletin' }[v] || ''; }
 
 function render(quiet) {
   const v = S.view;
@@ -877,7 +877,7 @@ function tabs() {
   if (isPresenter()) t.push(['today', 'Today']);
   if (isBooker()) t.push(['mine', 'Mine']);
   if (isAdmin()) t.push(['all', 'All']);
-  t.push(['pay', 'Pay']);
+  t.push(['pay', 'Incentive']);
   if (isAdmin()) t.push(['team', 'Team']);
   return t;
 }
@@ -903,7 +903,8 @@ function paint(title, html, quiet, sub) {
   ensureShell();
   if (!quiet) closeSheet(true);
   const y = window.scrollY;
-  document.getElementById('abTitle').textContent = title;
+  const abt = document.getElementById('abTitle');
+  abt.textContent = title; abt.classList.toggle('long', title.length > 16);  // e.g. "Recruitment incentive": smaller, so it fits
   document.getElementById('abBack').hidden = !sub;
   document.getElementById('abBrand').hidden = !!sub;
   document.getElementById('tabbar').innerHTML = tabs().map(t => '<button data-tab="' + t[0] + '" class="' + (S.tab === t[0] ? 'on' : '') + '">' + icon(t[0]) + '<span>' + t[1] + '</span></button>').join('');
@@ -1170,7 +1171,7 @@ function viewToday(quiet) {
       thanksButton(items) +
       (isAdmin() ? '<div class="bullbtns"><button class="btn" id="bullDaily">📣 ' + (isToday ? 'Today\'s' : DAYS[D(S.day).getUTCDay()]) + ' bulletin</button><button class="btn ghost" id="bullWeek">🏆 Week top 5</button></div>' : '') +
       (items.length ? '<div class="section-h"><b>In the room</b><span>' + rated + ' of ' + items.length + ' rated</span></div>' +
-        (isPresenter() && rated < items.length ? '<p class="hint">Tap Green, Amber or Red to rate. Rating = they were in the room (that\'s what counts for pay). Tap a name for stars and notes.</p>' : '') +
+        (isPresenter() && rated < items.length ? '<p class="hint">Tap Green, Amber or Red to rate. Rating = they were in the room (that\'s what counts for the recruitment incentive). Tap a name for stars and notes.</p>' : '') +
         '<div class="list">' + items.map(c => item(c, false, isPresenter() && !c.in_room ? 'rate' : '')).join('') + '</div>'
         : empty('📷', 'No check-ins yet. They appear here live as people scan the check-in QR on your first slide.'));
   }
@@ -1199,9 +1200,11 @@ function viewMine(quiet) {
     const noAnswer = items.filter(c => c.outcome === 'No answer');
     const toSend = items.filter(c => toCall.indexOf(c) < 0 && c.outcome === 'Academy booked' && c.welcome_url && !c.offer_sent_at && !c.academy_confirmed_at && c.admin_status !== 'pending' && c.admin_status !== 'rejected');
     const left = Math.max(0, d.pay.target - r.net);
-    body = '<div class="hero">' + top + '<div class="hero-body">' + ring(r.net, d.pay.target) + '<div class="hero-txt"><b>' + (left ? left + ' more to hit ' + d.pay.target : 'Target smashed 🔥') + '</b>' +
+    // Admins can book people but don't earn the recruitment incentive: their numbers, no target
+    body = '<div class="hero">' + top + (isAdmin() ? kpis([[items.filter(c => c.in_room).length, 'Attended'], [items.filter(c => c.outcome === 'Academy booked' && c.admin_status !== 'rejected').length, 'Booked'], [toCall.length, 'To call', toCall.length > 0]]) :
+      '<div class="hero-body">' + ring(r.net, d.pay.target) + '<div class="hero-txt"><b>' + (left ? left + ' more to hit ' + d.pay.target : 'Target smashed 🔥') + '</b>' +
       '<span>' + r.attended + ' attended · ' + r.excluded.length + ' don\'t count</span>' +
-      (r.excluded.length ? '<span class="small">' + r.excluded.map(x => h(x.name) + ' (' + h(x.why) + ')').join(' · ') + '</span>' : '') + '</div></div></div>' +
+      (r.excluded.length ? '<span class="small">' + r.excluded.map(x => h(x.name) + ' (' + h(x.why) + ')').join(' · ') + '</span>' : '') + '</div></div>') + '</div>' +
       (toCall.length ? '<div class="section-h"><b>📞 To call · ' + toCall.length + '</b><span>log by ' + h(S.me.deadlineLabel || 'Sat ' + S.me.deadlineTime) + '</span></div><div class="list">' + toCall.map(c => item(c, true, 'call')).join('') + '</div>' : '') +
       (toSend.length ? '<div class="section-h"><b>🎉 Send Day 1 details · ' + toSend.length + '</b></div><div class="list">' + toSend.map(c => item(c, true, 'offer')).join('') + '</div>' : '') +
       (noAnswer.length ? '<div class="section-h"><b>📵 No answer · ' + noAnswer.length + '</b><span>WhatsApp = "we tried calling you"</span></div><div class="list">' + noAnswer.map(c => item(c, true, 'noanswer')).join('') + '</div>' : '') +
@@ -1244,7 +1247,7 @@ function viewAll(quiet) {
   if (S.q) run();
 }
 
-// ───── Pay (leaderboard) ─────
+// ───── Recruitment incentive (leaderboard). Bookers only: admins don't earn it, so they're not on it. ─────
 function viewPay(quiet) {
   const d = want(S.week);
   let body;
@@ -1262,10 +1265,11 @@ function viewPay(quiet) {
         '<div class="pills">' + (r.late ? '<span class="pill amber">' + r.late + ' late</span>' : '') + (r.missing ? '<span class="pill red">' + r.missing + ' no outcome</span>' : '') + '<span class="pill">' + r.attended + ' attended</span></div>' +
         '<div class="small muted excl" hidden>' + (r.excluded.length ? r.excluded.map(x => h(x.name) + ': ' + h(x.why)).join('<br>') : 'Nothing excluded') + '</div></div>' +
         '<div class="net"><b>' + r.net + '</b><span>/' + p.target + '</span></div></div>').join('') : empty('💷', 'No appointments this week.')) + '</div>' +
-      '<p class="hint">Mon–Fri, rated by the presenter. Doesn\'t count: under 18, not eligible to work self-employed, seen in the last 6 months, removed by admin. Tap a row for details. Outcomes due ' + fmtTs(p.deadline) + '.</p>' +
+      '<p class="hint">Net ' + p.target + ' attended, Mon–Fri, rated by the presenter. Doesn\'t count: under 18, not eligible to work self-employed, seen in the last 6 months, removed by admin. ' +
+        (isAdmin() ? 'Admins don\'t earn the incentive, so people you book aren\'t on here. ' : '') + 'Tap a row for details. Outcomes due ' + fmtTs(p.deadline) + '.</p>' +
       (p.unassigned.length ? '<div class="section-h">No confirmed booker <span>' + p.unassigned.length + '</span></div><div class="list">' + p.unassigned.map(x => '<button class="item" data-id="' + h(x.id) + '"><span class="av">?</span><div class="main"><div class="name">' + h(x.name) + '</div><div class="sub">Typed "' + h(x.typed || '—') + '" · tap to assign</div></div><span class="chev">›</span></button>').join('') + '</div>' : '');
   }
-  const page = paint('Pay', weekNav() + body, quiet);
+  const page = paint('Recruitment incentive', weekNav() + body, quiet);
   bindItems(page); bindWeekNav();
   page.querySelectorAll('.payrow').forEach(r => { r.onclick = () => { const x = r.querySelector('.excl'); x.hidden = !x.hidden; }; });
 }
@@ -1278,7 +1282,7 @@ const TAGLINE = 'Great energy today, team! Let\'s keep the momentum rolling!';
 const TAGLINE_FRI = 'Great energy today, team! Let\'s keep the momentum rolling over the weekend ready for a big week next week!!';
 function inRoom(c) { return c.in_room === true || c.in_room === 'TRUE'; }
 function joinAnd(a) { return a.length < 2 ? a.join('') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1]; }
-/** Poster numbers, on the same rules as Pay: rated by the presenter, Mon–Fri, and only people who count. */
+/** Poster numbers, on the same rules as the recruitment incentive: rated by the presenter, Mon–Fri, and only people who count. */
 function bulletinNumbers(items, day, prevItems) {
   const we = weekEndingOf(day), week = [6, 5, 4, 3, 2].map(n => addDays(we, -n));
   const att = items.filter(inRoom), today = att.filter(c => c.attended_date === day), inWeek = att.filter(c => week.indexOf(c.attended_date) >= 0);
@@ -1341,7 +1345,7 @@ function viewBulletin() {
   const bar = barSet();
   const warn = [];
   if (kind === 'daily' && n.unrated) warn.push(n.unrated + ' checked in but not rated by the presenter yet, so not counted.');
-  if (kind === 'daily' ? n.noBooker : n.weekNoBooker) warn.push((kind === 'daily' ? n.noBooker : n.weekNoBooker) + ' with no confirmed booker, so not on the poster. Assign them in Pay.');
+  if (kind === 'daily' ? n.noBooker : n.weekNoBooker) warn.push((kind === 'daily' ? n.noBooker : n.weekNoBooker) + ' with no confirmed booker, so not on the poster. Assign them in Incentive.');
   const field = (id, label, val, area) => '<label class="q">' + label + '</label>' + (area ? '<textarea id="' + id + '" rows="2">' + h(val) + '</textarea>' : '<input type="text" id="' + id + '" value="' + h(val) + '">');
   const edit = '<details class="card" id="bedit"><summary><b>✏️ Edit wording</b> <span class="small muted">· optional</span></summary>' +
     (kind === 'daily'
@@ -1844,10 +1848,12 @@ function renderCandidate(c, quiet) {
       adm += '<p><b>Decision needed:</b> ' + h(c.outcome_by) + ' wants to book BA Academy.</p><input type="text" id="anote" placeholder="Note (optional)">' +
         '<div class="row" style="margin-top:8px"><button class="btn green grow" id="approve">Approve</button><button class="btn red grow" id="reject">Reject</button></div><hr>';
     }
-    adm += '<p><b>Pay count:</b> ' + (c.pay_reason ? '<span style="color:var(--red)">Doesn\'t count — ' + h(c.pay_reason) + '</span>' : '<span style="color:var(--green)">Counts towards ' + h(c.booker_name || 'booker') + '\'s net ' + S.me.payTarget + '</span>') + '</p>' +
-      (c.pay_excluded
+    const byAdmin = (S.users || []).some(u => u.id === c.booker_id && u.roles.indexOf('admin') >= 0);
+    adm += '<p><b>Recruitment incentive:</b> ' + (byAdmin ? '<span class="muted">Booked by ' + h(c.booker_name) + ' (admin), so no incentive</span>'
+      : c.pay_reason ? '<span style="color:var(--red)">Doesn\'t count — ' + h(c.pay_reason) + '</span>' : '<span style="color:var(--green)">Counts towards ' + h(c.booker_name || 'booker') + '\'s net ' + S.me.payTarget + '</span>') + '</p>' +
+      (byAdmin ? '' : c.pay_excluded
         ? '<button class="btn ghost sm" id="incl">Count it again</button>'
-        : '<div class="row"><input type="text" id="exr" placeholder="Reason, e.g. share code failed" style="flex:1"><button class="btn ghost sm" id="excl">Remove from pay</button></div>') +
+        : '<div class="row"><input type="text" id="exr" placeholder="Reason, e.g. share code failed" style="flex:1"><button class="btn ghost sm" id="excl">Remove from incentive</button></div>') +
       '<hr><label class="q" style="margin-top:0">Booker</label><div class="row"><select id="rb" style="flex:1"><option value="">Choose booker…</option>' +
       (S.users || []).filter(u => u.active && (u.roles.indexOf('booker') >= 0 || u.roles.indexOf('admin') >= 0)).map(u => '<option value="' + h(u.id) + '"' + (u.id === c.booker_id ? ' selected' : '') + '>' + h(u.name) + ' (' + h(u.company) + ')</option>').join('') +
       '</select><button class="btn ghost sm" id="reas">Save</button></div></div>';
@@ -1909,7 +1915,7 @@ function renderCandidate(c, quiet) {
     if (ex) ex.onclick = () => {
       const r = document.getElementById('exr').value.trim();
       if (!r) return toast('Add a reason first');
-      call('setPayExcluded', { id: c.id, excluded: true, reason: r }).then(nc => saved(nc, 'Removed from pay count')).catch(x => toast(x.message));
+      call('setPayExcluded', { id: c.id, excluded: true, reason: r }).then(nc => saved(nc, 'Removed from the incentive count')).catch(x => toast(x.message));
     };
     const inc = document.getElementById('incl');
     if (inc) inc.onclick = () => call('setPayExcluded', { id: c.id, excluded: false }).then(nc => saved(nc, 'Counted again')).catch(x => toast(x.message));
