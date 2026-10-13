@@ -1,4 +1,4 @@
-window.APP_VERSION = '01c104f5';
+window.APP_VERSION = '575cd570';
 
 (function () {
 'use strict';
@@ -299,47 +299,101 @@ const LADDER = [
   ['#3BAA5C', 'Stage 3 · Leadership', 'coach others, run sectors'],
   ['#3BB6B2', 'Stage 4 · Crew Leadership', 'develop leaders, travel'],
   ['#2D8FD5', 'Stage 5 · Assistant Ownership', 'learn to run the business'],
-  ['#5AA05A', 'Stage 6 · Owner', 'open your own marketing company + £10k start-up investment'],
+  ['#5AA05A', 'Stage 6 · Owner', 'open your own marketing company'],
 ];
 
+// The form's look (questions and answer options above are unchanged: flags and pay rely on them).
+const EVAL_EMOJI = { q1_excitement: '🔥', q2_stood_out: '👀', q3_reason: '🎯', q4_situation: '🧭', q4_looking_for: '🔎', q5_start_date: '📆',
+  q6_days: '🗓️', q7_commute: '🚆', q8_resilience: '💪', q9_results_paid: '💷', q9_results_detail: '✍️', q10_door: '🚪', q11_coach: '🎤',
+  q12_bdp_stage: '🪜', q12_bdp_why: '👑', q13_unspent: '🔒', q14_questions: '💬' };
+const EVAL_SECTIONS = [
+  ['⚡', 'The vibe', ['q1_excitement', 'q2_stood_out', 'q3_reason']],
+  ['📅', 'The practical stuff', ['q4_situation', 'q4_looking_for', 'q5_start_date', 'q6_days', 'q7_commute']],
+  ['🧠', 'Your mindset', ['q8_resilience', 'q9_results_paid', 'q9_results_detail', 'q10_door', 'q11_coach']],
+  ['🚀', 'Your future', ['q12_bdp_stage', 'q12_bdp_why'], 'ladders'],
+  ['🏁', 'Last bits', ['q13_unspent', 'q14_questions']],
+];
+/** Angad's Sales Skill Ladder slide: [level, name, time, earnings, while…, what you learn] */
+const SALES_LADDER = [
+  ['01', 'Beginner', '0–2 weeks', 'Building to £400 ABAE p/week', '', ['Learn the basic pitch + campaign', 'Daily habits: knocks, chats, pitches', 'Be coachable, apply feedback fast']],
+  ['02', 'Competency', '3–4 weeks', '£400 p/week', '', ['Handle blocks + objections', 'Create passion + empathy', 'Close with clarity']],
+  ['03', 'Proficiency', '5–12 weeks', '£400–£500 p/week', '', ['Adapt to any area + household', 'Work territory strategically', 'Hit every quality KPI']],
+  ['04', 'Advanced', '3–6 months', '£500–£600 p/week', 'whilst coaching', ['Coach + support new BAs', 'Diagnostic questions + active listening', 'Plan routes for max efficiency']],
+  ['05', 'Expert', '6–12 months', '£600–£800 p/week', 'whilst coaching multiple people', ['Top 10% on quality (Super Green)', 'Develop others to proficiency', 'Shape campaign strategy']],
+  ['06', 'Mastery', '12+ months', '£800–£1,000 p/week', 'whilst performance influencing a team', ['Inspire high-performing teams', 'Excellence through others', 'Build a high-performance culture']],
+];
+function excitementReact(v) {
+  const n = Number(v);
+  return !n ? 'Tap a number 👆' : n <= 3 ? '😴 Not feeling it yet' : n <= 5 ? '🤔 Curious' : n <= 7 ? '🙂 Into it' : n <= 9 ? '😍 Hyped' : '🔥 Can\'t wait!';
+}
+function evalLadders() {
+  return '<div class="sl-wrap"><div class="sl-h">💷 The Sales Skill Ladder</div>' +
+    '<p class="sl-sub">Beginner → Mastery, through practice and coaching</p><div class="sl-goal">🎯 Goal: £400+ in 30 days (ABAE)</div>' +
+    '<div class="sl">' + SALES_LADDER.map((l, i) => '<div class="slc' + (i === 5 ? ' top' : '') + '" style="--i:' + i + '"><div class="slc-meter">' + [0, 1, 2, 3, 4, 5].map(j => '<i' + (j <= i ? ' class="on"' : '') + '></i>').join('') + '</div><div class="slc-n">' + l[0] + '</div>' +
+      '<div class="slc-name">' + h(l[1]) + '</div><div class="slc-time">' + h(l[2]) + '</div><div class="slc-money">' + h(l[3]) + '</div>' +
+      (l[4] ? '<div class="slc-sub">' + h(l[4]) + '</div>' : '') + '<ul>' + l[5].map(b => '<li>' + h(b) + '</li>').join('') + '</ul></div>').join('') + '</div>' +
+    '<div class="sl-swipe">Swipe to level up →</div>' +
+    '<p class="sl-note">Illustrative timeframes, to be confirmed. Progress depends on practice and coaching.</p></div>' +
+    '<div class="bdp"><div class="sl-h">🪜 Business Development Programme</div>' +
+    '<p class="sl-sub">Start with no experience and progress all the way to running your own marketing company. We are actively looking for future business owners.</p>' +
+    '<ol class="steps">' + LADDER.map((l, i) => '<li><b>' + (i + 1) + '</b><div><strong>' + h(l[1].split(' · ')[1] || l[1]) + '</strong><span>' + h(l[2]) + '</span></div></li>').join('') + '</ol></div>';
+}
 function renderEval(edit) {
   stopTimer(); scrollTop();
   const a = store.get('evaldraft_' + C.rec.id) || {};
+  const byKey = {}; EVAL.forEach(q => { byKey[q.k] = q; });
+  let num = 0;
   const qhtml = q => {
     if (q.showIf && !q.showIf(a)) return '';
-    let w = '<div class="qwrap" data-k="' + q.k + '"><label class="q">' + h(q.t) + (q.optional ? '' : ' <span class="req">*</span>') + '</label>';
+    num++;
+    let w = '<div class="qwrap qcard" data-k="' + q.k + '"><div class="qhead"><span class="qn">' + (num < 10 ? '0' : '') + num + '</span><span class="qe">' + (EVAL_EMOJI[q.k] || '') + '</span></div>' +
+      '<label class="q">' + h(q.t) + (q.optional ? ' <span class="opt">optional</span>' : ' <span class="req">*</span>') + '</label>';
     if (q.help) w += '<div class="help">' + h(q.help) + '</div>';
-    if (q.type === 'bdp') {
-      w = '<div class="qwrap" data-k="' + q.k + '"><label class="q">Our Business Development Programme</label>' +
-        '<div class="help">Start with no experience and progress all the way to running your own marketing company. We are actively looking for future business owners.</div>' +
-        '<div class="ladder">' + LADDER.map(l => '<div style="background:' + l[0] + '">' + h(l[1]) + ' <span>— ' + h(l[2]) + '</span></div>').join('') + '</div>' +
-        '<label class="q">' + h(q.t) + ' <span class="req">*</span></label>';
-    }
-    if (q.type === 'scale') w += chips(q.k, ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'], a[q.k]).replace('class="chips"', 'class="chips scale"') + '<div class="row between small muted"><span>Not really</span><span>Can\'t wait</span></div>';
-    else if (q.type === 'text') w += '<input type="text" name="' + q.k + '" maxlength="300" value="' + h(a[q.k] || '') + '" placeholder="' + h(q.placeholder || '') + '">';
-    else if (q.type === 'area') w += '<textarea name="' + q.k + '" maxlength="1000">' + h(a[q.k] || '') + '</textarea>';
+    if (q.type === 'scale') {
+      w += chips(q.k, ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'], a[q.k]).replace('class="chips"', 'class="chips scale"') +
+        '<div class="row between small muted"><span>Not really</span><span>Can\'t wait</span></div><div class="react" id="react">' + excitementReact(a[q.k]) + '</div>';
+    } else if (q.type === 'text') w += '<input type="text" name="' + q.k + '" maxlength="300" value="' + h(a[q.k] || '') + '" placeholder="' + h(q.placeholder || 'Type here…') + '">';
+    else if (q.type === 'area') w += '<textarea name="' + q.k + '" maxlength="1000" placeholder="Type here…">' + h(a[q.k] || '') + '</textarea>';
     else if (q.type === 'date') w += '<input type="date" name="' + q.k + '" value="' + h(a[q.k] || '') + '">';
     else w += chips(q.k, q.opts, a[q.k], q.stack);
     return w + '</div>';
   };
+  const required = () => EVAL.filter(q => !q.optional && (!q.showIf || q.showIf(a)));
+  const progress = () => {
+    const r = required(), done = r.filter(q => String(a[q.k] || '').trim()).length, bar = document.getElementById('evbar');
+    if (!bar) return;
+    bar.style.width = Math.round(done / r.length * 100) + '%';
+    document.getElementById('evcount').textContent = done === r.length ? 'All done. Hit submit 🚀' : done + ' of ' + r.length + ' answered';
+    r.forEach(q => { const c = document.querySelector('.qcard[data-k="' + q.k + '"]'); if (c && String(a[q.k] || '').trim()) c.classList.remove('miss'); });
+  };
+  const meter = () => { const v = Number(a.q1_excitement) || 0; document.querySelectorAll('.chips.scale .chip').forEach(c => c.classList.toggle('lit', Number(c.dataset.v) <= v)); };
   const draw = () => {
-    $app.innerHTML = logos(48) + (edit
-      ? '<h1>Change your answers, ' + h(C.rec.first_name) + '</h1><p class="muted">Your answers are filled in. Change what you need, then save.</p>'
-      : '<h1>Your evaluation, ' + h(C.rec.first_name) + '</h1><p class="muted">About 4 minutes. Your answers shape your next step with us, so make them count.</p>') +
-      '<form id="f" class="card" novalidate>' + EVAL.map(qhtml).join('') + '<div id="err"></div><button class="btn block" id="go" type="submit">' + (edit ? 'Save my changes' : 'Submit my evaluation') + '</button></form>';
+    num = 0;
+    $app.innerHTML = '<div class="evprog"><div class="evtrack"><i id="evbar"></i></div><span id="evcount"></span></div>' + logos(48) +
+      '<div class="evhero">' + (edit
+        ? '<h1>Change your answers, ' + h(C.rec.first_name) + ' ✏️</h1><p>Your answers are filled in. Change what you need, then save.</p>'
+        : '<h1>Your evaluation, ' + h(C.rec.first_name) + ' 👋</h1><p>About 4 minutes. Your answers shape your next step with us, so make them count.</p>') +
+      '<div class="evtags"><span>⏱ 4 min</span><span>🔒 Private</span><span>📲 Saves as you go</span></div></div>' +
+      '<form id="f" class="evform" novalidate>' + EVAL_SECTIONS.map(sec => '<section class="evsec"><div class="evsec-h"><span>' + sec[0] + '</span>' + h(sec[1]) + '</div>' +
+        (sec[3] === 'ladders' ? evalLadders() : '') + sec[2].map(k => qhtml(byKey[k])).join('') + '</section>').join('') +
+      '<div id="err"></div><button class="btn block evsubmit" id="go" type="submit">' + (edit ? 'Save my changes ✅' : 'Submit my evaluation 🚀') + '</button></form>';
     const f = document.getElementById('f');
     bindChips(f, (name, v) => {
       a[name] = v; store.set('evaldraft_' + C.rec.id, a);
-      if (name === 'q4_situation') { const y = window.scrollY; draw(); window.scrollTo(0, y); }
+      if (name === 'q1_excitement') { document.getElementById('react').textContent = excitementReact(v); meter(); }
+      if (name === 'q4_situation') { const y = window.scrollY; draw(); window.scrollTo(0, y); return; }
+      progress();
     });
-    f.addEventListener('input', e => { if (e.target.name) { a[e.target.name] = e.target.value; store.set('evaldraft_' + C.rec.id, a); } });
+    f.addEventListener('input', e => { if (e.target.name) { a[e.target.name] = e.target.value; store.set('evaldraft_' + C.rec.id, a); progress(); } });
+    progress(); meter();
     f.addEventListener('submit', e => {
       e.preventDefault();
       const err = document.getElementById('err');
       const missing = EVAL.filter(q => !q.optional && (!q.showIf || q.showIf(a)) && !String(a[q.k] || '').trim());
       if (missing.length) {
-        showErr(err, 'Please answer every question marked *. Missing: "' + missing[0].t + '"');
-        const w = f.querySelector('.qwrap[data-k="' + missing[0].k + '"]'); if (w) w.scrollIntoView({ block: 'center' });
+        showErr(err, 'Nearly there! ' + missing.length + ' to go. Missing: "' + missing[0].t + '"');
+        missing.forEach(q => { const c = f.querySelector('.qwrap[data-k="' + q.k + '"]'); if (c) c.classList.add('miss'); });
+        const w = f.querySelector('.qwrap[data-k="' + missing[0].k + '"]'); if (w) w.scrollIntoView({ block: 'center', behavior: 'smooth' });
         return;
       }
       const btn = document.getElementById('go'); busy(btn, true, 'Sending…');
