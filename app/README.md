@@ -32,7 +32,7 @@ Slide QR codes (permanent): [`docs/qr-1-checkin.png`](docs/qr-1-checkin.png) · 
 node app/build.js
 NODE_PATH=$(npm root -g) node app/dev/e2e.js ./shots
 ```
-Runs the real `Code.gs` on an in-memory fake of Sheets, Gmail, UrlFetch and so on, then walks the whole journey in a phone-sized browser: 150+ checks covering QR flows, push alerts, WhatsApp messages, the welcome page and confirm, the recruitment incentive, repeats, late outcomes, access removal, GDPR deletion, the LINK / JUSS looks and the one-tap actions on the lists.
+Runs the real `Code.gs` on an in-memory fake of Sheets, Gmail, UrlFetch and so on, then walks the whole journey in a phone-sized browser: 160+ checks covering QR flows, push alerts, WhatsApp messages, the welcome page and confirm, the recruitment incentive, non-qualifiers, repeats, late outcomes, access removal, GDPR deletion, the LINK / JUSS looks and the one-tap actions on the lists.
 
 To see every screen as a LINK user and as a JUSS user (about 40 seconds):
 ```

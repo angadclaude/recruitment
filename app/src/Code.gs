@@ -25,7 +25,7 @@ const CONFIG = {
   ACADEMY_SIGNOFF: { LINK: 'Jess', JUSS: 'Rubal' }, // who signs the BA Academy WhatsApp, whoever sends it
   // Who sends the thank-you WhatsApp to every appointment (their company's candidates), and gets the reminder.
   // The same email for both = one person sends them all.
-  THANKS_TEAM: { LINK: 'jess@linkmarketing.org.uk', JUSS: 'rubal@jussmarketing.co.uk' },
+  THANKS_TEAM: { LINK: 'jess@linkmarketing.org.uk', JUSS: 'rubal@jussmarketing.co.uk' },  // recruitment team: thank-yous + non-qualifier alerts
   THANKS_TIME: '12:00',           // every day: "N thank-you messages to send" to Jess / Rubal (only if there are any)
   DIGEST_TIME: '18:00',           // Mon–Thu: each booker's round-up of their day
   ROUNDUP_TIME: '15:00',          // Friday: week roundup to each booker + a team roundup to admins
@@ -325,13 +325,22 @@ function flagsFor(c, isAdmin) {
   return f;
 }
 
+/** Non-qualifier: can't be taken on, known from their check-in answers ('' = qualifies).
+ *  No evaluation form, never counts for the incentive, nobody chased for an outcome; Jess + Rubal + booker alerted at check-in. */
+function nonQualifier(c) {
+  if (c.over18 !== 'Yes') return 'Under 18';
+  if (rtwLevel(c.rtw) === 'no') return 'Not eligible to work self-employed: ' + c.rtw;
+  if (c.visa_expiry && c.visa_expiry < c.attended_date) return 'Visa expired ' + c.visa_expiry;
+  return '';
+}
+
 /** Why a candidate does NOT count towards the booker's net attended ('' = counts). */
 function payExclusion(c) {
   if (!truthy(c.in_room)) return 'Not rated by the presenter (not confirmed in the room)';
   const wd = weekday(c.attended_date);
   if (wd === 0 || wd === 6) return 'Weekend appointment';
-  if (c.over18 !== 'Yes') return 'Under 18';
-  if (rtwLevel(c.rtw) === 'no') return 'Not eligible to work self-employed (' + c.rtw + ')';
+  const nq = nonQualifier(c);
+  if (nq) return nq;
   if (c.repeat_of && !CONFIG.REPEAT_COUNTS_FOR_PAY) return 'Repeat attendee (seen in the last 6 months)';
   if (truthy(c.pay_excluded)) return 'Removed by admin: ' + (c.pay_excluded_reason || 'no reason given');
   return '';
@@ -469,10 +478,17 @@ function checkin(req) {
     return { c: c, isNew: true };
   });
   if (res.isNew) log(null, 'checkin', res.c.id, name);
-  if (res.isNew && booker) {
+  const nq = nonQualifier(res.c);
+  if (res.isNew && nq) {
+    // Straight to Jess + Rubal and the booker, so someone speaks to them before they leave
+    const ids = [thanksTeam().LINK.id, thanksTeam().JUSS.id, booker ? booker.id : ''].filter(Boolean);
+    notify(usersAll().filter(u => ids.indexOf(u.id) >= 0), '⛔ Non-qualifier checked in: ' + name,
+      nq + ' · ' + (booker ? 'booked by ' + booker.name : 'booker not confirmed' + (res.c.booker_typed ? ' ("' + res.c.booker_typed + '")' : '')) +
+      '. No evaluation form for them. Have a word before they leave.', res.c.id);
+  } else if (res.isNew && booker) {
     notify([booker], '🙌 ' + name.split(' ')[0] + ' just checked in', name + ' is in the room for your appointment.', res.c.id);
   }
-  return { id: res.c.id, resume: res.c.resume_token, first_name: res.c.full_name.split(' ')[0], company: res.c.company || '', evalDone: !!res.c.eval_at };
+  return { id: res.c.id, resume: res.c.resume_token, first_name: res.c.full_name.split(' ')[0], company: res.c.company || '', evalDone: !!res.c.eval_at, nonQual: !!nq };
 }
 
 /** Today's check-in for a mobile, read fresh: only the first columns (id … mobile), then that one row. */
@@ -510,7 +526,7 @@ function candidateByResume(req) {
 
 function candidateStatus(req) {
   const c = candidateByResume(req);
-  return { first_name: c.full_name.split(' ')[0], company: c.company || '', attended_date: c.attended_date, today: todayStr(), evalDone: !!c.eval_at, canEdit: canEditEval(c) };
+  return { first_name: c.full_name.split(' ')[0], company: c.company || '', attended_date: c.attended_date, today: todayStr(), evalDone: !!c.eval_at, canEdit: canEditEval(c), nonQual: !!nonQualifier(c) };
 }
 /** A candidate can change their answers the same day, until their booker has logged the call outcome. */
 function canEditEval(c) { return !!c.eval_at && c.attended_date === todayStr() && !c.outcome; }
@@ -528,7 +544,7 @@ function resumeByMobile(req) {
   if (!m) throw new Error('Please enter a valid UK mobile number (07…).');
   const c = readTable('Candidates').filter(x => x.mobile === m && x.attended_date === todayStr())[0];
   if (!c) return { found: false };
-  return { found: true, id: c.id, resume: c.resume_token, first_name: c.full_name.split(' ')[0], company: c.company || '', evalDone: !!c.eval_at, canEdit: canEditEval(c) };
+  return { found: true, id: c.id, resume: c.resume_token, first_name: c.full_name.split(' ')[0], company: c.company || '', evalDone: !!c.eval_at, canEdit: canEditEval(c), nonQual: !!nonQualifier(c) };
 }
 
 const EVAL_FIELDS = ['q1_excitement', 'q2_stood_out', 'q3_reason', 'q4_situation', 'q4_looking_for', 'q5_start_date',
@@ -542,6 +558,7 @@ function submitEval(req) {
   EVAL_REQUIRED.forEach(k => { if (!String(a[k] || '').trim()) throw new Error('Please answer every question marked *.'); });
   const found = candidateByResume(req);  // the full read happens before the lock
   if (found.attended_date < addDays(todayStr(), -1)) throw new Error('This evaluation link has expired. Please speak to the person who booked you in.');
+  if (nonQualifier(found) && !found.eval_at) throw new Error("You don't need to fill in the evaluation. Our team will speak to you directly.");
   const res = withLock(() => {
     const c = readRow('Candidates', found._row);  // fresh copy of just this row
     if (c.id !== found.id) throw busyError();      // rows only move in the 02:00 clean-up: just retry
@@ -607,6 +624,7 @@ function shape(c, u) {
   if (!isAdmin(u)) o.q13_unspent = '';
   o.flags = flagsFor(c, isAdmin(u));
   o.pay_reason = payExclusion(c);
+  o.non_qual = nonQualifier(c);
   o.deadline = outcomeDeadline(c.attended_date);
   o.first_name = c.full_name.split(' ')[0];
   return o;
@@ -767,6 +785,22 @@ function setPayExcluded(req, u) {
   });
 }
 
+/** Admin: correct "18 or over" / right to work when a candidate tapped the wrong answer at check-in. */
+function fixEligibility(req, u) {
+  if (!isAdmin(u)) throw new Error('Admin only');
+  if (['Yes', 'No'].indexOf(req.over18) < 0) throw new Error('Choose Yes or No for 18 or over');
+  if (!RTW.some(r => r[0] === req.rtw)) throw new Error('Choose their right to work');
+  return withLock(() => {
+    const c = getC(req.id);
+    const was = c.over18 + ' / ' + c.rtw;
+    c.over18 = req.over18; c.rtw = req.rtw;
+    c.visa_expiry = rtwLevel(req.rtw) === 'visa' ? String(req.visa_expiry || c.visa_expiry || '') : '';
+    writeRow('Candidates', c);
+    log(u, 'eligibility_fixed', c.id, was + ' → ' + c.over18 + ' / ' + c.rtw);
+    return shape(c, u);
+  });
+}
+
 function reassignBooker(req, u) {
   if (!isAdmin(u)) throw new Error('Admin only');
   return withLock(() => {
@@ -830,7 +864,7 @@ function payReport(req, u) {
     r.attended++;
     const why = payExclusion(c);
     if (why) r.excluded.push({ id: c.id, name: c.full_name, why: why }); else r.net++;
-    if (c.outcome) { r.outcomes++; if (truthy(c.outcome_late)) r.late++; } else r.missing++;
+    if (c.outcome) { r.outcomes++; if (truthy(c.outcome_late)) r.late++; } else if (!nonQualifier(c)) r.missing++;
   });
   let list = Object.keys(by).map(k => by[k]).filter(r => r.attended > 0 || r.active);
   if (!isAdmin(u)) list = list.filter(r => r.booker_id === u.id);
@@ -903,7 +937,7 @@ const PUBLIC_ACTIONS = {
 const STAFF_ACTIONS = {
   me: me, bundle: bundle, listDay: listDay, listWeek: listWeek, search: search, getCandidate: getCandidate,
   saveNotes: saveNotes, markInRoom: markInRoom, saveOutcome: saveOutcome,
-  adminDecision: adminDecision, setPayExcluded: setPayExcluded, reassignBooker: reassignBooker,
+  adminDecision: adminDecision, setPayExcluded: setPayExcluded, fixEligibility: fixEligibility, reassignBooker: reassignBooker,
   markSent: markSent, payReport: payReport, listUsers: listUsers, saveUser: saveUser, deleteUser: deleteUser,
 };
 
@@ -987,7 +1021,7 @@ function weeklyProgressEmails() {
 /** Sat 14:00 (existing trigger) — outcomes were due Friday 18:00: chase anything still missing. They show as LATE. */
 function saturdayDeadlineEmails() {
   const we = weekEnding(todayStr());
-  const rows = readTable('Candidates').filter(c => c.week_ending === we && truthy(c.in_room) && !c.outcome);
+  const rows = readTable('Candidates').filter(c => c.week_ending === we && truthy(c.in_room) && !c.outcome && !nonQualifier(c));
   usersAll().filter(b => truthy(b.active)).forEach(b => {
     const mine = rows.filter(c => c.booker_id === b.id);
     if (!mine.length) return;
@@ -1068,7 +1102,7 @@ function digestFor(u, rows, today) {
   const came = mine.filter(c => c.attended_date === today && truthy(c.in_room));
   const evals = mine.filter(c => c.attended_date === today && c.eval_at);
   // Still to close: in the room this week, no outcome yet (evaluated ones first: they're the hottest)
-  const toClose = mine.filter(c => truthy(c.in_room) && !c.outcome).sort((a, b) => (b.eval_at ? 1 : 0) - (a.eval_at ? 1 : 0));
+  const toClose = mine.filter(c => truthy(c.in_room) && !c.outcome && !nonQualifier(c)).sort((a, b) => (b.eval_at ? 1 : 0) - (a.eval_at ? 1 : 0));
   const toSend = mine.filter(c => c.outcome === 'Academy booked' && c.welcome_token && !c.offer_sent_at && c.admin_status !== 'pending' && c.admin_status !== 'rejected');
   const toConfirm = mine.filter(c => c.outcome === 'Academy booked' && c.offer_sent_at && !c.academy_confirmed_at);
   if (!came.length && !evals.length && !toClose.length && !toSend.length) return null;  // nothing to say: no message
@@ -1092,7 +1126,7 @@ function weekStats(u, rows) {
   return {
     user: u, name: u.name, all: mine, booked: booked,
     notBooked: mine.filter(c => c.outcome && booked.indexOf(c) < 0),
-    open: mine.filter(c => !c.outcome),
+    open: mine.filter(c => !c.outcome && !nonQualifier(c)),
     sent: booked.filter(c => c.offer_sent_at), unsent: booked.filter(c => !c.offer_sent_at),
     net: rows.filter(c => c.booker_id === u.id && !payExclusion(c)).length,
   };

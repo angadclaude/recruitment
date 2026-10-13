@@ -165,6 +165,16 @@ async function fillEval(p) {
   const jag = await ci({ full_name: 'Jagpreet Kular', mobile: '07700900999', email: 'jag@example.com', booker_id: abd.id });
   const seven = await ci({ full_name: 'Seven Months', mobile: '07700900777', email: 'seven@example.com', booker_id: mo.id });
   const kid = await ci({ full_name: 'Young Person', mobile: '07700900500', email: 'yp@example.com', booker_id: fiza.id, over18: 'No' });
+  // Non-qualifiers (under 18, Tier 4 and the other no-right-to-work answers): Jess + Rubal + their booker hear straight away
+  const jId = users.find(u => /^jess@/.test(u.email)).id, rId = users.find(u => /^rubal@/.test(u.email)).id;
+  const nqTo = async name => (await getJson('/dev/pushes')).filter(p => p.body.headings.en === '⛔ Non-qualifier checked in: ' + name);
+  const kidP = await nqTo('Young Person'), ishP = await nqTo('Ishita Rani');
+  const ids = list => list.map(p => p.body.include_aliases.external_id[0]).sort().join();
+  ok(ids(kidP) === [jId, rId, fiza.id].sort().join() && /^Under 18 · booked by Fiza Iqbal\. No evaluation form/.test(kidP[0].body.contents.en),
+    'under-18 checks in → instant push to Jess, Rubal and their booker only: "⛔ Non-qualifier checked in: Young Person"');
+  ok(ids(ishP) === [jId, rId, mo.id].sort().join() && /Student visa \(Tier 4\) · booked by Mo Aden/.test(ishP[0].body.contents.en), 'Tier 4 checks in → the same alert (to Jess, Rubal and Mo)');
+  ok(!(await pushesTo(fiza.id)).some(p => /Young just checked in/.test(p.body.headings.en)) && (await pushesTo(abd.id)).some(p => /Adham just checked in/.test(p.body.headings.en)),
+    'the booker gets the non-qualifier alert instead of "just checked in" (everyone else still gets "just checked in")');
   let bad = null; try { await ci({ full_name: 'Bad', mobile: '123', email: 'x@y.z', booker_id: fiza.id }); } catch (e) { bad = e.message; }
   ok(/full name/.test(bad), 'validation: single-word name rejected');
   ok((await api(admin, 'getCandidate', { id: jag.id })).flags.some(f => /Seen before/.test(f.text)), 'repeat within 6 months flagged (Jagpreet, June)');
@@ -227,6 +237,14 @@ async function fillEval(p) {
   const trows = await jsp.$$eval('.sheet .trow', r => r.map(x => x.innerText));
   ok(trows.length === 5 && trows.some(t => /Ishita/.test(t) && /Mo Aden/.test(t)) && trows.some(t => /Ali Yilmaz/.test(t) && /booker not confirmed/.test(t)) && !trows.some(t => /Adham|Jagpreet/.test(t)),
     'Jess: "Thank everyone" = all 5 LINK appointments, whatever booker (even no booker); the JUSS ones are Rubal\'s');
+  // Non-qualifiers get an honest version: why we can't take them on, no "by Friday" promise, door left open
+  const tmsg = async c => decodeURIComponent((await jsp.getAttribute('[data-thanks="' + c.id + '"]', 'href')).split('?text=')[1]);
+  const ishMsg = await tmsg(ishita), kidMsg = await tmsg(kid);
+  fs.writeFileSync(`${SHOTS}/msg-thanks-nonqual-visa.txt`, ishMsg); fs.writeFileSync(`${SHOTS}/msg-thanks-nonqual-under18.txt`, kidMsg);
+  ok(/^Hey Ishita! 👋🧡/.test(ishMsg) && /\*self-employed\*, and your current visa or status doesn't allow self-employed work/.test(ishMsg) && /🔁 \*If your status changes\*, message us here/.test(ishMsg) &&
+    !/Friday|next steps/.test(ishMsg) && /\*Jess Grace\*, on behalf of LINK Marketing recruitment team 🧡$/.test(ishMsg), 'Tier 4 thank-you: honest "visa or status doesn\'t allow self-employed work", no Friday promise, signed Jess');
+  ok(/\*18 or over\*, so we can't take you on just yet/.test(kidMsg) && /🔁 \*When you turn 18\*, message us here and we'll book you straight back in/.test(kidMsg) && !/Friday/.test(kidMsg), 'under-18 thank-you: "18 or over… When you turn 18, message us"');
+  ok(/⛔ Non-qualifier message/.test(await jsp.innerText('.sheet .trow:has-text("Ishita")')) && !/Non-qualifier/.test(await jsp.innerText('.sheet .trow:has-text("Jasraj")')), 'Jess\'s list marks which ones get the non-qualifier message');
   const thanks = decodeURIComponent((await jsp.getAttribute('[data-thanks="' + jasId + '"]', 'href')).split('?text=')[1]);
   fs.writeFileSync(`${SHOTS}/msg-thanks.txt`, thanks);
   ok(thanks === "Hey Jasraj! 👋🧡\n\nThanks for coming through for your *Appointment Presentation* today in association with *LINK Marketing* 🙌\nWe loved meeting you in person.\n\n📲 *What happens next*\nOur Team will contact you at the latest by *close of business on Friday 6PM* about your next steps.\nKeep your phone close! 👀\n\n📖 *While you wait*, flick through the *LINK Organisation Magazine 2026* 👇\nhttps://linkmagflip-74ibv4pf.manus.space\n\n*Jess Grace*, on behalf of LINK Marketing recruitment team 🧡",
@@ -320,7 +338,11 @@ async function fillEval(p) {
     q1_excitement: '8', q2_stood_out: 'x', q3_reason: 'Leadership', q4_situation: 'Studying', q5_start_date: '2026-10-19', q6_days: '5 days',
     q7_commute: 'Yes', q8_resilience: 'x', q9_results_paid: 'No', q10_door: 'D) "Annoying, but I\'ll keep going."', q11_coach: 'A) Ask them to show me, then copy it',
     q12_bdp_stage: 'Not sure yet', q13_unspent: 'No' }, extra || {}) });
-  await ev(ishita, { q13_unspent: 'Yes', q10_door: 'C) "Maybe this isn\'t for me."', q1_excitement: '5' });
+  const blocked = async c => { try { await ev(c); return ''; } catch (e) { return e.message; } };
+  ok(/don't need to fill in the evaluation/.test(await blocked(ishita)) && /don't need to fill in the evaluation/.test(await blocked(kid)), 'non-qualifiers can\'t send an evaluation (server says no)');
+  // Young Person tapped "No" to 18+ by mistake: an admin fixes it, then they can do the evaluation
+  const fixed = await api(admin, 'fixEligibility', { id: kid.id, over18: 'Yes', rtw: 'British or Irish citizen' });
+  ok(!fixed.non_qual && !fixed.flags.some(f => f.text === 'Under 18'), 'admin fixes a wrong "18 or over" answer → no longer a non-qualifier');
   await ev(adham); await ev(ali); await ev(jag); await ev(kid);
 
   // Speed: once loaded, switching tabs and opening a candidate needs no waiting on Google
@@ -407,7 +429,7 @@ async function fillEval(p) {
   await shot(bp, '08-booker-my-candidates', true);
   const mineTxt = await bp.innerText('body');
   ok(!/Adham|Ishita/.test(mineTxt), 'booker only sees their own candidates');
-  ok(/4 more to hit 5/.test(mineTxt) && /1 don't count/.test(mineTxt), 'net attended 1/5 (under-18 not counted)');
+  ok(/3 more to hit 5/.test(mineTxt) && /0 don't count/.test(mineTxt), 'net attended 2/5 (Young Person counts once their 18+ answer was fixed)');
   await bp.click('.item:has-text("Jasraj Bhuller")');
   await bp.waitForSelector('#saveout');
   const snap = await bp.innerText('body');
@@ -613,9 +635,9 @@ async function fillEval(p) {
   const pay = await api(admin, 'payReport', { weekEnding: '2026-10-18' });
   ok(pay.deadline === '2026-10-16 18:00' && (await api(admin, 'me', {})).deadlineLabel === 'Fri 18:00', 'outcome deadline = Friday 18:00 (matches "by Friday 6PM" in the thank-you WhatsApp)');
   const prow = n => pay.rows.find(r => r.name === n);
-  ok(prow('Fiza Iqbal').net === 2 && prow('Fiza Iqbal').late === 1, 'pay: Fiza net 2, 1 late');
-  ok(prow('Mo Aden').net === 0, 'pay: Mo net 0 (Tier 4 excluded; Seven + Late Arrival not rated by presenter)');
-  ok(prow('Abdullahi Ahmed').net === 1, 'pay: Abdullahi net 1 (Jagpreet repeat + removed)');
+  ok(prow('Fiza Iqbal').net === 3 && prow('Fiza Iqbal').late === 1, 'incentive: Fiza net 3, 1 late');
+  ok(prow('Mo Aden').net === 0, 'incentive: Mo net 0 (Tier 4 excluded; Seven + Late Arrival not rated by presenter)');
+  ok(prow('Abdullahi Ahmed').net === 1, 'incentive: Abdullahi net 1 (Jagpreet repeat + removed)');
   await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button');
   await ap.click('.tabbar button[data-tab=pay]'); await ap.waitForSelector('.payrow');
   await shot(ap, '14-admin-pay', true);
@@ -633,16 +655,16 @@ async function fillEval(p) {
   const monday = (await api(admin, 'listWeek', { weekEnding: '2026-10-18' })).items.filter(c => c.attended_date === '2026-10-12' && (c.in_room === true || c.in_room === 'TRUE'));
   let bi = await bInfo();
   ok(bi.kind === 'daily' && bi.attended === monday.length && bi.nonQual === monday.filter(c => c.pay_reason).length && bi.nonQual > 0,
-    'daily bulletin: ' + bi.attended + ' attended, ' + bi.nonQual + ' non-qualifiers (rated only, same rules as Pay)');
+    'daily bulletin: ' + bi.attended + ' attended, ' + bi.nonQual + ' non-qualifiers (rated only, same rules as the incentive)');
   const expRows = pay.rows.filter(r => r.net > 0).sort((a, b) => b.net - a.net).map(r => r.name.split(' ')[0] + ' ' + r.net);
-  ok(JSON.stringify(bi.rows.map(r => r.replace(/^\S+ /, '').replace(/ BAR$/, ''))) === JSON.stringify(expRows) && /^🥇 /.test(bi.rows[0]), 'top performers match Pay, gold for #1: ' + bi.rows.join(' · '));
+  ok(JSON.stringify(bi.rows.map(r => r.replace(/^\S+ /, '').replace(/ BAR$/, ''))) === JSON.stringify(expRows) && /^🥇 /.test(bi.rows[0]), 'top performers match the incentive, gold for #1: ' + bi.rows.join(' · '));
   ok(await ap.$eval('#bimg', i => i.complete && i.naturalWidth === 1536 && i.naturalHeight === 2304), 'poster image made on the phone (1536×2304)');
   const saveImg = async f => fs.writeFileSync(`${SHOTS}/${f}`, Buffer.from(await ap.$eval('#bimg', i => fetch(i.src).then(r => r.arrayBuffer()).then(b => Array.from(new Uint8Array(b))))));
   await saveImg('15-bulletin-daily.jpg');
   await shot(ap, '15b-bulletin-screen');
   ok(/Abdullahi 1 BAR$/.test(bi.rows[1]) && !/BAR/.test(bi.rows[0]), '(BAR) added automatically for a "BA referral" check-in (Adham → Abdullahi)');
   await ap.click('#bedit summary'); await ap.click('#bbar .chip');
-  await ap.waitForFunction(() => /Fiza 2 BAR/.test(document.getElementById('bimg').dataset.info), null, { timeout: 5000 });
+  await ap.waitForFunction(() => /Fiza 3 BAR/.test(document.getElementById('bimg').dataset.info), null, { timeout: 5000 });
   ok(/BAR$/.test((await bInfo()).rows[0]), 'admin can still tap a name to add/remove (BAR)');
   const infoIs = (re) => ap.waitForFunction(r => { const i = document.getElementById('bimg'); return i && new RegExp(r).test(i.dataset.info || ''); }, re, { timeout: 10000 });
   await ap.click('.daybar .dchip[data-d="2026-10-13"]'); await infoIs('"attended":0');
@@ -678,7 +700,7 @@ async function fillEval(p) {
   ok(/Repeat/.test(again.pay_reason), 'repeat attendee does not count for the incentive');
   // Admins can book people, but don't earn the recruitment incentive
   await api(admin, 'saveUser', { user: Object.assign({}, staffIds.find(u => u.id === jessId), { roles: ['admin', 'booker'] }) });
-  const byJess = await ci({ full_name: 'Grace Okafor', mobile: '07700900777', email: 'grace@example.com', booker_id: jessId });
+  const byJess = await ci({ full_name: 'Grace Okafor', mobile: '07700900787', email: 'grace@example.com', booker_id: jessId });
   await api(nathan, 'saveNotes', { id: byJess.id, rag: 'G', stars: 4, tags: [], notes: '' });
   const inc = await api(admin, 'payReport', { weekEnding: '2026-10-25' });
   ok(!inc.rows.some(r => r.booker_id === jessId) && !inc.unassigned.some(x => x.id === byJess.id) && inc.rows.some(r => r.booker_id === fiza.id),
@@ -696,6 +718,31 @@ async function fillEval(p) {
   await jbp.click('.item:has-text("Grace Okafor")'); await jbp.waitForSelector('.profile h1');
   ok(/Booked by Jess Grace \(admin\), so no incentive/.test(await jbp.$eval('#page', e => e.innerText)) && !(await jbp.$('#excl')), 'candidate page: "Booked by Jess Grace (admin), so no incentive"');
   await jb.close();
+  const tim = await ci({ full_name: 'Tiny Tim', mobile: '07700900888', email: 'tim@example.com', booker_id: abd.id, over18: 'No' });
+  await api(nathan, 'saveNotes', { id: tim.id, rag: 'A', stars: 2, tags: [], notes: '' });
+  const ev1 = await browser.newContext(PHONE); const evp = await ev1.newPage();
+  await evp.goto(APP + 'eval.html'); await evp.waitForSelector('#m');
+  await evp.fill('#m', '07700900888'); await evp.click('#go');
+  await evp.waitForSelector('text=No form needed');
+  ok(!(await evp.$('.qcard')) && /Our team will speak to you directly/.test(await evp.innerText('body')), 'under-18 scans the evaluation QR → "No form needed", no questions');
+  await shot(evp, '17-nonqual-eval');
+  await ev1.close();
+  const incW2 = (await api(admin, 'payReport', { weekEnding: '2026-10-25' })).rows.find(r => r.booker_id === abd.id);
+  ok(incW2.excluded.some(x => x.name === 'Tiny Tim' && x.why === 'Under 18') && incW2.missing === 1, 'under-18: never counts for the incentive and nobody is chased for their outcome');
+  await ap.goto(APP + 'index.html?c=' + tim.id); await ap.waitForSelector('.profile h1');
+  const timTxt = await ap.$eval('#page', e => e.innerText);
+  ok(/⛔ Non-qualifier: Under 18/.test(timTxt) && /No evaluation form, doesn't count for the incentive, no outcome needed/.test(timTxt) && /not needed/i.test(timTxt), 'candidate page: ⛔ Non-qualifier banner, outcome "not needed"');
+  await shot(ap, '18-nonqual-candidate', true);
+  await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button');
+  await ap.click('.tabbar button[data-tab=all]'); await ap.waitForSelector('#flt'); await ap.click('#flt .chip[data-f=nq]');
+  await ap.waitForSelector('.item:has-text("Tiny Tim")');
+  ok((await ap.$$('.item')).length === 1 && /⛔ Non-qualifier/.test(await ap.innerText('.item')), 'All → "Non-qualifiers" filter lists them with a ⛔ badge');
+  await ap.click('.tabbar button[data-tab=today]'); await ap.waitForSelector('#bullDaily'); await ap.click('#bullDaily');
+  await ap.waitForSelector('#bimg[data-info]', { timeout: 15000 });
+  const bi2 = JSON.parse(await ap.getAttribute('#bimg', 'data-info'));
+  ok(bi2.rows.some(r => / Jess 1$/.test(r)) && !bi2.rows.some(r => /Abdullahi/.test(r)) && bi2.nonQual >= 1,
+    'bulletin: admins are on it (Jess 1); a non-qualifier is never credited to the booker, only in the Non-qualifiers number');
+  await ap.click('#abBack');
   await post('/dev/eval', { js: `globalThis.__pushOff = ['${abd.id}']` });
   const mailBefore = (await getJson('/dev/mail')).length;
   await post('/dev/run', { fn: 'weeklyProgressEmails' });

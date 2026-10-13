@@ -159,13 +159,17 @@ function startCandidate() {
       .catch(e => (e.retry ? { first_name: saved.first_name, unknown: true } : null))
     : Promise.resolve(null);
   known.then(st => {
-    if (st) { C.rec = saved; C.rec.first_name = st.first_name || saved.first_name; C.rec.company = coOf(st.company) || coOf(saved.company); store.set('cand', C.rec); } else store.del('cand');
+    if (st) {
+      C.rec = saved; C.rec.first_name = st.first_name || saved.first_name; C.rec.company = coOf(st.company) || coOf(saved.company);
+      if (!st.unknown) C.rec.nq = !!st.nonQual;
+      store.set('cand', C.rec);
+    } else store.del('cand');
     brandTheme(C.rec && C.rec.company);
     if (BOOT.mode === 'eval') {
-      if (st) return st.evalDone ? renderDone('already', st.canEdit) : renderEval();
+      if (st) return st.evalDone ? renderDone('already', st.canEdit) : C.rec.nq ? renderNoEval() : renderEval();
       return renderFind();
     }
-    if (st) return renderCheckedIn(C.rec.first_name, st.evalDone, st.canEdit);
+    if (st) return renderCheckedIn(C.rec.first_name, st.evalDone, st.canEdit, C.rec.nq);
     loadCheckin('');
   });
 }
@@ -278,11 +282,11 @@ function renderCheckin(then) {
     showErr(err, '');
     const btn = document.getElementById('go'); busy(btn, true, 'Checking in…');
     callRetry('checkin', { form: form }, () => { btn.innerHTML = 'Busy, still checking you in…'; }).then(r => {
-      C.rec = { id: r.id, resume: r.resume, first_name: r.first_name, company: coOf(r.company) || (booker ? coOf(booker.company) : '') };
+      C.rec = { id: r.id, resume: r.resume, first_name: r.first_name, company: coOf(r.company) || (booker ? coOf(booker.company) : ''), nq: !!r.nonQual };
       store.set('cand', C.rec); brandTheme(C.rec.company);
       if (r.evalDone) return renderDone('already');
-      if (then === 'eval') return renderEval();
-      renderCheckedIn(r.first_name);
+      if (then === 'eval') return r.nonQual ? renderNoEval() : renderEval();
+      renderCheckedIn(r.first_name, false, false, r.nonQual);
     }).catch(ex => { busy(btn, false); showErr(err, ex.message); });
   });
 }
@@ -302,8 +306,8 @@ function renderFind(notFound) {
     store.set('lastMobile', mobile);
     callRetry('resumeByMobile', { mobile: mobile }, () => { btn.innerHTML = 'Busy, still looking…'; }).then(r => {
       if (!r.found) return renderFind(true);
-      C.rec = { id: r.id, resume: r.resume, first_name: r.first_name, company: coOf(r.company) }; store.set('cand', C.rec); brandTheme(C.rec.company);
-      r.evalDone ? renderDone('already', r.canEdit) : renderIsThisYou();
+      C.rec = { id: r.id, resume: r.resume, first_name: r.first_name, company: coOf(r.company), nq: !!r.nonQual }; store.set('cand', C.rec); brandTheme(C.rec.company);
+      r.evalDone ? renderDone('already', r.canEdit) : r.nonQual ? renderNoEval() : renderIsThisYou();
     }).catch(ex => { busy(btn, false); showErr(document.getElementById('err'), ex.message); });
   };
   const ci = document.getElementById('ci'); if (ci) ci.onclick = () => loadCheckin('eval');
@@ -318,16 +322,28 @@ function renderIsThisYou() {
   document.getElementById('yes').onclick = () => renderEval();
   document.getElementById('no').onclick = () => { store.del('cand'); C.rec = null; renderFind(); };
 }
-function renderCheckedIn(first, evalDone, canEdit) {
+function renderCheckedIn(first, evalDone, canEdit, nonQual) {
   if (evalDone) return renderDone('already', canEdit);
   scrollTop(); brandTheme(C.rec && C.rec.company);
   $app.innerHTML = '<div class="c-hero">' + heroLogos() + '<span class="label">Checked in</span><h1>You\'re checked in, <span class="gname">' + h(first) + '</span>!</h1>' +
     '<p>We aim to begin at 10 AM 🕙</p></div><div class="card c-done">' + tickSvg() +
-    '<div class="ok">📝 <b>After the presentation</b>, please scan the second QR code on the screen (<b>Evaluation form</b>) for us to proceed with your application.</div></div>';
+    (nonQual ? '<div class="ok">🙋 <b>Thanks for coming in.</b> A member of our team will have a quick chat with you today.</div></div>'
+      : '<div class="ok">📝 <b>After the presentation</b>, please scan the second QR code on the screen (<b>Evaluation form</b>) for us to proceed with your application.</div></div>');
   const nm = document.createElement('button'); nm.className = 'btn ghost sm'; nm.id = 'notme'; nm.style.marginTop = '14px';
   nm.textContent = 'Not you? Check someone else in';
   nm.onclick = () => { store.del('cand'); C.rec = null; loadCheckin(''); };
   const card = $app.querySelector('.card'); if (card) card.appendChild(nm);
+}
+
+/** Non-qualifier (under 18 / no right to work self-employed) scanned the evaluation QR: no form, the team speaks to them. */
+function renderNoEval() {
+  stopTimer(); scrollTop(); brandTheme(C.rec && C.rec.company);
+  $app.innerHTML = '<div class="c-hero">' + heroLogos() + '<span class="label">Evaluation</span><h1>No form needed, <span class="gname">' + h(C.rec.first_name) + '</span></h1>' +
+    '<p>Thanks for coming in today 🙏</p></div><div class="card c-done">' + tickSvg() +
+    '<p>You don\'t need to fill in the evaluation. <b>Our team will speak to you directly</b> about your options 📲</p>' +
+    (C.co ? magCard(C.co) : magCard('LINK') + magCard('JUSS')) +
+    '<button class="btn ghost sm" id="notme" style="margin-top:10px">Not you? ' + (BOOT.mode === 'eval' ? 'Enter your number again' : 'Check someone else in') + '</button></div>';
+  document.getElementById('notme').onclick = () => { store.del('cand'); C.rec = null; if (BOOT.mode === 'eval') renderFind(); else loadCheckin(''); };
 }
 
 const EVAL = [
@@ -1046,9 +1062,12 @@ function statusPill(c) {
     return '<span class="pill orange">🎉 Send congratulations</span>';
   if (c.outcome === 'Academy booked') return '<span class="pill green">' + (c.academy_confirmed_at ? '✅ Day 1 confirmed' : 'Academy ' + fmt(c.academy_date)) + (c.outcome_late ? ' · late' : '') + '</span>';
   if (c.outcome) return '<span class="pill blue">' + h(c.outcome) + (c.outcome_late ? ' · late' : '') + '</span>';
+  if (c.non_qual) return '';  // nqPill says it: no evaluation, no call needed
   if (c.eval_at) return '<span class="pill orange">📞 Call needed</span>';
   return '<span class="pill">Awaiting evaluation</span>';
 }
+/** Non-qualifier (under 18 / no right to work self-employed): set by their check-in answers. */
+function nqPill(c) { return c.non_qual ? '<span class="pill red">⛔ Non-qualifier</span>' : ''; }
 function avatar(c, cls) { return '<span class="av ' + (cls || '') + ' rag-' + (c.rag || 'X') + '">' + h(initials(c.full_name)) + '</span>'; }
 function waFor(c) {
   const offerReady = c.outcome === 'Academy booked' && c.admin_status !== 'pending' && c.admin_status !== 'rejected' && c.welcome_url;
@@ -1075,7 +1094,7 @@ function itemBtn(c, showStatus, rating) {
   return '<button class="item" data-id="' + h(c.id) + '">' + avatar(c) + '<div class="main">' +
     '<div class="name">' + h(c.full_name) + (c.stars ? ' <span class="stars-sm">' + '★'.repeat(Number(c.stars)) + '</span>' : '') + '</div>' +
     '<div class="sub">' + (c.booker_name ? h(c.booker_name) + ' <span class="co ' + h(c.company) + '">' + h(c.company) + '</span>' : '<i>Booker not confirmed' + (c.booker_typed ? ': "' + h(c.booker_typed) + '"' : '') + '</i>') + '</div>' +
-    '<div class="pills">' + (showStatus ? statusPill(c) : '') + (c.in_room || rating ? '' : '<span class="pill">Not rated yet</span>') + (c._pending ? '<span class="pill">⏳ Syncing</span>' : '') + flagCounts(c) + '</div>' +
+    '<div class="pills">' + nqPill(c) + (showStatus ? statusPill(c) : '') + (c.in_room || rating ? '' : '<span class="pill">Not rated yet</span>') + (c._pending ? '<span class="pill">⏳ Syncing</span>' : '') + flagCounts(c) + '</div>' +
     '</div><span class="chev">›</span></button>';
 }
 function bindItems(root) {
@@ -1219,9 +1238,10 @@ function viewAll(quiet) {
   const d = want(S.week);
   const F = {
     all: ['All', () => true],
-    call: ['Needs outcome', c => !c.outcome],
+    call: ['Needs outcome', c => !c.outcome && !c.non_qual],
     pending: ['Awaiting admin', c => c.admin_status === 'pending'],
     red: ['Red flags', c => c.flags.some(f => f.level === 'red')],
+    nq: ['Non-qualifiers', c => !!c.non_qual],
     nobooker: ['No booker', c => !c.booker_id],
     late: ['Late', c => !!c.outcome_late],
   };
@@ -1600,6 +1620,7 @@ const HEART = { LINK: '🧡', JUSS: '🧡💙' };
 function heartOf(c) { return HEART[c.company === 'JUSS' ? 'JUSS' : 'LINK']; }
 function msgThanks(c) {
   const co = c.company === 'JUSS' ? 'JUSS' : 'LINK', mag = MAGAZINES[co];
+  if (c.non_qual) return msgThanksNonQual(c);
   return 'Hey ' + c.first_name + '! 👋' + heartOf(c) + '\n\n' +
     'Thanks for coming through for your *Appointment Presentation* today in association with *' + brandOf(c) + '* 🙌\n' +
     'We loved meeting you in person.\n\n' +
@@ -1607,6 +1628,23 @@ function msgThanks(c) {
     'Our Team will contact you at the latest by *close of business on Friday 6PM* about your next steps.\n' +
     'Keep your phone close! 👀\n\n' +
     '📖 *While you wait*, flick through the *' + mag.title + '* 👇\n' +
+    mag.url + '\n\n' +
+    '*' + thanksName(co) + '*, on behalf of ' + co + ' Marketing recruitment team ' + heartOf(c);
+}
+/** Non-qualifier's thank-you: honest about why we can't take them on (no "next steps by Friday"), and an open door to come back. */
+function msgThanksNonQual(c) {
+  const co = c.company === 'JUSS' ? 'JUSS' : 'LINK', mag = MAGAZINES[co];
+  const why = /^Under 18/.test(c.non_qual)
+    ? ['To join us as a Brand Ambassador you need to be *18 or over*, so we can\'t take you on just yet.', 'When you turn 18']
+    : /^Visa expired/.test(c.non_qual)
+      ? ['The visa expiry date you gave us has passed, so we can\'t take you on right now.', 'Once your visa is renewed']
+      : ['Our Brand Ambassador role is *self-employed*, and your current visa or status doesn\'t allow self-employed work, so we can\'t take you on right now.', 'If your status changes'];
+  return 'Hey ' + c.first_name + '! 👋' + heartOf(c) + '\n\n' +
+    'Thanks for coming through for your *Appointment Presentation* today in association with *' + brandOf(c) + '* 🙌\n' +
+    'It was great meeting you.\n\n' +
+    why[0] + '\n\n' +
+    '🔁 *' + why[1] + '*, message us here and we\'ll book you straight back in 💪\n\n' +
+    '📖 In the meantime, flick through the *' + mag.title + '* 👇\n' +
     mag.url + '\n\n' +
     '*' + thanksName(co) + '*, on behalf of ' + co + ' Marketing recruitment team ' + heartOf(c);
 }
@@ -1717,7 +1755,7 @@ function thanksSheet() {
       ? 'Your ' + myThanks().join(' + ') + ' appointments, whoever booked them. Each one opens WhatsApp with the message ready, signed by you. Tap send, come back, next one.'
       : 'Sent by ' + who('LINK') + ' and ' + who('JUSS') + ' for every appointment. They get a reminder at 12:00.') + '</p>' +
     '<div class="list">' + items.map(c => '<div class="trow">' + avatar(c) + '<div class="main"><div class="name">' + h(c.full_name) + '</div><div class="sub"><span class="co ' + thanksCo(c) + '">' + thanksCo(c) + '</span> ' +
-      (c.booker_name ? 'booked by ' + h(c.booker_name) : 'booker not confirmed') + '</div></div>' +
+      (c.booker_name ? 'booked by ' + h(c.booker_name) : 'booker not confirmed') + '</div>' + (c.non_qual ? '<div class="sub nqsub">⛔ Non-qualifier message</div>' : '') + '</div>' +
       (c.thanks_sent_at ? sent(c) : sender ? '<a class="btn wa sm" data-thanks="' + h(c.id) + '" href="' + h(waUrl(c.mobile, msgThanks(c))) + '" target="_blank" rel="noopener">💬 Send</a>' : '<span class="pill amber">Not sent</span>') + '</div>').join('') + '</div>' +
     '<button class="btn ghost block" id="tdone" style="margin-top:14px">Done</button></div>';
   document.body.appendChild(back);
@@ -1748,7 +1786,10 @@ window.addEventListener('scroll', () => { if (!spy.raf) spy.raf = requestAnimati
 function renderCandidate(c, quiet) {
   const canNotes = isPresenter();
   const canOutcome = isAdmin() || c.booker_id === S.me.user.id;
-  const flags = c.flags.filter(f => f.level === 'red').concat(c.flags.filter(f => f.level === 'amber'), c.flags.filter(f => f.level === 'green'));
+  // Non-qualifier: one clear banner instead of the separate under-18 / right-to-work flags
+  const elig = f => c.non_qual && (f.text === 'Under 18' || /^Not eligible: |^Visa expired/.test(f.text));
+  const nqBan = c.non_qual ? '<div class="flag red nq">⛔ Non-qualifier: ' + h(c.non_qual) + '<span>No evaluation form, doesn\'t count for the incentive, no outcome needed.</span></div>' : '';
+  const flags = c.flags.filter(f => f.level === 'red' && !elig(f)).concat(c.flags.filter(f => f.level === 'amber'), c.flags.filter(f => f.level === 'green'));
   const kv = (k, v) => v ? '<dt>' + h(k) + '</dt><dd>' + h(v) + '</dd>' : '';
   const qa = (q, a) => '<div class="qa"><div class="qq">' + h(q) + '</div><div class="aa">' + (a ? h(a) : '<span class="muted">—</span>') + '</div></div>';
   const glance = (k, v, cls) => '<div class="evt' + (cls ? ' ' + cls : '') + '"><span>' + h(k) + '</span><b>' + (v ? h(v) : '<span class="muted">—</span>') + '</b></div>';
@@ -1761,7 +1802,7 @@ function renderCandidate(c, quiet) {
       qa('Door shut in face', c.q10_door) + qa('Coach says pitch isn\'t working', c.q11_coach) +
       (c.q12_bdp_why ? qa('What running their own business would mean', c.q12_bdp_why) : '') +
       (isAdmin() ? qa('Unspent convictions (admin only)', c.q13_unspent) : '') + qa('Questions for us', c.q14_questions)
-    : '<p class="muted">Not submitted yet.</p>';
+    : '<p class="muted">' + (c.non_qual ? 'Non-qualifier: no evaluation form.' : 'Not submitted yet.') + '</p>';
   const academyDefault = c.academy_date || nextMonday(S.me.today);
   const offerReady = c.outcome === 'Academy booked' && c.admin_status !== 'pending' && c.admin_status !== 'rejected';
   const waMain = canOutcome && offerReady ? waUrl(c.mobile, msgAcademy(c)) : canNotes ? waUrl(c.mobile, msgThanks(c)) : waUrl(c.mobile, '');
@@ -1771,11 +1812,11 @@ function renderCandidate(c, quiet) {
     '<div class="muted small">Attended ' + fmt(c.attended_date) + ' · ' + (c.booker_name ? 'booked by <b>' + h(c.booker_name) + '</b> <span class="co ' + h(c.company) + '">' + h(c.company) + '</span>' : '<b>booker not confirmed</b>' + (c.booker_typed ? ' ("' + h(c.booker_typed) + '")' : '')) + '</div>' +
     (c.stars ? '<div class="stars-lg">' + '★'.repeat(Number(c.stars)) + '<span>' + '★'.repeat(5 - Number(c.stars)) + '</span></div>' : '') +
     (c.p_interesting ? '<div class="icebreak">💡 ' + h(c.p_interesting) + '</div>' : '') +
-    '<div class="pills center-pills">' + statusPill(c) + (c._pending ? '<span class="pill">⏳ Syncing…</span>' : '') + '</div>' +
+    '<div class="pills center-pills">' + nqPill(c) + statusPill(c) + (c._pending ? '<span class="pill">⏳ Syncing…</span>' : '') + '</div>' +
     '<div class="actions"><a href="tel:' + h(c.mobile) + '">' + icon('phone') + '<span>Call</span></a>' +
     '<a href="' + h(waMain) + '" target="_blank" rel="noopener">' + icon('chat') + '<span>WhatsApp</span></a>' +
     '<a href="mailto:' + h(c.email) + '">' + icon('mail') + '<span>Email</span></a></div>' +
-    (flags.length ? '<div class="flags">' + flags.map(f => '<div class="flag ' + f.level + '">' + h(f.text) + '</div>').join('') + '</div>' : '') + '</div>';
+    (flags.length || nqBan ? '<div class="flags">' + nqBan + flags.map(f => '<div class="flag ' + f.level + '">' + h(f.text) + '</div>').join('') + '</div>' : '') + '</div>';
 
   // In the room (presenter)
   let pres = '<div class="card" id="pres">';
@@ -1827,7 +1868,7 @@ function renderCandidate(c, quiet) {
 
   // WhatsApp, ready to send
   const wa = [];
-  if (signsThanks(c)) wa.push('<a class="btn wa block" target="_blank" rel="noopener" data-kind="thanks" href="' + h(waUrl(c.mobile, msgThanks(c))) + '">💬 Send thank-you message</a>' +
+  if (signsThanks(c)) wa.push('<a class="btn wa block" target="_blank" rel="noopener" data-kind="thanks" href="' + h(waUrl(c.mobile, msgThanks(c))) + '">💬 Send thank-you message' + (c.non_qual ? ' (non-qualifier)' : '') + '</a>' +
     (c.thanks_sent_at ? '<p class="small muted center">Opened ' + fmtTs(c.thanks_sent_at) + '</p>' : ''));
   const thanksFlag = signsThanks(c) ? '' : c.thanks_sent_at
     ? '<div class="flag green">💬 Thank-you sent ' + fmtTs(c.thanks_sent_at) + (c.thanks_by ? ' by ' + h(c.thanks_by) : '') + '</div>'
@@ -1853,6 +1894,11 @@ function renderCandidate(c, quiet) {
       (byAdmin ? '' : c.pay_excluded
         ? '<button class="btn ghost sm" id="incl">Count it again</button>'
         : '<div class="row"><input type="text" id="exr" placeholder="Reason, e.g. share code failed" style="flex:1"><button class="btn ghost sm" id="excl">Remove from incentive</button></div>') +
+      '<hr><details class="fixel"' + (c.non_qual ? ' open' : '') + '><summary><b>' + (c.non_qual ? 'Ticked the wrong answer at check-in?' : 'Fix their check-in answers') + '</b></summary>' +
+        '<label class="q">18 or over</label><select id="fx18">' + ['Yes', 'No'].map(v => '<option' + (c.over18 === v ? ' selected' : '') + '>' + v + '</option>').join('') + '</select>' +
+        '<label class="q">Right to work</label><select id="fxrtw">' + (S.me.rtw || []).map(r => '<option' + (c.rtw === r.label ? ' selected' : '') + '>' + h(r.label) + '</option>').join('') + '</select>' +
+        '<label class="q">Visa expiry (visas only)</label><input type="date" id="fxexp" value="' + h(c.visa_expiry) + '">' +
+        '<button class="btn ghost sm" id="fxsave" style="margin-top:10px">Save answers</button></details>' +
       '<hr><label class="q" style="margin-top:0">Booker</label><div class="row"><select id="rb" style="flex:1"><option value="">Choose booker…</option>' +
       (S.users || []).filter(u => u.active && (u.roles.indexOf('booker') >= 0 || u.roles.indexOf('admin') >= 0)).map(u => '<option value="' + h(u.id) + '"' + (u.id === c.booker_id ? ' selected' : '') + '>' + h(u.name) + ' (' + h(u.company) + ')</option>').join('') +
       '</select><button class="btn ghost sm" id="reas">Save</button></div></div>';
@@ -1860,7 +1906,7 @@ function renderCandidate(c, quiet) {
 
   // Sections, in the order this person works through them
   const SEC = {
-    out: ['Outcome', '<b>Call outcome</b><span>due ' + fmtTs(c.deadline) + '</span>', out + (canOutcome ? waCard : '')],
+    out: ['Outcome', '<b>Call outcome</b><span>' + (c.non_qual && !c.outcome ? 'not needed' : 'due ' + fmtTs(c.deadline)) + '</span>', out + (canOutcome ? waCard : '')],
     pres: [canNotes ? 'Rate' : 'Room', '<b>' + (canNotes ? 'In the room' : 'Presenter') + '</b>', pres + (canOutcome ? '' : waCard)],
     ev: ['Evaluation', '<b>Evaluation</b>' + (c.eval_at ? '<span>' + fmtTs(c.eval_at) + '</span>' : ''), '<div class="card">' + evalHtml + '</div>'],
     ci: ['Details', '<b>Check-in</b>', '<div class="card"><dl class="kv">' + kv('Mobile', c.mobile) + kv('Email', c.email) + kv('18 or over', c.over18) + kv('Right to work', c.rtw) +
@@ -1916,6 +1962,9 @@ function renderCandidate(c, quiet) {
       if (!r) return toast('Add a reason first');
       call('setPayExcluded', { id: c.id, excluded: true, reason: r }).then(nc => saved(nc, 'Removed from the incentive count')).catch(x => toast(x.message));
     };
+    const fx = document.getElementById('fxsave');
+    if (fx) fx.onclick = () => call('fixEligibility', { id: c.id, over18: document.getElementById('fx18').value, rtw: document.getElementById('fxrtw').value, visa_expiry: document.getElementById('fxexp').value })
+      .then(nc => saved(nc, nc.non_qual ? 'Saved: still a non-qualifier' : 'Saved ✓ They can do the evaluation now')).catch(x => toast(x.message));
     const inc = document.getElementById('incl');
     if (inc) inc.onclick = () => call('setPayExcluded', { id: c.id, excluded: false }).then(nc => saved(nc, 'Counted again')).catch(x => toast(x.message));
     document.getElementById('reas').onclick = () => {
