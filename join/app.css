@@ -132,6 +132,19 @@ textarea.short { min-height: 64px; }
 .btn.ghost { background: #fff; color: var(--ink); border: 1.5px solid var(--line); box-shadow: 0 6px 14px -10px rgba(var(--glow), .5); }
 .btn.dark { background: var(--dark); }
 .btn.wa { background: linear-gradient(120deg, #2BC266, #179A4B); box-shadow: 0 12px 24px -12px rgba(23,154,75,.7), inset 0 1px 0 rgba(255,255,255,.22); }
+.btn.sms { background: linear-gradient(120deg, #3B9BFF, #0A6CF0); box-shadow: 0 12px 24px -12px rgba(10,108,240,.7), inset 0 1px 0 rgba(255,255,255,.22); }
+/* Not on WhatsApp? 📱 Text · ✉️ Email (under each send button) */
+.altsend { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 8px; margin: 8px 0 2px; font-size: 13px; color: var(--muted); }
+.altsend a { font-weight: 800; color: var(--ink); text-decoration: none; background: #fff; border: 1.5px solid var(--line); border-radius: 999px; padding: 5px 11px; }
+.tsend { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; flex: none; }
+/* Alerts check (admin) */
+.achk { display: grid; gap: 6px; margin-top: 12px; font-size: 14px; }
+.achk div { background: var(--soft, #F3F1EE); border-radius: 12px; padding: 8px 11px; }
+#ares { margin-top: 10px; }
+.alist { grid-template-columns: minmax(0, 1fr); }
+.alist .trow .sub { white-space: normal; overflow-wrap: anywhere; }
+#ares .flag { margin-bottom: 6px; }
+.tsend .tx { font-size: 12px; font-weight: 700; color: var(--muted); text-decoration: none; }
 .btn.red { background: var(--red); box-shadow: 0 10px 20px -12px rgba(210,59,59,.8); }
 .btn.green { background: var(--green); box-shadow: 0 10px 20px -12px rgba(22,128,74,.8); }
 .btn.sm { padding: 9px 13px; font-size: 14px; border-radius: 12px; }

@@ -88,10 +88,18 @@ function load(opts) {
       DigestAlgorithm: { SHA_256: 'sha256' },
       computeDigest: (alg, s) => Array.from(crypto.createHash(alg).update(String(s), 'utf8').digest()).map(b => (b > 127 ? b - 256 : b)),
     },
-    MailApp: { sendEmail: o => { state.outbox.push(Object.assign({ at: new Date().toISOString() }, o)); } },
+    MailApp: { sendEmail: o => { state.outbox.push(Object.assign({ at: new Date().toISOString() }, o)); }, getRemainingDailyQuota: () => 1500 - state.outbox.length },
     // Fake OneSignal: users listed in globalThis.__pushOff have no phone subscribed (200 with an empty id, like the real API).
+    // Looking a user up (GET …/users/by/external_id/<id>): __pushNever → 404 (no record), __pushOff → no subscription, else one iPhone.
     UrlFetchApp: {
       fetch: (url, o) => {
+        const look = /\/users\/by\/external_id\/([^/?]+)$/.exec(url);
+        if (look) {
+          const id = decodeURIComponent(look[1]);
+          if ((ctx.__pushNever || []).includes(id)) return { getResponseCode: () => 404, getContentText: () => '{"errors":["not found"]}' };
+          const subs = (ctx.__pushOff || []).includes(id) ? [{ type: 'SafariPush', enabled: false, notification_types: -2 }] : [{ type: 'SafariPush', enabled: true, notification_types: 1, device_model: 'iPhone' }];
+          return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ properties: { last_active: 1760000000 }, subscriptions: subs }) };
+        }
         const body = JSON.parse(o.payload);
         const off = (ctx.__pushOff || []).some(id => body.include_aliases.external_id.includes(id));
         state.pushes.push({ url, headers: o.headers, body, reached: !off });
@@ -105,7 +113,7 @@ function load(opts) {
       getService: () => ({ getUrl: () => url }),
       getProjectTriggers: () => state.triggers, deleteTrigger: () => {},
       WeekDay: { MONDAY: 'MON', WEDNESDAY: 'WED', FRIDAY: 'FRI', SATURDAY: 'SAT' },
-      newTrigger: fn => { const t = { fn }; const ch = { timeBased: () => ch, onWeekDay: d => (t.day = d, ch), atHour: hr => (t.hour = hr, ch), everyDays: () => ch, everyMinutes: () => ch, inTimezone: () => ch, create: () => state.triggers.push(t) }; return ch; },
+      newTrigger: fn => { const t = { fn, getHandlerFunction: () => fn }; const ch = { timeBased: () => ch, onWeekDay: d => (t.day = d, ch), atHour: hr => (t.hour = hr, ch), everyDays: () => ch, everyMinutes: () => ch, inTimezone: () => ch, create: () => state.triggers.push(t) }; return ch; },
     },
     Session: { getEffectiveUser: () => ({ getEmail: () => 'angad@linkmarketing.org.uk' }) },
     HtmlService: {},

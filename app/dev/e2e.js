@@ -114,6 +114,8 @@ async function fillEval(p) {
   const mo = await mk('Mo Aden', 'mo@example.com', 'LINK', ['booker']);
   await mk('Nathan Smith', 'nathan@example.com', 'LINK', ['presenter']);
   ok(fiza.name === 'Fiza Iqbal', 'names are tidied (fiza iqbal → Fiza Iqbal)');
+  ok((await getJson('/dev/mail')).some(m => m.to === 'fiza@example.com' && /Set up the Juss & Link Recruitment App/.test(m.subject) && /Alerts: on ✅/.test(m.htmlBody)),
+    'adding someone emails them the 2-minute setup steps straight away (log in, Add to Home Screen, turn on alerts)');
   const nathan = await loginApi('nathan@example.com');
 
   // Old Google Form history (last 6 months imported = the repeat window)
@@ -441,7 +443,7 @@ async function fillEval(p) {
   ok(/Southall/.test(snap) && /Commission selling phones/.test(snap), 'one-page snapshot: presenter notes + evaluation together');
   ok(/💡 Plays semi-pro football/.test(snap) && /Wants to earn on results, saving for a house/.test(snap), 'booker sees the room answers: 💡 ice-breaker + why sales');
   const hdr = (await getJson('/dev/sheet?name=Candidates'))[0];
-  ok(hdr.slice(-5).join() === 'p_why_sales,p_why_sales_note,p_interesting,eval_edited_at,thanks_by', 'existing Sheet got the new columns automatically (no data moved)');
+  ok(hdr.slice(-5).join() === 'p_why_sales_note,p_interesting,eval_edited_at,thanks_by,no_whatsapp', 'existing Sheet got the new columns automatically (no data moved)');
   ok(!/Unspent convictions/.test(snap), 'conviction answer hidden from bookers');
   await bp.click('.chips[data-name=outcome] .chip:has-text("Academy booked")');
   await bp.fill('#adate', '2026-10-19');
@@ -552,6 +554,20 @@ async function fillEval(p) {
   ok(await jp.$eval('.wl-poster img', i => i.complete && i.naturalWidth > 0 && /poster-juss/.test(i.src)), 'JUSS welcome page shows the JUSS Week 1 poster (your screenshot)');
   const jog = await (await fetch(jwurl.replace(PUBLIC, APP))).text();
   ok(jog.includes('og:image" content="' + PUBLIC + 'img/og-juss.jpg"'), 'JUSS WhatsApp link preview shows the JUSS poster card');
+  // Not on WhatsApp: same message by text or email, and the app remembers it for the next message
+  const smsAlt = await ap.getAttribute('.altsend a[data-kind=offer][data-via=sms]', 'href');
+  const mailAlt = await ap.getAttribute('.altsend a[data-kind=offer][data-via=email]', 'href');
+  const smsBody = decodeURIComponent(smsAlt.split('body=')[1]);
+  ok(/^sms:\+447700900300[?&]body=/.test(smsAlt) && /Welcome to the JUSS Marketing BA Academy/.test(smsBody) && !/\*/.test(smsBody) && /welcome-juss\.html/.test(smsBody),
+    'Day 1 details: "Not on WhatsApp? 📱 Text" opens their texts with the same message (no WhatsApp *stars*)');
+  ok(/^mailto:adham@example\.com\?subject=/.test(mailAlt) && /You're in! BA Academy Day 1 – JUSS Marketing/.test(decodeURIComponent(mailAlt)), '"✉️ Email" opens an email to them with a subject line');
+  await ap.$eval('.altsend a[data-kind=offer][data-via=sms]', a => { a.addEventListener('click', e => e.preventDefault()); a.click(); });
+  let adNow = null; for (let i = 0; i < 25 && !(adNow && adNow.no_whatsapp); i++) { adNow = await api(admin, 'getCandidate', { id: adham.id }); if (!adNow.no_whatsapp) await new Promise(r => setTimeout(r, 200)); }
+  ok(adNow.no_whatsapp === 'TRUE' && !!adNow.offer_sent_at && (await getJson('/dev/sheet?name=Log')).some(r => r[2] === 'sms_offer'), 'texting them saves "not on WhatsApp" + Day 1 sent (logged as sms_offer)');
+  await ap.reload(); await ap.waitForSelector('a.sms[data-kind=offer]');
+  ok(/^sms:/.test(await ap.getAttribute('a.sms[data-kind=offer]', 'href')) && /📵 Not on WhatsApp/.test(await ap.innerText('body')) && !!(await ap.$('.altsend a[data-via=whatsapp]')),
+    'next time: the big button texts them ("📵 Not on WhatsApp" shown), WhatsApp still there as the small option');
+  await ap.locator('.wa-grid').screenshot({ path: SHOTS + '/12b-not-on-whatsapp.png' });
   const appHtml = await (await fetch(APP + 'index.html')).text();
   ok(appHtml.includes('og:title" content="Juss & Link Recruitment App"') && appHtml.includes('img/og-app.jpg') && appHtml.includes('apple-mobile-web-app-title" content="Juss & Link Recruitment App"'),
     'sharing the app link shows "Juss & Link Recruitment App" + logo card; same name when added to the home screen');
@@ -761,7 +777,28 @@ async function fillEval(p) {
   const newMail = (await getJson('/dev/mail')).slice(mailBefore);
   ok(newMail.some(m => m.to === abd.email && /net attended|target/.test(m.subject)), 'booker who never turned alerts on still gets it, by email');
   ok(!newMail.some(m => m.to === fiza.email), 'booker with alerts on gets the push only (no duplicate email)');
-  await post('/dev/eval', { js: 'globalThis.__pushOff = []' });
+  const alertLog = (await getJson('/dev/sheet?name=Log')).filter(r => r[2] === 'alert').map(r => r[4]);
+  ok(alertLog.some(d => /just checked in → 📲 Fiza/.test(d)) && alertLog.some(d => /→ .*✉️ Abdullahi/.test(d)),
+    'every alert is logged with who got it on their phone (📲) and who by email (✉️)');
+  // Alerts check (Team → 🔔 Alerts check): who actually gets their alerts
+  await post('/dev/eval', { js: `globalThis.__pushOff = ['${abd.id}']; globalThis.__pushNever = ['${mo.id}']` });
+  await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button[data-tab=team]');
+  await ap.click('.tabbar button[data-tab=team]'); await ap.click('#alertsck'); await ap.waitForSelector('.achk');
+  const ach = await ap.innerText('#page');
+  const offTxt = await ap.innerText('.datehead:has-text("Not getting") + .list'), onTxt = await ap.innerText('.datehead:has-text("Alerts on") + .list');
+  ok(/of \d+ get alerts on their phone/.test(ach) && /Abdullahi Ahmed/.test(offTxt) && /Mo Aden/.test(offTxt) && /Gets alerts by email instead: abdullahi@example\.com/.test(offTxt) && /Fiza Iqbal/.test(onTxt) && !/Fiza/.test(offTxt),
+    'Alerts check: Abdullahi + Mo listed as not getting phone alerts (email instead), Fiza on');
+  ok(/Phone alerts: connected/.test(ach) && /Email backup: \d+ emails left today/.test(ach) && /Scheduled alerts running/.test(ach), 'Alerts check: OneSignal connected, email allowance, scheduled alerts running');
+  await shot(ap, '18-alerts-check', true);
+  const mb = (await getJson('/dev/mail')).length;
+  await ap.click('#setupMail'); await ap.waitForSelector('text=Setup steps sent to');
+  const setupMails = (await getJson('/dev/mail')).slice(mb);
+  ok(setupMails.some(m => m.to === abd.email && /Set up the Juss & Link Recruitment App/.test(m.subject) && /Add to Home Screen/.test(m.htmlBody)) && setupMails.some(m => m.to === mo.email) && !setupMails.some(m => m.to === fiza.email),
+    '"Email setup steps" → only the people not set up get the 2-minute guide (iPhone: Add to Home Screen…)');
+  const pb = (await getJson('/dev/pushes')).length;
+  await ap.click('.trow:has-text("Fiza Iqbal") [data-test]'); await ap.waitForSelector('text=Test reached: Fiza Iqbal');
+  ok((await getJson('/dev/pushes')).slice(pb).some(p => /Test alert from Angad/.test(p.body.headings.en) && p.body.include_aliases.external_id.includes(fiza.id)), 'Test button → a test alert lands on Fiza\'s phone');
+  await post('/dev/eval', { js: 'globalThis.__pushOff = []; globalThis.__pushNever = []' });
 
   // ── 10. Access removed / Apps Script fallback / GDPR ──
   await api(admin, 'saveUser', { user: Object.assign({}, fiza, { active: false }) });
