@@ -610,12 +610,23 @@ function confirmAcademy(req) {
 
 // ───────────────────────── STAFF ─────────────────────────
 function canSee(u, c) {
-  if (isAdmin(u)) return true;
-  if (c.booker_id === u.id) return true;
+  if (fullAccess(u, c)) return true;
   if (has(u, 'presenter') && (c.attended_date === todayStr() || c.presenter_id === u.id)) return true;
   return false;
 }
+/** Everything about a candidate: admins, and the person who booked them. Nobody else. */
+function fullAccess(u, c) { return isAdmin(u) || c.booker_id === u.id; }
+/** A presenter's view of someone else's candidate: only what's needed to rate the room.
+ *  No evaluation answers, outcome, contact details, eligibility or who booked them. */
+const ROOM_FIELDS = ['id', 'created_at', 'attended_date', 'week_ending', 'full_name', 'company', 'in_room', 'rag', 'stars', 'tags', 'notes',
+  'presenter_id', 'presenter_name', 'notes_at', 'p_why_sales', 'p_why_sales_note', 'p_interesting'];
+function roomShape(c) {
+  const o = { limited: true, flags: [], first_name: c.full_name.split(' ')[0], eval_at: c.eval_at ? 'yes' : '' };  // eval_at: for the day's count only
+  ROOM_FIELDS.forEach(k => { o[k] = c[k]; });
+  return o;
+}
 function shape(c, u) {
+  if (!fullAccess(u, c)) return roomShape(c);
   const o = {};
   SHEETS.Candidates.forEach(k => { o[k] = c[k]; });
   delete o.resume_token;
@@ -716,6 +727,7 @@ function markInRoom(req, u) {
   if (!has(u, 'presenter')) throw new Error('Only presenters can confirm attendance.');
   return withLock(() => {
     const c = getC(req.id);
+    if (!canSee(u, c)) throw new Error('No access');
     c.in_room = req.in_room ? 'TRUE' : '';
     if (!c.presenter_id) { c.presenter_id = u.id; c.presenter_name = u.name; }
     writeRow('Candidates', c);
@@ -835,7 +847,7 @@ function markSent(req, u) {
   if (['thanks', 'offer', 'noanswer'].indexOf(req.kind) < 0) throw new Error('Unknown message');
   return withLock(() => {
     const c = getC(req.id);
-    if (!canSee(u, c)) throw new Error('No access');
+    if (!fullAccess(u, c)) throw new Error('No access');
     if (req.kind === 'thanks') {
       // Jess and Rubal can each send any thank-you, LINK or JUSS (signed with their own name)
       const team = thanksTeam(), cos = Object.keys(team);
