@@ -403,8 +403,12 @@ function verifyCode(req) {
       rec.attempts = String(Number(rec.attempts) + 1); writeRow('Codes', rec);
       throw new Error("That code isn't right or has expired. Check the latest email, or request a new code.");
     }
-    rec.expires = '0000'; writeRow('Codes', rec);
     const u = usersAll().filter(x => x.email.toLowerCase() === email && truthy(x.active))[0];
+    // Two doors on the login screen: Admin login (admins) and BA login (everyone else Angad gives access).
+    // Wrong door: say which one is theirs and keep the code, so the app carries on through the right door.
+    const door = u && isAdmin(u) ? 'admin' : 'ba';
+    if (u && (req.door === 'admin' || req.door === 'ba') && req.door !== door) return { wrongDoor: door };
+    rec.expires = '0000'; writeRow('Codes', rec);
     if (!u) throw new Error('Access not active.');
     const t = token();
     appendRow('Sessions', {
@@ -664,12 +668,14 @@ function saveNotes(req, u) {
   return withLock(() => {
     const c = getC(req.id);
     if (!canSee(u, c)) throw new Error('No access');
-    if (['G', 'A', 'R', ''].indexOf(req.rag) >= 0) c.rag = req.rag;
-    const s = Number(req.stars); c.stars = s >= 1 && s <= 5 ? String(s) : '';
+    // One tap on the list (Green / Amber / Red) sends only: ['rag'], so it never overwrites notes someone else just wrote.
+    const set = k => !Array.isArray(req.only) || req.only.indexOf(k) >= 0;
+    if (set('rag') && ['G', 'A', 'R', ''].indexOf(req.rag) >= 0) c.rag = req.rag;
+    if (set('stars')) { const s = Number(req.stars); c.stars = s >= 1 && s <= 5 ? String(s) : ''; }
     // Rating someone = they were in the room (no extra tap needed). Untick only if explicitly set false with no rating.
     c.in_room = (req.in_room || c.rag || c.stars) ? 'TRUE' : '';
-    c.tags = (req.tags || []).join(', ').slice(0, 300);
-    c.notes = String(req.notes || '').slice(0, 2000);
+    if (set('tags')) c.tags = (req.tags || []).join(', ').slice(0, 300);
+    if (set('notes')) c.notes = String(req.notes || '').slice(0, 2000);
     // The two questions the presenter asks in the room (only touched when sent, so older app versions can't wipe them)
     if (req.why !== undefined) c.p_why_sales = (req.why || []).join(', ').slice(0, 300);
     if (req.why_note !== undefined) c.p_why_sales_note = String(req.why_note || '').slice(0, 300);

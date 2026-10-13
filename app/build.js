@@ -51,18 +51,20 @@ function page(opts) {
   ].join('\n  ') : '';
   const staff = opts.mode === 'staff';
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="en"${opts.theme ? ' class="t-' + opts.theme + '"' : ''}>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>${opts.title}</title>
-  <meta name="theme-color" content="#F15A24">
+  <meta name="theme-color" content="${staff ? '#F4F2EF' : opts.theme === 'JUSS' ? '#123A48' : '#26262F'}">
   <meta name="color-scheme" content="only light">
   <meta name="robots" content="noindex, nofollow">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-180.png">
   ${staff ? '<link rel="manifest" href="manifest.webmanifest">\n  <meta name="apple-mobile-web-app-capable" content="yes">\n  <meta name="apple-mobile-web-app-title" content="' + APP_NAME + '">\n  <meta name="application-name" content="' + APP_NAME + '">' : ''}
   ${og}
+  <link rel="preload" href="fonts/anton-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="fonts/oswald-latin-600-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="app.css?v=${v}">
 </head>
 <body>
@@ -92,9 +94,9 @@ const pages = [
     og: { title: APP_NAME, desc: 'Bookers, presenters & admins: log in with your work email.', img: 'og-app.jpg' } },
   { file: 'checkin.html', mode: 'checkin', title: 'Check in · Juss & Link' },
   { file: 'eval.html', mode: 'eval', title: 'Your evaluation · Juss & Link' },
-  { file: 'welcome-link.html', mode: 'welcome', title: "You're in! · LINK Marketing BA Academy",
+  { file: 'welcome-link.html', mode: 'welcome', theme: 'LINK', title: "You're in! · LINK Marketing BA Academy",
     og: { title: "You're IN 🎉 LINK Marketing BA Academy", desc: 'Your Week 1 game plan + confirm your spot', img: 'og-link.jpg' } },
-  { file: 'welcome-juss.html', mode: 'welcome', title: "You're in! · JUSS Marketing BA Academy",
+  { file: 'welcome-juss.html', mode: 'welcome', theme: 'JUSS', title: "You're in! · JUSS Marketing BA Academy",
     og: { title: "You're IN 🎉 JUSS Marketing BA Academy", desc: 'Your Week 1 game plan + confirm your spot', img: 'og-juss.jpg' } },
 ];
 pages.forEach(p => write(p.file, page(p)));
@@ -102,7 +104,7 @@ pages.forEach(p => write(p.file, page(p)));
 write('manifest.webmanifest', JSON.stringify({
   name: APP_NAME, short_name: APP_NAME,
   start_url: './index.html', scope: './', display: 'standalone',
-  background_color: '#F6F4F1', theme_color: '#F15A24',
+  background_color: '#F4F2EF', theme_color: '#F4F2EF',
   icons: [
     { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
     { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
@@ -117,7 +119,8 @@ try { importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js')
 // the phone's copy is only used when there's no signal. Versioned files (?v=…) and images are safe to serve from the copy.
 const CACHE = 'recruit-${v}';
 const SHELL = ['index.html', 'checkin.html', 'eval.html', 'app.css?v=${v}', 'app.js?v=${v}', 'logos.js?v=${v}', 'qr.js?v=${v}', 'bulletin.js?v=${v}',
-  'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-180.png'];
+  'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-180.png',
+  'fonts/anton-latin-400-normal.woff2', 'fonts/oswald-latin-500-normal.woff2', 'fonts/oswald-latin-600-normal.woff2', 'fonts/oswald-latin-700-normal.woff2'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
 });
@@ -154,7 +157,7 @@ self.addEventListener('fetch', e => {
 
 ['icon-180.png', 'icon-192.png', 'icon-512.png'].forEach(f => copy(path.join(ASSETS, f), 'icons/' + f));
 ['poster-link.jpg', 'poster-juss.jpg', 'og-link.jpg', 'og-juss.jpg', 'og-app.jpg', 'logo-juss.png', 'logo-link.png'].forEach(f => copy(path.join(ASSETS, f), 'img/' + f));
-// Bulletin fonts (Oswald + Anton, SIL Open Font License, see fonts/OFL.txt)
+// App + bulletin fonts (Oswald + Anton, SIL Open Font License, see fonts/OFL.txt)
 fs.readdirSync(path.join(ASSETS, 'fonts')).forEach(f => copy(path.join(ASSETS, 'fonts', f), 'fonts/' + f));
 
 console.log('Built ' + OUT + ' (v' + v + ') for ' + BASE);

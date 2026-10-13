@@ -34,8 +34,10 @@ async function loginApi(email) {
   await api('', 'requestCode', { email });
   return (await api('', 'verifyCode', { email, code: await lastCode(email) })).token;
 }
-async function loginUi(page, email, url) {
+/** door: which login they tap. Default = the right one (Admin login for the admins, BA login for everyone else). */
+async function loginUi(page, email, url, door) {
   await page.goto(url || APP + 'index.html');
+  await page.click('#doors button[data-door=' + (door || (/@(linkmarketing|jussmarketing)\./.test(email) ? 'admin' : 'ba')) + ']');
   await page.fill('#em', email);
   await page.click('#go');
   await page.waitForSelector('#codeBox:not([hidden])');
@@ -136,7 +138,8 @@ async function fillEval(p) {
   await shot(cp, '01-checkin-empty');
   ok(await coOf(cp) === '' && (await cp.$$('.brandbar img')).length === 2, 'check-in opens in the shared look with both logos (company not known yet)');
   await fillCheckin(cp, { name: 'jasraj bhuller', mobile: '07700 900123', email: 'jasraj@example.com', booker: 'Fiza Iqbal', rtw: 'Graduate visa (PSW)', expiry: '2027-11-30' });
-  ok(await coOf(cp) === 'LINK', 'picking a LINK booker (Fiza) switches the check-in to LINK colours');
+  ok(await coOf(cp) === 'LINK' && await cp.evaluate(() => document.documentElement.classList.contains('t-LINK')) && /You're with\s+LINK Marketing/.test(await cp.innerText('#with')),
+    'picking a LINK booker (Fiza) switches the check-in to LINK colours ("You\'re with LINK Marketing")');
   await cp.click('#go');
   await cp.waitForSelector('text=You\'re checked in, Jasraj!');
   ok(await coOf(cp) === 'LINK' && (await cp.$$('.brandbar img')).length === 1, 'checked-in screen: LINK colours + LINK logo only');
@@ -171,6 +174,16 @@ async function fillEval(p) {
   console.log('presenter');
   const pres = await browser.newContext(PHONE);
   const pp = await pres.newPage();
+  await pp.goto(APP + 'index.html'); await pp.waitForSelector('#doors');
+  ok((await pp.$$eval('#doors button', b => b.map(x => x.textContent.trim()))).join(' | ') === '🛡️ Admin login | 🙌 BA login' && /BA login/.test(await pp.innerText('#doorHead')),
+    'login screen: two doors, Admin login + BA login (BA picked on a new phone)');
+  await pp.click('#doors button[data-door=admin]');
+  ok(/Angad, Jess, Satpal and Rubal/.test(await pp.innerText('#doorHead')), 'Admin login says it\'s for Angad, Jess, Satpal and Rubal');
+  await api('', 'requestCode', { email: 'fiza@example.com' });
+  const fizaCode = await lastCode('fiza@example.com');
+  const wrong = await api('', 'verifyCode', { email: 'fiza@example.com', code: fizaCode, door: 'admin' });
+  const right = await api('', 'verifyCode', { email: 'fiza@example.com', code: fizaCode, door: 'ba' });
+  ok(wrong.wrongDoor === 'ba' && !wrong.token && right.token, 'a BA trying Admin login is pointed to BA login (no admin session), and the same code still works there');
   await loginUi(pp, 'nathan@example.com');
   await pp.waitForSelector('text=Jasraj Bhuller');
   ok(!(await pp.$('#qr')) && !(await pp.$('#ev')), 'presenter has no QR / "open evaluations" buttons to press');
@@ -193,6 +206,14 @@ async function fillEval(p) {
   fs.writeFileSync(`${SHOTS}/msg-thanks.txt`, thanks);
   ok(thanks === "Hey Jasraj! 👋\n\nThanks for coming through for your Appointment Presentation today in association with LINK Marketing.\nWe loved meeting you in person.\n\nOur Team will contact you at the latest by close of business on Friday 6PM about your next steps 📲\nKeep your phone close!",
     'thank-you WhatsApp = Angad\'s wording (LINK, contact by Friday 6PM)');
+  // One tap on the Today list: Green / Amber / Red = in the room, and notes another presenter just wrote are kept
+  await api(nathan, 'saveNotes', { id: ishita.id, rag: '', stars: 0, tags: ['Quiet'], notes: 'Sat at the back' });
+  await pp.goBack(); await pp.waitForSelector('.kpis');
+  await pp.click('.quick[data-for="' + ishita.id + '"] .q-R');
+  await pp.waitForFunction(() => !JSON.parse(localStorage.getItem('lr_outbox') || '[]').length);
+  const ishNow = await api(admin, 'getCandidate', { id: ishita.id });
+  ok(ishNow.rag === 'R' && ishNow.in_room === 'TRUE' && ishNow.notes === 'Sat at the back' && ishNow.tags === 'Quiet', 'presenter taps Red on the list → in the room; notes + tags already written are kept');
+  ok(!(await pp.$('.quick[data-for="' + ishita.id + '"]')), 'rated card drops its Green / Amber / Red buttons');
   for (const [c, rag] of [[ishita, 'R'], [adham, 'G'], [ali, 'A'], [jag, 'A'], [kid, 'R']]) {
     await api(nathan, 'saveNotes', { id: c.id, rag, stars: rag === 'G' ? 3 : 2, tags: [], notes: 'test' });
   }
@@ -284,8 +305,9 @@ async function fillEval(p) {
   t0 = Date.now(); await pp.click('.tabbar button[data-tab=today]'); await pp.waitForSelector('.kpis');
   const tToday = Date.now() - t0;
   ok(tPay < 500 && tToday < 500, 'tabs switch instantly even with 1.5s Google delay (Pay ' + tPay + 'ms, Today ' + tToday + 'ms)');
-  t0 = Date.now(); await pp.click('.item:has-text("Adham Soliman")'); await pp.waitForSelector('.profile h1:has-text("Adham Soliman")');
-  const tCand = Date.now() - t0;
+  // Timed from the tap itself: the robot waits for the cards' entrance animation before it taps, a finger doesn't.
+  const tCand = await tapToText(pp, '.item:has-text("Adham Soliman")', 'Attended Mon 12 Oct');
+  await pp.waitForSelector('.profile h1:has-text("Adham Soliman")');
   ok(tCand < 500, 'candidate page opens instantly from the phone\'s copy (' + tCand + 'ms)');
   await pp.goBack(); await pp.waitForSelector('.kpis');
   ok(!(await pp.$('#bullDaily')), "presenters don't see the bulletin buttons (admins only)");
@@ -345,9 +367,10 @@ async function fillEval(p) {
   await shot(pp, '04b-swipe');
   const dark = await browser.newContext(Object.assign({ colorScheme: 'dark' }, PHONE));
   const dp = await dark.newPage();
-  await loginUi(dp, 'nathan@example.com'); await dp.waitForSelector('text=Jasraj Bhuller');
+  await loginUi(dp, 'nathan@example.com', null, 'admin'); await dp.waitForSelector('text=Jasraj Bhuller');
+  ok(await dp.$('text=You\'re a BA, so you\'re in through BA login') && !(await dp.$('.tabbar button[data-tab=team]')), 'BA who taps Admin login by mistake lands in the BA app (no admin tabs), told to use BA login');
   await shot(dp, '04c-phone-in-dark-mode');
-  ok(await dp.evaluate(() => getComputedStyle(document.body).backgroundColor) === 'rgb(243, 241, 238)', 'stays in the normal light look even when the phone is in dark mode');
+  ok(await dp.evaluate(() => getComputedStyle(document.body).backgroundColor) === 'rgb(247, 241, 236)', 'stays in the normal light (LINK) look even when the phone is in dark mode');
   await dark.close();
 
   // ── 4. Booker: snapshot → outcome → Gen Z WhatsApp with welcome link ──
@@ -380,6 +403,16 @@ async function fillEval(p) {
   await shot(bp, '09-booker-outcome', true);
   await bp.goBack(); await bp.waitForSelector('text=🎉 Send congratulations');
   ok(true, 'list shows "🎉 Send congratulations" until it\'s sent');
+  ok(/^https:\/\/wa\.me\//.test(await bp.getAttribute('.quick [data-send=offer]', 'href')), 'the card has a one-tap "🎉 Send Day 1 details on WhatsApp" button');
+  await bp.click('.quick[data-for="' + kid.id + '"] [data-out]');
+  await bp.waitForSelector('.sheet #sosave');
+  await shot(bp, '09b-booker-outcome-sheet');
+  await bp.click('.sheet .chips[data-name=outcome] .chip:has-text("Not suitable")');
+  await bp.fill('#sonotes', 'Under 18, try again next year');
+  await bp.click('#sosave');
+  await bp.waitForFunction(() => !document.querySelector('.sheet-back') && !JSON.parse(localStorage.getItem('lr_outbox') || '[]').length);
+  const kidNow = await api(admin, 'getCandidate', { id: kid.id });
+  ok(kidNow.outcome === 'Not suitable' && kidNow.outcome_notes === 'Under 18, try again next year' && kidNow.outcome_by === 'Fiza Iqbal', 'booker logs a call outcome straight from the list card (sheet), no need to open the page');
   await bp.click('.item:has-text("Jasraj Bhuller")'); await bp.waitForSelector('a.wa[data-kind=offer]');
   const msg = decodeURIComponent((await bp.getAttribute('a.wa[data-kind=offer]', 'href')).split('?text=')[1]);
   fs.writeFileSync(`${SHOTS}/msg-link.txt`, msg);

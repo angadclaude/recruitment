@@ -1,4 +1,4 @@
-window.APP_VERSION = '03b777f1';
+window.APP_VERSION = '52797937';
 
 (function () {
 'use strict';
@@ -63,6 +63,45 @@ function logos(size) {
     '<span class="x">×</span><img alt="JUSS Marketing" src="' + LOGOS.JUSS + '" style="height:' + size + 'px"></div>';
 }
 
+// ───────────── brand look: LINK (orange + charcoal) or JUSS (coral → amber → teal); none = LINK × JUSS ─────────────
+function coOf(x) { return x === 'JUSS' ? 'JUSS' : x === 'LINK' ? 'LINK' : ''; }
+/** dark: the top of the page is a dark panel, so the phone's status bar goes dark to match. */
+function setTheme(co, dark) {
+  co = coOf(co);
+  const root = document.documentElement;
+  root.classList.toggle('t-LINK', co === 'LINK');
+  root.classList.toggle('t-JUSS', co === 'JUSS');
+  if (document.body) { if (co) document.body.dataset.co = co; else delete document.body.dataset.co; }
+  let m = document.querySelector('meta[name=theme-color]');
+  if (!m) { m = document.createElement('meta'); m.name = 'theme-color'; document.head.appendChild(m); }
+  m.content = dark ? (co === 'JUSS' ? '#123A48' : '#26262F') : (co === 'JUSS' ? '#EDF5F5' : co === 'LINK' ? '#F7F1EC' : '#F4F2EF');
+}
+/** Candidate page logos: both until we know the booker's company (on check-in the other one dims the moment they pick), then just theirs. */
+function heroLogos() {
+  if (C.co) return '<div class="brandbar c-logos"><img class="lg-' + C.co + '" alt="' + C.co + ' Marketing" src="' + LOGOS[C.co] + '"></div>';
+  return '<div class="brandbar c-logos"><img class="lg-LINK" alt="LINK Marketing" src="' + LOGOS.LINK + '"><span class="x">×</span><img class="lg-JUSS" alt="JUSS Marketing" src="' + LOGOS.JUSS + '"></div>';
+}
+function tickSvg() { return '<div class="tick"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>'; }
+function greeting() { const hr = Number(londonNow().slice(11, 13)); return hr < 12 ? 'Good morning,' : hr < 17 ? 'Good afternoon,' : 'Good evening,'; }
+const REDUCED = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+/** Big numbers count up from 0 on a fresh screen (instant on the quiet background refresh). */
+function countUp(root, instant) {
+  root.querySelectorAll('[data-n]').forEach(el => {
+    const to = Number(el.dataset.n) || 0;
+    if (instant || REDUCED || to === 0) { el.textContent = to; return; }
+    const t0 = performance.now(), dur = Math.min(900, 380 + to * 60);
+    el.textContent = '0';
+    const step = t => { const p = Math.min(1, (t - t0) / dur); el.textContent = Math.round(to * (1 - Math.pow(1 - p, 3))); if (p < 1) requestAnimationFrame(step); };
+    requestAnimationFrame(step);
+  });
+}
+/** Cards rise in one after another: each gets its place in the queue. */
+function stagger(root) {
+  let i = 0;
+  root.querySelectorAll('.list > *, :scope > .card, :scope > .hero, :scope > .kpis, :scope > .tiles, :scope > .profile, :scope > section > .card')
+    .forEach(el => { el.style.setProperty('--i', Math.min(i++, 10)); });
+}
+
 // ───────────── dates (YYYY-MM-DD strings, no time zone surprises) ─────────────
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const DAYS_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -108,13 +147,9 @@ function showErr(el, msg) { el.innerHTML = msg ? '<div class="err">' + h(msg) + 
 // ═════════════════════════ CANDIDATE ═════════════════════════
 const C = { cfg: null, rec: null, co: '' };
 
-/** Candidate pages wear the booker's company colours: LINK = orange + charcoal, JUSS = sunset + teal.
- *  '' = not known yet (no booker picked, or "not sure"): the shared orange look with both logos. */
-function brandTheme(co) {
-  C.co = co === 'LINK' || co === 'JUSS' ? co : '';
-  if (C.co) document.body.dataset.co = C.co; else delete document.body.dataset.co;
-  const m = document.querySelector('meta[name=theme-color]'); if (m) m.content = C.co === 'JUSS' ? '#22A9B5' : '#F15A24';
-}
+/** Candidate pages wear the booker's company look: LINK = orange + charcoal, JUSS = coral → amber → teal (from their logos).
+ *  '' = not known yet (no booker picked, or "not sure"): the joint LINK × JUSS look with both logos. */
+function brandTheme(co) { C.co = coOf(co); setTheme(C.co, true); }
 
 function startCandidate() {
   if (BOOT.mode === 'welcome') return startWelcome();
@@ -125,7 +160,8 @@ function startCandidate() {
       .catch(e => (e.retry ? { first_name: saved.first_name, unknown: true } : null))
     : Promise.resolve(null);
   known.then(st => {
-    if (st) { C.rec = saved; C.rec.first_name = st.first_name || saved.first_name; C.rec.company = st.company || saved.company || ''; brandTheme(C.rec.company); } else store.del('cand');
+    if (st) { C.rec = saved; C.rec.first_name = st.first_name || saved.first_name; C.rec.company = coOf(st.company) || coOf(saved.company); store.set('cand', C.rec); } else store.del('cand');
+    brandTheme(C.rec && C.rec.company);
     if (BOOT.mode === 'eval') {
       if (st) return st.evalDone ? renderDone('already', st.canEdit) : renderEval();
       return renderFind();
@@ -137,7 +173,8 @@ function startCandidate() {
 
 /** then = 'eval' when someone scans the evaluation QR without having checked in. */
 function loadCheckin(then) {
-  $app.innerHTML = '<div class="loading">Loading…</div>';
+  brandTheme('');
+  $app.innerHTML = '<div class="splash">' + logos(56) + '<div class="spinner"></div></div>';
   call('publicConfig').then(cfg => { C.cfg = cfg; renderCheckin(then); })
     .catch(e => { $app.innerHTML = logos(48) + '<div class="err">' + h(e.message) + '</div>'; });
 }
@@ -146,10 +183,10 @@ function renderCheckin(then) {
   scrollTop(); brandTheme('');
   const sources = ['Indeed', 'TikTok', 'Instagram', 'Facebook', 'LinkedIn', BA_REFERRAL, 'Other'];
   const sec = (icon, title) => '<section class="evsec"><div class="evsec-h"><span>' + icon + '</span>' + title + '</div><div class="qcard ci">';
-  $app.innerHTML = logos(56) +
-    '<div class="evhero">' + (then === 'eval' ? '<h1>Quick check-in first 👋</h1><p>We couldn\'t find you, so fill this in, then your evaluation opens straight after.</p>'
-      : '<h1>Welcome — let\'s check you in 👋</h1><p>Takes about a minute.</p>') +
-    '<div class="evtags"><span>⏱ 1 min</span><span>🔒 Private</span></div></div>' +
+  $app.innerHTML = '<div class="c-hero">' + heroLogos() + '<span class="label">Recruitment day' + (C.cfg.today ? ' · ' + h(fmtLong(C.cfg.today)) : '') + '</span>' +
+    (then === 'eval' ? '<h1>Quick <span class="gtext">check-in</span> first 👋</h1><p>We couldn\'t find you, so fill this in, then your evaluation opens straight after.</p>'
+      : '<h1><span class="gtext">Welcome</span> 👋</h1><p>Let\'s check you in. Takes about a minute.</p>') +
+    '<div class="evtags"><span>⏱ 1 min</span><span>🔒 Private</span></div><div id="with"></div></div>' +
     '<form id="f" class="evform" novalidate autocomplete="on">' +
     sec('🙋', 'About you') +
     '<label class="q">Full name <span class="req">*</span></label><input type="text" name="full_name" autocomplete="name" placeholder="First and last name">' +
@@ -176,12 +213,17 @@ function renderCheckin(then) {
   bindChips(f);
   let booker = null;
   const bk = document.getElementById('bk');
+  const withEl = document.getElementById('with');
+  document.documentElement.classList.add('theme-anim');
   const drawBooker = (typed) => {
+    // Picking the booker switches the page to their company's look (LINK or JUSS)
+    const co = booker ? coOf(booker.company) : '';
+    brandTheme(co);
+    withEl.innerHTML = co ? '<div class="c-with"><img src="' + LOGOS[co] + '" alt="">You\'re with <b>' + co + ' Marketing</b></div>' : '';
     if (booker) {
       bk.innerHTML = '<div class="picked"><span>✓ ' + h(booker.name) + ' <span class="co ' + h(booker.company) + '">' + h(booker.company) + '</span></span>' +
         '<button type="button" class="btn ghost sm" id="chg">Change</button></div>';
-      document.getElementById('chg').onclick = () => { booker = null; brandTheme(''); drawBooker(''); bk.querySelector('input').focus(); };
-      brandTheme(booker.company);
+      document.getElementById('chg').onclick = () => { booker = null; drawBooker(''); bk.querySelector('input').focus(); };
       return;
     }
     bk.innerHTML = '<input type="text" id="bkq" autocomplete="off" placeholder="Type their name…" value="' + h(typed || '') + '"><div id="sg"></div>';
@@ -237,7 +279,7 @@ function renderCheckin(then) {
     showErr(err, '');
     const btn = document.getElementById('go'); busy(btn, true, 'Checking in…');
     callRetry('checkin', { form: form }, () => { btn.innerHTML = 'Busy, still checking you in…'; }).then(r => {
-      C.rec = { id: r.id, resume: r.resume, first_name: r.first_name, company: r.company || (booker ? booker.company : '') };
+      C.rec = { id: r.id, resume: r.resume, first_name: r.first_name, company: coOf(r.company) || (booker ? coOf(booker.company) : '') };
       store.set('cand', C.rec); brandTheme(C.rec.company);
       if (r.evalDone) return renderDone('already');
       if (then === 'eval') return renderEval();
@@ -249,19 +291,19 @@ function renderCheckin(then) {
 /** Evaluation QR scanned on a phone we don't recognise: find today's check-in by mobile. */
 function renderFind(notFound) {
   scrollTop(); brandTheme('');
-  $app.innerHTML = logos(56) + '<div class="evhero center"><div class="hero-emoji">📝</div><h1>Evaluation time</h1>' +
-    '<p>Enter the mobile number you checked in with this morning.</p></div><div class="evform"><div class="qcard">' +
-    '<input type="tel" id="m" inputmode="tel" autocomplete="tel" placeholder="07…" value="' + h(store.get('lastMobile') || '') + '"><div id="err">' +
+  $app.innerHTML = '<div class="c-hero">' + heroLogos() + '<span class="label">Last slide · evaluation</span><h1><span class="gtext">Evaluation</span> time 📝</h1>' +
+    '<p>Enter the mobile number you checked in with this morning.</p></div>' +
+    '<div class="card c-form"><label class="q">Your mobile</label><input type="tel" id="m" inputmode="tel" autocomplete="tel" placeholder="07…" value="' + h(store.get('lastMobile') || '') + '"><div id="err">' +
     (notFound ? '<div class="err">We can\'t find a check-in for that number today. Check the number, or check in now.</div>' : '') + '</div>' +
-    '<button class="btn block evsubmit" id="go" style="margin-top:12px">Start my evaluation 🚀</button>' +
-    (notFound ? '<button class="btn ghost block" id="ci" style="margin-top:8px">I didn\'t check in — do it now</button>' : '') + '</div></div>';
+    '<button class="btn block" id="go" style="margin-top:14px">Start my evaluation</button>' +
+    (notFound ? '<button class="btn ghost block" id="ci" style="margin-top:8px">I didn\'t check in — do it now</button>' : '') + '</div>';
   document.getElementById('go').onclick = () => {
     const btn = document.getElementById('go'); busy(btn, true, 'Looking…');
     const mobile = document.getElementById('m').value;
     store.set('lastMobile', mobile);
     callRetry('resumeByMobile', { mobile: mobile }, () => { btn.innerHTML = 'Busy, still looking…'; }).then(r => {
       if (!r.found) return renderFind(true);
-      C.rec = { id: r.id, resume: r.resume, first_name: r.first_name, company: r.company || '' }; store.set('cand', C.rec); brandTheme(C.rec.company);
+      C.rec = { id: r.id, resume: r.resume, first_name: r.first_name, company: coOf(r.company) }; store.set('cand', C.rec); brandTheme(C.rec.company);
       r.evalDone ? renderDone('already', r.canEdit) : renderIsThisYou();
     }).catch(ex => { busy(btn, false); showErr(document.getElementById('err'), ex.message); });
   };
@@ -269,25 +311,24 @@ function renderFind(notFound) {
 }
 
 function renderIsThisYou() {
-  scrollTop();
-  $app.innerHTML = logos(56) + '<div class="evhero center"><div class="hero-emoji">👋</div><h1>Is this you, ' + h(C.rec.first_name) + '?</h1>' +
-    '<p>Just checking we\'ve got the right person.</p></div><div class="qcard">' +
-    '<button class="btn block evsubmit" id="yes">Yes, start my evaluation 🚀</button>' +
+  scrollTop(); brandTheme(C.rec.company);
+  $app.innerHTML = '<div class="c-hero">' + heroLogos() + '<span class="label">Evaluation</span><h1>Is this you, <span class="gname">' + h(C.rec.first_name) + '</span>?</h1>' +
+    '<p>Just checking we\'ve got the right person.</p></div><div class="card c-form" style="padding-top:18px">' +
+    '<button class="btn block" id="yes">Yes, start my evaluation</button>' +
     '<button class="btn ghost block" id="no" style="margin-top:8px">No, that\'s not me</button></div>';
   document.getElementById('yes').onclick = () => renderEval();
   document.getElementById('no').onclick = () => { store.del('cand'); C.rec = null; renderFind(); };
 }
 function renderCheckedIn(first, evalDone, canEdit) {
   if (evalDone) return renderDone('already', canEdit);
-  scrollTop();
-  $app.innerHTML = logos(56) + '<div class="evhero center"><div class="hero-emoji">✅</div><h1>You\'re checked in, ' + h(first) + '!</h1>' +
-    '<p>We aim to begin at 10 AM 🕙</p></div>' +
-    '<div class="qcard nextup" id="next"><div class="evsec-h"><span>📝</span>Your next step</div>' +
-    '<p><b>After the presentation</b>, please scan the second QR code on the screen (<b>Evaluation form</b>) for us to proceed with your application.</p></div>';
-  const nm = document.createElement('button'); nm.className = 'btn ghost sm'; nm.id = 'notme'; nm.style.marginTop = '6px';
+  scrollTop(); brandTheme(C.rec && C.rec.company);
+  $app.innerHTML = '<div class="c-hero">' + heroLogos() + '<span class="label">Checked in</span><h1>You\'re checked in, <span class="gname">' + h(first) + '</span>!</h1>' +
+    '<p>We aim to begin at 10 AM 🕙</p></div><div class="card c-done">' + tickSvg() +
+    '<div class="ok">📝 <b>After the presentation</b>, please scan the second QR code on the screen (<b>Evaluation form</b>) for us to proceed with your application.</div></div>';
+  const nm = document.createElement('button'); nm.className = 'btn ghost sm'; nm.id = 'notme'; nm.style.marginTop = '14px';
   nm.textContent = 'Not you? Check someone else in';
   nm.onclick = () => { store.del('cand'); C.rec = null; loadCheckin(''); };
-  document.getElementById('next').appendChild(nm);
+  const card = $app.querySelector('.card'); if (card) card.appendChild(nm);
 }
 
 const EVAL = [
@@ -387,12 +428,13 @@ function renderEval(edit) {
     r.forEach(q => { const c = document.querySelector('.qcard[data-k="' + q.k + '"]'); if (c && String(a[q.k] || '').trim()) c.classList.remove('miss'); });
   };
   const meter = () => { const v = Number(a.q1_excitement) || 0; document.querySelectorAll('.chips.scale .chip').forEach(c => c.classList.toggle('lit', Number(c.dataset.v) <= v)); };
+  C.co = coOf(C.rec.company); setTheme(C.co);  // light page top (progress bar), so a light status bar
   const draw = () => {
     num = 0;
-    $app.innerHTML = '<div class="evprog"><div class="evtrack"><i id="evbar"></i></div><span id="evcount"></span></div>' + logos(48) +
-      '<div class="evhero">' + (edit
-        ? '<h1>Change your answers, ' + h(C.rec.first_name) + ' ✏️</h1><p>Your answers are filled in. Change what you need, then save.</p>'
-        : '<h1>Your evaluation, ' + h(C.rec.first_name) + ' 👋</h1><p>About 4 minutes. Your answers shape your next step with us, so make them count.</p>') +
+    $app.innerHTML = '<div class="evprog"><div class="evtrack"><i id="evbar"></i></div><span id="evcount"></span></div>' +
+      '<div class="evhero">' + heroLogos() + (edit
+        ? '<h1>Change your answers, <span class="gname">' + h(C.rec.first_name) + '</span> ✏️</h1><p>Your answers are filled in. Change what you need, then save.</p>'
+        : '<h1>Your evaluation, <span class="gname">' + h(C.rec.first_name) + '</span> 👋</h1><p>About 4 minutes. Your answers shape your next step with us, so make them count.</p>') +
       '<div class="evtags"><span>⏱ 4 min</span><span>🔒 Private</span><span>📲 Saves as you go</span></div></div>' +
       '<form id="f" class="evform" novalidate>' + EVAL_SECTIONS.map(sec => '<section class="evsec"><div class="evsec-h"><span>' + sec[0] + '</span>' + h(sec[1]) + '</div>' +
         (sec[3] === 'ladders' ? salesLadderHtml() + bdpHtml() : '') + sec[2].map(k => qhtml(byKey[k])).join('') + '</section>').join('') +
@@ -428,12 +470,12 @@ function renderEval(edit) {
 /** mode: 'new' (just sent) · 'already' (sent before: one evaluation per person per day) · 'updated' (answers changed).
  *  canEdit: same day and the booker hasn't logged the call yet → they can fix a mistake. */
 function renderDone(mode, canEdit) {
-  stopTimer(); scrollTop();
-  const first = C.rec && C.rec.first_name ? ', ' + h(C.rec.first_name) : '';
-  const top = mode === 'already' ? ['✅', 'Already done' + first, '<p>You\'ve already sent your evaluation today. No need to do it again.</p>']
-    : mode === 'updated' ? ['✅', 'Updated' + first + '!', '<p>Your changes have been saved.</p>'] : ['🙌', 'Thank you' + first + '!', '<p>Your evaluation is in 🚀</p>'];
-  $app.innerHTML = logos(56) + '<div class="evhero center"><div class="hero-emoji">' + top[0] + '</div><h1>' + top[1] + '</h1>' + top[2] + '</div>' +
-    '<div class="qcard"><div class="evsec-h"><span>📲</span>What happens next</div>' +
+  stopTimer(); scrollTop(); brandTheme(C.rec && C.rec.company);
+  const first = C.rec && C.rec.first_name ? ', <span class="gname">' + h(C.rec.first_name) + '</span>' : '';
+  const top = mode === 'already' ? ['Evaluation', 'Already done' + first, '<p>You\'ve already sent your evaluation today. No need to do it again.</p>']
+    : mode === 'updated' ? ['Evaluation', 'Updated' + first + '!', '<p>Your changes have been saved.</p>'] : ['Evaluation sent 🙌', 'Thank you' + first + '!', '<p>Your evaluation is in 🚀</p>'];
+  $app.innerHTML = '<div class="c-hero">' + heroLogos() + '<span class="label">' + top[0] + '</span><h1>' + top[1] + '</h1></div>' +
+    '<div class="card c-done">' + tickSvg() + top[2] + '<div class="evsec-h c-next"><span>📲</span>What happens next</div>' +
     '<p>Our team will contact you about your next steps by close of business on Friday 6PM at the latest 📲</p>' +
     '<p class="muted">Keep your phone close and check WhatsApp.</p>' +
     (canEdit && C.rec ? '<div id="err"></div><button class="btn ghost block" id="edit" style="margin-top:14px">✏️ Made a mistake? Change my answers</button>' : '') +
@@ -499,8 +541,8 @@ function renderWelcome(w) {
   const sec = (icon, title) => '<section class="evsec"><div class="evsec-h"><span>' + icon + '</span>' + title + '</div>';
 
   $app.innerHTML = '<div class="wl wl-' + co + '">' +
-    '<div class="evhero wl-hero"><img class="wl-logo" src="' + LOGOS[co] + '" alt="' + h(brand) + '">' +
-    '<h1>You\'re in, ' + h(w.first_name) + ' 🎉</h1><p>Welcome to the <b>' + h(brand) + ' BA Academy</b></p>' +
+    '<div class="wl-hero"><img class="wl-logo" src="' + LOGOS[co] + '" alt="' + h(brand) + '">' +
+    '<h1>You\'re in, <span class="gname">' + h(w.first_name) + '</span> 🎉</h1><p>Welcome to the <b>' + h(brand) + ' BA Academy</b></p>' +
     '<span class="wl-pill">' + h(when) + '</span></div>' +
 
     sec('📅', 'Day 1 · Induction') + '<div class="qcard"><div class="wl-date">' + h(fmtLong(w.academy_date)) + '</div>' +
@@ -638,6 +680,7 @@ function startStaff() {
     Object.keys(S.data).forEach(k => { if (!S.inflight[k]) S.data[k].at = 0; });
     boot();
   } else {
+    setTheme(store.get('lastCo'));
     $app.innerHTML = '<div class="splash">' + logos(56) + '<div class="spinner"></div></div>';
   }
   first
@@ -645,14 +688,39 @@ function startStaff() {
     .catch(e => { if (!S.booted && S.token) $app.innerHTML = logos(48) + '<div class="err">' + h(e.message) + '</div><button class="btn block" onclick="location.reload()">Try again</button>'; });
 }
 
+// Two doors: Admin login (the four admins) and BA login (bookers and presenters Angad gives access).
+const ADMIN_NAMES = 'Angad, Jess, Satpal and Rubal';
+const DOORS = {
+  admin: ['🛡️ Admin login', 'Admin login', 'For ' + ADMIN_NAMES + '.'],
+  ba: ['🙌 BA login', 'BA login', 'For bookers and presenters with access.'],
+};
 function renderLogin() {
   stopTimer(); scrollTop();
-  $app.innerHTML = '<div class="login">' + logos(60) + '<p class="appname">Juss &amp; Link Recruitment App</p><div class="card"><h1>Staff login</h1><p class="muted">We\'ll email you a 6-digit code. No password needed.</p>' +
-    '<label class="q">Work email</label><input type="email" id="em" autocomplete="email" value="' + h(store.get('lastEmail') || '') + '">' +
-    '<div id="codeBox" hidden><label class="q">6-digit code</label><input type="text" id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6"></div>' +
-    '<div id="err"></div><button class="btn block" id="go" style="margin-top:14px">Email me a code</button></div></div>';
+  setTheme(store.get('lastCo'));  // the last person on this phone's brand; co-branded on a new phone
+  let door = store.get('door') === 'admin' ? 'admin' : 'ba';
+  $app.innerHTML = '<div class="login"><div class="login-hero">' + logos(58) + '<div class="label">Juss &amp; Link</div><div class="display">Recruitment</div></div>' +
+    '<div class="seg doors" id="doors" role="tablist">' + Object.keys(DOORS).map(k => '<button type="button" role="tab" data-door="' + k + '">' + DOORS[k][0] + '</button>').join('') + '</div>' +
+    '<div class="card c-form"><div id="doorHead"></div>' +
+    '<label class="q">Work email</label><input type="email" id="em" autocomplete="email" placeholder="you@company.co.uk" value="' + h(store.get('lastEmail') || '') + '">' +
+    '<div id="codeBox" hidden><label class="q">6-digit code</label><input type="text" id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••" style="letter-spacing:.4em;font-weight:800;text-align:center"></div>' +
+    '<div id="err"></div><button class="btn block" id="go" style="margin-top:16px">Email me a code</button></div></div>';
+  const drawDoor = () => {
+    document.querySelectorAll('#doors button').forEach(b => { const on = b.dataset.door === door; b.classList.toggle('on', on); b.setAttribute('aria-selected', on); });
+    document.getElementById('doorHead').innerHTML = '<h1 style="margin-top:12px">' + DOORS[door][1] + '</h1><p class="muted">' + h(DOORS[door][2]) + ' We\'ll email you a 6-digit code. No password needed.</p>';
+  };
+  document.getElementById('doors').onclick = e => { const b = e.target.closest('button[data-door]'); if (b && b.dataset.door !== door) { door = b.dataset.door; store.set('door', door); drawDoor(); } };
+  drawDoor();
   let sent = false;
   const btn = document.getElementById('go');
+  const verify = (email, note) => call('verifyCode', { email: email, code: document.getElementById('code').value, door: door }).then(r => {
+    if (r.wrongDoor && !note) {
+      // Their door is the other one: switch to it and carry on (the code is still good)
+      door = r.wrongDoor; store.set('door', door); drawDoor();
+      return verify(email, door === 'admin' ? 'You\'re an admin, so you\'re in through Admin login 👍' : 'You\'re a BA, so you\'re in through BA login 👍');
+    }
+    S.token = r.token; store.set('tok', r.token); store.del('cache'); S.data = {}; S.users = null; startStaff();
+    if (note) toast(note);
+  });
   btn.onclick = () => {
     const email = document.getElementById('em').value.trim();
     const err = document.getElementById('err');
@@ -667,9 +735,7 @@ function renderLogin() {
       }).catch(ex => { busy(btn, false); showErr(err, ex.message); });
     } else {
       busy(btn, true, 'Checking…');
-      call('verifyCode', { email: email, code: document.getElementById('code').value }).then(r => {
-        S.token = r.token; store.set('tok', r.token); store.del('cache'); S.data = {}; S.users = null; startStaff();
-      }).catch(ex => { busy(btn, false); showErr(err, ex.message); });
+      verify(email).catch(ex => { busy(btn, false); showErr(err, ex.message); });
     }
   };
 }
@@ -677,6 +743,7 @@ function renderLogin() {
 function boot() {
   S.booted = true;
   S.week = S.week || S.me.weekEnding; S.day = S.day || S.me.today;
+  setTheme(S.me.user.company); store.set('lastCo', coOf(S.me.user.company)); store.set('door', isAdmin() ? 'admin' : 'ba');
   initPush();
   S.tab = S.tab || (isPresenter() ? 'today' : isBooker() ? 'mine' : 'all');
   hist('replace', { v: S.tab, p: {} });
@@ -784,13 +851,15 @@ function tabs() {
   return t;
 }
 function ensureShell() {
-  if (document.getElementById('page')) return;
+  const co = coOf(S.me.user.company) || 'LINK';
+  if (document.getElementById('page') && $app.dataset.co === co) return;
+  $app.dataset.co = co;
   $app.innerHTML =
     '<header class="appbar"><div class="appbar-in">' +
-      '<button class="iconbtn light" id="abBack" hidden aria-label="Back">' + icon('back') + '</button>' +
-      '<div class="ab-brand" id="abBrand"><img src="' + LOGOS.LINK + '" alt="LINK"><img src="' + LOGOS.JUSS + '" alt="JUSS"></div>' +
+      '<button class="iconbtn" id="abBack" hidden aria-label="Back">' + icon('back') + '</button>' +
+      '<div class="ab-brand" id="abBrand"><img src="' + LOGOS[co] + '" alt="' + co + ' Marketing"></div>' +
       '<div class="ab-title" id="abTitle"></div><span class="sync" id="sync"></span>' +
-      '<button class="avatar-btn" id="abMe">' + h(initials(S.me.user.name)) + '</button>' +
+      '<button class="avatar-btn" id="abMe" aria-label="Your account"><span>' + h(initials(S.me.user.name)) + '</span></button>' +
     '</div></header>' +
     '<div id="bars"></div><div id="ptr"><span class="spinner sm"></span></div><main id="page"></main><div id="menu" hidden></div>' +
     '<nav class="tabbar" id="tabbar"></nav>';
@@ -799,7 +868,9 @@ function ensureShell() {
   document.getElementById('tabbar').onclick = e => { const b = e.target.closest('button[data-tab]'); if (b) { if (b.dataset.tab === S.view) window.scrollTo({ top: 0, behavior: 'smooth' }); else go(b.dataset.tab); } };
 }
 function paint(title, html, quiet, sub) {
+  setTheme(S.me.user.company);
   ensureShell();
+  if (!quiet) closeSheet(true);
   const y = window.scrollY;
   document.getElementById('abTitle').textContent = title;
   document.getElementById('abBack').hidden = !sub;
@@ -808,9 +879,18 @@ function paint(title, html, quiet, sub) {
   document.getElementById('sync').classList.toggle('on', S.syncing > 0);
   refreshBars();
   const page = document.getElementById('page');
+  clearTimeout(paint._t);
   page.innerHTML = html;
-  if (quiet) window.scrollTo(0, y);
-  else { window.scrollTo(0, 0); page.classList.remove('enter', 'enter-sub'); void page.offsetWidth; page.classList.add(sub ? 'enter-sub' : 'enter'); }
+  if (quiet) {
+    page.classList.remove('cascade'); window.scrollTo(0, y); countUp(page, true);
+    page.querySelectorAll('.ring-fg[data-dash]').forEach(el => { el.style.transition = 'none'; el.setAttribute('stroke-dasharray', el.dataset.dash); });
+  } else {
+    window.scrollTo(0, 0);
+    page.classList.remove('enter', 'enter-sub', 'cascade'); void page.offsetWidth;
+    page.classList.add(sub ? 'enter-sub' : 'enter', 'cascade');
+    stagger(page); countUp(page); fillRings(page);
+    paint._t = setTimeout(() => page.classList.remove('cascade'), 1000);
+  }
   return page;
 }
 // Pull down at the top of a list to refresh
@@ -845,8 +925,8 @@ function toggleMenu() {
   const m = document.getElementById('menu');
   if (!m.hidden) { m.hidden = true; return; }
   const u = S.me.user;
-  m.innerHTML = '<div class="menu-card"><div class="row"><span class="av lg">' + h(initials(u.name)) + '</span><div><b>' + h(u.name) + '</b><div class="small muted">' + h(u.email) + '</div>' +
-    '<div class="small muted">' + h(u.company) + ' · ' + h(u.roles.join(', ')) + '</div></div></div>' +
+  m.innerHTML = '<div class="menu-card"><div class="row" style="flex-wrap:nowrap"><span class="av lg co-' + h(coOf(u.company) || 'LINK') + '">' + h(initials(u.name)) + '</span><div style="min-width:0"><b>' + h(u.name) + '</b><div class="small muted" style="overflow:hidden;text-overflow:ellipsis">' + h(u.email) + '</div>' +
+    '<div class="small muted"><span class="co ' + h(u.company) + '">' + h(u.company) + '</span> · ' + (isAdmin() ? '<b>Admin</b>' : '<b>BA</b> · ' + h(u.roles.join(', '))) + '</div></div></div>' +
     '<button class="btn ghost block" id="mRefresh" style="margin-top:12px">↻ Refresh now</button>' +
     '<button class="btn ghost block" id="mLogout" style="margin-top:8px;color:var(--red)">Log out</button>' +
     '<p class="small muted center" style="margin:10px 0 0">App version ' + h(window.APP_VERSION || 'dev') + '<br>Alerts: ' + h(pushStatus()) + '</p></div>';
@@ -861,6 +941,7 @@ function toggleMenu() {
   };
 }
 function skeleton(n) { let s = ''; for (let i = 0; i < (n || 4); i++) s += '<div class="item sk"><span class="av"></span><div class="main"><div class="sk-line w60"></div><div class="sk-line w40"></div></div></div>'; return '<div class="list">' + s + '</div>'; }
+function heroSkeleton() { return '<div class="hero sk" style="min-height:190px"><div class="sk-line w40" style="opacity:.25"></div><div class="sk-line w60" style="height:34px;opacity:.25;margin-top:12px"></div><div class="sk-line w40" style="opacity:.25"></div></div>'; }
 
 // ───── Install + alerts banners ─────
 let INSTALL_EVT = null;
@@ -944,15 +1025,24 @@ function waFor(c) {
   if (isPresenter()) return waUrl(c.mobile, msgThanks(c));
   return waUrl(c.mobile, '');
 }
-function item(c, showStatus) {
-  return '<div class="swipe"><div class="acts"><a class="act call" href="tel:' + h(c.mobile) + '">' + icon('phone', 20) + '<span>Call</span></a>' +
-    '<a class="act wa" href="' + h(waFor(c)) + '" target="_blank" rel="noopener">' + icon('chat', 20) + '<span>WhatsApp</span></a></div>' + itemBtn(c, showStatus) + '</div>';
+/** One-tap actions under a card: 'rate' (presenter: Green/Amber/Red = in the room) or 'call' (booker: call, WhatsApp, log outcome). */
+function quickRow(c, kind) {
+  if (kind === 'rate') return '<div class="quick" data-for="' + h(c.id) + '"><button type="button" class="q-G" data-rate="G">Green</button><button type="button" class="q-A" data-rate="A">Amber</button><button type="button" class="q-R" data-rate="R">Red</button></div>';
+  if (kind === 'call') return '<div class="quick" data-for="' + h(c.id) + '"><a href="tel:' + h(c.mobile) + '">' + icon('phone', 16) + 'Call</a>' +
+    '<a class="q-wa" href="' + h(waFor(c)) + '" target="_blank" rel="noopener">' + icon('chat', 16) + 'WhatsApp</a><button type="button" class="q-go" data-out="1">Log outcome</button></div>';
+  if (kind === 'offer') return '<div class="quick" data-for="' + h(c.id) + '"><a class="q-go" data-send="offer" href="' + h(waUrl(c.mobile, msgAcademy(c))) + '" target="_blank" rel="noopener">🎉 Send Day 1 details on WhatsApp</a></div>';
+  return '';
 }
-function itemBtn(c, showStatus) {
+function item(c, showStatus, kind) {
+  const q = kind ? quickRow(c, kind) : '';
+  return '<div class="ccard' + (q ? ' has-quick' : '') + '"><div class="swipe"><div class="acts"><a class="act call" href="tel:' + h(c.mobile) + '">' + icon('phone', 20) + '<span>Call</span></a>' +
+    '<a class="act wa" href="' + h(waFor(c)) + '" target="_blank" rel="noopener">' + icon('chat', 20) + '<span>WhatsApp</span></a></div>' + itemBtn(c, showStatus, kind === 'rate') + '</div>' + q + '</div>';
+}
+function itemBtn(c, showStatus, rating) {
   return '<button class="item" data-id="' + h(c.id) + '">' + avatar(c) + '<div class="main">' +
     '<div class="name">' + h(c.full_name) + (c.stars ? ' <span class="stars-sm">' + '★'.repeat(Number(c.stars)) + '</span>' : '') + '</div>' +
     '<div class="sub">' + (c.booker_name ? h(c.booker_name) + ' <span class="co ' + h(c.company) + '">' + h(c.company) + '</span>' : '<i>Booker not confirmed' + (c.booker_typed ? ': "' + h(c.booker_typed) + '"' : '') + '</i>') + '</div>' +
-    '<div class="pills">' + (showStatus ? statusPill(c) : '') + (c.in_room ? '' : '<span class="pill">Not rated yet</span>') + flagCounts(c) + '</div>' +
+    '<div class="pills">' + (showStatus ? statusPill(c) : '') + (c.in_room || rating ? '' : '<span class="pill">Not rated yet</span>') + (c._pending ? '<span class="pill">⏳ Syncing</span>' : '') + flagCounts(c) + '</div>' +
     '</div><span class="chev">›</span></button>';
 }
 function bindItems(root) {
@@ -964,6 +1054,22 @@ function bindItems(root) {
     };
   });
   (root || document).querySelectorAll('.swipe').forEach(bindSwipe);
+  (root || document).querySelectorAll('.quick[data-for]').forEach(q => {
+    const id = q.dataset.for;
+    q.querySelectorAll('[data-rate]').forEach(b => { b.onclick = () => quickRate(id, b.dataset.rate); });
+    q.querySelectorAll('[data-out]').forEach(b => { b.onclick = () => outcomeSheet(id); });
+    q.querySelectorAll('[data-send]').forEach(a => { a.addEventListener('click', () => { call('markSent', { id: id, kind: 'offer' }).catch(() => {}); }); });
+  });
+}
+/** Presenter taps Green/Amber/Red on the list: saved instantly, keeps their stars, tags and notes. */
+function quickRate(id, rag) {
+  const c = findCand(id); if (!c) return;
+  if (navigator.vibrate) navigator.vibrate(8);
+  // only: ['rag'] = the Google code changes just the rating. The rest is this phone's copy, for Google code that predates "only".
+  const payload = { id: c.id, in_room: true, rag: rag, only: ['rag'], stars: Number(c.stars) || 0, tags: c.tags ? String(c.tags).split(', ').filter(String) : [], notes: c.notes || '' };
+  const local = Object.assign({}, c, { rag: rag, in_room: 'TRUE', presenter_id: S.me.user.id, presenter_name: S.me.user.name, notes_at: londonNow() });
+  queueSave('saveNotes', payload, local, { G: '🟢 Green', A: '🟠 Amber', R: '🔴 Red' }[rag] + ' · ' + c.first_name + ' is in the room ✓');
+  render(true);
 }
 // Swipe a candidate left to reveal Call / WhatsApp
 function closeSwipes(except) { document.querySelectorAll('.swipe.open').forEach(x => { if (x !== except) { x.classList.remove('open'); x.querySelector('.item').style.transform = ''; } }); }
@@ -990,38 +1096,51 @@ function groupByDate(items) {
   items.forEach(c => { (g[c.attended_date] = g[c.attended_date] || []).push(c); });
   return Object.keys(g).sort().reverse().map(d => '<div class="datehead">' + fmt(d) + '<span>' + g[d].length + '</span></div><div class="list">' + g[d].map(c => item(c, true)).join('') + '</div>').join('');
 }
+function weekArrows(light) {
+  const cls = 'iconbtn' + (light ? ' light' : '');
+  return '<button class="' + cls + '" id="wprev" aria-label="Previous week">‹</button><button class="' + cls + '" id="wnext" aria-label="Next week"' + (S.week >= S.me.weekEnding ? ' disabled' : '') + '>›</button>';
+}
 function weekNav() {
-  return '<div class="seg-nav"><button class="iconbtn" id="wprev" aria-label="Previous week">‹</button><div class="lbl"><b>Week ending</b><span>' + fmt(S.week) + '</span></div>' +
-    '<button class="iconbtn" id="wnext" aria-label="Next week"' + (S.week >= S.me.weekEnding ? ' disabled' : '') + '>›</button></div>';
+  return '<div class="seg-nav"><div class="lbl"><span>' + (S.week === S.me.weekEnding ? 'This week · ending' : 'Week ending') + '</span><b>' + fmt(S.week) + '</b></div>' + weekArrows() + '</div>';
 }
 function bindWeekNav() {
   document.getElementById('wprev').onclick = () => { S.week = addDays(S.week, -7); render(); };
   document.getElementById('wnext').onclick = () => { S.week = addDays(S.week, 7); render(); };
 }
 function empty(icon_, text) { return '<div class="empty"><div class="big-emoji">' + icon_ + '</div><p>' + text + '</p></div>'; }
-function kpis(list) { return '<div class="kpis">' + list.map(k => '<div class="kpi k-' + k[2] + '"><b>' + k[0] + '</b><span>' + k[1] + '</span></div>').join('') + '</div>'; }
+/** [value, label, alert?]: plain numbers count up; anything else (e.g. "2/3") shows as it is. */
+function kpis(list) {
+  return '<div class="kpis">' + list.map(k => '<div class="kpi' + (k[2] ? ' alert' : '') + '"><b' + (typeof k[0] === 'number' ? ' data-n="' + k[0] + '"' : '') + '>' + h(k[0]) + '</b><span>' + h(k[1]) + '</span></div>').join('') + '</div>';
+}
 function ring(n, target) {
   const pct = Math.min(1, n / target), r = 42, c = 2 * Math.PI * r;
-  return '<svg class="ring" viewBox="0 0 100 100"><circle cx="50" cy="50" r="' + r + '" class="ring-bg"/><circle cx="50" cy="50" r="' + r + '" class="ring-fg' + (n >= target ? ' done' : '') + '" stroke-dasharray="' + (c * pct) + ' ' + c + '"/>' +
-    '<text x="50" y="54" text-anchor="middle">' + n + '<tspan>/' + target + '</tspan></text></svg>';
+  return '<svg class="ring" viewBox="0 0 100 100"><defs><linearGradient id="ringGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:var(--b1)"/><stop offset=".5" style="stop-color:var(--b2)"/><stop offset="1" style="stop-color:var(--b3)"/></linearGradient></defs>' +
+    '<circle cx="50" cy="50" r="' + r + '" class="ring-bg"/><circle cx="50" cy="50" r="' + r + '" class="ring-fg' + (n >= target ? ' done' : '') + '" stroke-dasharray="' + (REDUCED ? c * pct : 0) + ' ' + c + '" data-dash="' + (c * pct) + ' ' + c + '"/>' +
+    '<text x="50" y="60" text-anchor="middle">' + n + '<tspan>/' + target + '</tspan></text></svg>';
 }
+/** The ring fills up just after the screen appears. */
+function fillRings(root) { requestAnimationFrame(() => requestAnimationFrame(() => root.querySelectorAll('.ring-fg[data-dash]').forEach(el => { el.setAttribute('stroke-dasharray', el.dataset.dash); }))); }
 
 // ───── Today (presenter) ─────
 function viewToday(quiet) {
   const d = want(weekEndingOf(S.day));
   const isToday = S.day === S.me.today;
-  const head = '<div class="seg-nav"><button class="iconbtn" id="dprev" aria-label="Previous day">‹</button><div class="lbl"><b>' + (isToday ? 'Today' : DAYS_LONG[D(S.day).getUTCDay()]) + '</b><span>' + fmt(S.day) + '</span></div>' +
-    '<button class="iconbtn" id="dnext" aria-label="Next day"' + (isToday ? ' disabled' : '') + '>›</button></div>';
+  const top = '<div class="hero-top"><div class="grow"><div class="label">' + (isToday ? h(greeting()) : 'Looking back at') + '</div>' +
+    '<div class="hero-name">' + h(isToday ? S.me.user.name.split(' ')[0] : DAYS_LONG[D(S.day).getUTCDay()]) + '</div><div class="hero-date">' + h(isToday ? 'Today · ' + fmtLong(S.day) : fmtLong(S.day)) + '</div></div>' +
+    '<div class="hero-nav"><button class="iconbtn light" id="dprev" aria-label="Previous day">‹</button><button class="iconbtn light" id="dnext" aria-label="Next day"' + (isToday ? ' disabled' : '') + '>›</button></div></div>';
   let body;
-  if (!d) body = skeleton();
+  if (!d) body = '<div class="hero">' + top + '</div>' + skeleton();
   else {
     const items = d.items.filter(c => c.attended_date === S.day).sort((a, b) => a.created_at.localeCompare(b.created_at));
-    body = kpis([[items.length, 'Checked in', 'ink'], [items.filter(c => c.in_room).length, 'Rated', 'green'], [items.filter(c => c.eval_at).length, 'Evaluated', 'teal'], [items.filter(c => c.eval_at && !c.outcome).length, 'To call', 'orange']]) +
+    const rated = items.filter(c => c.in_room).length, toCall = items.filter(c => c.eval_at && !c.outcome).length;
+    body = '<div class="hero">' + top + kpis([[items.length, 'Checked in'], [rated, 'Rated'], [items.filter(c => c.eval_at).length, 'Evaluated'], [toCall, 'To call', toCall > 0]]) + '</div>' +
       (isAdmin() ? '<div class="bullbtns"><button class="btn" id="bullDaily">📣 ' + (isToday ? 'Today\'s' : DAYS[D(S.day).getUTCDay()]) + ' bulletin</button><button class="btn ghost" id="bullWeek">🏆 Week top 5</button></div>' : '') +
-      '<p class="hint">Tap a name to rate them. Rating = they were in the room (that\'s what counts for pay).</p>' +
-      (items.length ? '<div class="list">' + items.map(c => item(c, false)).join('') + '</div>' : empty('📷', 'No check-ins yet. They appear here live as people scan the check-in QR on your first slide.'));
+      (items.length ? '<div class="section-h"><b>In the room</b><span>' + rated + ' of ' + items.length + ' rated</span></div>' +
+        (isPresenter() && rated < items.length ? '<p class="hint">Tap Green, Amber or Red to rate. Rating = they were in the room (that\'s what counts for pay). Tap a name for stars and notes.</p>' : '') +
+        '<div class="list">' + items.map(c => item(c, false, isPresenter() && !c.in_room ? 'rate' : '')).join('') + '</div>'
+        : empty('📷', 'No check-ins yet. They appear here live as people scan the check-in QR on your first slide.'));
   }
-  const page = paint('Today', head + body, quiet);
+  const page = paint('', body, quiet);
   bindItems(page);
   [['bullDaily', 'daily'], ['bullWeek', 'weekly']].forEach(b => { const el = document.getElementById(b[0]); if (el) el.onclick = () => nav('bulletin', { day: S.day, kind: b[1] }, true); });
   document.getElementById('dprev').onclick = () => { S.day = addDays(S.day, -1); render(); };
@@ -1031,22 +1150,28 @@ function viewToday(quiet) {
 // ───── My candidates (booker) ─────
 function viewMine(quiet) {
   const d = want(S.week);
+  const thisWeek = S.week === S.me.weekEnding;
+  const top = '<div class="hero-top"><div class="grow"><div class="label">' + (thisWeek ? h(greeting()) : 'Looking back,') + '</div>' +
+    '<div class="hero-name">' + h(S.me.user.name.split(' ')[0]) + '</div><div class="hero-date">Week ending ' + h(fmt(S.week)) + '</div></div>' +
+    '<div class="hero-nav">' + weekArrows(true) + '</div></div>';
   let body;
-  if (!d) body = skeleton();
+  if (!d) body = '<div class="hero">' + top + '</div>' + skeleton();
   else {
     const me = S.me.user.id;
     const items = d.items.filter(c => c.booker_id === me);
     const r = d.pay.rows.filter(x => x.booker_id === me)[0] || { net: 0, attended: 0, excluded: [], late: 0, missing: 0 };
     const toCall = items.filter(c => c.eval_at && !c.outcome);
+    const toSend = items.filter(c => toCall.indexOf(c) < 0 && c.outcome === 'Academy booked' && c.welcome_url && !c.offer_sent_at && !c.academy_confirmed_at && c.admin_status !== 'pending' && c.admin_status !== 'rejected');
     const left = Math.max(0, d.pay.target - r.net);
-    body = '<div class="hero"><div>' + ring(r.net, d.pay.target) + '</div><div class="hero-txt"><b>' + (left ? left + ' more to hit ' + d.pay.target : 'Target smashed 🔥') + '</b>' +
+    body = '<div class="hero">' + top + '<div class="hero-body">' + ring(r.net, d.pay.target) + '<div class="hero-txt"><b>' + (left ? left + ' more to hit ' + d.pay.target : 'Target smashed 🔥') + '</b>' +
       '<span>' + r.attended + ' attended · ' + r.excluded.length + ' don\'t count</span>' +
-      (r.excluded.length ? '<span class="small">' + r.excluded.map(x => h(x.name) + ' (' + h(x.why) + ')').join(' · ') + '</span>' : '') + '</div></div>' +
-      (toCall.length ? '<div class="section-h">📞 To call <span>log by ' + h(S.me.deadlineLabel || 'Sat ' + S.me.deadlineTime) + '</span></div><div class="list">' + toCall.map(c => item(c, true)).join('') + '</div>' : '') +
-      (items.length > toCall.length ? '<div class="section-h">' + (toCall.length ? 'Everyone else' : 'This week') + '</div>' + groupByDate(items.filter(c => toCall.indexOf(c) < 0))
+      (r.excluded.length ? '<span class="small">' + r.excluded.map(x => h(x.name) + ' (' + h(x.why) + ')').join(' · ') + '</span>' : '') + '</div></div></div>' +
+      (toCall.length ? '<div class="section-h"><b>📞 To call · ' + toCall.length + '</b><span>log by ' + h(S.me.deadlineLabel || 'Sat ' + S.me.deadlineTime) + '</span></div><div class="list">' + toCall.map(c => item(c, true, 'call')).join('') + '</div>' : '') +
+      (toSend.length ? '<div class="section-h"><b>🎉 Send Day 1 details · ' + toSend.length + '</b></div><div class="list">' + toSend.map(c => item(c, true, 'offer')).join('') + '</div>' : '') +
+      (items.length > toCall.length + toSend.length ? '<div class="section-h"><b>' + (toCall.length || toSend.length ? 'Everyone else' : 'This week') + '</b></div>' + groupByDate(items.filter(c => toCall.indexOf(c) < 0 && toSend.indexOf(c) < 0))
         : items.length ? '' : empty('🗓️', 'No candidates this week yet.'));
   }
-  const page = paint('My candidates', weekNav() + body, quiet);
+  const page = paint('', body, quiet);
   bindItems(page); bindWeekNav();
 }
 
@@ -1065,10 +1190,10 @@ function viewAll(quiet) {
   if (!d) body = skeleton();
   else {
     const items = d.items.filter(F[S.filter][1]);
-    body = '<div class="chips scroll" id="flt">' + Object.keys(F).map(k => '<button class="chip' + (S.filter === k ? ' on' : '') + '" data-f="' + k + '">' + F[k][0] + ' <b>' + d.items.filter(F[k][1]).length + '</b></button>').join('') + '</div>' +
+    body = '<div class="chips scroll fchips" id="flt">' + Object.keys(F).map(k => '<button class="chip' + (S.filter === k ? ' on' : '') + '" data-f="' + k + '">' + F[k][0] + ' <b>' + d.items.filter(F[k][1]).length + '</b></button>').join('') + '</div>' +
       (items.length ? groupByDate(items) : empty('✨', 'Nothing here.'));
   }
-  const page = paint('All candidates', '<div class="search"><input type="search" id="q" placeholder="Search name, mobile or email" value="' + h(S.q || '') + '"></div><div id="sr"></div>' + weekNav() + body, quiet);
+  const page = paint('All', '<div class="search"><input type="search" id="q" placeholder="Search name, mobile or email" value="' + h(S.q || '') + '"></div><div id="sr"></div>' + weekNav() + body, quiet);
   bindItems(page); bindWeekNav();
   page.querySelectorAll('#flt .chip').forEach(b => { b.onclick = () => { S.filter = b.dataset.f; render(true); }; });
   let t;
@@ -1091,8 +1216,9 @@ function viewPay(quiet) {
     const p = d.pay;
     const rows = p.rows.filter(r => r.attended > 0 || isAdmin());
     const hit = rows.filter(r => r.net >= p.target).length;
-    body = (isAdmin() ? kpis([[rows.reduce((n, r) => n + r.net, 0), 'Net', 'ink'], [hit + '/' + rows.filter(r => r.attended).length, 'Hit ' + p.target, 'green'],
-      [rows.reduce((n, r) => n + r.late, 0), 'Late', 'orange'], [rows.reduce((n, r) => n + r.missing, 0), 'No outcome', 'red']]) : '') +
+    const late = rows.reduce((n, r) => n + r.late, 0), missing = rows.reduce((n, r) => n + r.missing, 0);
+    body = (isAdmin() ? '<div class="hero"><div class="label">Team this week</div>' + kpis([[rows.reduce((n, r) => n + r.net, 0), 'Net'], [hit + '/' + rows.filter(r => r.attended).length, 'Hit ' + p.target],
+      [late, 'Late', late > 0], [missing, 'No outcome', missing > 0]]) + '</div>' : '') +
       '<div class="list">' + (rows.length ? rows.map((r, i) => '<div class="payrow" data-i="' + i + '"><div class="rank' + (i < 3 && r.net ? ' top' + (i + 1) : '') + '">' + (i + 1) + '</div>' +
         '<div class="main"><div class="name">' + h(r.name) + ' <span class="co ' + h(r.company) + '">' + h(r.company) + '</span></div>' +
         '<div class="bar' + (r.net >= p.target ? ' done' : '') + '"><i style="width:' + Math.min(100, r.net / p.target * 100) + '%"></i></div>' +
@@ -1265,7 +1391,8 @@ function viewTeam() {
   const us = S.users;
   const row = u => '<button class="item" data-u="' + h(u.id) + '"><span class="av co-' + h(u.company) + '">' + h(initials(u.name)) + '</span><div class="main"><div class="name">' + h(u.name) + ' <span class="co ' + h(u.company) + '">' + h(u.company) + '</span>' +
     (u.active ? '' : ' <span class="pill red">No access</span>') + '</div><div class="sub">' + h(u.email) + '</div><div class="pills">' + u.roles.map(r => '<span class="pill">' + h(r) + '</span>').join('') + '</div></div><span class="chev">›</span></button>';
-  const page = paint('Team', '<div class="row" style="gap:8px;margin:4px 0 12px"><button class="btn grow" id="add">＋ Add person</button><button class="btn ghost grow" id="slideqr">📲 Slide QR codes</button></div>' +
+  const page = paint('Team', '<div class="tiles"><button class="tile hot" id="add"><i>＋</i><b>Add person</b><span>BA (booker, presenter) or admin</span></button>' +
+    '<button class="tile" id="slideqr"><i>📲</i><b>Slide QR codes</b><span>Check-in + evaluation</span></button></div>' +
     '<p class="hint">' + us.filter(u => u.active).length + ' people with access. Bookers appear in the check-in type-ahead.</p>' +
     '<div class="list">' + us.map(row).join('') + '</div>');
   document.getElementById('add').onclick = () => nav('user', {}, true);
@@ -1282,6 +1409,7 @@ function editUser(u) {
     '<div class="help" style="margin-top:6px">Decides which WhatsApp welcome message (LINK or JUSS) they send.</div>' +
     '<label class="q">Access</label><div class="chips" data-name="roles" data-multi="1">' +
     [['booker', 'Booker'], ['presenter', 'Presenter'], ['admin', 'Admin (adds/removes people, sees everything)']].map(r => '<button type="button" class="chip' + (x.roles.indexOf(r[0]) >= 0 ? ' on' : '') + '" data-v="' + r[0] + '">' + r[1] + '</button>').join('') + '</div>' +
+    '<div class="help" style="margin-top:8px">Booker or presenter = they log in with <b>BA login</b>. Admin = <b>Admin login</b>.</div>' +
     '<label class="check"><input type="checkbox" id="ua"' + (x.active ? ' checked' : '') + '> Has access (untick to switch off instantly)</label>' +
     '<div id="uerr"></div><button class="btn block" id="usave">Save</button>' +
     (u && u.id !== S.me.user.id ? '<button class="btn ghost block" id="udel" style="margin-top:8px;color:var(--red)">Delete person</button>' : '') + '</div>', false, true);
@@ -1407,7 +1535,10 @@ function flush() {
     FLUSHING = false;
     if (pendingIds().indexOf(nc.id) < 0) {
       upsert(nc);
-      const show = () => { if (S.view === 'cand' && S.params.id === nc.id) renderCandidate(findCand(nc.id) || nc, true); };
+      const show = () => {
+        if (S.view === 'cand' && S.params.id === nc.id) renderCandidate(findCand(nc.id) || nc, true);
+        else if (['today', 'mine', 'all'].indexOf(S.view) >= 0) render(true);  // the "⏳ Syncing" tag on the card goes away
+      };
       if (!isTyping()) show(); else whenNotTyping(show);
     }
     flush();
@@ -1461,51 +1592,116 @@ function msgAcademy(c) {
 }
 
 
+/** Outcome rules shared by the candidate page and the "Log outcome" sheet on the list. False (with the reason shown) if not ready. */
+function submitOutcome(c, payload, errEl) {
+  if (!payload.outcome) { showErr(errEl, 'Choose an outcome.'); return false; }
+  if (payload.outcome === 'Academy booked' && !/^\d{4}-\d{2}-\d{2}$/.test(payload.academy_date)) { showErr(errEl, 'Pick the BA Academy Day 1 date.'); return false; }
+  const acad = payload.outcome === 'Academy booked' ? payload.academy_date : '';
+  const now = londonNow();
+  const local = Object.assign({}, c, {
+    outcome: payload.outcome, academy_date: acad, outcome_notes: payload.outcome_notes, outcome_by: S.me.user.name, outcome_at: now,
+    outcome_late: now > c.deadline ? 'TRUE' : '', academy_confirmed_at: acad === c.academy_date ? c.academy_confirmed_at : '',
+    admin_status: acad && (c.rag === 'R' || c.repeat_block) && !isAdmin() && c.admin_status !== 'approved' ? 'pending' : (acad ? c.admin_status : (c.admin_status === 'pending' ? '' : c.admin_status)),
+  });
+  queueSave('saveOutcome', payload, local, local.outcome_late ? 'Saved — flagged late' : 'Outcome saved ✓');
+  return true;
+}
+
+// ───── "Log outcome" sheet: straight from the list card, no need to open the candidate ─────
+function closeSheet(now) {
+  const b = document.querySelector('.sheet-back'); if (!b) return;
+  document.body.style.overflow = '';
+  if (now || REDUCED) { b.remove(); return; }
+  b.querySelector('.sheet').classList.add('closing'); b.style.transition = 'opacity .22s'; b.style.opacity = '0';
+  setTimeout(() => b.remove(), 230);
+}
+function outcomeSheet(id) {
+  const c = findCand(id); if (!c) return;
+  closeSheet(true);
+  const back = document.createElement('div');
+  back.className = 'sheet-back';
+  back.innerHTML = '<div class="sheet" role="dialog" aria-label="Log the call outcome"><div class="grab"></div>' +
+    '<div class="sheet-h">' + avatar(c) + '<div style="min-width:0"><div class="label muted">Log the call · ' + h(c.full_name) + '</div><div class="display">How did it go?</div></div></div>' +
+    '<div id="sh">' + chips('outcome', S.me.outcomes, c.outcome, true) +
+    '<div id="sacad"' + (c.outcome === 'Academy booked' ? '' : ' hidden') + '><label class="q">BA Academy Day 1 date</label><input type="date" id="sadate" value="' + h(c.academy_date || nextMonday(S.me.today)) + '"></div>' +
+    '<label class="q">Notes from the call</label><textarea id="sonotes" class="short" placeholder="Anything the team should know">' + h(c.outcome_notes) + '</textarea>' +
+    '<div id="soerr"></div><button class="btn block" id="sosave" style="margin-top:14px">Save outcome</button>' +
+    '<button class="btn ghost block" id="socancel" style="margin-top:8px">Cancel</button>' +
+    '<p class="small muted center">Logging after ' + h(S.me.deadlineLabel || 'the deadline') + ' is allowed but shows as late.</p></div></div>';
+  document.body.appendChild(back);
+  document.body.style.overflow = 'hidden';
+  const sh = back.querySelector('#sh');
+  bindChips(sh, (n, v) => { if (n === 'outcome') back.querySelector('#sacad').hidden = v !== 'Academy booked'; });
+  back.onclick = e => { if (e.target === back) closeSheet(); };
+  back.querySelector('#socancel').onclick = () => closeSheet();
+  back.querySelector('#sosave').onclick = () => {
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    const ok = submitOutcome(findCand(id) || c, { id: id, outcome: chipVal(sh, 'outcome'), academy_date: back.querySelector('#sadate').value, outcome_notes: back.querySelector('#sonotes').value }, back.querySelector('#soerr'));
+    if (ok) { closeSheet(); render(true); }
+  };
+}
+
+// ───── Candidate page: summary on top, section tabs that stay pinned, the part you act on first ─────
+function spy() {
+  const bar = S.view === 'cand' && document.getElementById('jump'); if (!bar) return;
+  const secs = Array.from(document.querySelectorAll('.csec')); if (!secs.length) return;
+  let cur = secs[0];
+  secs.forEach(s => { if (s.getBoundingClientRect().top <= 170) cur = s; });
+  if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4) cur = secs[secs.length - 1];
+  let moved = null;
+  bar.querySelectorAll('button').forEach(b => { const on = b.dataset.go === cur.id; if (on && !b.classList.contains('on')) moved = b; b.classList.toggle('on', on); });
+  if (moved && (moved.offsetLeft < bar.scrollLeft || moved.offsetLeft + moved.offsetWidth > bar.scrollLeft + bar.clientWidth)) bar.scrollTo({ left: moved.offsetLeft - 16, behavior: REDUCED ? 'auto' : 'smooth' });
+}
+window.addEventListener('scroll', () => { if (!spy.raf) spy.raf = requestAnimationFrame(() => { spy.raf = 0; spy(); }); }, { passive: true });
+
 function renderCandidate(c, quiet) {
   const canNotes = isPresenter();
   const canOutcome = isAdmin() || c.booker_id === S.me.user.id;
   const flags = c.flags.filter(f => f.level === 'red').concat(c.flags.filter(f => f.level === 'amber'), c.flags.filter(f => f.level === 'green'));
   const kv = (k, v) => v ? '<dt>' + h(k) + '</dt><dd>' + h(v) + '</dd>' : '';
   const qa = (q, a) => '<div class="qa"><div class="qq">' + h(q) + '</div><div class="aa">' + (a ? h(a) : '<span class="muted">—</span>') + '</div></div>';
+  const glance = (k, v, cls) => '<div class="evt' + (cls ? ' ' + cls : '') + '"><span>' + h(k) + '</span><b>' + (v ? h(v) : '<span class="muted">—</span>') + '</b></div>';
   const evalHtml = c.eval_at
-    ? qa('Excitement (1–10)', c.q1_excitement) + qa('What stood out', c.q2_stood_out) + qa('#1 reason for joining', c.q3_reason) +
-      qa('Current situation', c.q4_situation + (c.q4_looking_for ? ' — looking for ' + c.q4_looking_for : '')) +
-      qa('Earliest start', c.q5_start_date ? fmt(c.q5_start_date) : '') + qa('Days per week', c.q6_days) + qa('Commute to Slough daily', c.q7_commute) +
-      qa('Kept going when it got tough', c.q8_resilience) + qa('Earned on results', c.q9_results_paid + (c.q9_results_detail ? ' — ' + c.q9_results_detail : '')) +
+    ? '<div class="evgrid"><div class="evt big"><span>Excitement</span><b>' + h(c.q1_excitement || '—') + '</b><i>out of 10</i></div>' +
+        glance('#1 reason', c.q3_reason, 'wide') + glance('Can start', c.q5_start_date ? fmt(c.q5_start_date) : '') + glance('Days / week', c.q6_days) +
+        glance('Commute', c.q7_commute) + glance('Right now', c.q4_situation + (c.q4_looking_for ? ' · ' + c.q4_looking_for : ''), 'wide') +
+        glance('In 2 years', c.q12_bdp_stage, 'full') + '</div>' +
+      qa('What stood out', c.q2_stood_out) + qa('Kept going when it got tough', c.q8_resilience) + qa('Earned on results', c.q9_results_paid + (c.q9_results_detail ? ' — ' + c.q9_results_detail : '')) +
       qa('Door shut in face', c.q10_door) + qa('Coach says pitch isn\'t working', c.q11_coach) +
-      qa('2-year ambition (BDP)', c.q12_bdp_stage + (c.q12_bdp_why ? ' — ' + c.q12_bdp_why : '')) +
+      (c.q12_bdp_why ? qa('What running their own business would mean', c.q12_bdp_why) : '') +
       (isAdmin() ? qa('Unspent convictions (admin only)', c.q13_unspent) : '') + qa('Questions for us', c.q14_questions)
     : '<p class="muted">Not submitted yet.</p>';
   const academyDefault = c.academy_date || nextMonday(S.me.today);
   const offerReady = c.outcome === 'Academy booked' && c.admin_status !== 'pending' && c.admin_status !== 'rejected';
   const waMain = canOutcome && offerReady ? waUrl(c.mobile, msgAcademy(c)) : canNotes ? waUrl(c.mobile, msgThanks(c)) : waUrl(c.mobile, '');
 
-  let html = '<div class="profile">' + avatar(c, 'xl') + '<h1>' + h(c.full_name) + '</h1>' +
+  // Summary: who, how they did, one-tap contact
+  const summary = '<div class="profile">' + avatar(c, 'xl') + '<h1>' + h(c.full_name) + '</h1>' +
     '<div class="muted small">Attended ' + fmt(c.attended_date) + ' · ' + (c.booker_name ? 'booked by <b>' + h(c.booker_name) + '</b> <span class="co ' + h(c.company) + '">' + h(c.company) + '</span>' : '<b>booker not confirmed</b>' + (c.booker_typed ? ' ("' + h(c.booker_typed) + '")' : '')) + '</div>' +
     (c.stars ? '<div class="stars-lg">' + '★'.repeat(Number(c.stars)) + '<span>' + '★'.repeat(5 - Number(c.stars)) + '</span></div>' : '') +
     (c.p_interesting ? '<div class="icebreak">💡 ' + h(c.p_interesting) + '</div>' : '') +
     '<div class="pills center-pills">' + statusPill(c) + (c._pending ? '<span class="pill">⏳ Syncing…</span>' : '') + '</div>' +
     '<div class="actions"><a href="tel:' + h(c.mobile) + '">' + icon('phone') + '<span>Call</span></a>' +
     '<a href="' + h(waMain) + '" target="_blank" rel="noopener">' + icon('chat') + '<span>WhatsApp</span></a>' +
-    '<a href="mailto:' + h(c.email) + '">' + icon('mail') + '<span>Email</span></a></div></div>' +
-    (flags.length ? '<div class="flags">' + flags.map(f => '<div class="flag ' + f.level + '">' + h(f.text) + '</div>').join('') + '</div>' : '');
+    '<a href="mailto:' + h(c.email) + '">' + icon('mail') + '<span>Email</span></a></div>' +
+    (flags.length ? '<div class="flags">' + flags.map(f => '<div class="flag ' + f.level + '">' + h(f.text) + '</div>').join('') + '</div>' : '') + '</div>';
 
-  // Presenter
-  html += '<div class="section-h">Presenter</div><div class="card" id="pres">';
+  // In the room (presenter)
+  let pres = '<div class="card" id="pres">';
   if (canNotes) {
-    html += '<label class="q" style="margin-top:0">💬 Why work in sales?</label>' +
+    pres += '<label class="q" style="margin-top:0">💬 Why work in sales?</label>' +
       '<textarea id="whynote" maxlength="300" class="short" placeholder="Type their answer, e.g. wants to earn on results, saving for a house">' + h(c.p_why_sales_note || c.p_why_sales) + '</textarea>' +
       '<label class="q">✨ Tell us something interesting about you</label>' +
       '<textarea id="interesting" maxlength="300" class="short" placeholder="Type their answer, e.g. plays semi-pro football">' + h(c.p_interesting) + '</textarea>' +
       '<label class="q">Rating</label><div class="rag"><button type="button" class="G' + (c.rag === 'G' ? ' on' : '') + '" data-r="G">Green</button>' +
       '<button type="button" class="A' + (c.rag === 'A' ? ' on' : '') + '" data-r="A">Amber</button><button type="button" class="R' + (c.rag === 'R' ? ' on' : '') + '" data-r="R">Red</button></div>' +
-      '<div class="stars">' + [1, 2, 3, 4, 5].map(n => '<button type="button" data-s="' + n + '" class="' + (Number(c.stars) >= n ? 'on' : '') + '">★</button>').join('') + '</div>' +
+      '<div class="stars">' + [1, 2, 3, 4, 5].map(n => '<button type="button" data-s="' + n + '" class="' + (Number(c.stars) >= n ? 'on' : '') + '" aria-label="' + n + ' star' + (n > 1 ? 's' : '') + '">★</button>').join('') + '</div>' +
       '<label class="q">Quick tags</label><div class="chips" data-name="tags" data-multi="1">' + TAGS.map(t => '<button type="button" class="chip' + ((c.tags || '').split(', ').indexOf(t) >= 0 ? ' on' : '') + '" data-v="' + h(t) + '">' + h(t) + '</button>').join('') + '</div>' +
       '<label class="q">Other notes</label><textarea id="notes" placeholder="Anything else, e.g. done sales in Turkey, holiday in December">' + h(c.notes) + '</textarea>' +
-      '<div id="perr"></div><button class="btn block" id="savenotes" style="margin-top:10px">Save notes</button>' +
+      '<div id="perr"></div><div class="dock"><button class="btn block" id="savenotes">Save notes</button></div>' +
       '<p class="small muted center">' + (c.in_room ? '✅ In the room · ' : '') + (c.notes_at ? 'saved ' + fmtTs(c.notes_at) + ' by ' + h(c.presenter_name) : 'Rating them confirms they were in the room') + '</p>';
   } else {
-    html += (c.p_why_sales || c.p_why_sales_note || c.p_interesting
+    pres += (c.p_why_sales || c.p_why_sales_note || c.p_interesting
       ? '<div class="qa"><div class="qq">💬 Why work in sales?</div><div class="aa">' + (h(c.p_why_sales_note || c.p_why_sales) || '<span class="muted">—</span>') + '</div></div>' +
         '<div class="qa"><div class="qq">✨ Something interesting about them</div><div class="aa">' + (h(c.p_interesting) || '<span class="muted">—</span>') + '</div></div><hr>'
       : '') +
@@ -1513,16 +1709,12 @@ function renderCandidate(c, quiet) {
       kv('Stars', c.stars ? c.stars + ' / 5' : '') + kv('Tags', c.tags) + kv('Presenter', c.presenter_name) + '</dl>' +
       (c.notes ? '<p style="white-space:pre-wrap;margin-top:10px">' + h(c.notes) + '</p>' : '<p class="muted">No notes yet.</p>');
   }
-  html += '</div>';
+  pres += '</div>';
 
-  html += '<div class="section-h">Check-in</div><div class="card"><dl class="kv">' + kv('Mobile', c.mobile) + kv('Email', c.email) + kv('18 or over', c.over18) + kv('Right to work', c.rtw) +
-    kv('Visa expiry', c.visa_expiry ? fmt(c.visa_expiry) : '') + kv('Found us via', c.source) + kv('Typed booker', c.booker_typed) + kv('Checked in', fmtTs(c.created_at)) + '</dl></div>';
-
-  html += '<div class="section-h">Evaluation' + (c.eval_at ? '<span>' + fmtTs(c.eval_at) + '</span>' : '') + '</div><div class="card">' + evalHtml + '</div>';
-
-  html += '<div class="section-h">Call outcome<span>due ' + fmtTs(c.deadline) + '</span></div><div class="card" id="out">';
+  // Call outcome (booker / admin)
+  let out = '<div class="card" id="out">';
   if (c.outcome) {
-    html += '<p>' + statusPill(c) + (c.academy_date ? ' <b>Day 1: ' + fmtLong(c.academy_date) + '</b>' : '') + '</p>' +
+    out += '<p>' + statusPill(c) + (c.academy_date ? ' <b>Day 1: ' + fmtLong(c.academy_date) + '</b>' : '') + '</p>' +
       '<p class="small muted">Logged ' + fmtTs(c.outcome_at) + ' by ' + h(c.outcome_by) + (c.outcome_late ? ' · <b style="color:var(--amber)">LATE</b>' : '') + '</p>' +
       (c.outcome_notes ? '<p style="white-space:pre-wrap">' + h(c.outcome_notes) + '</p>' : '') +
       (c.outcome === 'Academy booked' && offerReady ? (c.academy_confirmed_at
@@ -1531,17 +1723,18 @@ function renderCandidate(c, quiet) {
       (c.admin_status === 'pending' ? '<div class="flag red">Waiting for admin to approve this Academy booking (presenter marked RED or previously not suitable).</div>' : '') +
       (c.admin_status === 'approved' ? '<div class="flag green">Approved by ' + h(c.admin_by) + (c.admin_note ? ': ' + h(c.admin_note) : '') + '</div>' : '') +
       (c.admin_status === 'rejected' ? '<div class="flag red">Rejected by ' + h(c.admin_by) + (c.admin_note ? ': ' + h(c.admin_note) : '') + '</div>' : '');
-    if (canOutcome) html += '<hr>';
-  } else if (!canOutcome) html += '<p class="muted">Not logged yet.</p>';
+    if (canOutcome) out += '<hr>';
+  } else if (!canOutcome) out += '<p class="muted">Not logged yet.</p>';
   if (canOutcome) {
-    html += '<label class="q" style="margin-top:0">' + (c.outcome ? 'Update outcome' : 'How did the call go?') + '</label>' + chips('outcome', S.me.outcomes, c.outcome, true) +
+    out += '<label class="q" style="margin-top:0">' + (c.outcome ? 'Update outcome' : 'How did the call go?') + '</label>' + chips('outcome', S.me.outcomes, c.outcome, true) +
       '<div id="acad"' + (c.outcome === 'Academy booked' ? '' : ' hidden') + '><label class="q">BA Academy Day 1 date</label><input type="date" id="adate" value="' + h(academyDefault) + '"></div>' +
       '<label class="q">Notes from the call</label><textarea id="onotes" placeholder="Anything the team should know">' + h(c.outcome_notes) + '</textarea>' +
-      '<div id="oerr"></div><button class="btn block" id="saveout" style="margin-top:10px">Save outcome</button>' +
+      '<div id="oerr"></div><div class="dock"><button class="btn block" id="saveout">Save outcome</button></div>' +
       '<p class="small muted center">Logging after the deadline is allowed but shows as late.</p>';
   }
-  html += '</div>';
+  out += '</div>';
 
+  // WhatsApp, ready to send
   const wa = [];
   if (canNotes) wa.push('<a class="btn wa block" target="_blank" rel="noopener" data-kind="thanks" href="' + h(waUrl(c.mobile, msgThanks(c))) + '">💬 Send thank-you message</a>' +
     (c.thanks_sent_at ? '<p class="small muted center">Opened ' + fmtTs(c.thanks_sent_at) + '</p>' : ''));
@@ -1550,15 +1743,17 @@ function renderCandidate(c, quiet) {
     (c.offer_sent_at ? '<p class="small muted center">Opened ' + fmtTs(c.offer_sent_at) + '</p>' : '') +
     (c.welcome_url ? '<a class="btn ghost sm" target="_blank" rel="noopener" href="' + h(c.welcome_url) + '">👀 Preview their welcome page</a>' : ''));
   if (canOutcome && c.outcome === 'No answer') wa.push('<a class="btn wa block" target="_blank" rel="noopener" data-kind="noanswer" href="' + h(waUrl(c.mobile, msgNoAnswer(c))) + '">📞 Send "missed you" message</a>');
-  if (wa.length) html += '<div class="section-h">WhatsApp</div><div class="card" style="display:grid;gap:8px">' + wa.join('') + '<p class="small muted center">Opens WhatsApp with the message ready, then just tap send.</p></div>';
+  const waCard = wa.length ? '<div class="card wa-grid">' + wa.join('') + '<p class="small muted center" style="margin:0">Opens WhatsApp with the message ready, then just tap send.</p></div>' : '';
 
+  // Admin
+  let adm = '';
   if (isAdmin()) {
-    html += '<div class="section-h">Admin</div><div class="card">';
+    adm = '<div class="card">';
     if (c.admin_status === 'pending') {
-      html += '<p><b>Decision needed:</b> ' + h(c.outcome_by) + ' wants to book BA Academy.</p><input type="text" id="anote" placeholder="Note (optional)">' +
+      adm += '<p><b>Decision needed:</b> ' + h(c.outcome_by) + ' wants to book BA Academy.</p><input type="text" id="anote" placeholder="Note (optional)">' +
         '<div class="row" style="margin-top:8px"><button class="btn green grow" id="approve">Approve</button><button class="btn red grow" id="reject">Reject</button></div><hr>';
     }
-    html += '<p><b>Pay count:</b> ' + (c.pay_reason ? '<span style="color:var(--red)">Doesn\'t count — ' + h(c.pay_reason) + '</span>' : '<span style="color:var(--green)">Counts towards ' + h(c.booker_name || 'booker') + '\'s net ' + S.me.payTarget + '</span>') + '</p>' +
+    adm += '<p><b>Pay count:</b> ' + (c.pay_reason ? '<span style="color:var(--red)">Doesn\'t count — ' + h(c.pay_reason) + '</span>' : '<span style="color:var(--green)">Counts towards ' + h(c.booker_name || 'booker') + '\'s net ' + S.me.payTarget + '</span>') + '</p>' +
       (c.pay_excluded
         ? '<button class="btn ghost sm" id="incl">Count it again</button>'
         : '<div class="row"><input type="text" id="exr" placeholder="Reason, e.g. share code failed" style="flex:1"><button class="btn ghost sm" id="excl">Remove from pay</button></div>') +
@@ -1567,17 +1762,35 @@ function renderCandidate(c, quiet) {
       '</select><button class="btn ghost sm" id="reas">Save</button></div></div>';
   }
 
+  // Sections, in the order this person works through them
+  const SEC = {
+    out: ['Outcome', '<b>Call outcome</b><span>due ' + fmtTs(c.deadline) + '</span>', out + (canOutcome ? waCard : '')],
+    pres: [canNotes ? 'Rate' : 'Room', '<b>' + (canNotes ? 'In the room' : 'Presenter') + '</b>', pres + (canOutcome ? '' : waCard)],
+    ev: ['Evaluation', '<b>Evaluation</b>' + (c.eval_at ? '<span>' + fmtTs(c.eval_at) + '</span>' : ''), '<div class="card">' + evalHtml + '</div>'],
+    ci: ['Details', '<b>Check-in</b>', '<div class="card"><dl class="kv">' + kv('Mobile', c.mobile) + kv('Email', c.email) + kv('18 or over', c.over18) + kv('Right to work', c.rtw) +
+      kv('Visa expiry', c.visa_expiry ? fmt(c.visa_expiry) : '') + kv('Found us via', c.source) + kv('Typed booker', c.booker_typed) + kv('Checked in', fmtTs(c.created_at)) + '</dl></div>'],
+    adm: ['Admin', '<b>Admin</b>', adm],
+  };
+  const order = (canOutcome ? ['out', 'pres', 'ev', 'ci'] : ['pres', 'ev', 'ci', 'out']).concat(isAdmin() ? ['adm'] : []);
+  const html = summary +
+    '<nav class="jump" id="jump"><div class="jump-in">' + order.map((k, i) => '<button type="button" data-go="sec-' + k + '"' + (i ? '' : ' class="on"') + '>' + SEC[k][0] + '</button>').join('') + '</div></nav>' +
+    order.map(k => '<section class="csec" id="sec-' + k + '"><div class="section-h">' + SEC[k][1] + '</div>' + SEC[k][2] + '</section>').join('');
+
   paint(c.first_name, html, quiet, true);
+  document.querySelectorAll('#jump button').forEach(b => {
+    b.onclick = () => { const s = document.getElementById(b.dataset.go); if (s) s.scrollIntoView({ behavior: REDUCED ? 'auto' : 'smooth', block: 'start' }); };
+  });
+  spy();
 
   if (canNotes) {
     const st = { rag: c.rag, stars: Number(c.stars) || 0 };
-    const pres = document.getElementById('pres');
-    bindChips(pres);
-    pres.querySelectorAll('.rag button').forEach(b => { b.onclick = () => { st.rag = st.rag === b.dataset.r ? '' : b.dataset.r; pres.querySelectorAll('.rag button').forEach(x => x.classList.toggle('on', x.dataset.r === st.rag)); }; });
-    pres.querySelectorAll('.stars button').forEach(b => { b.onclick = () => { st.stars = Number(b.dataset.s); pres.querySelectorAll('.stars button').forEach(x => x.classList.toggle('on', Number(x.dataset.s) <= st.stars)); }; });
+    const presEl = document.getElementById('pres');
+    bindChips(presEl);
+    presEl.querySelectorAll('.rag button').forEach(b => { b.onclick = () => { st.rag = st.rag === b.dataset.r ? '' : b.dataset.r; presEl.querySelectorAll('.rag button').forEach(x => x.classList.toggle('on', x.dataset.r === st.rag)); }; });
+    presEl.querySelectorAll('.stars button').forEach(b => { b.onclick = () => { st.stars = Number(b.dataset.s); presEl.querySelectorAll('.stars button').forEach(x => x.classList.toggle('on', Number(x.dataset.s) <= st.stars)); }; });
     document.getElementById('savenotes').onclick = () => {
       if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
-      const payload = { id: c.id, in_room: !!c.in_room, rag: st.rag || '', stars: st.stars, tags: chipVals(pres, 'tags'), notes: document.getElementById('notes').value,
+      const payload = { id: c.id, in_room: !!c.in_room, rag: st.rag || '', stars: st.stars, tags: chipVals(presEl, 'tags'), notes: document.getElementById('notes').value,
         why_note: document.getElementById('whynote').value, interesting: document.getElementById('interesting').value };
       const local = Object.assign({}, c, {
         rag: payload.rag, stars: payload.stars ? String(payload.stars) : '', tags: payload.tags.join(', '), notes: payload.notes,
@@ -1588,22 +1801,11 @@ function renderCandidate(c, quiet) {
     };
   }
   if (canOutcome) {
-    const out = document.getElementById('out');
-    bindChips(out, (n, v) => { if (n === 'outcome') document.getElementById('acad').hidden = v !== 'Academy booked'; });
+    const outEl = document.getElementById('out');
+    bindChips(outEl, (n, v) => { if (n === 'outcome') document.getElementById('acad').hidden = v !== 'Academy booked'; });
     document.getElementById('saveout').onclick = () => {
       if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
-      const payload = { id: c.id, outcome: chipVal(out, 'outcome'), academy_date: document.getElementById('adate').value, outcome_notes: document.getElementById('onotes').value };
-      const err = document.getElementById('oerr');
-      if (!payload.outcome) return showErr(err, 'Choose an outcome.');
-      if (payload.outcome === 'Academy booked' && !/^\d{4}-\d{2}-\d{2}$/.test(payload.academy_date)) return showErr(err, 'Pick the BA Academy Day 1 date.');
-      const acad = payload.outcome === 'Academy booked' ? payload.academy_date : '';
-      const now = londonNow();
-      const local = Object.assign({}, c, {
-        outcome: payload.outcome, academy_date: acad, outcome_notes: payload.outcome_notes, outcome_by: S.me.user.name, outcome_at: now,
-        outcome_late: now > c.deadline ? 'TRUE' : '', academy_confirmed_at: acad === c.academy_date ? c.academy_confirmed_at : '',
-        admin_status: acad && (c.rag === 'R' || c.repeat_block) && !isAdmin() && c.admin_status !== 'approved' ? 'pending' : (acad ? c.admin_status : (c.admin_status === 'pending' ? '' : c.admin_status)),
-      });
-      queueSave('saveOutcome', payload, local, local.outcome_late ? 'Saved — flagged late' : 'Outcome saved ✓');
+      submitOutcome(c, { id: c.id, outcome: chipVal(outEl, 'outcome'), academy_date: document.getElementById('adate').value, outcome_notes: document.getElementById('onotes').value }, document.getElementById('oerr'));
     };
   }
   document.querySelectorAll('a.wa[data-kind]').forEach(a => {
