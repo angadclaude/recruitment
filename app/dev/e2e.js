@@ -202,10 +202,10 @@ async function fillEval(p) {
   await pp.waitForSelector('text=In the room · saved');
   await shot(pp, '04-presenter-notes', true);
   ok((await api(admin, 'getCandidate', { id: (await api(admin, 'search', { q: 'Jasraj' })).items[0].id })).in_room === 'TRUE', 'rating Jasraj automatically confirmed "in the room"');
-  const thanks = decodeURIComponent((await pp.getAttribute('a.wa[data-kind=thanks]', 'href')).split('?text=')[1]);
-  fs.writeFileSync(`${SHOTS}/msg-thanks.txt`, thanks);
-  ok(thanks === "Hey Jasraj! 👋🧡\n\nThanks for coming through for your *Appointment Presentation* today in association with *LINK Marketing* 🙌\nWe loved meeting you in person.\n\n📲 *What happens next*\nOur Team will contact you at the latest by *close of business on Friday 6PM* about your next steps.\nKeep your phone close! 👀\n\n📖 *While you wait*, flick through the *LINK Organisation Magazine 2026* 👇\nhttps://linkmagflip-74ibv4pf.manus.space\n\n*Jess Grace*, on behalf of LINK Marketing recruitment team 🧡",
-    'thank-you WhatsApp = Angad\'s wording, laid out to scan (LINK, contact by Friday 6PM) + the LINK magazine, signed Jess Grace for the LINK recruitment team');
+  const jasId = (await api(admin, 'search', { q: 'Jasraj' })).items[0].id;
+  ok(!(await pp.$('a.wa[data-kind=thanks]')) && /Thank-you not sent yet · Jess Grace sends it/.test(await pp.innerText('body')), 'presenter has no thank-you button: "Thank-you not sent yet · Jess Grace sends it"');
+  const nope = await post('/api', { action: 'markSent', token: nathan, id: jasId, kind: 'thanks' });
+  ok(!nope.ok && /sent by Jess Grace/.test(nope.error), 'server: only Jess (LINK) / Rubal (JUSS) can send a thank-you');
   // One tap on the Today list: Green / Amber / Red = in the room, and notes another presenter just wrote are kept
   await api(nathan, 'saveNotes', { id: ishita.id, rag: '', stars: 0, tags: ['Quiet'], notes: 'Sat at the back' });
   await pp.goBack(); await pp.waitForSelector('.kpis');
@@ -214,19 +214,29 @@ async function fillEval(p) {
   const ishNow = await api(admin, 'getCandidate', { id: ishita.id });
   ok(ishNow.rag === 'R' && ishNow.in_room === 'TRUE' && ishNow.notes === 'Sat at the back' && ishNow.tags === 'Quiet', 'presenter taps Red on the list → in the room; notes + tags already written are kept');
   ok(!(await pp.$('.quick[data-for="' + ishita.id + '"]')), 'rated card drops its Green / Amber / Red buttons');
-  // After the presentation: thank every appointment from one list, whoever booked them
+  // After the presentation: everyone else sees who's been thanked; only Jess / Rubal send
   await pp.click('#thanksAll'); await pp.waitForSelector('.sheet .trow');
-  const trows = await pp.$$eval('.sheet .trow', r => r.map(x => x.innerText));
-  ok(trows.length === 7 && trows.some(t => /Ishita/.test(t) && /Mo Aden/.test(t)) && trows.some(t => /Adham/.test(t) && /Abdullahi/.test(t)) && trows.some(t => /Ali Yilmaz/.test(t) && /booker not confirmed/.test(t)),
-    'presenter: "Thank everyone" lists all 7 appointments, LINK and JUSS, whatever booker (even no booker)');
-  ok(/Rubal Oshan\*, on behalf of JUSS Marketing recruitment team/.test(decodeURIComponent(await pp.getAttribute('[data-thanks="' + adham.id + '"]', 'href'))), 'JUSS appointment in the list → thank-you signed Rubal Oshan, JUSS recruitment team');
-  await pp.$eval('[data-thanks="' + ishita.id + '"]', a => { a.addEventListener('click', e => e.preventDefault()); a.click(); });
-  await pp.waitForSelector('.sheet .trow:has-text("Ishita") .pill.green');
-  await pp.waitForFunction(() => true);
-  let ishSent = null; for (let i = 0; i < 20 && !ishSent; i++) { ishSent = (await api(admin, 'getCandidate', { id: ishita.id })).thanks_sent_at; if (!ishSent) await new Promise(r => setTimeout(r, 200)); }
-  ok(!!ishSent, 'tap 💬 Send → WhatsApp opens and the row turns "✓ Sent" (saved, so nobody sends it twice)');
-  await shot(pp, '04d-thank-everyone');
+  ok((await pp.$$('.sheet .trow')).length === 7 && !(await pp.$('.sheet [data-thanks]')) && (await pp.$$('.sheet .pill.amber')).length === 7,
+    'presenter: sees all 7 thank-yous as "Not sent", with no Send buttons');
   await pp.click('#tdone');
+  // Jess (LINK recruitment team): all her LINK appointments in one list, whoever booked them
+  const jessCtx = await browser.newContext(PHONE);
+  const jsp = await jessCtx.newPage();
+  await loginUi(jsp, 'jess@linkmarketing.org.uk');
+  await jsp.click('#thanksAll'); await jsp.waitForSelector('.sheet .trow');
+  const trows = await jsp.$$eval('.sheet .trow', r => r.map(x => x.innerText));
+  ok(trows.length === 5 && trows.some(t => /Ishita/.test(t) && /Mo Aden/.test(t)) && trows.some(t => /Ali Yilmaz/.test(t) && /booker not confirmed/.test(t)) && !trows.some(t => /Adham|Jagpreet/.test(t)),
+    'Jess: "Thank everyone" = all 5 LINK appointments, whatever booker (even no booker); the JUSS ones are Rubal\'s');
+  const thanks = decodeURIComponent((await jsp.getAttribute('[data-thanks="' + jasId + '"]', 'href')).split('?text=')[1]);
+  fs.writeFileSync(`${SHOTS}/msg-thanks.txt`, thanks);
+  ok(thanks === "Hey Jasraj! 👋🧡\n\nThanks for coming through for your *Appointment Presentation* today in association with *LINK Marketing* 🙌\nWe loved meeting you in person.\n\n📲 *What happens next*\nOur Team will contact you at the latest by *close of business on Friday 6PM* about your next steps.\nKeep your phone close! 👀\n\n📖 *While you wait*, flick through the *LINK Organisation Magazine 2026* 👇\nhttps://linkmagflip-74ibv4pf.manus.space\n\n*Jess Grace*, on behalf of LINK Marketing recruitment team 🧡",
+    'thank-you WhatsApp = Angad\'s wording, laid out to scan (LINK, contact by Friday 6PM) + the LINK magazine, signed Jess Grace for the LINK recruitment team');
+  await jsp.$eval('[data-thanks="' + ishita.id + '"]', a => { a.addEventListener('click', e => e.preventDefault()); a.click(); });
+  await jsp.waitForSelector('.sheet .trow:has-text("Ishita") .pill.green');
+  let ishNow2 = null; for (let i = 0; i < 20 && !(ishNow2 && ishNow2.thanks_sent_at); i++) { ishNow2 = await api(admin, 'getCandidate', { id: ishita.id }); if (!ishNow2.thanks_sent_at) await new Promise(r => setTimeout(r, 200)); }
+  ok(!!ishNow2.thanks_sent_at && ishNow2.thanks_by === 'Jess Grace', 'Jess taps 💬 Send → WhatsApp opens, the row turns "✓ Sent" and it\'s saved as sent by Jess Grace');
+  await shot(jsp, '04d-thank-everyone');
+  await jessCtx.close();
   for (const [c, rag] of [[ishita, 'R'], [adham, 'G'], [ali, 'A'], [jag, 'A'], [kid, 'R']]) {
     await api(nathan, 'saveNotes', { id: c.id, rag, stars: rag === 'G' ? 3 : 2, tags: [], notes: 'test' });
   }
@@ -283,7 +293,7 @@ async function fillEval(p) {
   const tEdit = Date.now();
   await p2e.click('#go');
   await p2e.waitForSelector('text=Updated, Jasraj!', { timeout: 30000 });
-  const jasId = (await api(admin, 'search', { q: 'Jasraj' })).items[0].id;
+
   const jasNow = await api(admin, 'getCandidate', { id: jasId });
   ok(jasNow.q14_questions === 'Changed my mind: when is Day 1?' && !!jasNow.eval_edited_at, 'Google busy → the save waits its turn and goes through by itself (' + Math.round((Date.now() - tEdit) / 1000) + 's), answers updated');
   ok((await pushesTo(fiza.id)).some(p => /Jasraj changed their evaluation answers/.test(p.body.headings.en)), 'PUSH → booker: "Jasraj changed their evaluation answers"');
@@ -404,7 +414,7 @@ async function fillEval(p) {
   ok(/Southall/.test(snap) && /Commission selling phones/.test(snap), 'one-page snapshot: presenter notes + evaluation together');
   ok(/💡 Plays semi-pro football/.test(snap) && /Wants to earn on results, saving for a house/.test(snap), 'booker sees the room answers: 💡 ice-breaker + why sales');
   const hdr = (await getJson('/dev/sheet?name=Candidates'))[0];
-  ok(hdr.slice(-4).join() === 'p_why_sales,p_why_sales_note,p_interesting,eval_edited_at', 'existing Sheet got the new columns automatically (no data moved)');
+  ok(hdr.slice(-5).join() === 'p_why_sales,p_why_sales_note,p_interesting,eval_edited_at,thanks_by', 'existing Sheet got the new columns automatically (no data moved)');
   ok(!/Unspent convictions/.test(snap), 'conviction answer hidden from bookers');
   await bp.click('.chips[data-name=outcome] .chip:has-text("Academy booked")');
   await bp.fill('#adate', '2026-10-19');
@@ -482,7 +492,13 @@ async function fillEval(p) {
   await loginUi(ap, 'angad@linkmarketing.org.uk');
   await ap.goto(APP + 'index.html?c=' + adham.id);
   await ap.waitForSelector('a.wa[data-kind=offer]');
-  const jthanks = decodeURIComponent((await ap.getAttribute('a.wa[data-kind=thanks]', 'href')).split('?text=')[1]);
+  ok(!(await ap.$('a.wa[data-kind=thanks]')) && /Thank-you not sent yet · Rubal Oshan sends it/.test(await ap.innerText('body')), 'admin (Angad) can see Adham\'s JUSS thank-you isn\'t sent yet, and that Rubal sends it');
+  const rubCtx = await browser.newContext(PHONE);
+  const rbp = await rubCtx.newPage();
+  await loginUi(rbp, 'rubal@jussmarketing.co.uk', APP + 'index.html?c=' + adham.id);
+  await rbp.waitForSelector('a.wa[data-kind=thanks]');
+  const jthanks = decodeURIComponent((await rbp.getAttribute('a.wa[data-kind=thanks]', 'href')).split('?text=')[1]);
+  await rubCtx.close();
   fs.writeFileSync(`${SHOTS}/msg-thanks-juss.txt`, jthanks);
   ok(/in association with \*JUSS Marketing\*/.test(jthanks) && /\*JUSS Marketing Organisation Magazine 2026\* 👇\nhttps:\/\/jmomagazine-gjfukcw6\.manus\.space\/\n/.test(jthanks) && !/linkmagflip/.test(jthanks) && /\*Rubal Oshan\*, on behalf of JUSS Marketing recruitment team 🧡💙$/.test(jthanks),
     'JUSS thank-you WhatsApp: JUSS wording + the JUSS Marketing Organisation Magazine 2026, signed Rubal Oshan for the JUSS recruitment team');
@@ -534,6 +550,29 @@ async function fillEval(p) {
   ok(true, 'shared phone: "Not you? Check someone else in" → a fresh check-in form');
   await shc.close();
 
+  // ── 12:00: Jess / Rubal get "N thank-you messages to send" (theirs only, only if any are left; not the bookers) ──
+  const staffIds = (await api(admin, 'listUsers', {})).users;
+  const jessId = staffIds.find(u => /^jess@/.test(u.email)).id, rubalId = staffIds.find(u => /^rubal@/.test(u.email)).id;
+  await setTime('2026-10-12T11:55:00+01:00');
+  const before12 = (await getJson('/dev/pushes')).length;
+  await post('/dev/run', { fn: 'keepWarm' });
+  ok((await getJson('/dev/pushes')).length === before12, 'no thank-you reminder before 12:00');
+  await setTime('2026-10-12T12:05:00+01:00');
+  await post('/dev/run', { fn: 'keepWarm' });
+  const at12 = (await getJson('/dev/pushes')).slice(before12);
+  const rJess = at12.find(p => p.body.include_aliases.external_id.includes(jessId)), rRubal = at12.find(p => p.body.include_aliases.external_id.includes(rubalId));
+  ok(at12.length === 2 && rJess && /^💬 \d+ thank-you messages? to send$/.test(rJess.body.headings.en) && !/Ishita/.test(rJess.body.contents.en) && /\?c=thanks$/.test(rJess.body.web_url) &&
+    rRubal && /Adham/.test(rRubal.body.contents.en) && !/Jasraj/.test(rRubal.body.contents.en),
+    '12:00 → Jess: "' + (rJess ? rJess.body.headings.en + ' | ' + rJess.body.contents.en : 'none') + '", Rubal gets the JUSS ones; nobody else (bookers don\'t)');
+  await post('/dev/run', { fn: 'keepWarm' });
+  ok((await getJson('/dev/pushes')).length === before12 + 2, 'thank-you reminder goes once a day');
+  const j12 = await browser.newContext(PHONE);
+  const j12p = await j12.newPage();
+  await loginUi(j12p, 'jess@linkmarketing.org.uk', APP + 'index.html?c=thanks');
+  await j12p.waitForSelector('.sheet .trow [data-thanks]');
+  ok(true, 'tapping the 12:00 alert opens Jess\'s send list straight away');
+  await j12.close();
+
   // ── Daily 18:00 round-up for every booker (runs from the 5-minute keep-warm, no extra trigger) ──
   await setTime('2026-10-12T17:55:00+01:00');
   let before18 = (await getJson('/dev/pushes')).length;
@@ -545,7 +584,7 @@ async function fillEval(p) {
   const dFiza = digests.find(p => p.body.include_aliases.external_id.includes(fiza.id));
   ok(dFiza && /^📊 Today: \d+ in · \d+ evaluations?/.test(dFiza.body.headings.en) && /Week: \d+\/5 net attended/.test(dFiza.body.contents.en),
     '18:00 round-up → Fiza: "' + (dFiza ? dFiza.body.headings.en + ' | ' + dFiza.body.contents.en.replace(/\n/g, ' | ') : 'none') + '"');
-  const jessId = (await api(admin, 'listUsers', {})).users.find(u => /Jess/.test(u.name)).id;
+
   ok(!digests.some(p => p.body.include_aliases.external_id.includes(jessId)), 'no round-up for someone with no appointments (no spam)');
   await post('/dev/run', { fn: 'keepWarm' });
   ok((await getJson('/dev/pushes')).length === before18 + digests.length, 'sent once a day only (the next run 5 minutes later sends nothing)');
