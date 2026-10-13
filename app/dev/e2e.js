@@ -204,8 +204,8 @@ async function fillEval(p) {
   ok((await api(admin, 'getCandidate', { id: (await api(admin, 'search', { q: 'Jasraj' })).items[0].id })).in_room === 'TRUE', 'rating Jasraj automatically confirmed "in the room"');
   const thanks = decodeURIComponent((await pp.getAttribute('a.wa[data-kind=thanks]', 'href')).split('?text=')[1]);
   fs.writeFileSync(`${SHOTS}/msg-thanks.txt`, thanks);
-  ok(thanks === "Hey Jasraj! 👋🧡\n\nThanks for coming through for your *Appointment Presentation* today in association with *LINK Marketing* 🙌\nWe loved meeting you in person.\n\n📲 *What happens next*\nOur Team will contact you at the latest by *close of business on Friday 6PM* about your next steps.\nKeep your phone close! 👀\n\n📖 *While you wait*, flick through the *LINK Organisation Magazine 2026* 👇\nhttps://linkmagflip-74ibv4pf.manus.space\n\n*Team LINK* 🧡",
-    'thank-you WhatsApp = Angad\'s wording, laid out to scan (LINK, contact by Friday 6PM) + the LINK magazine');
+  ok(thanks === "Hey Jasraj! 👋🧡\n\nThanks for coming through for your *Appointment Presentation* today in association with *LINK Marketing* 🙌\nWe loved meeting you in person.\n\n📲 *What happens next*\nOur Team will contact you at the latest by *close of business on Friday 6PM* about your next steps.\nKeep your phone close! 👀\n\n📖 *While you wait*, flick through the *LINK Organisation Magazine 2026* 👇\nhttps://linkmagflip-74ibv4pf.manus.space\n\n*Jess Grace*, on behalf of LINK Marketing recruitment team 🧡",
+    'thank-you WhatsApp = Angad\'s wording, laid out to scan (LINK, contact by Friday 6PM) + the LINK magazine, signed Jess Grace for the LINK recruitment team');
   // One tap on the Today list: Green / Amber / Red = in the room, and notes another presenter just wrote are kept
   await api(nathan, 'saveNotes', { id: ishita.id, rag: '', stars: 0, tags: ['Quiet'], notes: 'Sat at the back' });
   await pp.goBack(); await pp.waitForSelector('.kpis');
@@ -214,6 +214,19 @@ async function fillEval(p) {
   const ishNow = await api(admin, 'getCandidate', { id: ishita.id });
   ok(ishNow.rag === 'R' && ishNow.in_room === 'TRUE' && ishNow.notes === 'Sat at the back' && ishNow.tags === 'Quiet', 'presenter taps Red on the list → in the room; notes + tags already written are kept');
   ok(!(await pp.$('.quick[data-for="' + ishita.id + '"]')), 'rated card drops its Green / Amber / Red buttons');
+  // After the presentation: thank every appointment from one list, whoever booked them
+  await pp.click('#thanksAll'); await pp.waitForSelector('.sheet .trow');
+  const trows = await pp.$$eval('.sheet .trow', r => r.map(x => x.innerText));
+  ok(trows.length === 7 && trows.some(t => /Ishita/.test(t) && /Mo Aden/.test(t)) && trows.some(t => /Adham/.test(t) && /Abdullahi/.test(t)) && trows.some(t => /Ali Yilmaz/.test(t) && /booker not confirmed/.test(t)),
+    'presenter: "Thank everyone" lists all 7 appointments, LINK and JUSS, whatever booker (even no booker)');
+  ok(/Rubal Oshan\*, on behalf of JUSS Marketing recruitment team/.test(decodeURIComponent(await pp.getAttribute('[data-thanks="' + adham.id + '"]', 'href'))), 'JUSS appointment in the list → thank-you signed Rubal Oshan, JUSS recruitment team');
+  await pp.$eval('[data-thanks="' + ishita.id + '"]', a => { a.addEventListener('click', e => e.preventDefault()); a.click(); });
+  await pp.waitForSelector('.sheet .trow:has-text("Ishita") .pill.green');
+  await pp.waitForFunction(() => true);
+  let ishSent = null; for (let i = 0; i < 20 && !ishSent; i++) { ishSent = (await api(admin, 'getCandidate', { id: ishita.id })).thanks_sent_at; if (!ishSent) await new Promise(r => setTimeout(r, 200)); }
+  ok(!!ishSent, 'tap 💬 Send → WhatsApp opens and the row turns "✓ Sent" (saved, so nobody sends it twice)');
+  await shot(pp, '04d-thank-everyone');
+  await pp.click('#tdone');
   for (const [c, rag] of [[ishita, 'R'], [adham, 'G'], [ali, 'A'], [jag, 'A'], [kid, 'R']]) {
     await api(nathan, 'saveNotes', { id: c.id, rag, stars: rag === 'G' ? 3 : 2, tags: [], notes: 'test' });
   }
@@ -409,12 +422,17 @@ async function fillEval(p) {
   await bp.click('.quick[data-for="' + kid.id + '"] [data-out]');
   await bp.waitForSelector('.sheet #sosave');
   await shot(bp, '09b-booker-outcome-sheet');
-  await bp.click('.sheet .chips[data-name=outcome] .chip:has-text("Not suitable")');
-  await bp.fill('#sonotes', 'Under 18, try again next year');
+  await bp.click('.sheet .chips[data-name=outcome] .chip:has-text("No answer")');
+  await bp.fill('#sonotes', 'Rang twice, voicemail');
   await bp.click('#sosave');
   await bp.waitForFunction(() => !document.querySelector('.sheet-back') && !JSON.parse(localStorage.getItem('lr_outbox') || '[]').length);
   const kidNow = await api(admin, 'getCandidate', { id: kid.id });
-  ok(kidNow.outcome === 'Not suitable' && kidNow.outcome_notes === 'Under 18, try again next year' && kidNow.outcome_by === 'Fiza Iqbal', 'booker logs a call outcome straight from the list card (sheet), no need to open the page');
+  ok(kidNow.outcome === 'No answer' && kidNow.outcome_notes === 'Rang twice, voicemail' && kidNow.outcome_by === 'Fiza Iqbal', 'booker logs a call outcome straight from the list card (sheet), no need to open the page');
+  await bp.waitForSelector('.quick[data-for="' + kid.id + '"] [data-na]');
+  const na = decodeURIComponent((await bp.getAttribute('.quick[data-for="' + kid.id + '"] [data-na]', 'href')).split('?text=')[1]);
+  fs.writeFileSync(`${SHOTS}/msg-no-answer.txt`, na);
+  ok(/📵 No answer · 1/i.test(await bp.innerText('body')) && /^Hey Young! 👋/.test(na) && /in association with \*LINK Marketing\*/.test(na) && /We tried calling you/.test(na) && /\*call or text back\*/.test(na) && /\*Fiza Iqbal\*, on behalf of LINK Marketing recruitment team 🧡$/.test(na),
+    'no answer → "📵 No answer" on the list with a ready WhatsApp: "we tried calling you, call or text back", signed Fiza Iqbal for the LINK recruitment team');
   await bp.click('.item:has-text("Jasraj Bhuller")'); await bp.waitForSelector('a.wa[data-kind=offer]');
   const msg = decodeURIComponent((await bp.getAttribute('a.wa[data-kind=offer]', 'href')).split('?text=')[1]);
   fs.writeFileSync(`${SHOTS}/msg-link.txt`, msg);
@@ -466,8 +484,8 @@ async function fillEval(p) {
   await ap.waitForSelector('a.wa[data-kind=offer]');
   const jthanks = decodeURIComponent((await ap.getAttribute('a.wa[data-kind=thanks]', 'href')).split('?text=')[1]);
   fs.writeFileSync(`${SHOTS}/msg-thanks-juss.txt`, jthanks);
-  ok(/in association with \*JUSS Marketing\*/.test(jthanks) && /\*JUSS Marketing Organisation Magazine 2026\* 👇\nhttps:\/\/jmomagazine-gjfukcw6\.manus\.space\/\n/.test(jthanks) && !/linkmagflip/.test(jthanks) && /\*Team JUSS\* 🧡💙$/.test(jthanks),
-    'JUSS thank-you WhatsApp: JUSS wording + the JUSS Marketing Organisation Magazine 2026');
+  ok(/in association with \*JUSS Marketing\*/.test(jthanks) && /\*JUSS Marketing Organisation Magazine 2026\* 👇\nhttps:\/\/jmomagazine-gjfukcw6\.manus\.space\/\n/.test(jthanks) && !/linkmagflip/.test(jthanks) && /\*Rubal Oshan\*, on behalf of JUSS Marketing recruitment team 🧡💙$/.test(jthanks),
+    'JUSS thank-you WhatsApp: JUSS wording + the JUSS Marketing Organisation Magazine 2026, signed Rubal Oshan for the JUSS recruitment team');
   const jmsg = decodeURIComponent((await ap.getAttribute('a.wa[data-kind=offer]', 'href')).split('?text=')[1]);
   fs.writeFileSync(`${SHOTS}/msg-juss.txt`, jmsg);
   ok(/JUSS Marketing BA Academy/.test(jmsg) && /welcome-juss\.html/.test(jmsg) && !/Pre-Coaching/.test(jmsg), 'JUSS booker → JUSS message + JUSS welcome page');

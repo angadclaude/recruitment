@@ -378,6 +378,12 @@ textarea.short { min-height: 64px; }
 .sheet-h .av { box-shadow: none; }
 .sheet-h .display { font-size: 26px; }
 .sheet.closing { animation: sheetDown .22s ease forwards; }
+.trow { display: flex; align-items: center; gap: 12px; padding: 11px 12px; background: #fff; border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow); }
+.trow .main { flex: 1; min-width: 0; }
+.trow .name { font-weight: 800; }
+.trow .sub { font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+.trow .av { width: 40px; height: 40px; font-size: 14px; box-shadow: none; }
+.trow .btn.sm { flex: none; }
 
 /* ── Candidate page ── */
 .profile { position: relative; text-align: center; padding: 22px 16px 16px; margin: 0 0 6px; background: #fff; border: 1px solid var(--line); border-radius: 26px; box-shadow: var(--shadow); overflow: hidden; isolation: isolate; }
