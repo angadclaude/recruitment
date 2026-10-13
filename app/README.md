@@ -9,7 +9,7 @@ Slide N QR → evaluation (same phone straight in · other phone by mobile · or
   → Booker: one-page snapshot → call → outcome + Academy Day 1 date
   → One tap: Gen Z WhatsApp (LINK or JUSS) with a personal welcome page link
   → Candidate taps CONFIRM on their welcome page → 🔔 booker
-  → Everything grouped by date / week ending → weekly pay report (net attended)
+  → Everything grouped by date / week ending → weekly recruitment incentive (net attended, bookers only — admins don't earn it)
 ```
 
 **To set it up, follow [SETUP.md](SETUP.md).** Free: Google Apps Script + Sheet (data), GitHub Pages (`/join`), OneSignal (push).
@@ -19,8 +19,8 @@ Slide QR codes (permanent): [`docs/qr-1-checkin.png`](docs/qr-1-checkin.png) · 
 ## Files
 | Path | What it is |
 |---|---|
-| `src/Code.gs` | Server: data, rules (flags, pay, deadlines, 6-month repeats), logins, push/email alerts, welcome page API, setup, history import |
-| `src/JS.html` | The app: check-in, evaluation, welcome page, and the staff app (Today, My candidates, All, Pay, Team, slide QR codes) |
+| `src/Code.gs` | Server: data, rules (flags, recruitment incentive, deadlines, 6-month repeats), logins, push/email alerts, welcome page API, setup, history import |
+| `src/JS.html` | The app: check-in, evaluation, welcome page, and the staff app (Today, My candidates, All, Incentive, Team, slide QR codes) |
 | `src/Index.html`, `Styles.html`, `Logos.html`, `QR.html` | Page shell, styles, embedded logos, QR generator (qrcode-generator 1.4.4, MIT) |
 | `build.js` | Builds the installable app into `/join` (GitHub Pages) from the same `src/` files |
 | `assets/` | Icons, Week 1 posters, WhatsApp link-preview cards |
@@ -32,7 +32,7 @@ Slide QR codes (permanent): [`docs/qr-1-checkin.png`](docs/qr-1-checkin.png) · 
 node app/build.js
 NODE_PATH=$(npm root -g) node app/dev/e2e.js ./shots
 ```
-Runs the real `Code.gs` on an in-memory fake of Sheets, Gmail, UrlFetch and so on, then walks the whole journey in a phone-sized browser: 126 checks covering QR flows, push alerts, WhatsApp messages, the welcome page and confirm, pay, repeats, late outcomes, access removal, GDPR deletion, the LINK / JUSS looks and the one-tap actions on the lists.
+Runs the real `Code.gs` on an in-memory fake of Sheets, Gmail, UrlFetch and so on, then walks the whole journey in a phone-sized browser: 150+ checks covering QR flows, push alerts, WhatsApp messages, the welcome page and confirm, the recruitment incentive, repeats, late outcomes, access removal, GDPR deletion, the LINK / JUSS looks and the one-tap actions on the lists.
 
 To see every screen as a LINK user and as a JUSS user (about 40 seconds):
 ```

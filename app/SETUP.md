@@ -72,7 +72,7 @@ Until Part C is done, alerts go by email instead. Nothing breaks.
 ## Part D. Get the team on it
 
 1. Open **https://angadclaude.github.io/recruitment/join/** → tap **🛡️ Admin login** (Angad, Jess, Satpal, Rubal) → your email → the 6-digit code.
-2. **👥 Team → + Add person** for every booker and presenter: name, email, **LINK or JUSS**, access. Bookers and presenters are BAs: they use **🙌 BA login**.
+2. **👥 Team → + Add person** for every booker and presenter: name, email, **LINK or JUSS**, access. Bookers and presenters are BAs: they use **🙌 BA login**. Only bookers earn the **recruitment incentive** (net 5): admins can be picked as someone's booker, but they're never on the incentive board and get no incentive alerts.
 3. Send everyone the link with this message:
 
 > 📲 Our new recruitment app is live. Open https://angadclaude.github.io/recruitment/join/ → tap **🙌 BA login** → your email → the 6-digit code we email you.
@@ -94,11 +94,11 @@ Put the two QR codes on the presentation once. They never change:
 
 ## Daily routine
 1. Candidates scan the **check-in QR** on the first slide. The booker gets a push: *"🙌 Jasraj just checked in"*.
-2. **Presenter** taps each name on their phone → Green/Amber/Red, ★1–5, tags, notes. **Rating someone confirms they were in the room** (that's what counts for pay).
+2. **Presenter** taps each name on their phone → Green/Amber/Red, ★1–5, tags, notes. **Rating someone confirms they were in the room** (that's what counts for the recruitment incentive).
 3. Last slide: candidates scan the **evaluation QR**. Same phone → straight in. Different phone → they type their mobile. Missed check-in → they check in there and then.
 4. **Booker** gets *"📋 Jasraj's evaluation is in"* → one-page snapshot → call → log outcome → tap **🎉 Send BA Academy Day 1 details**.
 5. Candidate taps the link in WhatsApp → their **personal welcome page** (Week 1 plan, poster, directions, add to calendar) → taps **🔒 Confirm I'm coming** → booker gets *"✅ Jasraj confirmed Day 1!"*
-6. **Admins, end of day:** **Today → 📣 Today's bulletin → 📤 Share to WhatsApp**. The stats poster is built from the app: attended, non-qualifiers and top performers, on the same rules as Pay. On Fridays it adds the weekly total; tap **🏆 Week top 5** for the leaderboard. **✏️ Edit wording** lets you change the messages, tag someone as (BAR), and change the Mission / Plan numbers or the cash amount.
+6. **Admins, end of day:** **Today → 📣 Today's bulletin → 📤 Share to WhatsApp**. The stats poster is built from the app: attended, non-qualifiers and top performers, on the same rules as the recruitment incentive. On Fridays it adds the weekly total; tap **🏆 Week top 5** for the leaderboard. **✏️ Edit wording** lets you change the messages, tag someone as (BAR), and change the Mission / Plan numbers or the cash amount.
 
 ## Push alerts
 | When | Who |
@@ -107,21 +107,21 @@ Put the two QR codes on the presentation once. They never change:
 | Evaluation submitted | their booker |
 | Candidate confirms Day 1 | their booker |
 | Booker books a 🔴 candidate | all admins |
-| Wed + Fri 10:00: "3/5 net attended" | every booker |
+| Wed + Fri 10:00: "3/5 net attended" (recruitment incentive) | every booker (not admins) |
 | Mon–Thu 18:00: your day (who came in, evaluations) + who still needs closing, sending Day 1 details or confirming | every booker who had appointments (nothing to say = no message) |
 | **Fri 15:00 week roundup:** appointments, who's booked, who's not, no outcome yet, who's been sent the Day 1 WhatsApp (and who hasn't), net vs target | every booker who had appointments |
 | **Fri 15:00 team roundup:** the same, one line per booker, loose ends first | admins |
 | Sat 14:00: "🔴 2 outcomes LATE (due Fri 18:00)" | bookers who missed the deadline |
-| Mon 09:00: pay report ready | admins |
+| Mon 09:00: recruitment incentive report | admins |
 
 ## Rules built in (top of `Code.gs`)
 - **Net attended:** Mon–Fri, **rated by the presenter**, 18+, eligible to work self-employed, not seen in the last **6 months**, not removed by admin. Target 5.
-- **Check-ins outside 07:00–17:00 still go through**, but admins see an amber "outside office hours" flag. Combined with "presenter must rate them", nobody can be checked in from home for pay.
+- **Check-ins outside 07:00–17:00 still go through**, but admins see an amber "outside office hours" flag. Combined with "presenter must rate them", nobody can be checked in from home for the incentive.
 - **Outcome deadline Friday 18:00** (the thank-you WhatsApp promises candidates a call "by close of business Friday 6PM"). Later outcomes are accepted and marked LATE.
 - **Made a mistake in the evaluation?** The candidate scans the evaluation QR again → **✏️ Change my answers** (same day, until their booker logs the call). The booker gets a push.
 - **Busy moments** (20+ people scanning at once): the app waits its turn and retries by itself; candidates see "Busy, still sending…", never an error. Answers are kept on the phone until they're sent.
 - **Presenter RED / previously rejected** → admin decides before the Academy message unlocks.
-- **GDPR, as the check-in page promises:** full details for **12 weeks**, then trimmed to the basics (name, contact, result, what pay needs). Evaluation answers, the convictions answer and presenter notes are wiped. Everything is deleted after **6 months** (= the repeat-candidate window). The conviction answer is admin-only.
+- **GDPR, as the check-in page promises:** full details for **12 weeks**, then trimmed to the basics (name, contact, result, what the incentive needs). Evaluation answers, the convictions answer and presenter notes are wiped. Everything is deleted after **6 months** (= the repeat-candidate window). The conviction answer is admin-only.
 
 ## Changing something later
 Apps Script: edit → Save → **Deploy → Manage deployments → ✏️ → New version → Deploy**. The URL stays the same.
