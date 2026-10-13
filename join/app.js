@@ -1,4 +1,4 @@
-window.APP_VERSION = '50231892';
+window.APP_VERSION = '7d838f14';
 
 (function () {
 'use strict';
@@ -512,6 +512,8 @@ const OFFICES = {
   LINK: { address: '2nd Floor East, Automotive House, Grays Place, Slough SL2 5AF', maps: 'https://maps.app.goo.gl/f4pkh222EHHTyQSM9' },
   JUSS: { address: '2nd Floor East, Automotive House, Grays Place, Slough SL2 5AF', maps: 'https://maps.app.goo.gl/zeP4MjS2hMJzB9V9A' },
 };
+// The recruitment team who sign every thank-you WhatsApp (by the candidate's company, whoever taps send).
+const RECRUITMENT_TEAM = { LINK: 'Jess Grace', JUSS: 'Rubal Oshan' };
 // Each company's digital magazine: in the thank-you WhatsApp and on the thank-you screen after the evaluation.
 const MAGAZINES = {
   LINK: { title: 'LINK Organisation Magazine 2026', url: 'https://linkmagflip-74ibv4pf.manus.space' },
@@ -1042,6 +1044,8 @@ function quickRow(c, kind) {
   if (kind === 'rate') return '<div class="quick" data-for="' + h(c.id) + '"><button type="button" class="q-G" data-rate="G">Green</button><button type="button" class="q-A" data-rate="A">Amber</button><button type="button" class="q-R" data-rate="R">Red</button></div>';
   if (kind === 'call') return '<div class="quick" data-for="' + h(c.id) + '"><a href="tel:' + h(c.mobile) + '">' + icon('phone', 16) + 'Call</a>' +
     '<a class="q-wa" href="' + h(waFor(c)) + '" target="_blank" rel="noopener">' + icon('chat', 16) + 'WhatsApp</a><button type="button" class="q-go" data-out="1">Log outcome</button></div>';
+  if (kind === 'noanswer') return '<div class="quick" data-for="' + h(c.id) + '"><a href="tel:' + h(c.mobile) + '">' + icon('phone', 16) + 'Call again</a>' +
+    '<a class="q-wa" data-na="1" href="' + h(waUrl(c.mobile, msgNoAnswer(c))) + '" target="_blank" rel="noopener">' + icon('chat', 16) + 'WhatsApp</a><button type="button" class="q-go" data-out="1">Update</button></div>';
   if (kind === 'offer') return '<div class="quick" data-for="' + h(c.id) + '"><a class="q-go" data-send="offer" href="' + h(waUrl(c.mobile, msgAcademy(c))) + '" target="_blank" rel="noopener">🎉 Send Day 1 details on WhatsApp</a></div>';
   return '';
 }
@@ -1144,8 +1148,11 @@ function viewToday(quiet) {
   if (!d) body = '<div class="hero">' + top + '</div>' + skeleton();
   else {
     const items = d.items.filter(c => c.attended_date === S.day).sort((a, b) => a.created_at.localeCompare(b.created_at));
-    const rated = items.filter(c => c.in_room).length, toCall = items.filter(c => c.eval_at && !c.outcome).length;
+    const rated = items.filter(c => c.in_room).length, toCall = items.filter(c => c.eval_at && !c.outcome).length, thanked = items.filter(c => c.thanks_sent_at).length;
     body = '<div class="hero">' + top + kpis([[items.length, 'Checked in'], [rated, 'Rated'], [items.filter(c => c.eval_at).length, 'Evaluated'], [toCall, 'To call', toCall > 0]]) + '</div>' +
+      (isPresenter() && items.length ? (thanked < items.length
+        ? '<button class="btn wa block" id="thanksAll" style="margin-bottom:10px">💬 Thank-you messages · ' + thanked + ' of ' + items.length + ' sent</button>'
+        : '<button class="btn ghost block" id="thanksAll" style="margin-bottom:10px">✅ Thank-you messages · all ' + items.length + ' sent</button>') : '') +
       (isAdmin() ? '<div class="bullbtns"><button class="btn" id="bullDaily">📣 ' + (isToday ? 'Today\'s' : DAYS[D(S.day).getUTCDay()]) + ' bulletin</button><button class="btn ghost" id="bullWeek">🏆 Week top 5</button></div>' : '') +
       (items.length ? '<div class="section-h"><b>In the room</b><span>' + rated + ' of ' + items.length + ' rated</span></div>' +
         (isPresenter() && rated < items.length ? '<p class="hint">Tap Green, Amber or Red to rate. Rating = they were in the room (that\'s what counts for pay). Tap a name for stars and notes.</p>' : '') +
@@ -1154,6 +1161,7 @@ function viewToday(quiet) {
   }
   const page = paint('', body, quiet);
   bindItems(page);
+  const ta = document.getElementById('thanksAll'); if (ta) ta.onclick = thanksSheet;
   [['bullDaily', 'daily'], ['bullWeek', 'weekly']].forEach(b => { const el = document.getElementById(b[0]); if (el) el.onclick = () => nav('bulletin', { day: S.day, kind: b[1] }, true); });
   document.getElementById('dprev').onclick = () => { S.day = addDays(S.day, -1); render(); };
   document.getElementById('dnext').onclick = () => { if (S.day < S.me.today) { S.day = addDays(S.day, 1); render(); } };
@@ -1173,6 +1181,7 @@ function viewMine(quiet) {
     const items = d.items.filter(c => c.booker_id === me);
     const r = d.pay.rows.filter(x => x.booker_id === me)[0] || { net: 0, attended: 0, excluded: [], late: 0, missing: 0 };
     const toCall = items.filter(c => c.eval_at && !c.outcome);
+    const noAnswer = items.filter(c => c.outcome === 'No answer');
     const toSend = items.filter(c => toCall.indexOf(c) < 0 && c.outcome === 'Academy booked' && c.welcome_url && !c.offer_sent_at && !c.academy_confirmed_at && c.admin_status !== 'pending' && c.admin_status !== 'rejected');
     const left = Math.max(0, d.pay.target - r.net);
     body = '<div class="hero">' + top + '<div class="hero-body">' + ring(r.net, d.pay.target) + '<div class="hero-txt"><b>' + (left ? left + ' more to hit ' + d.pay.target : 'Target smashed 🔥') + '</b>' +
@@ -1180,7 +1189,8 @@ function viewMine(quiet) {
       (r.excluded.length ? '<span class="small">' + r.excluded.map(x => h(x.name) + ' (' + h(x.why) + ')').join(' · ') + '</span>' : '') + '</div></div></div>' +
       (toCall.length ? '<div class="section-h"><b>📞 To call · ' + toCall.length + '</b><span>log by ' + h(S.me.deadlineLabel || 'Sat ' + S.me.deadlineTime) + '</span></div><div class="list">' + toCall.map(c => item(c, true, 'call')).join('') + '</div>' : '') +
       (toSend.length ? '<div class="section-h"><b>🎉 Send Day 1 details · ' + toSend.length + '</b></div><div class="list">' + toSend.map(c => item(c, true, 'offer')).join('') + '</div>' : '') +
-      (items.length > toCall.length + toSend.length ? '<div class="section-h"><b>' + (toCall.length || toSend.length ? 'Everyone else' : 'This week') + '</b></div>' + groupByDate(items.filter(c => toCall.indexOf(c) < 0 && toSend.indexOf(c) < 0))
+      (noAnswer.length ? '<div class="section-h"><b>📵 No answer · ' + noAnswer.length + '</b><span>WhatsApp = "we tried calling you"</span></div><div class="list">' + noAnswer.map(c => item(c, true, 'noanswer')).join('') + '</div>' : '') +
+      (items.length > toCall.length + toSend.length + noAnswer.length ? '<div class="section-h"><b>' + (toCall.length || toSend.length || noAnswer.length ? 'Everyone else' : 'This week') + '</b></div>' + groupByDate(items.filter(c => toCall.indexOf(c) < 0 && toSend.indexOf(c) < 0 && noAnswer.indexOf(c) < 0))
         : items.length ? '' : empty('🗓️', 'No candidates this week yet.'));
   }
   const page = paint('', body, quiet);
@@ -1580,11 +1590,16 @@ function msgThanks(c) {
     'Keep your phone close! 👀\n\n' +
     '📖 *While you wait*, flick through the *' + mag.title + '* 👇\n' +
     mag.url + '\n\n' +
-    '*Team ' + co + '* ' + heartOf(c);
+    '*' + RECRUITMENT_TEAM[co] + '*, on behalf of ' + co + ' Marketing recruitment team ' + heartOf(c);
 }
 function msgNoAnswer(c) {
-  return 'Hey ' + c.first_name + ' 👋 it\'s ' + S.me.user.name.split(' ')[0] + ' from ' + brandOf(c) + '!\n\n' +
-    'Just tried calling about today\'s presentation 📞 When\'s good for a quick 2-min chat? Drop me a time 👇';
+  const co = c.company === 'JUSS' ? 'JUSS' : 'LINK';
+  return 'Hey ' + c.first_name + '! 👋' + heartOf(c) + '\n\n' +
+    'We\'re contacting you with regards to the *Appointment Presentation* you came to in association with *' + brandOf(c) + '*.\n\n' +
+    '📞 *We tried calling you*\n' +
+    'Could you please *call or text back* so we can have a chat over the phone as soon as possible?\n\n' +
+    'Speak soon! 🙌\n\n' +
+    '*' + S.me.user.name + '*, on behalf of ' + co + ' Marketing recruitment team ' + heartOf(c);
 }
 /** Short, scannable, one link. The link opens their personal page (schedule, poster, map, calendar, CONFIRM). */
 function msgAcademy(c) {
@@ -1656,6 +1671,33 @@ function outcomeSheet(id) {
     const ok = submitOutcome(findCand(id) || c, { id: id, outcome: chipVal(sh, 'outcome'), academy_date: back.querySelector('#sadate').value, outcome_notes: back.querySelector('#sonotes').value }, back.querySelector('#soerr'));
     if (ok) { closeSheet(); render(true); }
   };
+}
+
+// ───── After the presentation: thank every appointment, whoever booked them ─────
+function thanksSheet() {
+  const d = S.data[weekEndingOf(S.day)];
+  const items = d ? d.items.filter(c => c.attended_date === S.day).sort((a, b) => a.created_at.localeCompare(b.created_at)) : [];
+  closeSheet(true);
+  const back = document.createElement('div');
+  back.className = 'sheet-back';
+  const sent = c => '<span class="pill green">✓ Sent ' + h(String(c.thanks_sent_at).slice(11, 16)) + '</span>';
+  back.innerHTML = '<div class="sheet" role="dialog" aria-label="Thank-you messages"><div class="grab"></div>' +
+    '<div class="sheet-h"><div><div class="label muted">After the presentation</div><div class="display">Thank everyone 💬</div></div></div>' +
+    '<p class="hint" style="margin-top:-6px">Each one opens WhatsApp with the message ready, signed by <b>' + RECRUITMENT_TEAM.LINK + '</b> (LINK) or <b>' + RECRUITMENT_TEAM.JUSS + '</b> (JUSS). Tap send, come back, next one.</p>' +
+    '<div class="list">' + items.map(c => '<div class="trow">' + avatar(c) + '<div class="main"><div class="name">' + h(c.full_name) + '</div><div class="sub"><span class="co ' + h(c.company || 'LINK') + '">' + h(c.company || 'LINK') + '</span> ' +
+      (c.booker_name ? 'booked by ' + h(c.booker_name) : 'booker not confirmed') + '</div></div>' +
+      (c.thanks_sent_at ? sent(c) : '<a class="btn wa sm" data-thanks="' + h(c.id) + '" href="' + h(waUrl(c.mobile, msgThanks(c))) + '" target="_blank" rel="noopener">💬 Send</a>') + '</div>').join('') + '</div>' +
+    '<button class="btn ghost block" id="tdone" style="margin-top:14px">Done</button></div>';
+  document.body.appendChild(back);
+  document.body.style.overflow = 'hidden';
+  back.onclick = e => { if (e.target === back) { closeSheet(); render(true); } };
+  back.querySelector('#tdone').onclick = () => { closeSheet(); render(true); };
+  back.querySelectorAll('[data-thanks]').forEach(a => a.addEventListener('click', () => {
+    const c = findCand(a.dataset.thanks); if (!c) return;
+    c.thanks_sent_at = londonNow(); saveCache();
+    call('markSent', { id: c.id, kind: 'thanks' }).catch(() => {});
+    setTimeout(() => { a.outerHTML = sent(c); }, 300);  // after WhatsApp has opened
+  }));
 }
 
 // ───── Candidate page: summary on top, section tabs that stay pinned, the part you act on first ─────
@@ -1759,7 +1801,7 @@ function renderCandidate(c, quiet) {
   if (canOutcome && offerReady && (c.welcome_url || !c._pending)) wa.push('<a class="btn wa block" target="_blank" rel="noopener" data-kind="offer" href="' + h(waUrl(c.mobile, msgAcademy(c))) + '">🎉 Send BA Academy Day 1 details (' + h(c.company || 'LINK') + ')</a>' +
     (c.offer_sent_at ? '<p class="small muted center">Opened ' + fmtTs(c.offer_sent_at) + '</p>' : '') +
     (c.welcome_url ? '<a class="btn ghost sm" target="_blank" rel="noopener" href="' + h(c.welcome_url) + '">👀 Preview their welcome page</a>' : ''));
-  if (canOutcome && c.outcome === 'No answer') wa.push('<a class="btn wa block" target="_blank" rel="noopener" data-kind="noanswer" href="' + h(waUrl(c.mobile, msgNoAnswer(c))) + '">📞 Send "missed you" message</a>');
+  if (canOutcome && c.outcome === 'No answer') wa.push('<a class="btn wa block" target="_blank" rel="noopener" data-kind="noanswer" href="' + h(waUrl(c.mobile, msgNoAnswer(c))) + '">📞 Send "we tried calling you" message</a>');
   const waCard = wa.length ? '<div class="card wa-grid">' + wa.join('') + '<p class="small muted center" style="margin:0">Opens WhatsApp with the message ready, then just tap send.</p></div>' : '';
 
   // Admin
