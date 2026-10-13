@@ -1907,15 +1907,16 @@ function renderCandidate(c, quiet) {
   // Sections, in the order this person works through them
   const SEC = {
     out: ['Outcome', '<b>Call outcome</b><span>' + (c.non_qual && !c.outcome ? 'not needed' : 'due ' + fmtTs(c.deadline)) + '</span>', out + (canOutcome ? waCard : '')],
-    pres: [canNotes ? 'Rate' : 'Room', '<b>' + (canNotes ? 'In the room' : 'Presenter') + '</b>', pres + (canOutcome ? '' : waCard)],
+    pres: ['Appt Feedback', '<b>Appt feedback</b>', pres + (canOutcome ? '' : waCard)],
     ev: ['Evaluation', '<b>Evaluation</b>' + (c.eval_at ? '<span>' + fmtTs(c.eval_at) + '</span>' : ''), '<div class="card">' + evalHtml + '</div>'],
     ci: ['Details', '<b>Check-in</b>', '<div class="card"><dl class="kv">' + kv('Mobile', c.mobile) + kv('Email', c.email) + kv('18 or over', c.over18) + kv('Right to work', c.rtw) +
       kv('Visa expiry', c.visa_expiry ? fmt(c.visa_expiry) : '') + kv('Found us via', c.source) + kv('Typed booker', c.booker_typed) + kv('Checked in', fmtTs(c.created_at)) + '</dl></div>'],
     adm: ['Admin', '<b>Admin</b>', adm],
   };
-  const order = (canOutcome ? ['out', 'pres', 'ev', 'ci'] : ['pres', 'ev', 'ci', 'out']).concat(isAdmin() ? ['adm'] : []);
+  // Same order for everyone, the order they work through it: who they are → how the appointment went → their answers → the call
+  const order = ['ci', 'pres', 'ev', 'out'].concat(isAdmin() ? ['adm'] : []);
   const html = summary +
-    '<nav class="jump" id="jump"><div class="jump-in">' + order.map((k, i) => '<button type="button" data-go="sec-' + k + '"' + (i ? '' : ' class="on"') + '>' + SEC[k][0] + '</button>').join('') + '</div></nav>' +
+    '<nav class="jump' + (order.length > 4 ? ' five' : '') + '" id="jump"><div class="jump-in">' + order.map((k, i) => '<button type="button" data-go="sec-' + k + '"' + (i ? '' : ' class="on"') + '>' + SEC[k][0] + '</button>').join('') + '</div></nav>' +
     order.map(k => '<section class="csec" id="sec-' + k + '"><div class="section-h">' + SEC[k][1] + '</div>' + SEC[k][2] + '</section>').join('');
 
   paint(c.first_name, html, quiet, true);
