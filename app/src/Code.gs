@@ -82,7 +82,7 @@ const SHEETS = {
     'admin_status', 'admin_note', 'admin_by', 'admin_at',
     'pay_excluded', 'pay_excluded_reason', 'thanks_sent_at', 'offer_sent_at',
     'welcome_token', 'academy_confirmed_at',
-    'p_why_sales', 'p_why_sales_note', 'p_interesting', 'eval_edited_at', 'thanks_by',
+    'p_why_sales', 'p_why_sales_note', 'p_interesting', 'eval_edited_at', 'thanks_by', 'no_whatsapp',
   ],
   History: ['attended_date', 'full_name', 'mobile', 'email', 'booker_raw', 'presenter_raw'],
   Codes: ['email', 'code_hash', 'expires', 'attempts'],
@@ -828,7 +828,11 @@ function thanksTeam() {
 /** A candidate's company for the thank-you (no confirmed booker yet = LINK, like the message). */
 function thanksCo(c) { return c.company === 'JUSS' ? 'JUSS' : 'LINK'; }
 
+/** A WhatsApp / text / email message was opened. kind: thanks · offer · noanswer. via: whatsapp (default) · sms · email.
+ *  Sending by text or email means they're not on WhatsApp: remembered, so the next message goes by text too. */
 function markSent(req, u) {
+  const via = ['sms', 'email'].indexOf(req.via) >= 0 ? req.via : 'whatsapp';
+  if (['thanks', 'offer', 'noanswer'].indexOf(req.kind) < 0) throw new Error('Unknown message');
   return withLock(() => {
     const c = getC(req.id);
     if (!canSee(u, c)) throw new Error('No access');
@@ -841,8 +845,9 @@ function markSent(req, u) {
       c.thanks_sent_at = nowStr(); c.thanks_by = u.name;
     }
     if (req.kind === 'offer') c.offer_sent_at = nowStr();
+    if (via !== 'whatsapp') c.no_whatsapp = 'TRUE';
     writeRow('Candidates', c);
-    log(u, 'whatsapp_' + req.kind, c.id, '');
+    log(u, via + '_' + req.kind, c.id, '');
     return { ok: true };
   });
 }
@@ -895,7 +900,8 @@ function saveUser(req, u) {
   if (['LINK', 'JUSS'].indexOf(x.company) < 0) throw new Error('Company must be LINK or JUSS');
   const roles = (x.roles || []).filter(r => ['admin', 'presenter', 'booker'].indexOf(r) >= 0);
   if (!roles.length) throw new Error('Pick at least one role');
-  return withLock(() => {
+  const isNew = !x.id;
+  const saved = withLock(() => {
     const all = readTable('Users');
     if (all.some(o => o.email.toLowerCase() === email && o.id !== x.id)) throw new Error('That email is already used.');
     let rec = x.id ? all.filter(o => o.id === x.id)[0] : null;
@@ -909,6 +915,8 @@ function saveUser(req, u) {
     log(u, 'user_save', '', rec.name + ' ' + rec.roles + ' active=' + rec.active);
     return publicUser(rec);
   });
+  if (isNew && saved.active) sendSetupEmail(saved);  // new person: the setup steps land in their inbox straight away
+  return saved;
 }
 
 /** Delete a user outright. If they still own candidates, switch them off instead (keeps pay history intact). */
@@ -942,6 +950,7 @@ const STAFF_ACTIONS = {
   saveNotes: saveNotes, markInRoom: markInRoom, saveOutcome: saveOutcome,
   adminDecision: adminDecision, setPayExcluded: setPayExcluded, fixEligibility: fixEligibility, reassignBooker: reassignBooker,
   markSent: markSent, payReport: payReport, listUsers: listUsers, saveUser: saveUser, deleteUser: deleteUser,
+  alertsCheck: alertsCheck, testAlert: testAlert, sendSetupEmails: sendSetupEmails,
 };
 
 // ───────────────────────── LINKS ─────────────────────────
@@ -963,7 +972,7 @@ function welcomeUrl(c) {
 // ───────────────────────── ALERTS: phone push (OneSignal, free) + optional email ─────────────────────────
 function esc(s) { return String(s || '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch])); }
 function mail(to, subject, html) {
-  try { MailApp.sendEmail({ to: to, subject: subject, htmlBody: html, name: CONFIG.APP_NAME }); } catch (e) { console.error(e); }
+  try { MailApp.sendEmail({ to: to, subject: subject, htmlBody: html, name: CONFIG.APP_NAME }); return true; } catch (e) { console.error(e); return false; }
 }
 function pushKeys() {
   const p = PropertiesService.getScriptProperties();
@@ -1005,8 +1014,96 @@ function notify(users, title, body, cid) {
   if (!list.length) return;
   const url = staffUrl(cid || '');
   const reached = pushTo(list.map(u => u.id), title, body, url);
-  list.filter(u => CONFIG.EMAIL_ALERTS || reached.indexOf(u.id) < 0)
-    .forEach(u => mail(u.email, title, '<p>' + esc(body).replace(/\n/g, '<br>') + '</p><p><a href="' + url + '">Open the app</a></p>'));
+  const emailed = list.filter(u => CONFIG.EMAIL_ALERTS || reached.indexOf(u.id) < 0)
+    .map(u => ({ u: u, ok: mail(u.email, title, '<p>' + esc(body).replace(/\n/g, '<br>') + '</p><p><a href="' + url + '">Open the app</a></p>') }));
+  // One Log line per alert: who got it on their phone, who by email (and any email that failed), so "did they get it?" has an answer
+  const first = l => l.map(u => u.name.split(' ')[0]).join(', ');
+  const phone = list.filter(u => reached.indexOf(u.id) >= 0), ok = emailed.filter(e => e.ok).map(e => e.u), bad = emailed.filter(e => !e.ok).map(e => e.u);
+  log({ name: 'alert' }, 'alert', cid || '', title + ' → ' + [phone.length ? '📲 ' + first(phone) : '', ok.length ? '✉️ ' + first(ok) : '', bad.length ? '❌ email failed: ' + first(bad) : ''].filter(String).join(' · '));
+}
+
+// ───────────────────────── ALERTS HEALTH (admin): is everyone actually reachable? ─────────────────────────
+/** OneSignal's record for each person: 'on' (a phone subscribed), 'off' (opened the app, alerts not allowed), 'never' (no record yet). */
+function oneSignalUsers(ids, k) {
+  if (!ids.length) return {};
+  const get = scheme => UrlFetchApp.fetchAll(ids.map(id => ({
+    url: 'https://api.onesignal.com/apps/' + k.app + '/users/by/external_id/' + encodeURIComponent(id),
+    method: 'get', muteHttpExceptions: true, headers: { Authorization: scheme + k.key },
+  })));
+  let res = get('Key ');
+  if (res.every(r => r.getResponseCode() === 401 || r.getResponseCode() === 403)) res = get('Basic ');
+  const out = {};
+  ids.forEach((id, i) => {
+    const code = res[i].getResponseCode();
+    if (code === 404) { out[id] = { status: 'never', phones: 0 }; return; }
+    if (code < 200 || code >= 300) { out[id] = { status: 'unknown', phones: 0, note: 'OneSignal said ' + code }; return; }
+    let j = {};
+    try { j = JSON.parse(res[i].getContentText()); } catch (e) { /* treated as no subscriptions */ }
+    const subs = (j.subscriptions || []).filter(x => /Push$/.test(String(x.type || '')));
+    const on = subs.filter(x => x.enabled === true || Number(x.notification_types) > 0);
+    const last = j.properties && Number(j.properties.last_active);
+    out[id] = {
+      status: on.length ? 'on' : 'off', phones: on.length,
+      devices: on.map(x => x.device_model || String(x.type).replace(/Push$/, '')).filter(String).join(', '),
+      last_active: last ? Utilities.formatDate(new Date(last * 1000), CONFIG.TZ, 'yyyy-MM-dd HH:mm') : '',
+    };
+  });
+  return out;
+}
+
+const SETUP_TIMERS = ['keepWarm', 'dailyMaintenance', 'weeklyProgressEmails', 'saturdayDeadlineEmails', 'mondayPayReportEmail'];
+/** Everyone with access: phone alerts on / off / never set up, logged in or not, plus the system checks
+ *  (OneSignal keys, email allowance left today, scheduled timers, last round-ups). */
+function alertsCheck(req, u) {
+  if (!isAdmin(u)) throw new Error('Admin only');
+  const users = usersAll().filter(x => truthy(x.active));
+  const now = nowStr(), logins = {};
+  readTable('Sessions').forEach(x => { if (String(x.expires) > now) logins[x.user_id] = (logins[x.user_id] || 0) + 1; });
+  const k = pushKeys();
+  let os = {}, osErr = '';
+  try { os = k ? oneSignalUsers(users.map(x => x.id), k) : {}; } catch (e) { osErr = String(e.message || e).slice(0, 160); }
+  const p = PropertiesService.getScriptProperties();
+  let mailLeft = -1; try { mailLeft = MailApp.getRemainingDailyQuota(); } catch (e) { /* not available */ }
+  const timers = ScriptApp.getProjectTriggers().map(t => t.getHandlerFunction());
+  return {
+    push: !!k, pushError: osErr, mailLeft: mailLeft,
+    timersMissing: SETUP_TIMERS.filter(f => timers.indexOf(f) < 0),
+    lastDigest: p.getProperty('DIGEST_SENT') || '', lastThanksReminder: p.getProperty('THANKS_REMINDED') || '',
+    people: users.map(x => Object.assign({ id: x.id, name: x.name, company: x.company, roles: rolesOf(x), email: x.email, logins: logins[x.id] || 0 },
+      os[x.id] || { status: k ? 'unknown' : 'no-push', phones: 0 })).sort((a, b) => a.name.localeCompare(b.name)),
+  };
+}
+
+/** Admin: send a test push to some people (or everyone). Says who it reached. */
+function testAlert(req, u) {
+  if (!isAdmin(u)) throw new Error('Admin only');
+  const ids = Array.isArray(req.ids) && req.ids.length ? req.ids : usersAll().filter(x => truthy(x.active)).map(x => x.id);
+  const users = usersAll().filter(x => truthy(x.active) && ids.indexOf(x.id) >= 0);
+  const reached = pushTo(users.map(x => x.id), '🔔 Test alert from ' + u.name.split(' ')[0], 'If you can see this, your alerts work ✅', staffUrl(''));
+  log(u, 'alert_test', '', users.length + ' sent, ' + reached.length + ' reached');
+  return { reached: users.filter(x => reached.indexOf(x.id) >= 0).map(x => x.name), missed: users.filter(x => reached.indexOf(x.id) < 0).map(x => x.name) };
+}
+
+/** The 2-minute setup steps, by email: sent automatically when someone is added, and on demand from the alerts check. */
+function setupEmailHtml(x) {
+  const first = esc(x.name.split(' ')[0]), link = staffUrl('');
+  return '<p>Hi ' + first + ',</p><p>You\'ve been added to the <b>' + esc(CONFIG.APP_NAME) + '</b>. It alerts you the moment your candidates check in, when their evaluation is in, and when outcomes are due. ' +
+    'Set it up once on your phone (2 minutes):</p><ol>' +
+    '<li>Open <a href="' + link + '">' + link + '</a></li>' +
+    '<li>Log in with <b>' + esc(x.email) + '</b>. We\'ll email you a 6-digit code.</li>' +
+    '<li><b>iPhone:</b> tap <b>Share</b> → <b>Add to Home Screen</b>, then open the app from the new icon (alerts only work from the icon). <b>Android:</b> tap <b>Install</b> when it asks.</li>' +
+    '<li>Tap <b>🔔 Turn on</b> → <b>Allow</b>.</li>' +
+    '<li>Check it worked: tap your initials (top right). It should say <b>Alerts: on ✅</b></li></ol>' +
+    '<p>Until alerts are on, you\'ll get them by email instead, which is slower. Set it up today.</p>';
+}
+function sendSetupEmail(x) { return mail(x.email, '🔔 Set up the ' + CONFIG.APP_NAME + ' (2 minutes)', setupEmailHtml(x)); }
+function sendSetupEmails(req, u) {
+  if (!isAdmin(u)) throw new Error('Admin only');
+  const ids = Array.isArray(req.ids) ? req.ids : [];
+  const users = usersAll().filter(x => truthy(x.active) && ids.indexOf(x.id) >= 0);
+  const sent = users.filter(sendSetupEmail);
+  log(u, 'setup_emails', '', sent.length + ' sent: ' + sent.map(x => x.name.split(' ')[0]).join(', '));
+  return { sent: sent.map(x => x.name), failed: users.filter(x => sent.indexOf(x) < 0).map(x => x.name) };
 }
 
 /** Wed + Fri 10:00 — recruitment incentive progress nudge to every active booker (not admins: they don't earn it). */

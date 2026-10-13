@@ -1,4 +1,4 @@
-window.APP_VERSION = 'a6b5c192';
+window.APP_VERSION = '0fbcdb34';
 
 (function () {
 'use strict';
@@ -867,15 +867,16 @@ function nav(view, params, push) {
   render();
 }
 function hist(kind, st) { try { kind === 'push' ? history.pushState(st, '') : history.replaceState(st, ''); S.hist = kind === 'push' ? (S.hist || 0) + 1 : (S.hist || 0); } catch (e) { /* not allowed in this frame */ } }
-function back() { if (S.hist > 0 && history.state && ['cand', 'user', 'slideqr', 'bulletin'].indexOf(history.state.v) >= 0) { S.hist--; history.back(); } else nav(S.tab); }
+function back() { if (S.hist > 0 && history.state && ['cand', 'user', 'slideqr', 'bulletin', 'alerts'].indexOf(history.state.v) >= 0) { S.hist--; history.back(); } else nav(S.tab); }
 function go(tab) { nav(tab, {}, false); }
-function titleOf(v) { return { today: 'Today', mine: 'My candidates', all: 'All candidates', pay: 'Recruitment incentive', team: 'Team', slideqr: 'Slide QR codes', user: 'Team', bulletin: 'Bulletin' }[v] || ''; }
+function titleOf(v) { return { today: 'Today', mine: 'My candidates', all: 'All candidates', pay: 'Recruitment incentive', team: 'Team', slideqr: 'Slide QR codes', user: 'Team', bulletin: 'Bulletin', alerts: 'Alerts check' }[v] || ''; }
 
 function render(quiet) {
   const v = S.view;
   if (v === 'cand') return viewCandidate(S.params.id);
   if (v === 'user') return editUser(S.params.id ? (S.users || []).filter(u => u.id === S.params.id)[0] : null);
   if (v === 'slideqr') return viewSlideQR();
+  if (v === 'alerts') return viewAlerts();
   if (v === 'bulletin') return viewBulletin();
   ({ today: viewToday, mine: viewMine, all: viewAll, pay: viewPay, team: viewTeam }[v] || viewToday)(quiet);
 }
@@ -1078,24 +1079,24 @@ function nqPill(c) { return c.non_qual ? '<span class="pill red">⛔ Non-qualifi
 function avatar(c, cls) { return '<span class="av ' + (cls || '') + ' rag-' + (c.rag || 'X') + '">' + h(initials(c.full_name)) + '</span>'; }
 function waFor(c) {
   const offerReady = c.outcome === 'Academy booked' && c.admin_status !== 'pending' && c.admin_status !== 'rejected' && c.welcome_url;
-  if (offerReady && (isAdmin() || c.booker_id === S.me.user.id)) return waUrl(c.mobile, msgAcademy(c));
-  if (signsThanks(c)) return waUrl(c.mobile, msgThanks(c));
-  return waUrl(c.mobile, '');
+  if (offerReady && (isAdmin() || c.booker_id === S.me.user.id)) return msgUrl(c, msgAcademy(c));
+  if (canThank()) return msgUrl(c, msgThanks(c));
+  return msgUrl(c, '');
 }
 /** One-tap actions under a card: 'rate' (presenter: Green/Amber/Red = in the room) or 'call' (booker: call, WhatsApp, log outcome). */
 function quickRow(c, kind) {
   if (kind === 'rate') return '<div class="quick" data-for="' + h(c.id) + '"><button type="button" class="q-G" data-rate="G">Green</button><button type="button" class="q-A" data-rate="A">Amber</button><button type="button" class="q-R" data-rate="R">Red</button></div>';
   if (kind === 'call') return '<div class="quick" data-for="' + h(c.id) + '"><a href="tel:' + h(c.mobile) + '">' + icon('phone', 16) + 'Call</a>' +
-    '<a class="q-wa" href="' + h(waFor(c)) + '" target="_blank" rel="noopener">' + icon('chat', 16) + 'WhatsApp</a><button type="button" class="q-go" data-out="1">Log outcome</button></div>';
+    '<a class="q-wa" href="' + h(waFor(c)) + '" target="_blank" rel="noopener">' + icon('chat', 16) + chanName(c) + '</a><button type="button" class="q-go" data-out="1">Log outcome</button></div>';
   if (kind === 'noanswer') return '<div class="quick" data-for="' + h(c.id) + '"><a href="tel:' + h(c.mobile) + '">' + icon('phone', 16) + 'Call again</a>' +
-    '<a class="q-wa" data-na="1" href="' + h(waUrl(c.mobile, msgNoAnswer(c))) + '" target="_blank" rel="noopener">' + icon('chat', 16) + 'WhatsApp</a><button type="button" class="q-go" data-out="1">Update</button></div>';
-  if (kind === 'offer') return '<div class="quick" data-for="' + h(c.id) + '"><a class="q-go" data-send="offer" href="' + h(waUrl(c.mobile, msgAcademy(c))) + '" target="_blank" rel="noopener">🎉 Send Day 1 details on WhatsApp</a></div>';
+    '<a class="q-wa" data-na="1" href="' + h(msgUrl(c, msgNoAnswer(c))) + '" target="_blank" rel="noopener">' + icon('chat', 16) + chanName(c) + '</a><button type="button" class="q-go" data-out="1">Update</button></div>';
+  if (kind === 'offer') return '<div class="quick" data-for="' + h(c.id) + '"><a class="q-go" data-send="offer" data-via="' + (c.no_whatsapp ? 'sms' : 'whatsapp') + '" href="' + h(msgUrl(c, msgAcademy(c))) + '" target="_blank" rel="noopener">🎉 Send Day 1 details ' + (c.no_whatsapp ? 'by text' : 'on WhatsApp') + '</a></div>';
   return '';
 }
 function item(c, showStatus, kind) {
   const q = kind ? quickRow(c, kind) : '';
   return '<div class="ccard' + (q ? ' has-quick' : '') + '"><div class="swipe"><div class="acts"><a class="act call" href="tel:' + h(c.mobile) + '">' + icon('phone', 20) + '<span>Call</span></a>' +
-    '<a class="act wa" href="' + h(waFor(c)) + '" target="_blank" rel="noopener">' + icon('chat', 20) + '<span>WhatsApp</span></a></div>' + itemBtn(c, showStatus, kind === 'rate') + '</div>' + q + '</div>';
+    '<a class="act wa" href="' + h(waFor(c)) + '" target="_blank" rel="noopener">' + icon('chat', 20) + '<span>' + chanName(c) + '</span></a></div>' + itemBtn(c, showStatus, kind === 'rate') + '</div>' + q + '</div>';
 }
 function itemBtn(c, showStatus, rating) {
   return '<button class="item" data-id="' + h(c.id) + '">' + avatar(c) + '<div class="main">' +
@@ -1117,7 +1118,7 @@ function bindItems(root) {
     const id = q.dataset.for;
     q.querySelectorAll('[data-rate]').forEach(b => { b.onclick = () => quickRate(id, b.dataset.rate); });
     q.querySelectorAll('[data-out]').forEach(b => { b.onclick = () => outcomeSheet(id); });
-    q.querySelectorAll('[data-send]').forEach(a => { a.addEventListener('click', () => { call('markSent', { id: id, kind: 'offer' }).catch(() => {}); }); });
+    q.querySelectorAll('[data-send]').forEach(a => { a.addEventListener('click', () => { call('markSent', { id: id, kind: 'offer', via: a.dataset.via }).catch(() => {}); }); });
   });
 }
 /** Presenter taps Green/Amber/Red on the list: saved instantly, keeps their stars, tags and notes. */
@@ -1459,11 +1460,13 @@ function viewTeam() {
   const row = u => '<button class="item" data-u="' + h(u.id) + '"><span class="av co-' + h(u.company) + '">' + h(initials(u.name)) + '</span><div class="main"><div class="name">' + h(u.name) + ' <span class="co ' + h(u.company) + '">' + h(u.company) + '</span>' +
     (u.active ? '' : ' <span class="pill red">No access</span>') + '</div><div class="sub">' + h(u.email) + '</div><div class="pills">' + u.roles.map(r => '<span class="pill">' + h(r) + '</span>').join('') + '</div></div><span class="chev">›</span></button>';
   const page = paint('Team', '<div class="tiles"><button class="tile hot" id="add"><i>＋</i><b>Add person</b><span>BA (booker, presenter) or admin</span></button>' +
-    '<button class="tile" id="slideqr"><i>📲</i><b>Slide QR codes</b><span>Check-in + evaluation</span></button></div>' +
+    '<button class="tile" id="slideqr"><i>📲</i><b>Slide QR codes</b><span>Check-in + evaluation</span></button>' +
+    '<button class="tile" id="alertsck"><i>🔔</i><b>Alerts check</b><span>Who gets their alerts?</span></button></div>' +
     '<p class="hint">' + us.filter(u => u.active).length + ' people with access. Bookers appear in the check-in type-ahead.</p>' +
     '<div class="list">' + us.map(row).join('') + '</div>');
   document.getElementById('add').onclick = () => nav('user', {}, true);
   document.getElementById('slideqr').onclick = () => nav('slideqr', {}, true);
+  document.getElementById('alertsck').onclick = () => nav('alerts', {}, true);
   page.querySelectorAll('.item[data-u]').forEach(el => { el.onclick = () => nav('user', { id: el.dataset.u }, true); });
 }
 
@@ -1524,6 +1527,63 @@ function slideQR(url, title, caption, colour) {
 }
 
 const QR_CAPTIONS = { checkin: 'Takes 1 minute 👋', eval: '4 minutes · your answers shape your next step' };
+// ───── Alerts check (admin): is everyone actually getting their alerts? ─────
+function viewAlerts() {
+  const id = S.viewId;
+  paint('Alerts check', '<p class="hint">Asking OneSignal about everyone\'s phone…</p>' + skeleton(5), false, true);
+  call('alertsCheck').then(r => { if (S.viewId === id) drawAlerts(r); }).catch(e => {
+    if (S.viewId !== id) return;
+    paint('Alerts check', '<div class="err">' + h(/Unknown action/.test(e.message) ? 'Paste the new Google code (Code.gs) into Apps Script first, then open this again.' : e.message) + '</div>', false, true);
+  });
+}
+function drawAlerts(r) {
+  const P = r.people, on = P.filter(p => p.status === 'on'), off = P.filter(p => p.status !== 'on');
+  const neverIn = off.filter(p => !p.logins).length;
+  const pill = p => p.status === 'on' ? '<span class="pill green">✅ Alerts on</span>'
+    : !p.logins ? '<span class="pill red">Never logged in</span>'
+    : p.status === 'off' || p.status === 'never' ? '<span class="pill amber">Logged in · alerts off</span>'
+    : '<span class="pill">Can\'t check' + (p.note ? ' · ' + h(p.note) : '') + '</span>';
+  const how = p => p.status === 'on' ? '📲 ' + h(p.devices || 'phone') + (p.phones > 1 ? ' (' + p.phones + ')' : '') + (p.last_active ? ' · last opened ' + h(fmtTs(p.last_active)) : '')
+    : '✉️ Gets alerts by email instead: ' + h(p.email);
+  const row = p => '<div class="trow"><span class="av co-' + h(p.company) + '">' + h(initials(p.name)) + '</span><div class="main"><div class="name">' + h(p.name) + ' <span class="co ' + h(p.company) + '">' + h(p.company) + '</span></div>' +
+    '<div class="sub">' + how(p) + '</div><div class="pills">' + pill(p) + '</div></div>' +
+    (p.status === 'on' ? '<button class="btn ghost sm" data-test="' + h(p.id) + '">Test</button>' : '') + '</div>';
+  const sys = [
+    r.push ? (r.pushError ? '⚠️ Phone alerts: couldn\'t reach OneSignal (' + h(r.pushError) + ')' : '✅ Phone alerts: connected (OneSignal)') : '❌ Phone alerts: OneSignal keys missing in Script properties. Everyone gets email only.',
+    r.mailLeft < 0 ? '' : (r.mailLeft >= 50 ? '✅' : '⚠️') + ' Email backup: ' + r.mailLeft + ' emails left today',
+    r.timersMissing.length ? '❌ Scheduled alerts not running: ' + h(r.timersMissing.join(', ')) + '. In Apps Script, run <b>setup</b> once.' : '✅ Scheduled alerts running (check-in, 12:00 thank-yous, 18:00 + Friday round-ups)',
+    r.lastDigest ? '🗓️ Last round-up sent: ' + h(fmt(r.lastDigest)) : '',
+  ].filter(String);
+  const page = paint('Alerts check',
+    '<div class="card"><div class="display" style="font-size:22px">' + on.length + ' of ' + P.length + ' get alerts on their phone</div>' +
+    '<p class="hint" style="margin:6px 0 0">' + (off.length ? off.length + ' don\'t' + (neverIn ? ' (' + neverIn + ' have never logged in)' : '') + ': their alerts go to email, which is slower and easy to miss.' : 'Everyone is set up 🎉') + '</p>' +
+    '<div class="achk">' + sys.map(x => '<div>' + x + '</div>').join('') + '</div></div>' +
+    (off.length ? '<button class="btn block" id="setupMail">📧 Email setup steps to the ' + off.length + ' not set up</button>' : '') +
+    (on.length ? '<button class="btn ghost block" id="testAll" style="margin-top:8px">🔔 Send a test alert to the ' + on.length + ' who are on</button>' : '') +
+    '<div id="ares"></div>' +
+    (off.length ? '<div class="datehead">Not getting phone alerts (' + off.length + ')</div><div class="list alist">' + off.map(row).join('') + '</div>' : '') +
+    (on.length ? '<div class="datehead">Alerts on (' + on.length + ')</div><div class="list alist">' + on.map(row).join('') + '</div>' : '') +
+    '<p class="hint">New people get the setup steps by email automatically when you add them.</p>', false, true);
+  const res = page.querySelector('#ares');
+  const test = (ids, btn) => {
+    busy(btn, true, 'Sending…');
+    call('testAlert', { ids: ids }).then(t => {
+      busy(btn, false);
+      res.innerHTML = '<div class="flag green">📲 Test reached: ' + (h(t.reached.join(', ')) || 'nobody') + '</div>' + (t.missed.length ? '<div class="flag amber">Didn\'t reach: ' + h(t.missed.join(', ')) + '</div>' : '') +
+        '<p class="hint">Ask them: did it buzz? If not, their phone is blocking it: Settings → Notifications → the app → Allow.</p>';
+    }).catch(e => { busy(btn, false); toast(e.message); });
+  };
+  const sm = page.querySelector('#setupMail');
+  if (sm) sm.onclick = () => {
+    busy(sm, true, 'Sending…');
+    call('sendSetupEmails', { ids: off.map(p => p.id) }).then(t => {
+      sm.outerHTML = '<div class="flag green">📧 Setup steps sent to ' + t.sent.length + ': ' + h(t.sent.map(n => n.split(' ')[0]).join(', ')) + '</div>' + (t.failed.length ? '<div class="flag red">Couldn\'t email: ' + h(t.failed.join(', ')) + '</div>' : '');
+    }).catch(e => { busy(sm, false); toast(e.message); });
+  };
+  const ta = page.querySelector('#testAll'); if (ta) ta.onclick = () => test(on.map(p => p.id), ta);
+  page.querySelectorAll('[data-test]').forEach(b => { b.onclick = () => test([b.dataset.test], b); });
+}
+
 function viewSlideQR() {
   const L = S.me.links;
   const card = (url, title, cap, col, file, where) => {
@@ -1622,6 +1682,29 @@ window.addEventListener('online', () => flush());
 
 function brandOf(c) { return c.company === 'JUSS' ? 'JUSS Marketing' : 'LINK Marketing'; }
 function waUrl(mobile, text) { return 'https://wa.me/44' + String(mobile).slice(1) + '?text=' + encodeURIComponent(text); }
+// ───── Not on WhatsApp: the same message by text (from the sender's own phone) or email ─────
+/** WhatsApp's *bold* stars would show as stars in a text or email. */
+function plainMsg(text) { return String(text).replace(/\*([^*\n]+)\*/g, '$1'); }
+function smsUrl(mobile, text) { return 'sms:+44' + String(mobile).slice(1) + (IS_IOS ? '&' : '?') + 'body=' + encodeURIComponent(plainMsg(text)); }
+function mailUrl(email, subject, text) { return 'mailto:' + email + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(plainMsg(text)); }
+/** Once someone has texted or emailed them (= not on WhatsApp), every message to them goes by text. */
+function msgUrl(c, text) { return c.no_whatsapp ? smsUrl(c.mobile, text) : waUrl(c.mobile, text); }
+function chanName(c) { return c.no_whatsapp ? 'Text' : 'WhatsApp'; }
+const MSG_SUBJECT = {
+  thanks: c => 'Thanks for coming in today – ' + brandOf(c),
+  offer: c => 'You\'re in! BA Academy Day 1 – ' + brandOf(c),
+  noanswer: c => 'We tried calling you – ' + brandOf(c),
+};
+/** The big send button (WhatsApp; text once they're known not to be on it) + "Not on WhatsApp? 📱 Text · ✉️ Email" under it. */
+function sendButtons(c, kind, label, text) {
+  const sms = !!c.no_whatsapp;
+  const link = (via, href, inner, cls) => '<a' + (cls ? ' class="' + cls + '"' : '') + ' target="_blank" rel="noopener" data-kind="' + kind + '" data-via="' + via + '" href="' + h(href) + '">' + inner + '</a>';
+  const main = sms ? link('sms', smsUrl(c.mobile, text), '📱 ' + label.replace(/^\S+\s/, '') + ' by text', 'btn sms block')
+    : link('whatsapp', waUrl(c.mobile, text), label, 'btn wa block');
+  return main + '<div class="altsend"><span>' + (sms ? '📵 Not on WhatsApp' : 'Not on WhatsApp?') + '</span>' +
+    (sms ? link('whatsapp', waUrl(c.mobile, text), '💬 WhatsApp') : link('sms', smsUrl(c.mobile, text), '📱 Text')) +
+    (c.email ? link('email', mailUrl(c.email, MSG_SUBJECT[kind](c), text), '✉️ Email') : '') + '</div>';
+}
 
 const HEART = { LINK: '🧡', JUSS: '🧡💙' };
 function heartOf(c) { return HEART[c.company === 'JUSS' ? 'JUSS' : 'LINK']; }
@@ -1758,6 +1841,12 @@ function thanksSheet() {
   back.className = 'sheet-back';
   const sent = c => '<span class="pill green">✓ Sent ' + h(String(c.thanks_sent_at).slice(11, 16)) + (!c.thanks_by || c.thanks_by === S.me.user.name ? '' : ' · ' + h(String(c.thanks_by).split(' ')[0])) + '</span>';
   const who = co => '<b>' + h(thanksName(co)) + '</b> (' + co + ')';
+  // 💬 Send (WhatsApp) with "📱 Text instead" under it; the other way round once they're known not to be on WhatsApp
+  const tsend = c => {
+    const msg = msgThanks(c), sms = !!c.no_whatsapp;
+    return '<span class="tsend"><a class="btn ' + (sms ? 'sms' : 'wa') + ' sm" data-thanks="' + h(c.id) + '" data-via="' + (sms ? 'sms' : 'whatsapp') + '" href="' + h(sms ? smsUrl(c.mobile, msg) : waUrl(c.mobile, msg)) + '" target="_blank" rel="noopener">' + (sms ? '📱 Text' : '💬 Send') + '</a>' +
+      '<a class="tx" data-thanks="' + h(c.id) + '" data-via="' + (sms ? 'whatsapp' : 'sms') + '" href="' + h(sms ? waUrl(c.mobile, msg) : smsUrl(c.mobile, msg)) + '" target="_blank" rel="noopener">' + (sms ? '💬 WhatsApp' : '📱 Text instead') + '</a></span>';
+  };
   back.innerHTML = '<div class="sheet" role="dialog" aria-label="Thank-you messages"><div class="grab"></div>' +
     '<div class="sheet-h"><div><div class="label muted">After the presentation</div><div class="display">' + (sender ? 'Thank everyone 💬' : 'Thank-yous 💬') + '</div></div></div>' +
     '<p class="hint" style="margin-top:-6px">' + (sender
@@ -1766,7 +1855,7 @@ function thanksSheet() {
       : 'Sent by ' + who('LINK') + ' and ' + who('JUSS') + ' for every appointment. They get a reminder at 12:00.') + '</p>' +
     '<div class="list">' + items.map(c => (sender && own.length && other.length && c === other[0] ? '<div class="datehead">' + otherCo + ' · ' + h(thanksName(otherCo).split(' ')[0]) + ' usually sends these</div>' : '') + '<div class="trow">' + avatar(c) + '<div class="main"><div class="name">' + h(c.full_name) + '</div><div class="sub"><span class="co ' + thanksCo(c) + '">' + thanksCo(c) + '</span> ' +
       (c.booker_name ? 'booked by ' + h(c.booker_name) : 'booker not confirmed') + '</div>' + (c.non_qual ? '<div class="sub nqsub">⛔ Non-qualifier message</div>' : '') + '</div>' +
-      (c.thanks_sent_at ? sent(c) : sender ? '<a class="btn wa sm" data-thanks="' + h(c.id) + '" href="' + h(waUrl(c.mobile, msgThanks(c))) + '" target="_blank" rel="noopener">💬 Send</a>' : '<span class="pill amber">Not sent</span>') + '</div>').join('') + '</div>' +
+      (c.thanks_sent_at ? sent(c) : sender ? tsend(c) : '<span class="pill amber">Not sent</span>') + '</div>').join('') + '</div>' +
     '<button class="btn ghost block" id="tdone" style="margin-top:14px">Done</button></div>';
   document.body.appendChild(back);
   document.body.style.overflow = 'hidden';
@@ -1774,9 +1863,10 @@ function thanksSheet() {
   back.querySelector('#tdone').onclick = () => { closeSheet(); render(true); };
   back.querySelectorAll('[data-thanks]').forEach(a => a.addEventListener('click', () => {
     const c = findCand(a.dataset.thanks); if (!c) return;
-    c.thanks_sent_at = londonNow(); c.thanks_by = S.me.user.name; saveCache();
-    call('markSent', { id: c.id, kind: 'thanks' }).catch(e => toast(e.message));
-    setTimeout(() => { a.outerHTML = sent(c); }, 300);  // after WhatsApp has opened
+    const via = a.dataset.via || 'whatsapp';
+    c.thanks_sent_at = londonNow(); c.thanks_by = S.me.user.name; if (via !== 'whatsapp') c.no_whatsapp = 'TRUE'; saveCache();
+    call('markSent', { id: c.id, kind: 'thanks', via: via }).catch(e => toast(e.message));
+    setTimeout(() => { (a.closest('.tsend') || a).outerHTML = sent(c); }, 300);  // after WhatsApp / Messages has opened
   }));
 }
 
@@ -1815,7 +1905,7 @@ function renderCandidate(c, quiet) {
     : '<p class="muted">' + (c.non_qual ? 'Non-qualifier: no evaluation form.' : 'Not submitted yet.') + '</p>';
   const academyDefault = c.academy_date || nextMonday(S.me.today);
   const offerReady = c.outcome === 'Academy booked' && c.admin_status !== 'pending' && c.admin_status !== 'rejected';
-  const waMain = canOutcome && offerReady ? waUrl(c.mobile, msgAcademy(c)) : canNotes ? waUrl(c.mobile, msgThanks(c)) : waUrl(c.mobile, '');
+  const waMain = canOutcome && offerReady ? msgUrl(c, msgAcademy(c)) : canThank() ? msgUrl(c, msgThanks(c)) : msgUrl(c, '');
 
   // Summary: who, how they did, one-tap contact
   const summary = '<div class="profile">' + avatar(c, 'xl') + '<h1>' + h(c.full_name) + '</h1>' +
@@ -1824,7 +1914,7 @@ function renderCandidate(c, quiet) {
     (c.p_interesting ? '<div class="icebreak">💡 ' + h(c.p_interesting) + '</div>' : '') +
     '<div class="pills center-pills">' + nqPill(c) + statusPill(c) + (c._pending ? '<span class="pill">⏳ Syncing…</span>' : '') + '</div>' +
     '<div class="actions"><a href="tel:' + h(c.mobile) + '">' + icon('phone') + '<span>Call</span></a>' +
-    '<a href="' + h(waMain) + '" target="_blank" rel="noopener">' + icon('chat') + '<span>WhatsApp</span></a>' +
+    '<a href="' + h(waMain) + '" target="_blank" rel="noopener">' + icon('chat') + '<span>' + chanName(c) + '</span></a>' +
     '<a href="mailto:' + h(c.email) + '">' + icon('mail') + '<span>Email</span></a></div>' +
     (flags.length || nqBan ? '<div class="flags">' + nqBan + flags.map(f => '<div class="flag ' + f.level + '">' + h(f.text) + '</div>').join('') + '</div>' : '') + '</div>';
 
@@ -1878,17 +1968,18 @@ function renderCandidate(c, quiet) {
 
   // WhatsApp, ready to send
   const wa = [];
-  if (canThank()) wa.push('<a class="btn wa block" target="_blank" rel="noopener" data-kind="thanks" href="' + h(waUrl(c.mobile, msgThanks(c))) + '">💬 Send thank-you message' + (c.non_qual ? ' (non-qualifier)' : '') + '</a>' +
+  if (canThank()) wa.push(sendButtons(c, 'thanks', '💬 Send thank-you message' + (c.non_qual ? ' (non-qualifier)' : ''), msgThanks(c)) +
     (c.thanks_sent_at ? '<p class="small muted center">Opened ' + fmtTs(c.thanks_sent_at) + (c.thanks_by && c.thanks_by !== S.me.user.name ? ' by ' + h(c.thanks_by) : '') + '</p>' : ''));
   const thanksFlag = canThank() ? '' : c.thanks_sent_at
     ? '<div class="flag green">💬 Thank-you sent ' + fmtTs(c.thanks_sent_at) + (c.thanks_by ? ' by ' + h(c.thanks_by) : '') + '</div>'
     : '<div class="flag amber">💬 Thank-you not sent yet · ' + h(thanksName(thanksCo(c))) + ' sends it</div>';
   if (canOutcome && offerReady && !c.welcome_url && c._pending) wa.push('<div class="flag amber"><span class="spinner sm inline"></span> Saving to Google… the 🎉 congratulations button appears here in a few seconds.</div>');
-  if (canOutcome && offerReady && (c.welcome_url || !c._pending)) wa.push('<a class="btn wa block" target="_blank" rel="noopener" data-kind="offer" href="' + h(waUrl(c.mobile, msgAcademy(c))) + '">🎉 Send BA Academy Day 1 details (' + h(c.company || 'LINK') + ')</a>' +
+  if (canOutcome && offerReady && (c.welcome_url || !c._pending)) wa.push(sendButtons(c, 'offer', '🎉 Send BA Academy Day 1 details (' + h(c.company || 'LINK') + ')', msgAcademy(c)) +
     (c.offer_sent_at ? '<p class="small muted center">Opened ' + fmtTs(c.offer_sent_at) + '</p>' : '') +
     (c.welcome_url ? '<a class="btn ghost sm" target="_blank" rel="noopener" href="' + h(c.welcome_url) + '">👀 Preview their welcome page</a>' : ''));
-  if (canOutcome && c.outcome === 'No answer') wa.push('<a class="btn wa block" target="_blank" rel="noopener" data-kind="noanswer" href="' + h(waUrl(c.mobile, msgNoAnswer(c))) + '">📞 Send "we tried calling you" message</a>');
-  const waCard = '<div class="card wa-grid">' + thanksFlag + wa.join('') + (wa.length ? '<p class="small muted center" style="margin:0">Opens WhatsApp with the message ready, then just tap send.</p>' : '') + '</div>';
+  if (canOutcome && c.outcome === 'No answer') wa.push(sendButtons(c, 'noanswer', '📞 Send "we tried calling you" message', msgNoAnswer(c)));
+  const noWa = c.no_whatsapp ? '<div class="flag amber">📵 Not on WhatsApp: message them by text (or email)</div>' : '';
+  const waCard = '<div class="card wa-grid">' + noWa + thanksFlag + wa.join('') + (wa.length ? '<p class="small muted center" style="margin:0">Opens ' + (c.no_whatsapp ? 'your Messages app' : 'WhatsApp') + ' with the message ready, then just tap send.</p>' : '') + '</div>';
 
   // Admin
   let adm = '';
@@ -1961,8 +2052,15 @@ function renderCandidate(c, quiet) {
       submitOutcome(c, { id: c.id, outcome: chipVal(outEl, 'outcome'), academy_date: document.getElementById('adate').value, outcome_notes: document.getElementById('onotes').value }, document.getElementById('oerr'));
     };
   }
-  document.querySelectorAll('a.wa[data-kind]').forEach(a => {
-    a.addEventListener('click', () => { if (a.dataset.kind !== 'noanswer') call('markSent', { id: c.id, kind: a.dataset.kind }).catch(() => {}); });
+  document.querySelectorAll('a[data-kind]').forEach(a => {
+    a.addEventListener('click', () => {
+      const via = a.dataset.via || 'whatsapp';
+      if (a.dataset.kind !== 'noanswer' || via !== 'whatsapp') call('markSent', { id: c.id, kind: a.dataset.kind, via: via }).catch(() => {});
+      if (via !== 'whatsapp' && !c.no_whatsapp) {
+        const lc = findCand(c.id); if (lc) { lc.no_whatsapp = 'TRUE'; saveCache(); }
+        c.no_whatsapp = 'TRUE'; setTimeout(() => { if (S.view === 'cand' && S.params.id === c.id) renderCandidate(lc || c, true); }, 800);
+      }
+    });
   });
   if (isAdmin()) {
     const dec = d => () => call('adminDecision', { id: c.id, decision: d, note: (document.getElementById('anote') || {}).value || '' }).then(nc => saved(nc, 'Decision saved ✓')).catch(x => toast(x.message));

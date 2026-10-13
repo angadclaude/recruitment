@@ -81,7 +81,14 @@ Until Part C is done, alerts go by email instead. Nothing breaks.
 
 **iPhone users must open it from the home-screen icon.** Apple only allows notifications for web apps added to the home screen (iOS 16.4+).
 
-**Check each person before they leave the room:** tap their initials (top right). It must say **Alerts: on ✅**. If it says anything else, that line tells you what's wrong. Anyone who isn't on gets alerts by email only. Once a week, compare OneSignal → **Audience → Subscriptions** with the Team list.
+**Check each person before they leave the room:** tap their initials (top right). It must say **Alerts: on ✅**. If it says anything else, that line tells you what's wrong. Anyone who isn't on gets alerts by email only.
+
+**👥 Team → 🔔 Alerts check** shows everyone at once: who gets alerts on their phone, who has never logged in, who logged in but never allowed alerts. It also checks that OneSignal is connected, how many backup emails are left today, and that the scheduled alerts are running.
+- **📧 Email setup steps** sends the 2-minute guide to everyone who isn't set up.
+- **Test** sends a test alert to one phone. Ask them if it buzzed.
+- New people get the setup email automatically when you add them.
+
+Every alert the app sends is written to the **Log** tab (action `alert`): 📲 = reached their phone, ✉️ = went by email.
 
 ## Part E. The slides
 Put the two QR codes on the presentation once. They never change:
@@ -115,6 +122,9 @@ Put the two QR codes on the presentation once. They never change:
 | **Fri 15:00 team roundup:** the same, one line per booker, loose ends first | admins |
 | Sat 14:00: "🔴 2 outcomes LATE (due Fri 18:00)" | bookers who missed the deadline |
 | Mon 09:00: recruitment incentive report | admins |
+
+## Not on WhatsApp?
+Every WhatsApp button has **Not on WhatsApp? 📱 Text · ✉️ Email** under it: the same message, sent from your own phone's texts or email. Once someone texts or emails a candidate, the app remembers **📵 Not on WhatsApp**, so the next person (e.g. the booker sending Day 1 details) gets a **Text** button instead.
 
 ## Rules built in (top of `Code.gs`)
 - **Net attended:** Mon–Fri, **rated by the presenter**, 18+, eligible to work self-employed, not seen in the last **6 months**, not removed by admin. Target 5.
