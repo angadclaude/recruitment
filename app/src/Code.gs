@@ -23,6 +23,10 @@ const CONFIG = {
   // Leave '' to use the Google Apps Script link instead (no push notifications).
   PUBLIC_URL: 'https://angadclaude.github.io/recruitment/join/',
   ACADEMY_SIGNOFF: { LINK: 'Jess', JUSS: 'Rubal' }, // who signs the BA Academy WhatsApp, whoever sends it
+  // Who sends the thank-you WhatsApp to every appointment (their company's candidates), and gets the reminder.
+  // The same email for both = one person sends them all.
+  THANKS_TEAM: { LINK: 'jess@linkmarketing.org.uk', JUSS: 'rubal@jussmarketing.co.uk' },
+  THANKS_TIME: '12:00',           // every day: "N thank-you messages to send" to Jess / Rubal (only if there are any)
   DIGEST_TIME: '18:00',           // Mon–Thu: each booker's round-up of their day
   ROUNDUP_TIME: '15:00',          // Friday: week roundup to each booker + a team roundup to admins
   TEAM_ROUNDUP: true,             // false = admins don't get the Friday team roundup
@@ -78,7 +82,7 @@ const SHEETS = {
     'admin_status', 'admin_note', 'admin_by', 'admin_at',
     'pay_excluded', 'pay_excluded_reason', 'thanks_sent_at', 'offer_sent_at',
     'welcome_token', 'academy_confirmed_at',
-    'p_why_sales', 'p_why_sales_note', 'p_interesting', 'eval_edited_at',
+    'p_why_sales', 'p_why_sales_note', 'p_interesting', 'eval_edited_at', 'thanks_by',
   ],
   History: ['attended_date', 'full_name', 'mobile', 'email', 'booker_raw', 'presenter_raw'],
   Codes: ['email', 'code_hash', 'expires', 'attempts'],
@@ -623,6 +627,7 @@ function me(req, u) {
     deadlineTime: CONFIG.OUTCOME_DEADLINE_TIME, deadlineLabel: deadlineLabel(),
     links: { checkin: publicLink('checkin'), eval: publicLink('eval'), staff: staffUrl('') },
     signoff: CONFIG.ACADEMY_SIGNOFF,
+    thanksTeam: thanksTeam(),
   };
 }
 
@@ -774,11 +779,28 @@ function reassignBooker(req, u) {
   });
 }
 
+/** { LINK: {id, name, email}, JUSS: {...} }: who sends each company's thank-you WhatsApp. */
+function thanksTeam() {
+  const out = {};
+  Object.keys(CONFIG.THANKS_TEAM).forEach(co => {
+    const email = String(CONFIG.THANKS_TEAM[co]).toLowerCase();
+    const u = usersAll().filter(x => x.email.toLowerCase() === email && truthy(x.active))[0];
+    out[co] = { id: u ? u.id : '', name: u ? u.name : '', email: email };
+  });
+  return out;
+}
+/** A candidate's company for the thank-you (no confirmed booker yet = LINK, like the message). */
+function thanksCo(c) { return c.company === 'JUSS' ? 'JUSS' : 'LINK'; }
+
 function markSent(req, u) {
   return withLock(() => {
     const c = getC(req.id);
     if (!canSee(u, c)) throw new Error('No access');
-    if (req.kind === 'thanks') c.thanks_sent_at = nowStr();
+    if (req.kind === 'thanks') {
+      const t = thanksTeam()[thanksCo(c)];
+      if (!t || t.id !== u.id) throw new Error('Thank-you messages are sent by ' + ((t && t.name) || 'the recruitment team') + '.');
+      c.thanks_sent_at = nowStr(); c.thanks_by = u.name;
+    }
     if (req.kind === 'offer') c.offer_sent_at = nowStr();
     writeRow('Candidates', c);
     log(u, 'whatsapp_' + req.kind, c.id, '');
@@ -986,6 +1008,29 @@ function keepWarm() {
   const t = nowStr().slice(11, 13);
   if (t >= '07' && t <= '20') usersAll();
   maybeDailyDigest();
+  maybeThanksReminder();
+}
+
+/** Every day at THANKS_TIME: Jess / Rubal get "N thank-you messages to send" for today's appointments not thanked yet.
+ *  Nothing to send = no message. Tapping it opens their send list. */
+function maybeThanksReminder() {
+  const now = nowStr(), today = now.slice(0, 10), hm = now.slice(11, 16);
+  if (hm < CONFIG.THANKS_TIME || hm > '20:59') return;
+  const p = PropertiesService.getScriptProperties();
+  if (p.getProperty('THANKS_REMINDED') === today) return;
+  p.setProperty('THANKS_REMINDED', today);  // claim it first so an overlapping run can't send twice
+  const rows = readTable('Candidates').filter(c => c.attended_date === today && !c.thanks_sent_at);
+  const team = thanksTeam(), byUser = {};
+  Object.keys(team).forEach(co => {
+    const t = team[co]; if (!t.id) return;
+    const mine = rows.filter(c => thanksCo(c) === co);
+    if (mine.length) (byUser[t.id] = byUser[t.id] || []).push.apply(byUser[t.id], mine);
+  });
+  Object.keys(byUser).forEach(id => {
+    const list = byUser[id], u = userById(id);
+    notify([u], '💬 ' + plural(list.length, 'thank-you message') + ' to send',
+      'Today\'s appointments: ' + firstNames(list, 4) + '. Tap to send them in one go.', 'thanks');
+  });
 }
 
 /** Runs from keepWarm (every 5 min), so no extra trigger to install: one message a day, Mon–Thu at DIGEST_TIME, Friday at ROUNDUP_TIME. */

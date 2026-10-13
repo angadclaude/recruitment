@@ -511,8 +511,19 @@ const OFFICES = {
   LINK: { address: '2nd Floor East, Automotive House, Grays Place, Slough SL2 5AF', maps: 'https://maps.app.goo.gl/f4pkh222EHHTyQSM9' },
   JUSS: { address: '2nd Floor East, Automotive House, Grays Place, Slough SL2 5AF', maps: 'https://maps.app.goo.gl/zeP4MjS2hMJzB9V9A' },
 };
-// The recruitment team who sign every thank-you WhatsApp (by the candidate's company, whoever taps send).
-const RECRUITMENT_TEAM = { LINK: 'Jess Grace', JUSS: 'Rubal Oshan' };
+// Only the recruitment team send the thank-you WhatsApp: Jess for LINK appointments, Rubal for JUSS (THANKS_TEAM in Code.gs).
+// This default is for Google code that predates THANKS_TEAM.
+const THANKS_DEFAULT = { LINK: { name: 'Jess Grace', email: 'jess@linkmarketing.org.uk' }, JUSS: { name: 'Rubal Oshan', email: 'rubal@jussmarketing.co.uk' } };
+function thanksTeam() { return (S.me && S.me.thanksTeam) || THANKS_DEFAULT; }
+function thanksName(co) { return thanksTeam()[co].name || THANKS_DEFAULT[co].name; }
+/** No confirmed booker yet = LINK, like the message itself. */
+function thanksCo(c) { return c.company === 'JUSS' ? 'JUSS' : 'LINK'; }
+/** The companies whose thank-yous this person sends: ['LINK'] for Jess, ['JUSS'] for Rubal, [] for everyone else. */
+function myThanks() {
+  const t = thanksTeam(), me = S.me && S.me.user;
+  return me ? Object.keys(t).filter(co => (t[co].id && t[co].id === me.id) || String(t[co].email).toLowerCase() === String(me.email).toLowerCase()) : [];
+}
+function signsThanks(c) { return myThanks().indexOf(thanksCo(c)) >= 0; }
 // Each company's digital magazine: in the thank-you WhatsApp and on the thank-you screen after the evaluation.
 const MAGAZINES = {
   LINK: { title: 'LINK Organisation Magazine 2026', url: 'https://linkmagflip-74ibv4pf.manus.space' },
@@ -760,7 +771,13 @@ function boot() {
   initPush();
   S.tab = S.tab || (isPresenter() ? 'today' : isBooker() ? 'mine' : 'all');
   hist('replace', { v: S.tab, p: {} });
-  if (BOOT.cid) { const id = BOOT.cid; BOOT.cid = ''; nav('cand', { id: id }, true); } else nav(S.tab, {}, false);
+  if (BOOT.cid === 'thanks') {
+    // From the 12:00 "thank-you messages to send" alert: Today, then the send list once today's data is in
+    BOOT.cid = ''; if (isPresenter()) S.tab = 'today'; nav(S.tab, {}, false);
+    let tries = 0;
+    const open = () => { if (S.view !== 'today') return; if (S.data[weekEndingOf(S.day)] || tries++ > 40) thanksSheet(); else setTimeout(open, 250); };
+    if (S.tab === 'today') setTimeout(open, 300);
+  } else if (BOOT.cid) { const id = BOOT.cid; BOOT.cid = ''; nav('cand', { id: id }, true); } else nav(S.tab, {}, false);
   stopTimer();
   S.lastPoll = Date.now();
   S.timer = setInterval(tick, 5000);
@@ -1035,7 +1052,7 @@ function avatar(c, cls) { return '<span class="av ' + (cls || '') + ' rag-' + (c
 function waFor(c) {
   const offerReady = c.outcome === 'Academy booked' && c.admin_status !== 'pending' && c.admin_status !== 'rejected' && c.welcome_url;
   if (offerReady && (isAdmin() || c.booker_id === S.me.user.id)) return waUrl(c.mobile, msgAcademy(c));
-  if (isPresenter()) return waUrl(c.mobile, msgThanks(c));
+  if (signsThanks(c)) return waUrl(c.mobile, msgThanks(c));
   return waUrl(c.mobile, '');
 }
 /** One-tap actions under a card: 'rate' (presenter: Green/Amber/Red = in the room) or 'call' (booker: call, WhatsApp, log outcome). */
@@ -1147,11 +1164,9 @@ function viewToday(quiet) {
   if (!d) body = '<div class="hero">' + top + '</div>' + skeleton();
   else {
     const items = d.items.filter(c => c.attended_date === S.day).sort((a, b) => a.created_at.localeCompare(b.created_at));
-    const rated = items.filter(c => c.in_room).length, toCall = items.filter(c => c.eval_at && !c.outcome).length, thanked = items.filter(c => c.thanks_sent_at).length;
+    const rated = items.filter(c => c.in_room).length, toCall = items.filter(c => c.eval_at && !c.outcome).length;
     body = '<div class="hero">' + top + kpis([[items.length, 'Checked in'], [rated, 'Rated'], [items.filter(c => c.eval_at).length, 'Evaluated'], [toCall, 'To call', toCall > 0]]) + '</div>' +
-      (isPresenter() && items.length ? (thanked < items.length
-        ? '<button class="btn wa block" id="thanksAll" style="margin-bottom:10px">💬 Thank-you messages · ' + thanked + ' of ' + items.length + ' sent</button>'
-        : '<button class="btn ghost block" id="thanksAll" style="margin-bottom:10px">✅ Thank-you messages · all ' + items.length + ' sent</button>') : '') +
+      thanksButton(items) +
       (isAdmin() ? '<div class="bullbtns"><button class="btn" id="bullDaily">📣 ' + (isToday ? 'Today\'s' : DAYS[D(S.day).getUTCDay()]) + ' bulletin</button><button class="btn ghost" id="bullWeek">🏆 Week top 5</button></div>' : '') +
       (items.length ? '<div class="section-h"><b>In the room</b><span>' + rated + ' of ' + items.length + ' rated</span></div>' +
         (isPresenter() && rated < items.length ? '<p class="hint">Tap Green, Amber or Red to rate. Rating = they were in the room (that\'s what counts for pay). Tap a name for stars and notes.</p>' : '') +
@@ -1589,7 +1604,7 @@ function msgThanks(c) {
     'Keep your phone close! 👀\n\n' +
     '📖 *While you wait*, flick through the *' + mag.title + '* 👇\n' +
     mag.url + '\n\n' +
-    '*' + RECRUITMENT_TEAM[co] + '*, on behalf of ' + co + ' Marketing recruitment team ' + heartOf(c);
+    '*' + thanksName(co) + '*, on behalf of ' + co + ' Marketing recruitment team ' + heartOf(c);
 }
 function msgNoAnswer(c) {
   const co = c.company === 'JUSS' ? 'JUSS' : 'LINK';
@@ -1672,20 +1687,34 @@ function outcomeSheet(id) {
   };
 }
 
-// ───── After the presentation: thank every appointment, whoever booked them ─────
+// ───── After the presentation: Jess (LINK) and Rubal (JUSS) thank every appointment, whoever booked them ─────
+/** Today's button: "send yours" for Jess / Rubal, "sent or not" for everyone else on Today. */
+function thanksButton(items) {
+  if (!items.length) return '';
+  const mine = items.filter(signsThanks), sentN = l => l.filter(c => c.thanks_sent_at).length;
+  if (mine.length) return sentN(mine) < mine.length
+    ? '<button class="btn wa block" id="thanksAll" style="margin-bottom:10px">💬 Your thank-you messages · ' + sentN(mine) + ' of ' + mine.length + ' sent</button>'
+    : '<button class="btn ghost block" id="thanksAll" style="margin-bottom:10px">✅ Your thank-you messages · all ' + mine.length + ' sent</button>';
+  const parts = ['LINK', 'JUSS'].map(co => { const l = items.filter(c => thanksCo(c) === co); return l.length ? co + ' ' + sentN(l) + '/' + l.length + ' (' + h(thanksName(co).split(' ')[0]) + ')' : ''; }).filter(String);
+  return '<button class="btn ghost block' + (sentN(items) < items.length ? ' tpend' : '') + '" id="thanksAll" style="margin-bottom:10px">' + (sentN(items) < items.length ? '💬' : '✅') + ' Thank-yous sent · ' + parts.join(' · ') + '</button>';
+}
 function thanksSheet() {
   const d = S.data[weekEndingOf(S.day)];
-  const items = d ? d.items.filter(c => c.attended_date === S.day).sort((a, b) => a.created_at.localeCompare(b.created_at)) : [];
+  const all = d ? d.items.filter(c => c.attended_date === S.day).sort((a, b) => a.created_at.localeCompare(b.created_at)) : [];
+  const sender = myThanks().length > 0, items = sender ? all.filter(signsThanks) : all;
   closeSheet(true);
   const back = document.createElement('div');
   back.className = 'sheet-back';
-  const sent = c => '<span class="pill green">✓ Sent ' + h(String(c.thanks_sent_at).slice(11, 16)) + '</span>';
+  const sent = c => '<span class="pill green">✓ Sent ' + h(String(c.thanks_sent_at).slice(11, 16)) + (sender || !c.thanks_by ? '' : ' · ' + h(String(c.thanks_by).split(' ')[0])) + '</span>';
+  const who = co => '<b>' + h(thanksName(co)) + '</b> (' + co + ')';
   back.innerHTML = '<div class="sheet" role="dialog" aria-label="Thank-you messages"><div class="grab"></div>' +
-    '<div class="sheet-h"><div><div class="label muted">After the presentation</div><div class="display">Thank everyone 💬</div></div></div>' +
-    '<p class="hint" style="margin-top:-6px">Each one opens WhatsApp with the message ready, signed by <b>' + RECRUITMENT_TEAM.LINK + '</b> (LINK) or <b>' + RECRUITMENT_TEAM.JUSS + '</b> (JUSS). Tap send, come back, next one.</p>' +
-    '<div class="list">' + items.map(c => '<div class="trow">' + avatar(c) + '<div class="main"><div class="name">' + h(c.full_name) + '</div><div class="sub"><span class="co ' + h(c.company || 'LINK') + '">' + h(c.company || 'LINK') + '</span> ' +
+    '<div class="sheet-h"><div><div class="label muted">After the presentation</div><div class="display">' + (sender ? 'Thank everyone 💬' : 'Thank-yous 💬') + '</div></div></div>' +
+    '<p class="hint" style="margin-top:-6px">' + (sender
+      ? 'Your ' + myThanks().join(' + ') + ' appointments, whoever booked them. Each one opens WhatsApp with the message ready, signed by you. Tap send, come back, next one.'
+      : 'Sent by ' + who('LINK') + ' and ' + who('JUSS') + ' for every appointment. They get a reminder at 12:00.') + '</p>' +
+    '<div class="list">' + items.map(c => '<div class="trow">' + avatar(c) + '<div class="main"><div class="name">' + h(c.full_name) + '</div><div class="sub"><span class="co ' + thanksCo(c) + '">' + thanksCo(c) + '</span> ' +
       (c.booker_name ? 'booked by ' + h(c.booker_name) : 'booker not confirmed') + '</div></div>' +
-      (c.thanks_sent_at ? sent(c) : '<a class="btn wa sm" data-thanks="' + h(c.id) + '" href="' + h(waUrl(c.mobile, msgThanks(c))) + '" target="_blank" rel="noopener">💬 Send</a>') + '</div>').join('') + '</div>' +
+      (c.thanks_sent_at ? sent(c) : sender ? '<a class="btn wa sm" data-thanks="' + h(c.id) + '" href="' + h(waUrl(c.mobile, msgThanks(c))) + '" target="_blank" rel="noopener">💬 Send</a>' : '<span class="pill amber">Not sent</span>') + '</div>').join('') + '</div>' +
     '<button class="btn ghost block" id="tdone" style="margin-top:14px">Done</button></div>';
   document.body.appendChild(back);
   document.body.style.overflow = 'hidden';
@@ -1693,8 +1722,8 @@ function thanksSheet() {
   back.querySelector('#tdone').onclick = () => { closeSheet(); render(true); };
   back.querySelectorAll('[data-thanks]').forEach(a => a.addEventListener('click', () => {
     const c = findCand(a.dataset.thanks); if (!c) return;
-    c.thanks_sent_at = londonNow(); saveCache();
-    call('markSent', { id: c.id, kind: 'thanks' }).catch(() => {});
+    c.thanks_sent_at = londonNow(); c.thanks_by = S.me.user.name; saveCache();
+    call('markSent', { id: c.id, kind: 'thanks' }).catch(e => toast(e.message));
     setTimeout(() => { a.outerHTML = sent(c); }, 300);  // after WhatsApp has opened
   }));
 }
@@ -1794,14 +1823,17 @@ function renderCandidate(c, quiet) {
 
   // WhatsApp, ready to send
   const wa = [];
-  if (canNotes) wa.push('<a class="btn wa block" target="_blank" rel="noopener" data-kind="thanks" href="' + h(waUrl(c.mobile, msgThanks(c))) + '">💬 Send thank-you message</a>' +
+  if (signsThanks(c)) wa.push('<a class="btn wa block" target="_blank" rel="noopener" data-kind="thanks" href="' + h(waUrl(c.mobile, msgThanks(c))) + '">💬 Send thank-you message</a>' +
     (c.thanks_sent_at ? '<p class="small muted center">Opened ' + fmtTs(c.thanks_sent_at) + '</p>' : ''));
+  const thanksFlag = signsThanks(c) ? '' : c.thanks_sent_at
+    ? '<div class="flag green">💬 Thank-you sent ' + fmtTs(c.thanks_sent_at) + (c.thanks_by ? ' by ' + h(c.thanks_by) : '') + '</div>'
+    : '<div class="flag amber">💬 Thank-you not sent yet · ' + h(thanksName(thanksCo(c))) + ' sends it</div>';
   if (canOutcome && offerReady && !c.welcome_url && c._pending) wa.push('<div class="flag amber"><span class="spinner sm inline"></span> Saving to Google… the 🎉 congratulations button appears here in a few seconds.</div>');
   if (canOutcome && offerReady && (c.welcome_url || !c._pending)) wa.push('<a class="btn wa block" target="_blank" rel="noopener" data-kind="offer" href="' + h(waUrl(c.mobile, msgAcademy(c))) + '">🎉 Send BA Academy Day 1 details (' + h(c.company || 'LINK') + ')</a>' +
     (c.offer_sent_at ? '<p class="small muted center">Opened ' + fmtTs(c.offer_sent_at) + '</p>' : '') +
     (c.welcome_url ? '<a class="btn ghost sm" target="_blank" rel="noopener" href="' + h(c.welcome_url) + '">👀 Preview their welcome page</a>' : ''));
   if (canOutcome && c.outcome === 'No answer') wa.push('<a class="btn wa block" target="_blank" rel="noopener" data-kind="noanswer" href="' + h(waUrl(c.mobile, msgNoAnswer(c))) + '">📞 Send "we tried calling you" message</a>');
-  const waCard = wa.length ? '<div class="card wa-grid">' + wa.join('') + '<p class="small muted center" style="margin:0">Opens WhatsApp with the message ready, then just tap send.</p></div>' : '';
+  const waCard = '<div class="card wa-grid">' + thanksFlag + wa.join('') + (wa.length ? '<p class="small muted center" style="margin:0">Opens WhatsApp with the message ready, then just tap send.</p>' : '') + '</div>';
 
   // Admin
   let adm = '';
