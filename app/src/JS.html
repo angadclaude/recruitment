@@ -1064,6 +1064,7 @@ function flagCounts(c) {
   return (r ? '<span class="pill red">' + r + ' red</span>' : '') + (a ? '<span class="pill amber">' + a + ' amber</span>' : '');
 }
 function statusPill(c) {
+  if (c.limited) return c.in_room ? '<span class="pill green">✅ In the room</span>' : '';
   if (c.admin_status === 'pending') return '<span class="pill red">Awaiting admin</span>';
   if (c.outcome === 'Academy booked' && c.welcome_url && !c.offer_sent_at && !c.academy_confirmed_at && c.admin_status !== 'pending' && c.admin_status !== 'rejected' && S.me && (isAdmin() || c.booker_id === S.me.user.id))
     return '<span class="pill orange">🎉 Send congratulations</span>';
@@ -1094,13 +1095,16 @@ function quickRow(c, kind) {
 }
 function item(c, showStatus, kind) {
   const q = kind ? quickRow(c, kind) : '';
+  // Someone else's candidate (presenter rating the room): name + rating only, no call / WhatsApp
+  if (c.limited) return '<div class="ccard' + (q ? ' has-quick' : '') + '">' + itemBtn(c, showStatus, kind === 'rate') + q + '</div>';
   return '<div class="ccard' + (q ? ' has-quick' : '') + '"><div class="swipe"><div class="acts"><a class="act call" href="tel:' + h(c.mobile) + '">' + icon('phone', 20) + '<span>Call</span></a>' +
     '<a class="act wa" href="' + h(waFor(c)) + '" target="_blank" rel="noopener">' + icon('chat', 20) + '<span>' + chanName(c) + '</span></a></div>' + itemBtn(c, showStatus, kind === 'rate') + '</div>' + q + '</div>';
 }
 function itemBtn(c, showStatus, rating) {
   return '<button class="item" data-id="' + h(c.id) + '">' + avatar(c) + '<div class="main">' +
     '<div class="name">' + h(c.full_name) + (c.stars ? ' <span class="stars-sm">' + '★'.repeat(Number(c.stars)) + '</span>' : '') + '</div>' +
-    '<div class="sub">' + (c.booker_name ? h(c.booker_name) + ' <span class="co ' + h(c.company) + '">' + h(c.company) + '</span>' : '<i>Booker not confirmed' + (c.booker_typed ? ': "' + h(c.booker_typed) + '"' : '') + '</i>') + '</div>' +
+    '<div class="sub">' + (c.limited ? (c.company ? '<span class="co ' + h(c.company) + '">' + h(c.company) + '</span> ' : '') + 'Checked in ' + h(String(c.created_at).slice(11, 16))
+      : c.booker_name ? h(c.booker_name) + ' <span class="co ' + h(c.company) + '">' + h(c.company) + '</span>' : '<i>Booker not confirmed' + (c.booker_typed ? ': "' + h(c.booker_typed) + '"' : '') + '</i>') + '</div>' +
     '<div class="pills">' + nqPill(c) + (showStatus ? statusPill(c) : '') + (c.in_room || rating ? '' : '<span class="pill">Not rated yet</span>') + (c._pending ? '<span class="pill">⏳ Syncing</span>' : '') + flagCounts(c) + '</div>' +
     '</div><span class="chev">›</span></button>';
 }
@@ -1191,12 +1195,13 @@ function viewToday(quiet) {
   if (!d) body = '<div class="hero">' + top + '</div>' + skeleton();
   else {
     const items = d.items.filter(c => c.attended_date === S.day).sort((a, b) => a.created_at.localeCompare(b.created_at));
-    const rated = items.filter(c => c.in_room).length, toCall = items.filter(c => c.eval_at && !c.outcome).length;
+    const rated = items.filter(c => c.in_room).length, toCall = items.filter(c => !c.limited && c.eval_at && !c.outcome).length;
     body = '<div class="hero">' + top + kpis([[items.length, 'Checked in'], [rated, 'Rated'], [items.filter(c => c.eval_at).length, 'Evaluated'], [toCall, 'To call', toCall > 0]]) + '</div>' +
-      thanksButton(items) +
+      (isAdmin() || canThank() ? thanksButton(items) : '') +
       (isAdmin() ? '<div class="bullbtns"><button class="btn" id="bullDaily">📣 ' + (isToday ? 'Today\'s' : DAYS[D(S.day).getUTCDay()]) + ' bulletin</button><button class="btn ghost" id="bullWeek">🏆 Week top 5</button></div>' : '') +
       (items.length ? '<div class="section-h"><b>In the room</b><span>' + rated + ' of ' + items.length + ' rated</span></div>' +
         (isPresenter() && rated < items.length ? '<p class="hint">Tap Green, Amber or Red to rate. Rating = they were in the room (that\'s what counts for the recruitment incentive). Tap a name for stars and notes.</p>' : '') +
+        (items.some(c => c.limited) ? '<p class="hint">🔒 You see your own candidates in full. Everyone else\'s: name and room rating only.</p>' : '') +
         '<div class="list">' + items.map(c => item(c, false, isPresenter() && !c.in_room ? 'rate' : '')).join('') + '</div>'
         : empty('📷', 'No check-ins yet. They appear here live as people scan the check-in QR on your first slide.'));
   }
@@ -1882,42 +1887,9 @@ function spy() {
 }
 window.addEventListener('scroll', () => { if (!spy.raf) spy.raf = requestAnimationFrame(() => { spy.raf = 0; spy(); }); }, { passive: true });
 
-function renderCandidate(c, quiet) {
-  const canNotes = isPresenter();
-  const canOutcome = isAdmin() || c.booker_id === S.me.user.id;
-  // Non-qualifier: one clear banner instead of the separate under-18 / right-to-work flags
-  const elig = f => c.non_qual && (f.text === 'Under 18' || /^Not eligible: |^Visa expired/.test(f.text));
-  const nqBan = c.non_qual ? '<div class="flag red nq">⛔ Non-qualifier: ' + h(c.non_qual) + '<span>No evaluation form, doesn\'t count for the incentive, no outcome needed.</span></div>' : '';
-  const flags = c.flags.filter(f => f.level === 'red' && !elig(f)).concat(c.flags.filter(f => f.level === 'amber'), c.flags.filter(f => f.level === 'green'));
+/** Appointment feedback: the presenter's rating + notes (editable for presenters, read-only for everyone else). */
+function presCard(c, canNotes) {
   const kv = (k, v) => v ? '<dt>' + h(k) + '</dt><dd>' + h(v) + '</dd>' : '';
-  const qa = (q, a) => '<div class="qa"><div class="qq">' + h(q) + '</div><div class="aa">' + (a ? h(a) : '<span class="muted">—</span>') + '</div></div>';
-  const glance = (k, v, cls) => '<div class="evt' + (cls ? ' ' + cls : '') + '"><span>' + h(k) + '</span><b>' + (v ? h(v) : '<span class="muted">—</span>') + '</b></div>';
-  const evalHtml = c.eval_at
-    ? '<div class="evgrid"><div class="evt big"><span>Excitement</span><b>' + h(c.q1_excitement || '—') + '</b><i>out of 10</i></div>' +
-        glance('#1 reason', c.q3_reason, 'wide') + glance('Can start', c.q5_start_date ? fmt(c.q5_start_date) : '') + glance('Days / week', c.q6_days) +
-        glance('Commute', c.q7_commute) + glance('Right now', c.q4_situation + (c.q4_looking_for ? ' · ' + c.q4_looking_for : ''), 'wide') +
-        glance('In 2 years', c.q12_bdp_stage, 'full') + '</div>' +
-      qa('What stood out', c.q2_stood_out) + qa('Kept going when it got tough', c.q8_resilience) + qa('Earned on results', c.q9_results_paid + (c.q9_results_detail ? ' — ' + c.q9_results_detail : '')) +
-      qa('Door shut in face', c.q10_door) + qa('Coach says pitch isn\'t working', c.q11_coach) +
-      (c.q12_bdp_why ? qa('What running their own business would mean', c.q12_bdp_why) : '') +
-      (isAdmin() ? qa('Unspent convictions (admin only)', c.q13_unspent) : '') + qa('Questions for us', c.q14_questions)
-    : '<p class="muted">' + (c.non_qual ? 'Non-qualifier: no evaluation form.' : 'Not submitted yet.') + '</p>';
-  const academyDefault = c.academy_date || nextMonday(S.me.today);
-  const offerReady = c.outcome === 'Academy booked' && c.admin_status !== 'pending' && c.admin_status !== 'rejected';
-  const waMain = canOutcome && offerReady ? msgUrl(c, msgAcademy(c)) : canThank() ? msgUrl(c, msgThanks(c)) : msgUrl(c, '');
-
-  // Summary: who, how they did, one-tap contact
-  const summary = '<div class="profile">' + avatar(c, 'xl') + '<h1>' + h(c.full_name) + '</h1>' +
-    '<div class="muted small">Attended ' + fmt(c.attended_date) + ' · ' + (c.booker_name ? 'booked by <b>' + h(c.booker_name) + '</b> <span class="co ' + h(c.company) + '">' + h(c.company) + '</span>' : '<b>booker not confirmed</b>' + (c.booker_typed ? ' ("' + h(c.booker_typed) + '")' : '')) + '</div>' +
-    (c.stars ? '<div class="stars-lg">' + '★'.repeat(Number(c.stars)) + '<span>' + '★'.repeat(5 - Number(c.stars)) + '</span></div>' : '') +
-    (c.p_interesting ? '<div class="icebreak">💡 ' + h(c.p_interesting) + '</div>' : '') +
-    '<div class="pills center-pills">' + nqPill(c) + statusPill(c) + (c._pending ? '<span class="pill">⏳ Syncing…</span>' : '') + '</div>' +
-    '<div class="actions"><a href="tel:' + h(c.mobile) + '">' + icon('phone') + '<span>Call</span></a>' +
-    '<a href="' + h(waMain) + '" target="_blank" rel="noopener">' + icon('chat') + '<span>' + chanName(c) + '</span></a>' +
-    '<a href="mailto:' + h(c.email) + '">' + icon('mail') + '<span>Email</span></a></div>' +
-    (flags.length || nqBan ? '<div class="flags">' + nqBan + flags.map(f => '<div class="flag ' + f.level + '">' + h(f.text) + '</div>').join('') + '</div>' : '') + '</div>';
-
-  // In the room (presenter)
   let pres = '<div class="card" id="pres">';
   if (canNotes) {
     pres += '<label class="q" style="margin-top:0">💬 Why work in sales?</label>' +
@@ -1941,6 +1913,74 @@ function renderCandidate(c, quiet) {
       (c.notes ? '<p style="white-space:pre-wrap;margin-top:10px">' + h(c.notes) + '</p>' : '<p class="muted">No notes yet.</p>');
   }
   pres += '</div>';
+  return pres;
+}
+function bindPres(c) {
+  const st = { rag: c.rag, stars: Number(c.stars) || 0 };
+  const presEl = document.getElementById('pres');
+  bindChips(presEl);
+  presEl.querySelectorAll('.rag button').forEach(b => { b.onclick = () => { st.rag = st.rag === b.dataset.r ? '' : b.dataset.r; presEl.querySelectorAll('.rag button').forEach(x => x.classList.toggle('on', x.dataset.r === st.rag)); }; });
+  presEl.querySelectorAll('.stars button').forEach(b => { b.onclick = () => { st.stars = Number(b.dataset.s); presEl.querySelectorAll('.stars button').forEach(x => x.classList.toggle('on', Number(x.dataset.s) <= st.stars)); }; });
+  document.getElementById('savenotes').onclick = () => {
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    const payload = { id: c.id, in_room: !!c.in_room, rag: st.rag || '', stars: st.stars, tags: chipVals(presEl, 'tags'), notes: document.getElementById('notes').value,
+      why_note: document.getElementById('whynote').value, interesting: document.getElementById('interesting').value };
+    const local = Object.assign({}, c, {
+      rag: payload.rag, stars: payload.stars ? String(payload.stars) : '', tags: payload.tags.join(', '), notes: payload.notes,
+      p_why_sales_note: payload.why_note, p_interesting: payload.interesting,
+      in_room: (c.in_room || payload.rag || payload.stars) ? 'TRUE' : '', presenter_id: S.me.user.id, presenter_name: S.me.user.name, notes_at: londonNow(),
+    });
+    queueSave('saveNotes', payload, local, 'Notes saved ✓');
+  };
+}
+function renderCandidate(c, quiet) {
+  const canNotes = isPresenter();
+  const canOutcome = isAdmin() || c.booker_id === S.me.user.id;
+  // Someone else's candidate (a presenter rating the room): who + appointment feedback, nothing else
+  if (c.limited) {
+    const lim = '<div class="profile">' + avatar(c, 'xl') + '<h1>' + h(c.full_name) + '</h1>' +
+      '<div class="muted small">Checked in ' + fmtTs(c.created_at) + (c.company ? ' · <span class="co ' + h(c.company) + '">' + h(c.company) + '</span>' : '') + '</div>' +
+      '<div class="pills center-pills">' + statusPill(c) + (c._pending ? '<span class="pill">⏳ Syncing…</span>' : '') + '</div>' +
+      '<p class="hint" style="margin:10px 0 0">🔒 Not your candidate: you can rate the room. Their answers and outcome stay with the person who booked them.</p></div>';
+    paint(c.first_name, lim + '<section class="csec" id="sec-pres"><div class="section-h"><b>Appt feedback</b></div>' + presCard(c, canNotes) + '</section>', quiet, true);
+    if (canNotes) bindPres(c);
+    return;
+  }
+  // Non-qualifier: one clear banner instead of the separate under-18 / right-to-work flags
+  const elig = f => c.non_qual && (f.text === 'Under 18' || /^Not eligible: |^Visa expired/.test(f.text));
+  const nqBan = c.non_qual ? '<div class="flag red nq">⛔ Non-qualifier: ' + h(c.non_qual) + '<span>No evaluation form, doesn\'t count for the incentive, no outcome needed.</span></div>' : '';
+  const flags = c.flags.filter(f => f.level === 'red' && !elig(f)).concat(c.flags.filter(f => f.level === 'amber'), c.flags.filter(f => f.level === 'green'));
+  const kv = (k, v) => v ? '<dt>' + h(k) + '</dt><dd>' + h(v) + '</dd>' : '';
+  const qa = (q, a) => '<div class="qa"><div class="qq">' + h(q) + '</div><div class="aa">' + (a ? h(a) : '<span class="muted">—</span>') + '</div></div>';
+  const glance = (k, v, cls) => '<div class="evt' + (cls ? ' ' + cls : '') + '"><span>' + h(k) + '</span><b>' + (v ? h(v) : '<span class="muted">—</span>') + '</b></div>';
+  const evalHtml = c.eval_at
+    ? '<div class="evgrid"><div class="evt big"><span>Excitement</span><b>' + h(c.q1_excitement || '—') + '</b><i>out of 10</i></div>' +
+        glance('#1 reason', c.q3_reason, 'wide') + glance('Can start', c.q5_start_date ? fmt(c.q5_start_date) : '') + glance('Days / week', c.q6_days) +
+        glance('Commute', c.q7_commute) + glance('Right now', c.q4_situation + (c.q4_looking_for ? ' · ' + c.q4_looking_for : ''), 'wide') +
+        glance('In 2 years', c.q12_bdp_stage, 'full') + '</div>' +
+      qa('What stood out', c.q2_stood_out) + qa('Kept going when it got tough', c.q8_resilience) + qa('Earned on results', c.q9_results_paid + (c.q9_results_detail ? ' — ' + c.q9_results_detail : '')) +
+      qa('Door shut in face', c.q10_door) + qa('Coach says pitch isn\'t working', c.q11_coach) +
+      (c.q12_bdp_why ? qa('What running their own business would mean', c.q12_bdp_why) : '') +
+      (isAdmin() ? qa('Unspent convictions (admin only)', c.q13_unspent) : '') + qa('Questions for us', c.q14_questions)
+    : '<p class="muted">' + (c.non_qual ? 'Non-qualifier: no evaluation form.' : 'Not submitted yet.') + '</p>';
+  const academyDefault = c.academy_date || nextMonday(S.me.today);
+  const offerReady = c.outcome === 'Academy booked' && c.admin_status !== 'pending' && c.admin_status !== 'rejected';
+  const waMain = canOutcome && offerReady ? msgUrl(c, msgAcademy(c)) : canThank() ? msgUrl(c, msgThanks(c)) : msgUrl(c, '');
+
+
+  // Summary: who, how they did, one-tap contact
+  const summary = '<div class="profile">' + avatar(c, 'xl') + '<h1>' + h(c.full_name) + '</h1>' +
+    '<div class="muted small">Attended ' + fmt(c.attended_date) + ' · ' + (c.booker_name ? 'booked by <b>' + h(c.booker_name) + '</b> <span class="co ' + h(c.company) + '">' + h(c.company) + '</span>' : '<b>booker not confirmed</b>' + (c.booker_typed ? ' ("' + h(c.booker_typed) + '")' : '')) + '</div>' +
+    (c.stars ? '<div class="stars-lg">' + '★'.repeat(Number(c.stars)) + '<span>' + '★'.repeat(5 - Number(c.stars)) + '</span></div>' : '') +
+    (c.p_interesting ? '<div class="icebreak">💡 ' + h(c.p_interesting) + '</div>' : '') +
+    '<div class="pills center-pills">' + nqPill(c) + statusPill(c) + (c._pending ? '<span class="pill">⏳ Syncing…</span>' : '') + '</div>' +
+    '<div class="actions"><a href="tel:' + h(c.mobile) + '">' + icon('phone') + '<span>Call</span></a>' +
+    '<a href="' + h(waMain) + '" target="_blank" rel="noopener">' + icon('chat') + '<span>' + chanName(c) + '</span></a>' +
+    '<a href="mailto:' + h(c.email) + '">' + icon('mail') + '<span>Email</span></a></div>' +
+    (flags.length || nqBan ? '<div class="flags">' + nqBan + flags.map(f => '<div class="flag ' + f.level + '">' + h(f.text) + '</div>').join('') + '</div>' : '') + '</div>';
+
+  // In the room (presenter)
+  const pres = presCard(c, canNotes);
 
   // Call outcome (booker / admin)
   let out = '<div class="card" id="out">';
@@ -2025,24 +2065,7 @@ function renderCandidate(c, quiet) {
   });
   spy();
 
-  if (canNotes) {
-    const st = { rag: c.rag, stars: Number(c.stars) || 0 };
-    const presEl = document.getElementById('pres');
-    bindChips(presEl);
-    presEl.querySelectorAll('.rag button').forEach(b => { b.onclick = () => { st.rag = st.rag === b.dataset.r ? '' : b.dataset.r; presEl.querySelectorAll('.rag button').forEach(x => x.classList.toggle('on', x.dataset.r === st.rag)); }; });
-    presEl.querySelectorAll('.stars button').forEach(b => { b.onclick = () => { st.stars = Number(b.dataset.s); presEl.querySelectorAll('.stars button').forEach(x => x.classList.toggle('on', Number(x.dataset.s) <= st.stars)); }; });
-    document.getElementById('savenotes').onclick = () => {
-      if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
-      const payload = { id: c.id, in_room: !!c.in_room, rag: st.rag || '', stars: st.stars, tags: chipVals(presEl, 'tags'), notes: document.getElementById('notes').value,
-        why_note: document.getElementById('whynote').value, interesting: document.getElementById('interesting').value };
-      const local = Object.assign({}, c, {
-        rag: payload.rag, stars: payload.stars ? String(payload.stars) : '', tags: payload.tags.join(', '), notes: payload.notes,
-        p_why_sales_note: payload.why_note, p_interesting: payload.interesting,
-        in_room: (c.in_room || payload.rag || payload.stars) ? 'TRUE' : '', presenter_id: S.me.user.id, presenter_name: S.me.user.name, notes_at: londonNow(),
-      });
-      queueSave('saveNotes', payload, local, 'Notes saved ✓');
-    };
-  }
+  if (canNotes) bindPres(c);
   if (canOutcome) {
     const outEl = document.getElementById('out');
     bindChips(outEl, (n, v) => { if (n === 'outcome') document.getElementById('acad').hidden = v !== 'Academy booked'; });

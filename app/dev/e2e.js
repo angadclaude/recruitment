@@ -215,9 +215,15 @@ async function fillEval(p) {
   await shot(pp, '04-presenter-notes', true);
   ok((await api(admin, 'getCandidate', { id: (await api(admin, 'search', { q: 'Jasraj' })).items[0].id })).in_room === 'TRUE', 'rating Jasraj automatically confirmed "in the room"');
   const jasId = (await api(admin, 'search', { q: 'Jasraj' })).items[0].id;
-  ok(!(await pp.$('a.wa[data-kind=thanks]')) && /Thank-you not sent yet · Jess Grace sends it/.test(await pp.innerText('body')), 'presenter has no thank-you button: "Thank-you not sent yet · Jess Grace sends it"');
-  const nope = await post('/api', { action: 'markSent', token: nathan, id: jasId, kind: 'thanks' });
-  ok(!nope.ok && /sent by Jess Grace or Rubal Oshan/.test(nope.error), 'server: only Jess / Rubal can send a thank-you');
+  // Not their candidate (Fiza booked Jasraj): the presenter sees the room rating, nothing else
+  const lockedTxt = await pp.innerText('#page');
+  ok(/Not your candidate/.test(lockedTxt) && !/07700|jasraj@example|Fiza|Call outcome|Graduate visa/.test(lockedTxt) && !(await pp.$('a[href^="tel:"]')) && !(await pp.$('a[data-kind]')) && !(await pp.$('#jump')),
+    'presenter on someone else\'s candidate: rating + notes only (no phone, email, booker, right to work, evaluation, outcome or WhatsApp)');
+  const nathView = await api(nathan, 'getCandidate', { id: jasId });
+  ok(nathView.limited && !nathView.mobile && !nathView.email && !nathView.booker_name && !nathView.rtw && !nathView.q2_stood_out && !nathView.outcome && nathView.notes && nathView.rag === 'G',
+    'server: a presenter gets only the room fields for someone else\'s candidate (the app can\'t show what it never receives)');
+  const nope = await post('/api', { action: 'markSent', token: nathan, id: jasId, kind: 'offer' });
+  ok(!nope.ok && /No access/.test(nope.error), 'server: nobody can send or log messages for someone else\'s candidate');
   // One tap on the Today list: Green / Amber / Red = in the room, and notes another presenter just wrote are kept
   await api(nathan, 'saveNotes', { id: ishita.id, rag: '', stars: 0, tags: ['Quiet'], notes: 'Sat at the back' });
   await pp.goBack(); await pp.waitForSelector('.kpis');
@@ -226,11 +232,9 @@ async function fillEval(p) {
   const ishNow = await api(admin, 'getCandidate', { id: ishita.id });
   ok(ishNow.rag === 'R' && ishNow.in_room === 'TRUE' && ishNow.notes === 'Sat at the back' && ishNow.tags === 'Quiet', 'presenter taps Red on the list → in the room; notes + tags already written are kept');
   ok(!(await pp.$('.quick[data-for="' + ishita.id + '"]')), 'rated card drops its Green / Amber / Red buttons');
-  // After the presentation: everyone else sees who's been thanked; only Jess / Rubal send
-  await pp.click('#thanksAll'); await pp.waitForSelector('.sheet .trow');
-  ok((await pp.$$('.sheet .trow')).length === 7 && !(await pp.$('.sheet [data-thanks]')) && (await pp.$$('.sheet .pill.amber')).length === 7,
-    'presenter: sees all 7 thank-yous as "Not sent", with no Send buttons');
-  await pp.click('#tdone');
+  // After the presentation: only Jess / Rubal (and admins) see the thank-you list
+  ok(!(await pp.$('#thanksAll')) && /name and room rating only/.test(await pp.innerText('#page')) && !(await pp.$('.act.call')),
+    'presenter\'s Today: no thank-you list, no call / WhatsApp on anyone else\'s card, "🔒 name and room rating only"');
   // Jess (LINK recruitment team): all her LINK appointments in one list, whoever booked them
   const jessCtx = await browser.newContext(PHONE);
   const jsp = await jessCtx.newPage();
@@ -360,7 +364,7 @@ async function fillEval(p) {
   const tToday = Date.now() - t0;
   ok(tPay < 500 && tToday < 500, 'tabs switch instantly even with 1.5s Google delay (Pay ' + tPay + 'ms, Today ' + tToday + 'ms)');
   // Timed from the tap itself: the robot waits for the cards' entrance animation before it taps, a finger doesn't.
-  const tCand = await tapToText(pp, '.item:has-text("Adham Soliman")', 'Attended Mon 12 Oct');
+  const tCand = await tapToText(pp, '.item:has-text("Adham Soliman")', 'Not your candidate');
   await pp.waitForSelector('.profile h1:has-text("Adham Soliman")');
   ok(tCand < 500, 'candidate page opens instantly from the phone\'s copy (' + tCand + 'ms)');
   await pp.goBack(); await pp.waitForSelector('.kpis');
@@ -408,17 +412,7 @@ async function fillEval(p) {
   await pp.waitForFunction(() => !JSON.parse(localStorage.getItem('lr_outbox') || '[]').length, null, { timeout: 20000 });
   ok((await api(admin, 'getCandidate', { id: jag.id })).notes === 'Saved while Google was busy.', "presenter's save while Google is busy → kept and retried, not lost");
   await pp.goBack(); await pp.waitForSelector('.kpis');
-  // A background refresh can redraw the list mid-swipe, so swipe again if it didn't stick.
-  for (let i = 0; i < 3 && !(await pp.$('.swipe.open')); i++) {
-    await pp.evaluate(() => {
-      const sw = document.querySelector('.swipe'); const t = (type, x) => sw.dispatchEvent(new TouchEvent(type, { bubbles: true, touches: type === 'touchend' ? [] : [new Touch({ identifier: 1, target: sw, clientX: x, clientY: 200 })] }));
-      t('touchstart', 300); t('touchmove', 250); t('touchmove', 150); t('touchmove', 100); t('touchend', 100);
-    });
-    await pp.waitForSelector('.swipe.open', { timeout: 3000 }).catch(() => {});
-  }
-  await pp.waitForSelector('.swipe.open', { timeout: 1000 });
-  ok(/^tel:/.test(await pp.getAttribute('.swipe.open .act.call', 'href')) && /wa\.me/.test(await pp.getAttribute('.swipe.open .act.wa', 'href')), 'swipe a candidate → Call / WhatsApp buttons');
-  await shot(pp, '04b-swipe');
+  ok(!(await pp.$('.swipe')), 'presenter: no swipe-to-call on anyone else\'s card');
   const dark = await browser.newContext(Object.assign({ colorScheme: 'dark' }, PHONE));
   const dp = await dark.newPage();
   await loginUi(dp, 'nathan@example.com', null, 'admin'); await dp.waitForSelector('text=Jasraj Bhuller');
@@ -436,6 +430,18 @@ async function fillEval(p) {
   await shot(bp, '08-booker-my-candidates', true);
   const mineTxt = await bp.innerText('body');
   ok(!/Adham|Ishita/.test(mineTxt), 'booker only sees their own candidates');
+  // A background refresh can redraw the list mid-swipe, so swipe again if it didn't stick.
+  for (let i = 0; i < 3 && !(await bp.$('.swipe.open')); i++) {
+    await bp.evaluate(() => {
+      const sw = document.querySelector('.swipe'); const t = (type, x) => sw.dispatchEvent(new TouchEvent(type, { bubbles: true, touches: type === 'touchend' ? [] : [new Touch({ identifier: 1, target: sw, clientX: x, clientY: 200 })] }));
+      t('touchstart', 300); t('touchmove', 250); t('touchmove', 150); t('touchmove', 100); t('touchend', 100);
+    });
+    await bp.waitForSelector('.swipe.open', { timeout: 3000 }).catch(() => {});
+  }
+  await bp.waitForSelector('.swipe.open', { timeout: 1000 });
+  ok(/^tel:/.test(await bp.getAttribute('.swipe.open .act.call', 'href')) && /wa\.me/.test(await bp.getAttribute('.swipe.open .act.wa', 'href')), 'booker swipes their own candidate → Call / WhatsApp buttons');
+  await shot(bp, '04b-swipe');
+  await bp.click('.swipe.open .item'); await bp.waitForFunction(() => !document.querySelector('.swipe.open'));  // tap closes the swipe
   ok(/3 more to hit 5/.test(mineTxt) && /0 don't count/.test(mineTxt), 'net attended 2/5 (Young Person counts once their 18+ answer was fixed)');
   await bp.click('.item:has-text("Jasraj Bhuller")');
   await bp.waitForSelector('#saveout');
