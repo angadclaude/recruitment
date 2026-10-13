@@ -462,7 +462,7 @@ function checkin(req) {
   if (res.isNew && booker) {
     notify([booker], '🙌 ' + name.split(' ')[0] + ' just checked in', name + ' is in the room for your appointment.', res.c.id);
   }
-  return { id: res.c.id, resume: res.c.resume_token, first_name: res.c.full_name.split(' ')[0], evalDone: !!res.c.eval_at };
+  return { id: res.c.id, resume: res.c.resume_token, first_name: res.c.full_name.split(' ')[0], company: res.c.company || '', evalDone: !!res.c.eval_at };
 }
 
 /** Today's check-in for a mobile, read fresh: only the first columns (id … mobile), then that one row. */
@@ -500,7 +500,7 @@ function candidateByResume(req) {
 
 function candidateStatus(req) {
   const c = candidateByResume(req);
-  return { first_name: c.full_name.split(' ')[0], attended_date: c.attended_date, today: todayStr(), evalDone: !!c.eval_at, canEdit: canEditEval(c) };
+  return { first_name: c.full_name.split(' ')[0], company: c.company || '', attended_date: c.attended_date, today: todayStr(), evalDone: !!c.eval_at, canEdit: canEditEval(c) };
 }
 /** A candidate can change their answers the same day, until their booker has logged the call outcome. */
 function canEditEval(c) { return !!c.eval_at && c.attended_date === todayStr() && !c.outcome; }
@@ -518,7 +518,7 @@ function resumeByMobile(req) {
   if (!m) throw new Error('Please enter a valid UK mobile number (07…).');
   const c = readTable('Candidates').filter(x => x.mobile === m && x.attended_date === todayStr())[0];
   if (!c) return { found: false };
-  return { found: true, id: c.id, resume: c.resume_token, first_name: c.full_name.split(' ')[0], evalDone: !!c.eval_at, canEdit: canEditEval(c) };
+  return { found: true, id: c.id, resume: c.resume_token, first_name: c.full_name.split(' ')[0], company: c.company || '', evalDone: !!c.eval_at, canEdit: canEditEval(c) };
 }
 
 const EVAL_FIELDS = ['q1_excitement', 'q2_stood_out', 'q3_reason', 'q4_situation', 'q4_looking_for', 'q5_start_date',

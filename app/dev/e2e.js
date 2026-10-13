@@ -61,6 +61,7 @@ const setTime = iso => post('/dev/time', { iso });
 const ok = (cond, msg) => { assert.ok(cond, msg); console.log('  ✓ ' + msg); };
 const pushesTo = async id => (await getJson('/dev/pushes')).filter(p => p.body.include_aliases.external_id.includes(id));
 
+const coOf = p => p.evaluate(() => document.body.dataset.co || '');
 async function fillCheckin(p, f) {
   await p.waitForSelector('#f');
   await p.fill('[name=full_name]', f.name);
@@ -133,9 +134,12 @@ async function fillEval(p) {
   await cp.goto(APP + 'checkin.html');
   await cp.waitForSelector('#f');
   await shot(cp, '01-checkin-empty');
+  ok(await coOf(cp) === '' && (await cp.$$('.brandbar img')).length === 2, 'check-in opens in the shared look with both logos (company not known yet)');
   await fillCheckin(cp, { name: 'jasraj bhuller', mobile: '07700 900123', email: 'jasraj@example.com', booker: 'Fiza Iqbal', rtw: 'Graduate visa (PSW)', expiry: '2027-11-30' });
+  ok(await coOf(cp) === 'LINK', 'picking a LINK booker (Fiza) switches the check-in to LINK colours');
   await cp.click('#go');
   await cp.waitForSelector('text=You\'re checked in, Jasraj!');
+  ok(await coOf(cp) === 'LINK' && (await cp.$$('.brandbar img')).length === 1, 'checked-in screen: LINK colours + LINK logo only');
   ok(/After the presentation, please scan the second QR code on the screen \(Evaluation form\) for us to proceed with your application\./.test(await cp.innerText('body')), 'checked-in screen: "After the presentation, please scan the second QR code… to proceed with your application."');
   await shot(cp, '02-checked-in');
   ok(true, 'candidate checked in from the static slide QR (no presenter action)');
@@ -198,6 +202,7 @@ async function fillEval(p) {
   await cp.goto(APP + 'eval.html');
   await cp.waitForSelector('text=Your evaluation, Jasraj');
   ok(true, 'same phone: evaluation QR opens straight into Jasraj\'s evaluation');
+  ok(await coOf(cp) === 'LINK', 'LINK candidate\'s evaluation is in LINK colours');
   const q3 = await cp.$$eval('.chips[data-name=q3_reason] .chip', els => els.map(e => e.textContent));
   ok(['Uncapped earnings', 'Career progression', 'Learn new skills'].every(x => q3.includes(x)), 'evaluation keeps the standard options: earnings, career progression, learn new skills');
   ok((await cp.$$('.sl .slc')).length === 6 && /Mastery/.test(await cp.innerText('.sl')) && !/£10k/.test(await cp.innerText('body')), 'evaluation shows the Sales Skill Ladder (6 levels); Stage 6 has no £10k line');
@@ -225,6 +230,8 @@ async function fillEval(p) {
   await p2.click('#yes');
   await p2.waitForSelector('text=Your evaluation, Adham');
   ok(true, 'different phone: evaluation QR finds Adham by mobile number');
+  ok(await coOf(p2) === 'JUSS', 'JUSS candidate (booked by Abdullahi) gets the JUSS colours, even on a different phone');
+  await shot(p2, '07b-eval-juss', true);
   await p2c.close();
   // Same person scans the evaluation QR again after sending it → told it's already done (not a confusing "thank you")
   const p2d = await browser.newContext(PHONE);
@@ -379,6 +386,7 @@ async function fillEval(p) {
   const wurl = (msg.match(/https:\/\/\S+welcome-link\.html\?t=\w+/) || [])[0];
   ok(/^JASRAJ!! 🎉 You're IN\./.test(msg) && /Pre-Coaching Module/.test(msg) && wurl, 'LINK WhatsApp: Gen Z copy + personal welcome link');
   ok(/– Jess, LINK Marketing$/.test(msg), 'LINK message signed by Jess (sent by Fiza)');
+  ok(/Week 1 game plan \+ Sales Skill Ladder 📈 \+ tap \*CONFIRM\*/.test(msg), 'WhatsApp tells them the link has their Week 1 plan + the Sales Skill Ladder');
   const links = msg.match(/https:\/\/\S+/g);
   ok(/welcome-link\.html/.test(links[0]), 'first link is the welcome page (so WhatsApp shows the poster card)');
   ok(links.some(l => l.indexOf('forms.office.com') >= 0 && l.indexOf('QT4blMNFxEuaVSUMKK6uNT5Z') > 0), 'LINK message carries the Pre-Coaching Module link');
@@ -391,6 +399,7 @@ async function fillEval(p) {
   await wp.goto(wurl.replace(PUBLIC, APP));
   await wp.waitForSelector('text=You\'re in, Jasraj');
   await shot(wp, '10-welcome-page', true);
+  ok(await coOf(wp) === 'LINK' && (await wp.$$('.sl .slc')).length === 6 && (await wp.$$('.bdp .steps li')).length === 6, 'LINK welcome page: LINK colours + Sales Skill Ladder (6 levels) + Business Development Programme');
   const wtxt = await wp.innerText('body');
   ok(/Monday 19 October/.test(wtxt) && /Day 1 is in 7 days/.test(wtxt) && /Pre-Coaching Module/.test(wtxt) && /Practical Learning Day/.test(wtxt), 'welcome page: date, countdown, pre-coaching, Week 1 plan');
   ok(/forms\.office\.com/.test(await wp.getAttribute('a:has-text("Open the Pre-Coaching Module")', 'href')) && (await wp.getAttribute('a:has-text("Google Maps")', 'href')) === 'https://maps.app.goo.gl/f4pkh222EHHTyQSM9', 'LINK welcome page: Pre-Coaching Module button + LINK Google Maps listing');
@@ -430,6 +439,7 @@ async function fillEval(p) {
   await jp.goto(jwurl.replace(PUBLIC, APP));
   await jp.waitForSelector('text=You\'re in, Adham');
   await shot(jp, '12-welcome-juss', true);
+  ok(await coOf(jp) === 'JUSS' && (await jp.$$('.sl .slc')).length === 6, 'JUSS welcome page: JUSS colours + Sales Skill Ladder');
   ok(/Thursday onwards/.test(await jp.innerText('body')), 'JUSS welcome page uses the JUSS schedule');
   ok((await jp.getAttribute('a:has-text("Google Maps")', 'href')) === 'https://maps.app.goo.gl/zeP4MjS2hMJzB9V9A' && !(await jp.$('a:has-text("Pre-Coaching Module")')), 'JUSS welcome page: JUSS Google Maps listing, no pre-coaching button');
   ok(await jp.$eval('.wl-poster img', i => i.complete && i.naturalWidth > 0 && /poster-juss/.test(i.src)), 'JUSS welcome page shows the JUSS Week 1 poster (your screenshot)');
