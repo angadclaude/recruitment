@@ -806,6 +806,47 @@ async function fillEval(p) {
   ok((await getJson('/dev/pushes')).slice(pb).some(p => /Test alert from Angad/.test(p.body.headings.en) && p.body.include_aliases.external_id.includes(fiza.id)), 'Test button → a test alert lands on Fiza\'s phone');
   await post('/dev/eval', { js: 'globalThis.__pushOff = []; globalThis.__pushNever = []' });
 
+  // ── 9b. A booker who isn't in the app yet: the candidate types their name, admin adds them by name, the credit follows ──
+  console.log('booker not on the list');
+  const nb = await browser.newContext(PHONE); const nbp = await nb.newPage();
+  await nbp.goto(APP + 'checkin.html'); await nbp.waitForSelector('#f');
+  await nbp.fill('[name=full_name]', 'Tara Newman'); await nbp.fill('[name=mobile]', '07700900801'); await nbp.fill('[name=email]', 'tara@example.com');
+  await nbp.click('.chips[data-name=over18] .chip:has-text("Yes")');
+  await nbp.fill('#bkq', 'Priya Sharma');
+  ok(/Not on the list\? Type their full name/.test(await nbp.innerText('#sg')), 'booker not on the list → "Not on the list? Type their full name and carry on"');
+  await nbp.locator('.qcard.ci:has(#bk)').screenshot({ path: SHOTS + '/19a-checkin-booker-not-listed.png' });
+  await nbp.selectOption('[name=rtw]', 'British or Irish citizen'); await nbp.check('[name=privacy_ok]');
+  await nbp.click('#go'); await nbp.waitForSelector('text=You\'re checked in, Tara!');
+  ok(true, 'candidate checks in with the typed name (no need to tick "not sure")');
+  await nb.close();
+  const tara = (await api(admin, 'search', { q: 'Tara Newman' })).items[0];
+  ok(!tara.booker_id && tara.booker_typed === 'Priya Sharma', 'saved as "Booker not confirmed: Priya Sharma"');
+  const omar = await ci({ full_name: 'Omar Second', mobile: '07700900802', email: 'omar2@example.com', booker_id: '', booker_typed: 'priya' });
+  await ap.goto(APP + 'index.html?c=' + tara.id); await ap.waitForSelector('#rb');
+  await ap.selectOption('#rb', '__new');
+  ok(await ap.inputValue('#nbkn') === 'Priya Sharma', 'Booker → "＋ Someone not on the list…" opens with the name the candidate typed');
+  await ap.click('#nbk .chip:has-text("JUSS")');
+  await ap.locator('#sec-adm').screenshot({ path: SHOTS + '/19b-add-booker-by-name.png' });
+  await ap.click('#nbksave'); await ap.waitForSelector('text=Priya added and credited');
+  const tNow = await api(admin, 'getCandidate', { id: tara.id }), oNow = await api(admin, 'getCandidate', { id: omar.id });
+  ok(tNow.booker_name === 'Priya Sharma' && tNow.company === 'JUSS' && oNow.booker_name === 'Priya Sharma',
+    'Priya added by name (JUSS): Tara credited to her, and Omar (who typed "priya") linked automatically');
+  const priya = (await api(admin, 'listUsers')).users.find(x => x.name === 'Priya Sharma');
+  ok(priya && !priya.email && (await api('', 'publicConfig')).bookers.some(b => b.name === 'Priya Sharma'), 'Priya is on the team with no email (not in the app yet) and in the check-in booker list straight away');
+  await api(nathan, 'saveNotes', { id: tara.id, rag: 'G', stars: 4, tags: [], notes: '' });
+  ok(((await api(admin, 'payReport', {})).rows.find(r => r.name === 'Priya Sharma') || {}).net === 1, 'Tara rated in the room → counts for Priya on the recruitment incentive');
+  await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button[data-tab=today]');
+  await ap.click('.tabbar button[data-tab=today]'); await ap.waitForSelector('#bullDaily'); await ap.click('#bullDaily');
+  await ap.waitForSelector('#bimg[data-info]', { timeout: 15000 });
+  ok(JSON.parse(await ap.getAttribute('#bimg', 'data-info')).rows.some(r => / Priya 1$/.test(r)), 'Priya gets her recognition on the daily bulletin (Priya 1)');
+  await ap.click('#abBack');
+  const mb2 = (await getJson('/dev/mail')).length;
+  await api(admin, 'saveUser', { user: Object.assign({}, priya, { email: 'priya@example.com' }) });
+  ok((await getJson('/dev/mail')).slice(mb2).some(m => m.to === 'priya@example.com' && /Set up the/.test(m.subject)), 'adding her email later → she gets the setup email');
+  const prTok = await loginApi('priya@example.com');
+  const prView = await api(prTok, 'getCandidate', { id: tara.id });
+  ok(!prView.limited && prView.mobile === '07700900801', 'she logs in and Tara is already hers, in full');
+
   // ── 10. Access removed / Apps Script fallback / GDPR ──
   await api(admin, 'saveUser', { user: Object.assign({}, fiza, { active: false }) });
   const fz = await loginApi('mo@example.com');

@@ -1,4 +1,4 @@
-window.APP_VERSION = '1ccc3bc0';
+window.APP_VERSION = 'ec1b5c54';
 
 (function () {
 'use strict';
@@ -239,7 +239,7 @@ function renderCheckin(then) {
       const hits = C.cfg.bookers.filter(b => b.name.toLowerCase().split(' ').some(p => p.indexOf(q) === 0) || b.name.toLowerCase().indexOf(q) === 0).slice(0, 6);
       sg.innerHTML = hits.length
         ? '<div class="suggest">' + hits.map(b => '<button type="button" data-id="' + h(b.id) + '"><span>' + h(b.name) + '</span><span class="co ' + h(b.company) + '">' + h(b.company) + '</span></button>').join('') + '</div>'
-        : '<div class="help" style="margin-top:6px">No match — check the spelling, or tick "I\'m not sure".</div>';
+        : '<div class="help" style="margin-top:6px">Not on the list? Type their <b>full name</b> and carry on, we\'ll match it up.</div>';
     };
     inp.addEventListener('input', draw);
     sg.addEventListener('click', e => {
@@ -276,7 +276,7 @@ function renderCheckin(then) {
     };
     if (!form.full_name.trim() || !form.mobile.trim() || !form.email.trim()) return showErr(err, 'Please fill in your name, mobile and email.');
     if (!form.over18) return showErr(err, 'Please answer whether you are 18 or over.');
-    if (!booker && !unsure) return showErr(err, 'Who booked you in? Tap their name from the list as you type, or tick "I\'m not sure".');
+    if (!booker && !unsure && typed.length < 2) return showErr(err, 'Who booked you in? Tap their name from the list as you type, or tick "I\'m not sure".');
     if (!form.rtw) return showErr(err, 'Please choose your right to work status.');
     if (!document.getElementById('exp').hidden && !form.visa_expiry) return showErr(err, 'Please add your visa expiry date.');
     if (!form.privacy_ok) return showErr(err, 'Please tick the privacy box to continue.');
@@ -1463,7 +1463,7 @@ function viewTeam() {
   }
   const us = S.users;
   const row = u => '<button class="item" data-u="' + h(u.id) + '"><span class="av co-' + h(u.company) + '">' + h(initials(u.name)) + '</span><div class="main"><div class="name">' + h(u.name) + ' <span class="co ' + h(u.company) + '">' + h(u.company) + '</span>' +
-    (u.active ? '' : ' <span class="pill red">No access</span>') + '</div><div class="sub">' + h(u.email) + '</div><div class="pills">' + u.roles.map(r => '<span class="pill">' + h(r) + '</span>').join('') + '</div></div><span class="chev">›</span></button>';
+    (u.active ? '' : ' <span class="pill red">No access</span>') + '</div><div class="sub">' + (u.email ? h(u.email) : '<span class="pill amber">Not in the app yet · name only</span>') + '</div><div class="pills">' + u.roles.map(r => '<span class="pill">' + h(r) + '</span>').join('') + '</div></div><span class="chev">›</span></button>';
   const page = paint('Team', '<div class="tiles"><button class="tile hot" id="add"><i>＋</i><b>Add person</b><span>BA (booker, presenter) or admin</span></button>' +
     '<button class="tile" id="slideqr"><i>📲</i><b>Slide QR codes</b><span>Check-in + evaluation</span></button>' +
     '<button class="tile" id="alertsck"><i>🔔</i><b>Alerts check</b><span>Who gets their alerts?</span></button></div>' +
@@ -1479,7 +1479,8 @@ function editUser(u) {
   const x = u || { name: '', email: '', company: 'LINK', roles: ['booker'], active: true };
   const page = paint(u ? u.name : 'Add a person', '<div class="card" id="uf">' +
     '<label class="q">Full name</label><input type="text" id="un" value="' + h(x.name) + '">' +
-    '<label class="q">Email (used to log in)</label><input type="email" id="ue" value="' + h(x.email) + '">' +
+    '<label class="q">Email (used to log in)</label><input type="email" id="ue" value="' + h(x.email) + '" placeholder="Leave blank if they\'re not using the app yet">' +
+    '<div class="help" style="margin-top:6px">No email yet? Add them by name: they\'re in the check-in list and credited on the bulletin and incentive straight away. Add their email later and they can log in, with everything already theirs.</div>' +
     '<label class="q">Company</label>' + chips('company', ['LINK', 'JUSS'], x.company) +
     '<div class="help" style="margin-top:6px">Decides which WhatsApp welcome message (LINK or JUSS) they send.</div>' +
     '<label class="q">Access</label><div class="chips" data-name="roles" data-multi="1">' +
@@ -1495,7 +1496,7 @@ function editUser(u) {
       .then(saved => {
         S.users = (S.users || []).filter(o => o.id !== saved.id).concat([saved]).sort((a, b) => a.name.localeCompare(b.name));
         if (saved.id === S.me.user.id) { S.me.user = saved; }
-        saveCache(); toast('Saved ✓'); back();
+        saveCache(); toast(saved.linked ? 'Saved ✓ ' + saved.linked + ' check-in' + (saved.linked > 1 ? 's' : '') + ' that typed "' + saved.name.split(' ')[0] + '" now credited to them' : 'Saved ✓'); back();
       }).catch(x2 => { busy(btn, false); showErr(document.getElementById('uerr'), x2.message); });
   };
   const del = document.getElementById('udel');
@@ -1626,6 +1627,8 @@ function viewCandidate(id) {
   Promise.all([call('getCandidate', { id: id }), need]).then(([x]) => { if (S.viewId === vid) renderCandidate(x); })
     .catch(e => { if (S.viewId === vid) paint('', '<div class="err">' + h(e.message) + '</div>', false, true); });
 }
+/** Same as the Google code's: lower case, letters and single spaces only ("  Hasini!" → "hasini"). */
+function normName(s) { return String(s || '').toLowerCase().replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim(); }
 function saved(nc, msg) { upsert(nc); toast(msg); if (S.view === 'cand' && S.params.id === nc.id) renderCandidate(nc, true); }
 
 // ───── Instant saves: change shows straight away, syncs in the background, retries when signal returns ─────
@@ -2042,7 +2045,11 @@ function renderCandidate(c, quiet) {
         '<button class="btn ghost sm" id="fxsave" style="margin-top:10px">Save answers</button></details>' +
       '<hr><label class="q" style="margin-top:0">Booker</label><div class="row"><select id="rb" style="flex:1"><option value="">Choose booker…</option>' +
       (S.users || []).filter(u => u.active && (u.roles.indexOf('booker') >= 0 || u.roles.indexOf('admin') >= 0)).map(u => '<option value="' + h(u.id) + '"' + (u.id === c.booker_id ? ' selected' : '') + '>' + h(u.name) + ' (' + h(u.company) + ')</option>').join('') +
-      '</select><button class="btn ghost sm" id="reas">Save</button></div></div>';
+      '<option value="__new">＋ Someone not on the list…</option></select><button class="btn ghost sm" id="reas">Save</button></div>' +
+      '<div id="nbk" hidden><label class="q">Their name</label><input type="text" id="nbkn" value="' + h(c.booker_id ? '' : c.booker_typed) + '" placeholder="First and last name">' +
+      '<label class="q">Company</label>' + chips('nbkco', ['LINK', 'JUSS'], 'LINK') +
+      '<div class="help" style="margin-top:6px">Added to the team by name: credited on the bulletin and incentive now. Add their email in Team later so they can log in.</div>' +
+      '<button class="btn block" id="nbksave" style="margin-top:10px">Add and credit them</button></div></div>';
   }
 
   // Sections, in the order this person works through them
@@ -2099,9 +2106,26 @@ function renderCandidate(c, quiet) {
       .then(nc => saved(nc, nc.non_qual ? 'Saved: still a non-qualifier' : 'Saved ✓ They can do the evaluation now')).catch(x => toast(x.message));
     const inc = document.getElementById('incl');
     if (inc) inc.onclick = () => call('setPayExcluded', { id: c.id, excluded: false }).then(nc => saved(nc, 'Counted again')).catch(x => toast(x.message));
+    const rb = document.getElementById('rb'), nbk = document.getElementById('nbk');
+    rb.onchange = () => { nbk.hidden = rb.value !== '__new'; document.getElementById('reas').hidden = rb.value === '__new'; };
+    bindChips(nbk);
     document.getElementById('reas').onclick = () => {
-      const v = document.getElementById('rb').value; if (!v) return toast('Choose a booker');
+      const v = rb.value; if (!v || v === '__new') return toast('Choose a booker');
       call('reassignBooker', { id: c.id, booker_id: v }).then(nc => saved(nc, 'Booker updated ✓')).catch(x => toast(x.message));
+    };
+    document.getElementById('nbksave').onclick = e => {
+      const btn = e.currentTarget, name = document.getElementById('nbkn').value.trim();
+      if (name.split(/\s+/).length < 2) return toast('Add their first and last name');
+      busy(btn, true, 'Adding…');
+      call('saveUser', { user: { id: '', name: name, email: '', company: chipVal(nbk, 'nbkco') || 'LINK', roles: ['booker'], active: true } })
+        .then(u2 => {
+          S.users = (S.users || []).filter(o => o.id !== u2.id).concat([u2]).sort((a, b) => a.name.localeCompare(b.name)); saveCache();
+          return call('reassignBooker', { id: c.id, booker_id: u2.id }).then(nc => {
+            const t = normName(c.booker_typed), full = normName(u2.name), self = !c.booker_id && t && (t === full || t === full.split(' ')[0]);
+            const more = Math.max(0, (u2.linked || 0) - (self ? 1 : 0));
+            saved(nc, '✓ ' + u2.name.split(' ')[0] + ' added and credited' + (more ? ' (+' + more + ' more check-in' + (more > 1 ? 's' : '') + ' that typed their name)' : ''));
+          });
+        }).catch(x => { busy(btn, false); toast(x.message); });
     };
   }
 }
