@@ -449,7 +449,7 @@ async function fillEval(p) {
   ok(/Southall/.test(snap) && /Commission selling phones/.test(snap), 'one-page snapshot: presenter notes + evaluation together');
   ok(/💡 Plays semi-pro football/.test(snap) && /Wants to earn on results, saving for a house/.test(snap), 'booker sees the room answers: 💡 ice-breaker + why sales');
   const hdr = (await getJson('/dev/sheet?name=Candidates'))[0];
-  ok(hdr.slice(-5).join() === 'p_why_sales_note,p_interesting,eval_edited_at,thanks_by,no_whatsapp', 'existing Sheet got the new columns automatically (no data moved)');
+  ok(hdr.slice(-5).join() === 'thanks_by,no_whatsapp,day1_status,day1_by,day1_at', 'existing Sheet got the new columns automatically (no data moved)');
   ok(!/Unspent convictions/.test(snap), 'conviction answer hidden from bookers');
   await bp.click('.chips[data-name=outcome] .chip:has-text("Academy booked")');
   await bp.fill('#adate', '2026-10-19');
@@ -658,9 +658,42 @@ async function fillEval(p) {
   const rTeam = fri.find(p => p.body.include_aliases.external_id.includes(angadId) && /^📋 Team week/.test(p.body.headings.en));
   ok(rTeam && /Fiza Iqbal: \d+ in/.test(rTeam.body.contents.en) && /Day 1 texts sent \d+\/\d+/.test(rTeam.body.contents.en),
     'Friday 15:00 → admins get the team roundup: "' + (rTeam ? rTeam.body.headings.en + ' | ' + rTeam.body.contents.en.replace(/\n/g, ' | ') : 'none') + '"');
+  ok(rTeam && /Tap to chase them in one go/.test(rTeam.body.contents.en) && /\?c=chase$/.test(rTeam.body.web_url), 'the team roundup opens Chase outcomes when tapped');
+
+  // ── Chase outcomes: one tap nudges every booker with outcomes still to log (no copy-pasting from the sheet) ──
+  const wk = (await api(admin, 'listWeek', { weekEnding: '2026-10-18' })).items;
+  const isOpen = c => (c.in_room === true || c.in_room === 'TRUE') && !c.outcome && !c.non_qual;
+  const isUnsent = c => c.outcome === 'Academy booked' && c.admin_status !== 'rejected' && c.admin_status !== 'pending' && !c.offer_sent_at;
+  const toChase = [...new Set(wk.filter(c => c.booker_id && (isOpen(c) || isUnsent(c))).map(c => c.booker_id))];
+  ok(toChase.includes(fiza.id), 'Friday 15:00: ' + toChase.length + ' booker(s) still have outcomes to log or Day 1 texts to send (Fiza among them)');
+  await ap.goto(APP + 'index.html?c=chase');
+  await ap.waitForSelector('#nudgeAll');
+  ok(await ap.textContent('#abTitle') === 'Chase outcomes' && (await ap.$$('[data-nudge]')).length === toChase.length &&
+    new RegExp(toChase.length + ' bookers? to chase').test(await ap.innerText('#page')), 'the alert opens Chase outcomes: one row per booker with something outstanding (' + toChase.length + ')');
+  const fizaOpen = wk.filter(c => c.booker_id === fiza.id && isOpen(c)).map(c => c.first_name);
+  const fizaRow = await ap.$eval('[data-nudge="' + fiza.id + '"]', b => b.closest('.trow').innerText);
+  ok(fizaOpen.length > 0 && fizaOpen.every(n => new RegExp('To log: .*' + n).test(fizaRow)), 'each row says who is still to log: "' + fizaRow.replace(/\n/g, ' | ') + '"');
+  const grp = decodeURIComponent((await ap.getAttribute('#waGroup', 'href')).replace('https://wa.me/?text=', ''));
+  ok(/^⏰ \*Outcomes due Fri 18:00\*/.test(grp) && /\*Fiza\*/.test(grp) && /Do it now 👉 http/.test(grp), 'Post to team WhatsApp: the full list in one message, ready for the bookers\' group');
+  await shot(ap, '25-chase-outcomes', true);
+  const beforeChase = (await getJson('/dev/pushes')).length;
+  await ap.click('#nudgeAll');
+  await ap.waitForSelector('#cres .flag');
+  const chased = (await getJson('/dev/pushes')).slice(beforeChase);
+  const cFiza = chased.find(p => p.body.include_aliases.external_id.includes(fiza.id));
+  ok(chased.length === toChase.length && toChase.every(id => chased.some(p => p.body.include_aliases.external_id.includes(id))) &&
+    cFiza && /^⏰ Angad: /.test(cFiza.body.headings.en) && /Tap to do it now/.test(cFiza.body.contents.en),
+    'Nudge all → one alert to each of them: "' + (cFiza ? cFiza.body.headings.en + ' | ' + cFiza.body.contents.en.replace(/\n/g, ' | ') : 'none') + '"');
+  ok(/Nudged: .*Fiza/.test(await ap.innerText('#cres')), 'the screen confirms who was nudged');
+  await ap.click('#nudgeAll');
+  await ap.waitForFunction(() => /Already nudged/.test(document.getElementById('cres').innerText));
+  ok((await getJson('/dev/pushes')).length === beforeChase + chased.length, 'tapping again within 30 minutes doesn\'t spam them');
+  let notAdmin = null; try { await api(await loginApi('fiza@example.com'), 'chaseOutcomes', {}); } catch (e) { notAdmin = e.message; }
+  ok(/Admin only/.test(notAdmin), 'bookers can\'t chase each other (admins only)');
   await setTime('2026-10-16T18:05:00+01:00');
+  const before1805 = (await getJson('/dev/pushes')).length;
   await post('/dev/run', { fn: 'keepWarm' });
-  ok((await getJson('/dev/pushes')).length === beforeFri + fri.length, 'no extra 18:00 message on Friday');
+  ok((await getJson('/dev/pushes')).length === before1805, 'no extra 18:00 message on Friday');
 
   // ── 7. Sunday close → logged but LATE; pay ──
   await setTime('2026-10-18T15:00:00+01:00');
@@ -719,11 +752,66 @@ async function fillEval(p) {
   ok(dl.suggestedFilename() === 'JL-top5-2026-10-18.jpg', 'Share → image ready for WhatsApp (saved where sharing isn\'t available)');
   await ap.click('#abBack'); await ap.waitForSelector('#bullDaily');
 
+  // ── Who's expected on Monday: the evening-before briefing + the Day 1 list ──
+  await setTime('2026-10-18T17:55:00+01:00');
+  const beforeBrief = (await getJson('/dev/pushes')).length;
+  await post('/dev/run', { fn: 'keepWarm' });
+  ok((await getJson('/dev/pushes')).length === beforeBrief, 'no Academy briefing before 18:00');
+  const monStarters = (await api(admin, 'academyList', {})).items.filter(c => c.academy_date === '2026-10-19');
+  ok(monStarters.some(c => c.id === jasId) && monStarters.some(c => c.id === adham.id) && !monStarters.some(c => c.id === ishita.id),
+    'Day 1 list for Mon 19 Oct: ' + monStarters.map(c => c.first_name).join(', ') + ' (not Ishita: still waiting on an admin decision)');
+  await setTime('2026-10-18T18:05:00+01:00');
+  await post('/dev/run', { fn: 'keepWarm' });
+  const brief = (await getJson('/dev/pushes')).slice(beforeBrief);
+  const bFiza = brief.find(p => p.body.include_aliases.external_id.includes(fiza.id)), bAbd = brief.find(p => p.body.include_aliases.external_id.includes(abd.id));
+  const bTeam = brief.find(p => p.body.include_aliases.external_id.includes(angadId));
+  const nConf = monStarters.filter(c => c.academy_confirmed_at).length;
+  ok(bFiza && /^🎓 Tomorrow's BA Academy: 1 starter of yours$/.test(bFiza.body.headings.en) && /Jasraj [✅⏳]/.test(bFiza.body.contents.en) && !/Adham/.test(bFiza.body.contents.en) && /\?c=academy$/.test(bFiza.body.web_url),
+    'Sunday 18:00 → Fiza: "' + (bFiza ? bFiza.body.headings.en + ' | ' + bFiza.body.contents.en.replace(/\n/g, ' | ') : 'none') + '"');
+  ok(bAbd && /Adham/.test(bAbd.body.contents.en) && !/Jasraj/.test(bAbd.body.contents.en), 'Abdullahi gets his own starter (Adham) only');
+  ok(bTeam && bTeam.body.headings.en === '🎓 Tomorrow: ' + monStarters.length + ' starters expected · ' + nConf + ' confirmed',
+    'admins: "' + (bTeam ? bTeam.body.headings.en + ' | ' + bTeam.body.contents.en : 'none') + '"');
+  ok(!brief.some(p => p.body.include_aliases.external_id.includes(mo.id)), 'nobody with no starters tomorrow gets one (Mo\'s Ishita is still pending)');
+  await post('/dev/run', { fn: 'keepWarm' });
+  ok((await getJson('/dev/pushes')).length === beforeBrief + brief.length, 'the briefing goes once');
+  await ap.goto(APP + 'index.html?c=academy');
+  await ap.waitForSelector('.trow[data-cand="' + jasId + '"]');
+  const d1Txt = await ap.innerText('#page');
+  ok(await ap.textContent('#abTitle') === 'Day 1 list' && /Monday 19 October · TOMORROW/i.test(d1Txt) && new RegExp(monStarters.length + ' expected · ' + nConf + ' confirmed').test(d1Txt),
+    'tapping it opens the Day 1 list: "Monday 19 October · TOMORROW · ' + monStarters.length + ' expected · ' + nConf + ' confirmed"');
+  const remind = decodeURIComponent(await ap.$eval('.trow[data-cand="' + jasId + '"] a.btn', a => a.href));
+  ok(/BA Academy Day 1\* with \*LINK Marketing\* is \*TOMORROW, Monday 19 October at 1:30pm/.test(remind) && /Bring photo ID/.test(remind) && /– Angad, LINK Marketing/.test(remind),
+    '💬 Remind: a ready-made WhatsApp ("your BA Academy Day 1 with LINK Marketing is TOMORROW…")');
+  ok(!(await ap.$('[data-d1]')), 'no Arrived / No-show buttons before Day 1');
+  await shot(ap, '26-day1-list', true);
+  let early = null; try { await api(admin, 'markDay1', { id: jasId, status: 'arrived' }); } catch (e) { early = e.message; }
+  ok(/hasn't happened yet/.test(early), 'can\'t mark someone arrived before their Day 1');
+  const fizaD1 = (await api(await loginApi('fiza@example.com'), 'academyList', {})).items;
+  ok(fizaD1.length && fizaD1.every(c => c.booker_id === fiza.id), 'a booker\'s Day 1 list shows their own starters only');
+  ok(!(await api(nathan, 'academyList', {})).items.length, 'a presenter sees nobody (no access to other people\'s candidates)');
+
   // ── 8. Check-in outside hours: accepted, flagged amber for admins only ──
   await setTime('2026-10-19T21:00:00+01:00');
   const owl = await ci({ full_name: 'Night Owl', mobile: '07700900111', email: 'n@example.com', booker_id: fiza.id });
   ok(!!owl.id, 'check-in after 17:00 still goes through (candidate just sees "checked in")');
   ok((await api(admin, 'getCandidate', { id: owl.id })).flags.some(f => /outside office hours/.test(f.text)), 'admin sees amber "checked in at 21:00 (outside office hours)"');
+
+  // Day 1: tick who turned up → the real show-up rate
+  await ap.goto(APP + 'index.html?c=academy');
+  await ap.waitForSelector('[data-d1="arrived"][data-id="' + jasId + '"]');
+  ok(/Monday 19 October · TODAY/i.test(await ap.innerText('#page')), 'on the day it says TODAY with Arrived / No-show for each starter');
+  await ap.click('[data-d1="arrived"][data-id="' + jasId + '"]');
+  await ap.waitForSelector('[data-d1="arrived"][data-id="' + jasId + '"].green');
+  await ap.click('[data-d1="no_show"][data-id="' + adham.id + '"]');
+  await ap.waitForSelector('[data-d1="no_show"][data-id="' + adham.id + '"].red');
+  const jD1 = await api(admin, 'getCandidate', { id: jasId }), aD1 = await api(admin, 'getCandidate', { id: adham.id });
+  ok(jD1.day1_status === 'arrived' && jD1.day1_by === 'Angad Oshan' && aD1.day1_status === 'no_show', 'saved on their row in the Sheet: Jasraj arrived, Adham no-show (with who marked it and when)');
+  ok(/1 arrived · 1 no-show/.test(await ap.innerText('#page')), 'the day\'s count updates: "… 1 arrived · 1 no-show"');
+  await shot(ap, '27-day1-arrivals', true);
+  await ap.click('[data-d1="no_show"][data-id="' + adham.id + '"]');
+  await ap.waitForSelector('[data-d1="no_show"][data-id="' + adham.id + '"].ghost');
+  ok((await api(admin, 'getCandidate', { id: adham.id })).day1_status === '', 'tap again to undo a mistake');
+  await api(admin, 'markDay1', { id: adham.id, status: 'arrived' });
 
   // ── 9. Rejected person returns next week → red; scheduled pushes ──
   await setTime('2026-10-20T10:00:00+01:00');

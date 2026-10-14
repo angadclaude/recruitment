@@ -82,7 +82,7 @@ const SHEETS = {
     'admin_status', 'admin_note', 'admin_by', 'admin_at',
     'pay_excluded', 'pay_excluded_reason', 'thanks_sent_at', 'offer_sent_at',
     'welcome_token', 'academy_confirmed_at',
-    'p_why_sales', 'p_why_sales_note', 'p_interesting', 'eval_edited_at', 'thanks_by', 'no_whatsapp',
+    'p_why_sales', 'p_why_sales_note', 'p_interesting', 'eval_edited_at', 'thanks_by', 'no_whatsapp', 'day1_status', 'day1_by', 'day1_at',
   ],
   History: ['attended_date', 'full_name', 'mobile', 'email', 'booker_raw', 'presenter_raw'],
   Codes: ['email', 'code_hash', 'expires', 'attempts'],
@@ -1025,6 +1025,7 @@ const STAFF_ACTIONS = {
   adminDecision: adminDecision, setPayExcluded: setPayExcluded, fixEligibility: fixEligibility, reassignBooker: reassignBooker,
   markSent: markSent, payReport: payReport, listUsers: listUsers, saveUser: saveUser, deleteUser: deleteUser,
   alertsCheck: alertsCheck, testAlert: testAlert, sendSetupEmails: sendSetupEmails, adminCode: adminCode,
+  chaseOutcomes: chaseOutcomes, academyList: academyList, markDay1: markDay1,
 };
 
 // ───────────────────────── LINKS ─────────────────────────
@@ -1223,6 +1224,7 @@ function keepWarm() {
   if (t >= '07' && t <= '20') usersAll();
   maybeDailyDigest();
   maybeThanksReminder();
+  maybeAcademyBriefing();
 }
 
 /** Every day at THANKS_TIME: Jess / Rubal get "N thank-you messages to send" for today's appointments not thanked yet.
@@ -1256,6 +1258,77 @@ function maybeDailyDigest() {
   p.setProperty('DIGEST_SENT', today);  // claim it first so an overlapping run can't send twice
   if (fri) weeklyRoundups(today); else dailyDigests(today);
 }
+/** Admin, one tap ("Chase outcomes"; the Friday 15:00 team alert opens it): every booker with appointments still to log
+ *  or Day 1 texts not sent gets an alert (email if they're not set up). The same booker isn't nudged twice in 30 minutes. */
+function chaseOutcomes(req, u) {
+  if (!isAdmin(u)) throw new Error('Admin only');
+  const we = req.weekEnding || weekEnding(todayStr());
+  const only = Array.isArray(req.ids) && req.ids.length ? req.ids : null;
+  const rows = readTable('Candidates').filter(c => c.week_ending === we);
+  const cache = CacheService.getScriptCache(), out = { nudged: [], recently: [], noApp: [] };
+  usersAll().filter(b => truthy(b.active) && has(b, 'booker') && b.id !== u.id && (!only || only.indexOf(b.id) >= 0)).forEach(b => {
+    const s = weekStats(b, rows), unsent = s.unsent.filter(c => c.admin_status !== 'pending');
+    if (!s.open.length && !unsent.length) return;
+    if (!b.email) { out.noApp.push(b.name); return; }
+    const key = 'chase_' + b.id + '_' + we;
+    if (cache.get(key)) { out.recently.push(b.name); return; }
+    const lines = [];
+    if (s.open.length) lines.push('📞 To log: ' + firstNames(s.open, 6));
+    if (unsent.length) lines.push('📲 Day 1 text not sent: ' + firstNames(unsent, 6));
+    notify([b], '⏰ ' + u.name.split(' ')[0] + ': ' + (s.open.length ? plural(s.open.length, 'outcome') + ' to log by ' + deadlineLabel() : plural(unsent.length, 'Day 1 text') + ' to send'),
+      lines.join('\n') + '\nTap to do it now.', '');
+    cache.put(key, '1', 1800);
+    out.nudged.push(b.name);
+  });
+  log(u, 'chase', '', out.nudged.length + ' nudged' + (out.nudged.length ? ': ' + out.nudged.map(n => n.split(' ')[0]).join(', ') : ''));
+  return out;
+}
+
+/** Everyone booked onto the BA Academy with Day 1 from a week ago onwards: admins see everyone, bookers their own. */
+function academyList(req, u) {
+  const from = addDays(todayStr(), -7);
+  const rows = readTable('Candidates').filter(c => c.outcome === 'Academy booked' && c.admin_status !== 'rejected' && c.admin_status !== 'pending' &&
+    c.academy_date && c.academy_date >= from && fullAccess(u, c));
+  return { today: todayStr(), items: rows.sort((a, b) => a.academy_date.localeCompare(b.academy_date) || a.full_name.localeCompare(b.full_name)).map(c => shape(c, u)) };
+}
+/** On Day 1: arrived / no-show (or clear it). Admins, or the person who booked them. Gives the real show-up rate. */
+function markDay1(req, u) {
+  if (['arrived', 'no_show', ''].indexOf(req.status) < 0) throw new Error('Choose arrived or no-show');
+  return withLock(() => {
+    const c = getC(req.id);
+    if (!fullAccess(u, c)) throw new Error('No access');
+    if (c.outcome !== 'Academy booked') throw new Error('They aren\'t booked onto the Academy.');
+    if (req.status && c.academy_date > todayStr()) throw new Error('Their Day 1 hasn\'t happened yet.');
+    c.day1_status = req.status; c.day1_by = req.status ? u.name : ''; c.day1_at = req.status ? nowStr() : '';
+    writeRow('Candidates', c);
+    log(u, 'day1_' + (req.status || 'cleared'), c.id, '');
+    return shape(c, u);
+  });
+}
+/** 18:00 the evening before an Academy day: each booker gets their starters (✅ confirmed / ⏳ not yet), admins the full count.
+ *  Nobody starting tomorrow = no message. Tapping it opens the Day 1 list. */
+function maybeAcademyBriefing() {
+  const now = nowStr(), today = now.slice(0, 10), hm = now.slice(11, 16);
+  if (hm < CONFIG.DIGEST_TIME || hm > '20:59') return;
+  const p = PropertiesService.getScriptProperties();
+  if (p.getProperty('ACADEMY_BRIEF') === today) return;
+  p.setProperty('ACADEMY_BRIEF', today);  // claim it first so an overlapping run can't send twice
+  const tomorrow = addDays(today, 1);
+  const rows = readTable('Candidates').filter(c => c.outcome === 'Academy booked' && c.academy_date === tomorrow && c.admin_status !== 'rejected' && c.admin_status !== 'pending');
+  if (!rows.length) return;
+  const tag = c => c.full_name.split(' ')[0] + (c.academy_confirmed_at ? ' ✅' : ' ⏳');
+  const by = {};
+  rows.forEach(c => { if (c.booker_id) (by[c.booker_id] = by[c.booker_id] || []).push(c); });
+  Object.keys(by).forEach(id => {
+    const b = userById(id), list = by[id], not = list.filter(c => !c.academy_confirmed_at);
+    if (b) notify([b], '🎓 Tomorrow\'s BA Academy: ' + plural(list.length, 'starter') + ' of yours', list.map(tag).join(', ') +
+      (not.length ? '\n⏳ Not confirmed: ' + firstNames(not) + '. Send a reminder now.' : '\nAll confirmed 🔥'), 'academy');
+  });
+  const not = rows.filter(c => !c.academy_confirmed_at);
+  notify(usersAll().filter(x => isAdmin(x) && truthy(x.active)), '🎓 Tomorrow: ' + plural(rows.length, 'starter') + ' expected · ' + (rows.length - not.length) + ' confirmed',
+    not.length ? '⏳ Not confirmed: ' + firstNames(not, 8) : 'Everyone has confirmed 🔥', 'academy');
+}
+
 function firstNames(list, max) {
   const f = list.map(c => c.full_name.split(' ')[0]);
   return f.slice(0, max || 4).join(', ') + (f.length > (max || 4) ? ' +' + (f.length - (max || 4)) : '');
@@ -1312,7 +1385,7 @@ function weeklyRoundups(today) {
   const stats = users.filter(u => has(u, 'booker')).map(u => weekStats(u, rows)).filter(s => s.all.length);
   stats.forEach(s => { const r = roundupFor(s); notify([s.user], r.title, r.body, ''); });
   const admins = users.filter(isAdmin);
-  if (CONFIG.TEAM_ROUNDUP && admins.length && stats.length) { const t = teamRoundup(stats); notify(admins, t.title, t.body, ''); }
+  if (CONFIG.TEAM_ROUNDUP && admins.length && stats.length) { const t = teamRoundup(stats); notify(admins, t.title, t.body + '\nTap to chase them in one go.', 'chase'); }
 }
 function roundupFor(s) {
   const target = CONFIG.PAY_TARGET, lines = [];
