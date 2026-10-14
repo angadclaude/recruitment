@@ -181,6 +181,8 @@ Someone stuck later (email slow, in Spam, or "too many codes")? Same thing: Team
   - any other check-in from the last 14 days where the candidate typed their name is credited to them automatically.
 - **Later:** Team → tap them → add their email. They get the setup email, log in, and every candidate is already theirs.
 - **Team → ＋ Add person:** works the same way. Leave the email blank for "not in the app yet".
+- **Same person twice?** If the name is nearly the same as someone already on the team (a typo like "Ali Abass" for "Ali Abbas", or the same name inside a longer one like "Ali Abbas" and "Ramis - Ali Abbas"), the app asks *"… is already on the team. Same person?"*. Tap **✅ Yes: credit them**. Only add a new person if they really are someone else, because two entries split their incentive and bulletin credit.
+- **Renaming someone** (Team → tap them → name) updates "booked by" on all their candidates.
 
 ## Not on WhatsApp?
 Every WhatsApp button has **Not on WhatsApp? 📱 Text · ✉️ Email** under it: the same message, sent from your own phone's texts or email. Once someone texts or emails a candidate, the app remembers **📵 Not on WhatsApp**, so the next person (e.g. the booker sending Day 1 details) gets a **Text** button instead.
