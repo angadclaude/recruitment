@@ -184,6 +184,23 @@ Someone stuck later (email slow, in Spam, or "too many codes")? Same thing: Team
 - **Same person twice?** If the name is nearly the same as someone already on the team (a typo like "Ali Abass" for "Ali Abbas", or the same name inside a longer one like "Ali Abbas" and "Ramis - Ali Abbas"), the app asks *"… is already on the team. Same person?"*. Tap **✅ Yes: credit them**. Only add a new person if they really are someone else, because two entries split their incentive and bulletin credit.
 - **Renaming someone** (Team → tap them → name) updates "booked by" on all their candidates.
 
+## 🚀 New starter onboarding (Jess / Rubal, admins only)
+When a booker books someone onto the Academy (or an admin approves a 🔴 booking), Jess (LINK) or Rubal (JUSS) gets **"🚀 New starter to onboard: Adham Soliman · Booked by Abdullahi for Monday 19th October"**. Tap it to open their page, which has the **🚀 Onboard** card at the top:
+
+1. **Add to Databyte:** tap **Open Databyte ↗**, then Organize → Users → Manage → ＋ New user.
+   - Copy each box across: first name, last name, email, phone (07700 900300).
+   - **Recruitment source** is picked for you: *Personal Recruitment* if they said a BA referred them, otherwise *Office Recruitment*. Tap to change it. The recruiter is shown too.
+   - Tap **✅ Added to Databyte**.
+2. **Welcome email:** **📧 Preview & send** shows the exact email ("LINK / JUSS Marketing - Your Brand Ambassador Journey Begins!"): their name, Day 1 date, Day 1 / Day 2 times, FieldIQ, pre-coaching (LINK), client, magazine, map and contact number, signed by you. Tap **Send**.
+   - It's locked until step 1, because FieldIQ only works once they're on Databyte.
+   - It goes from the app with your name ("Rubal Oshan | JUSS Marketing"). Replies come to your email, and you get a copy.
+
+**Day 1 tab:** **🚀 To onboard · N** lists everyone still to do. Each starter shows *Not on Databyte / Welcome email to send / Onboarded*.
+
+**Who sees it:** admins only. Bookers never see the card, and the Google side refuses them too.
+
+**Changing the email:** the links, numbers and wording are in `ONBOARD` and `onboardEmail` at the top of `Code.gs`. The Sheet keeps `recruit_source`, `databyte_at/by` and `onboard_email_at/by`.
+
 ## Bookers' other names (team members, their company)
 Some bookers recruit under other names: a team member ("Daniel Thompson"), their company ("Stones Recruitment"), or both ("Sophie - Skye Promotions"). Candidates type whichever name they know.
 

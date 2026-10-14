@@ -1759,7 +1759,8 @@ function drawAcademy(r, quiet) {
         (c.day1_status ? '' : '<button class="pill yes" data-yes="' + h(c.id) + '">👍 They replied Yes</button>')) +
       (c.offer_sent_at || started ? '' : '<span class="pill red">Day 1 text not sent</span>') +
       (remindedToday(c) && !c.day1_status ? '<span class="pill blue">📲 Reminded ' + h(String(c.day1_reminded_at).slice(11, 16)) + '</span>' : '') +
-      (c.day1_status === 'arrived' ? '<span class="pill green">🎓 Arrived</span>' : c.day1_status === 'no_show' ? '<span class="pill red">❌ No-show</span>' : '');
+      (c.day1_status === 'arrived' ? '<span class="pill green">🎓 Arrived</span>' : c.day1_status === 'no_show' ? '<span class="pill red">❌ No-show</span>' : '') +
+      (!admin || started ? '' : c.onboard_email_at ? '<span class="pill green">🚀 Onboarded</span>' : c.databyte_at ? '<span class="pill amber">🚀 Welcome email to send</span>' : '<span class="pill red">🚀 Not on Databyte</span>');
     const act = started
       ? '<div class="d1btns"><button class="btn sm ' + (c.day1_status === 'arrived' ? 'green' : 'ghost') + '" data-d1="arrived" data-id="' + h(c.id) + '">Arrived</button>' +
         '<button class="btn sm ' + (c.day1_status === 'no_show' ? 'red' : 'ghost') + '" data-d1="no_show" data-id="' + h(c.id) + '">No-show</button></div>'
@@ -1778,13 +1779,17 @@ function drawAcademy(r, quiet) {
       '<button class="btn ghost" data-pdf="' + x + '">📄 Print list (PDF)</button></div>' : '';
     return '<div class="datehead">' + h(label(x)) + '</div><p class="hint" style="margin:-4px 4px 8px">' + h(counts) + '</p>' + tools + '<div class="list alist">' + l.map(row).join('') + '</div>';
   };
+  const toOnb = admin ? r.items.filter(c => c.academy_date >= today && !c.onboard_email_at) : [];
   const page = paint('Day 1',
     (r.items.length ? '' : empty('🎓', 'Nobody booked onto the Academy yet.')) +
+    (toOnb.length ? '<div class="card needs onbq"><b>🚀 To onboard · ' + toOnb.length + '</b><p class="small muted" style="margin:4px 0 2px">Databyte, then the welcome email with FieldIQ. Tap a name.</p>' +
+      toOnb.map(c => '<button class="nm" data-cand="' + h(c.id) + '">' + h(c.first_name) + (c.databyte_at ? ' · email' : '') + '</button>').join('') + '</div>' : '') +
     upcoming.map(block).join('') +
     (past.length ? '<div class="datehead" style="margin-top:22px">Last week</div>' + past.map(block).join('') : '') +
     '<p class="hint">' + (admin ? '📲 Send reminders: the Day 1 reminder to every starter, signed by you (Jess / Rubal: you get a nudge at 10:00 on the day). 👍 When someone replies Yes, tap "They replied Yes". 📄 Print list: the sign-in sheet for the room. ' : '💬 Remind sends them the Day 1 reminder (time, address, Maps pin). 👍 When they reply Yes, tap "They replied Yes". ') +
     'On Day 1, tap Arrived or No-show for everyone: that\'s your show-up rate.</p>', quiet, !admin);
   page.querySelectorAll('.trow[data-cand] .main').forEach(el => { el.onclick = () => nav('cand', { id: el.parentNode.dataset.cand }, true); });
+  page.querySelectorAll('.nm[data-cand]').forEach(b => { b.onclick = () => nav('cand', { id: b.dataset.cand }, true); });
   page.querySelectorAll('[data-remall]').forEach(b => { b.onclick = () => day1Sheet(b.dataset.remall); });
   page.querySelectorAll('[data-pdf]').forEach(b => { b.onclick = () => { const x = b.dataset.pdf; savePdf(day1Pdf(x, r.items.filter(c => c.academy_date === x)), 'Day1-' + x + '.pdf'); }; });
   page.querySelectorAll('[data-rem1]').forEach(a => a.addEventListener('click', () => markReminded(r.items.filter(x => x.id === a.dataset.rem1)[0], a.dataset.via)));
@@ -1849,6 +1854,78 @@ function day1Sheet(date) {
     markReminded(c, a.dataset.via);
     setTimeout(() => { (a.closest('.tsend') || a).outerHTML = sent(c); back.querySelector('#d1prog').textContent = prog(); }, 300);  // after WhatsApp / Messages has opened
   }));
+}
+
+// ───── New starter onboarding (admins only): 1 · add to Databyte (copy each box), 2 · the welcome email with the FieldIQ link ─────
+const DATABYTE_URL = 'https://uk.databyte.live/cloud/users/list';
+function recruitSource(c) { return c.recruit_source || (isBar(c) ? 'Personal Recruitment' : 'Office Recruitment'); }
+function fmtPhone(m) { const d = String(m || '').replace(/\D/g, ''); return /^07\d{9}$/.test(d) ? d.slice(0, 5) + ' ' + d.slice(5) : String(m || ''); }
+function copyText(v, label) {
+  const done = () => toast('📋 Copied ' + label);
+  const fallback = () => {
+    const t = document.createElement('textarea'); t.value = v; t.setAttribute('readonly', ''); t.style.position = 'fixed'; t.style.opacity = '0';
+    document.body.appendChild(t); t.select();
+    try { document.execCommand('copy'); done(); } catch (e) { toast(v); }
+    t.remove();
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(v).then(done, fallback); else fallback();
+}
+function onboardCard(c) {
+  const parts = String(c.full_name).trim().split(/\s+/), first = parts[0], last = parts.slice(1).join(' ');
+  const row = (k, v) => '<div class="cprow"><span>' + h(k) + '</span><b>' + h(v || '—') + '</b>' + (v ? '<button type="button" class="btn ghost sm" data-copy="' + h(v) + '" data-label="' + h(k.toLowerCase()) + '">Copy</button>' : '') + '</div>';
+  const onDb = !!c.databyte_at, sent = !!c.onboard_email_at, brand = c.company === 'JUSS' ? 'JUSS Marketing' : 'Link Marketing';
+  const by = (who, at) => h(String(who || '').split(' ')[0]) + ' ' + h(fmtTs(at));
+  return '<div class="card onb" id="onb"><div class="onb-h"><b>🚀 Onboard ' + h(first) + '</b>' +
+      (sent ? '<span class="pill green">✅ Onboarded</span>' : '<span class="pill">admins only</span>') + '</div>' +
+    '<div class="onb-step' + (onDb ? ' done' : '') + '"><div class="onb-t"><b>1 · Add to Databyte</b>' + (onDb ? '<span class="pill green">✓ ' + by(c.databyte_by, c.databyte_at) + '</span>' : '') + '</div>' +
+      '<p class="small muted">Organize → Users → Manage → ＋ New user. Copy each box across:</p>' +
+      '<div class="cplist">' + row('First name', first) + row('Last name', last) + row('Email', c.email) + row('Phone number', fmtPhone(c.mobile)) + '</div>' +
+      '<label class="q">Recruitment source</label>' + chips('rsrc', ['Office Recruitment', 'Personal Recruitment'], recruitSource(c)) +
+      '<p class="small muted" style="margin:8px 0 0">Recruiter: <b>' + h(c.booker_name || 'their booker') + '</b>' + (isBar(c) ? ' · they said a BA referred them' : '') + '</p>' +
+      '<div class="row" style="margin-top:10px"><a class="btn ghost sm" href="' + DATABYTE_URL + '" target="_blank" rel="noopener">Open Databyte ↗</a>' +
+      (onDb ? '<button type="button" class="btn ghost sm" id="dbundo">Undo</button>' : '<button type="button" class="btn green sm grow" id="dbdone">✅ Added to Databyte</button>') + '</div></div>' +
+    '<div class="onb-step' + (sent ? ' done' : '') + (onDb ? '' : ' locked') + '"><div class="onb-t"><b>2 · Send the welcome email</b>' + (sent ? '<span class="pill green">✓ Sent ' + by(c.onboard_email_by, c.onboard_email_at) + '</span>' : '') + '</div>' +
+      '<p class="small muted">"' + brand + ' - Your Brand Ambassador Journey Begins!" with the FieldIQ link, to <b>' + h(c.email) + '</b>. ' +
+      (onDb ? 'Replies come to you, and you get a copy.' : '🔒 Unlocks once they\'re on Databyte: FieldIQ only works after that.') + '</p>' +
+      '<button type="button" class="btn block' + (sent ? ' ghost' : '') + '" id="obsend"' + (onDb ? '' : ' disabled') + '>' + (sent ? '📧 Send it again' : '📧 Preview &amp; send welcome email') + '</button></div></div>';
+}
+function bindOnboard(c) {
+  const box = document.getElementById('onb'); if (!box) return;
+  const save = (payload, msg, btn) => {
+    if (btn) busy(btn, true, '…');
+    return call('onboardStep', Object.assign({ id: c.id }, payload)).then(nc => { Object.assign(c, nc); upsert(nc); renderCandidate(c, true); if (msg) toast(msg); })
+      .catch(e => { if (btn) busy(btn, false); toast(/Unknown action/.test(e.message) ? 'Paste the new Google code (Code.gs) first.' : e.message); });
+  };
+  box.querySelectorAll('[data-copy]').forEach(b => { b.onclick = () => copyText(b.dataset.copy, b.dataset.label); });
+  bindChips(box, (n, v) => { if (n === 'rsrc' && v) save({ source: v }, v); });
+  const done = box.querySelector('#dbdone'); if (done) done.onclick = () => save({ databyte: true, source: recruitSource(c) }, '✅ On Databyte. Now send the welcome email', done);
+  const undo = box.querySelector('#dbundo'); if (undo) undo.onclick = () => save({ databyte: false }, 'Undone', undo);
+  const send = box.querySelector('#obsend'); if (send) send.onclick = () => onboardSheet(c);
+}
+/** See exactly what goes out, then send it (from the app, as you, replies to you). */
+function onboardSheet(c) {
+  closeSheet(true);
+  const back = document.createElement('div');
+  back.className = 'sheet-back';
+  back.innerHTML = '<div class="sheet" role="dialog" aria-label="Welcome email"><div class="grab"></div>' +
+    '<div class="sheet-h"><div><div class="label muted">To ' + h(c.email) + '</div><div class="display">Welcome email 📧</div></div></div>' +
+    '<div id="obbody"><p class="hint">Loading the email…</p></div><div id="oberr"></div>' +
+    '<button class="btn block" id="obgo" disabled style="margin-top:12px">📧 Send to ' + h(c.first_name) + '</button>' +
+    '<button class="btn ghost block" id="obcancel" style="margin-top:8px">Cancel</button></div>';
+  document.body.appendChild(back);
+  document.body.style.overflow = 'hidden';
+  back.onclick = e => { if (e.target === back) closeSheet(); };
+  back.querySelector('#obcancel').onclick = () => closeSheet();
+  call('onboardPreview', { id: c.id }).then(m => {
+    back.querySelector('#obbody').innerHTML = '<div class="small" style="margin-bottom:6px"><b id="obsubj">' + h(m.subject) + '</b></div><iframe class="obframe" sandbox="" title="Email preview"></iframe>';
+    back.querySelector('.obframe').srcdoc = m.html;
+    back.querySelector('#obgo').disabled = false;
+  }).catch(e => showErr(back.querySelector('#oberr'), /Unknown action/.test(e.message) ? 'Paste the new Google code (Code.gs) first.' : e.message));
+  back.querySelector('#obgo').onclick = ev => {
+    const b = ev.currentTarget; busy(b, true, 'Sending…');
+    call('onboardSend', { id: c.id }).then(nc => { Object.assign(c, nc); upsert(nc); closeSheet(); renderCandidate(c, true); toast('📧 Welcome email sent to ' + c.first_name); })
+      .catch(e => { busy(b, false); showErr(back.querySelector('#oberr'), e.message); });
+  };
 }
 
 // ───── Day 1 sign-in sheet as a PDF (A4). Built by hand: no library to load, works offline. ─────
@@ -2456,11 +2533,13 @@ function renderCandidate(c, quiet) {
   };
   // Same order for everyone, the order they work through it: who they are → how the appointment went → their answers → the call
   const order = ['ci', 'pres', 'ev', 'out'].concat(isAdmin() ? ['adm'] : []);
-  const html = summary +
+  const onb = isAdmin() && offerReady && !c.limited ? onboardCard(c) : '';
+  const html = summary + onb +
     '<nav class="jump' + (order.length > 4 ? ' five' : '') + '" id="jump"><div class="jump-in">' + order.map((k, i) => '<button type="button" data-go="sec-' + k + '"' + (i ? '' : ' class="on"') + '>' + SEC[k][0] + '</button>').join('') + '</div></nav>' +
     order.map(k => '<section class="csec" id="sec-' + k + '"><div class="section-h">' + SEC[k][1] + '</div>' + SEC[k][2] + '</section>').join('');
 
   paint(c.first_name, html, quiet, true);
+  if (onb) bindOnboard(c);
   document.querySelectorAll('#jump button').forEach(b => {
     b.onclick = () => { const s = document.getElementById(b.dataset.go); if (s) s.scrollIntoView({ behavior: REDUCED ? 'auto' : 'smooth', block: 'start' }); };
   });
