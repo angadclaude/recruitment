@@ -1,4 +1,4 @@
-window.APP_VERSION = '2b97bfe8';
+window.APP_VERSION = 'f495b95b';
 
 (function () {
 'use strict';
@@ -1861,6 +1861,16 @@ function day1Sheet(date) {
 const DATABYTE_URL = 'https://uk.databyte.live/onboarding/dashboard/list';
 /** The server's rule: booked by a booker → Personal; booked by the office (Jess, Rubal) or nobody → Office. */
 function recruitSource(c) { return c.recruit_source || 'Office Recruitment'; }
+/** After the email: a WhatsApp nudge so they find it (spam / Promotions) and reply GOT IT. */
+function msgWelcomeHeadsUp(c, fr) {
+  const co = c.company === 'JUSS' ? 'JUSS' : 'LINK';
+  return 'Hi ' + c.first_name + ' 👋 It\'s ' + S.me.user.name.split(' ')[0] + ' from ' + brandOf(c) + '.\n\n' +
+    'I\'ve just emailed your starter pack to ' + c.email + ' 📧\n' +
+    '📲 FieldIQ (download before Day 1)\n' + (co === 'LINK' ? '📝 Your Pre-Coaching Module\n' : '') +
+    '📘 Your ' + (co === 'JUSS' ? 'JUSS HF' : 'Link FR') + ' Playbook\n🗓️ Your Week 1 plan\n\n' +
+    'It\'s from ' + (fr ? fr.email : 'us') + '. Can\'t see it? Check *Spam* or *Promotions* and tap *Not spam*, so nothing else goes missing.\n\n' +
+    'Please reply *GOT IT* once you have it ✅';
+}
 /** Who the welcome email comes from (same rule as the server): you if you're Jess / Rubal, else the brand's. */
 function welcomeFrom(c) {
   const W = S.me.welcomeFrom || {}, T = S.me.thanksTeam || {}, mine = Object.keys(T).filter(k => T[k].id === S.me.user.id)[0];
@@ -1895,7 +1905,9 @@ function onboardCard(c) {
       '<p class="small muted">"' + brand + ' - Your Brand Ambassador Journey Begins!" with FieldIQ and their Playbook, to <b>' + h(c.email) + '</b>.' +
       (onDb ? '' : ' 🔒 Unlocks once they\'re on Databyte: FieldIQ only works after that.') + '</p>' +
       (fr ? '<p class="small obfrom">📤 From <b>' + h(fr.name || fr.email) + '</b> · ' + h(fr.email) + (fr.ready ? '' : ' <span class="pill amber">not set up yet</span>') + '</p>' : '') +
-      '<button type="button" class="btn block' + (sent ? ' ghost' : '') + '" id="obsend"' + (onDb ? '' : ' disabled') + '>' + (sent ? '📧 Send it again' : '📧 Preview &amp; send welcome email') + '</button></div></div>';
+      (sent && c.mobile ? '<a class="btn ' + (c.no_whatsapp ? 'sms' : 'wa') + ' block" id="obwa" target="_blank" rel="noopener" href="' + h(msgUrl(c, msgWelcomeHeadsUp(c, fr))) + '">' +
+        (c.no_whatsapp ? '📱' : '💬') + ' Heads-up: "check your email, reply GOT IT"</a>' : '') +
+      '<button type="button" class="btn block' + (sent ? ' ghost' : '') + '" id="obsend"' + (onDb ? '' : ' disabled') + (sent ? ' style="margin-top:8px"' : '') + '>' + (sent ? '📧 Send it again' : '📧 Preview &amp; send welcome email') + '</button></div></div>';
 }
 function bindOnboard(c) {
   const box = document.getElementById('onb'); if (!box) return;
@@ -1926,11 +1938,12 @@ function onboardSheet(c) {
   call('onboardPreview', { id: c.id }).then(m => {
     back.querySelector('#obbody').innerHTML = '<div class="small muted" id="obfrom">From ' + h(m.from) + '</div><div class="small" style="margin-bottom:6px"><b id="obsubj">' + h(m.subject) + '</b></div><iframe class="obframe" sandbox="" title="Email preview"></iframe>';
     back.querySelector('.obframe').srcdoc = m.html;
+    const fr = welcomeFrom(c); if (fr) fr.ready = !m.notReady;  // keep the card's "not set up yet" in step with the server
     if (m.notReady) showErr(back.querySelector('#oberr'), m.notReady); else back.querySelector('#obgo').disabled = false;
   }).catch(e => showErr(back.querySelector('#oberr'), /Unknown action/.test(e.message) ? 'Paste the new Google code (Code.gs) first.' : e.message));
   back.querySelector('#obgo').onclick = ev => {
     const b = ev.currentTarget; busy(b, true, 'Sending…');
-    call('onboardSend', { id: c.id }).then(nc => { Object.assign(c, nc); upsert(nc); closeSheet(); renderCandidate(c, true); toast('📧 Welcome email sent to ' + c.first_name); })
+    call('onboardSend', { id: c.id }).then(nc => { Object.assign(c, nc); upsert(nc); closeSheet(); renderCandidate(c, true); toast('📧 Sent. Now tap the heads-up so ' + c.first_name + ' finds it'); })
       .catch(e => { busy(b, false); showErr(back.querySelector('#oberr'), e.message); });
   };
 }
