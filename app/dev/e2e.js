@@ -886,6 +886,23 @@ async function fillEval(p) {
     'back from the email app: the code box is still open ("We emailed a code to…"), so nobody taps "Email me a code" again and again');
   await rc.close();
   await ap.click('#abBack');
+  // Adding someone in the room: the app stays on their page, ready to show a login code
+  await ap.click('#add'); await ap.waitForSelector('#un');
+  await ap.fill('#un', 'Zara Newstarter'); await ap.fill('#ue', 'zara@example.com');
+  await ap.click('#uf .chips[data-name=company] .chip:has-text("JUSS")');
+  await ap.click('#usave'); await ap.waitForSelector('text=Zara is set up');
+  ok(!!(await ap.$('#ucode')), 'adding someone keeps you on their page: "Zara is set up… With them now? Tap 🔑"');
+  await ap.click('#ucode'); await ap.waitForSelector('.codeshow .code');
+  const zcode = (await ap.innerText('.codeshow .code')).trim();
+  const zc = await browser.newContext(PHONE); const zp = await zc.newPage();
+  await zp.goto(APP + 'index.html'); await zp.click('#doors button[data-door=ba]');
+  await zp.fill('#em', 'zara@example.com'); await zp.click('#haveCode'); await zp.fill('#code', zcode); await zp.click('#go');
+  await zp.waitForSelector('.tabbar button'); await zc.close();
+  ok(true, 'she logs in on the spot with that code, without waiting for any email');
+  await ap.click('#abBack');
+  const mb4 = (await getJson('/dev/mail')).length;
+  await api(admin, 'saveUser', { user: Object.assign({}, monish, { email: 'monish.somalai@example.com' }) });
+  ok((await getJson('/dev/mail')).slice(mb4).some(m => m.to === 'monish.somalai@example.com' && /Set up the/.test(m.subject)), 'correcting someone\'s email sends the setup steps to the new address');
 
   // ── 10. Access removed / Apps Script fallback / GDPR ──
   await api(admin, 'saveUser', { user: Object.assign({}, fiza, { active: false }) });

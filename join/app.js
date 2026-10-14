@@ -1,4 +1,4 @@
-window.APP_VERSION = '38530aac';
+window.APP_VERSION = '13ec76b3';
 
 (function () {
 'use strict';
@@ -1522,7 +1522,16 @@ function editUser(u) {
       .then(saved => {
         S.users = (S.users || []).filter(o => o.id !== saved.id).concat([saved]).sort((a, b) => a.name.localeCompare(b.name));
         if (saved.id === S.me.user.id) { S.me.user = saved; }
-        saveCache(); toast(saved.linked ? 'Saved ✓ ' + saved.linked + ' check-in' + (saved.linked > 1 ? 's' : '') + ' that typed "' + saved.name.split(' ')[0] + '" now credited to them' : 'Saved ✓'); back();
+        saveCache(); toast(saved.linked ? 'Saved ✓ ' + saved.linked + ' check-in' + (saved.linked > 1 ? 's' : '') + ' that typed "' + saved.name.split(' ')[0] + '" now credited to them' : 'Saved ✓');
+        // Just added (or email changed) and they can log in: stay on their page, ready to show a login code if they're with you
+        if (saved.email && saved.active && (!u || String(u.email || '').toLowerCase() !== saved.email.toLowerCase())) {
+          S.params = { id: saved.id }; hist('replace', { v: 'user', p: S.params });
+          editUser(saved);
+          const box = document.getElementById('ucodebox');
+          if (box) box.innerHTML = '<div class="flag green" style="margin-top:10px">✅ ' + h(saved.name.split(' ')[0]) + ' is set up. We\'ve emailed them the setup steps. <b>With them now?</b> Tap 🔑 above and they\'re in within a minute, no email needed.</div>';
+          return;
+        }
+        back();
       }).catch(x2 => { busy(btn, false); showErr(document.getElementById('uerr'), x2.message); });
   };
   const del = document.getElementById('udel');
