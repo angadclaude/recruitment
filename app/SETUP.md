@@ -123,6 +123,15 @@ Put the two QR codes on the presentation once. They never change:
 | Sat 14:00: "🔴 2 outcomes LATE (due Fri 18:00)" | bookers who missed the deadline |
 | Mon 09:00: recruitment incentive report | admins |
 
+## Getting someone logged in (do it in the room)
+1. **👥 Team → ＋ Add person** → name, email, LINK/JUSS → **Save**. You stay on their page; they also get the setup email.
+2. Tap **🔑 Show a login code**.
+3. On their phone: open the app → **BA login** → type their email → **Already have a code?** → type the code → **Log in**.
+4. Then **Add to Home Screen** (iPhone) or **Install** (Android), open the app from the icon, and tap **🔔 Turn on**.
+5. Tap their initials: it must say **Alerts: on ✅** before they leave.
+
+Someone stuck later (email slow, in Spam, or "too many codes")? Same thing: Team → their name → 🔑. Correcting someone's email resends the setup steps to the new address. Every code request is in the **Log** tab (`login_code`: emailed / no active team member / limit reached).
+
 ## A booker who isn't on the app yet
 - **At check-in:** if their name isn't in the list, the candidate types it and carries on. It shows as *Booker not confirmed: "Priya"*.
 - **On the candidate page:** Admin → **Booker → ＋ Someone not on the list…**. The name is pre-filled from what the candidate typed; pick LINK/JUSS and tap **Add and credit them**. They're added to the team **by name only** (no email). From then on:

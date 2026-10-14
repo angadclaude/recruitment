@@ -949,14 +949,14 @@ function saveUser(req, u) {
   if (!roles.length) throw new Error('Pick at least one role');
   if (!email && roles.indexOf('booker') < 0) throw new Error('Add their email: only bookers can be added by name alone.');
   const isNew = !x.id;
-  let hadEmail = false;
+  let oldEmail = '';
   const saved = withLock(() => {
     const all = readTable('Users');
     if (email && all.some(o => o.email.toLowerCase() === email && o.id !== x.id)) throw new Error('That email is already used.');
     if (isNew && all.some(o => normName(o.name) === normName(x.name))) throw new Error(cleanName(x.name) + ' is already on the team. Tap their name to edit them.');
     let rec = x.id ? all.filter(o => o.id === x.id)[0] : null;
     if (x.id && !rec) throw new Error('User not found');
-    hadEmail = !!(rec && rec.email);
+    oldEmail = rec ? normEmail(rec.email) : '';
     if (rec && rec.id === u.id && (roles.indexOf('admin') < 0 || !x.active)) throw new Error("You can't remove your own admin access.");
     if (!rec) rec = { id: uid(), created_at: nowStr() };
     rec.name = cleanName(x.name); rec.email = email; rec.company = x.company;
@@ -966,7 +966,8 @@ function saveUser(req, u) {
     log(u, 'user_save', '', rec.name + ' ' + rec.roles + ' active=' + rec.active);
     return publicUser(rec);
   });
-  if (saved.active && saved.email && !hadEmail) sendSetupEmail(saved);  // new person (or email just added): the setup steps land in their inbox
+  // New person, email just added, or email corrected: the setup steps land in the (new) inbox
+  if (saved.active && saved.email && normEmail(saved.email) !== oldEmail) sendSetupEmail(saved);
   const linked = saved.active && rolesOf(saved).indexOf('booker') >= 0 ? linkTypedBookings(saved, u) : 0;
   return Object.assign(saved, { linked: linked });
 }
