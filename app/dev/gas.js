@@ -89,6 +89,11 @@ function load(opts) {
       computeDigest: (alg, s) => Array.from(crypto.createHash(alg).update(String(s), 'utf8').digest()).map(b => (b > 127 ? b - 256 : b)),
     },
     MailApp: { sendEmail: o => { state.outbox.push(Object.assign({ at: new Date().toISOString() }, o)); }, getRemainingDailyQuota: () => 1500 - state.outbox.length },
+    // The script owner's Gmail: globalThis.__sendAs = its "Send mail as" addresses (none until a test adds them)
+    GmailApp: {
+      getAliases: () => ctx.__sendAs || [],
+      sendEmail: (to, subject, body, o) => { state.outbox.push(Object.assign({ at: new Date().toISOString(), to, subject, body, via: 'gmail' }, o)); },
+    },
     // Fake OneSignal: users listed in globalThis.__pushOff have no phone subscribed (200 with an empty id, like the real API).
     // Looking a user up (GET …/users/by/external_id/<id>): __pushNever → 404 (no record), __pushOff → no subscription, else one iPhone.
     UrlFetchApp: {

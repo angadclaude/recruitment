@@ -1857,8 +1857,14 @@ function day1Sheet(date) {
 }
 
 // ───── New starter onboarding (admins only): 1 · add to Databyte (copy each box), 2 · the welcome email with the FieldIQ link ─────
-const DATABYTE_URL = 'https://uk.databyte.live/cloud/users/list';
-function recruitSource(c) { return c.recruit_source || (isBar(c) ? 'Personal Recruitment' : 'Office Recruitment'); }
+const DATABYTE_URL = 'https://uk.databyte.live/onboarding/dashboard/list';
+/** The server's rule: booked by a booker → Personal; booked by the office (Jess, Rubal) or nobody → Office. */
+function recruitSource(c) { return c.recruit_source || 'Office Recruitment'; }
+/** Who the welcome email comes from (same rule as the server): you if you're Jess / Rubal, else the brand's. */
+function welcomeFrom(c) {
+  const W = S.me.welcomeFrom || {}, T = S.me.thanksTeam || {}, mine = Object.keys(T).filter(k => T[k].id === S.me.user.id)[0];
+  return W[mine || (c.company === 'JUSS' ? 'JUSS' : 'LINK')] || null;
+}
 function fmtPhone(m) { const d = String(m || '').replace(/\D/g, ''); return /^07\d{9}$/.test(d) ? d.slice(0, 5) + ' ' + d.slice(5) : String(m || ''); }
 function copyText(v, label) {
   const done = () => toast('📋 Copied ' + label);
@@ -1874,19 +1880,20 @@ function onboardCard(c) {
   const parts = String(c.full_name).trim().split(/\s+/), first = parts[0], last = parts.slice(1).join(' ');
   const row = (k, v) => '<div class="cprow"><span>' + h(k) + '</span><b>' + h(v || '—') + '</b>' + (v ? '<button type="button" class="btn ghost sm" data-copy="' + h(v) + '" data-label="' + h(k.toLowerCase()) + '">Copy</button>' : '') + '</div>';
   const onDb = !!c.databyte_at, sent = !!c.onboard_email_at, brand = c.company === 'JUSS' ? 'JUSS Marketing' : 'Link Marketing';
+  const src = recruitSource(c), fr = welcomeFrom(c);
   const by = (who, at) => h(String(who || '').split(' ')[0]) + ' ' + h(fmtTs(at));
   return '<div class="card onb" id="onb"><div class="onb-h"><b>🚀 Onboard ' + h(first) + '</b>' +
       (sent ? '<span class="pill green">✅ Onboarded</span>' : '<span class="pill">admins only</span>') + '</div>' +
     '<div class="onb-step' + (onDb ? ' done' : '') + '"><div class="onb-t"><b>1 · Add to Databyte</b>' + (onDb ? '<span class="pill green">✓ ' + by(c.databyte_by, c.databyte_at) + '</span>' : '') + '</div>' +
-      '<p class="small muted">Organize → Users → Manage → ＋ New user. Copy each box across:</p>' +
-      '<div class="cplist">' + row('First name', first) + row('Last name', last) + row('Email', c.email) + row('Phone number', fmtPhone(c.mobile)) + '</div>' +
-      '<label class="q">Recruitment source</label>' + chips('rsrc', ['Office Recruitment', 'Personal Recruitment'], recruitSource(c)) +
-      '<p class="small muted" style="margin:8px 0 0">Recruiter: <b>' + h(c.booker_name || 'their booker') + '</b>' + (isBar(c) ? ' · they said a BA referred them' : '') + '</p>' +
+      '<p class="small muted">Open Databyte, add them as a new starter and copy each box across:</p>' +
+      '<div class="cplist">' + row('First name', first) + row('Last name', last) + row('Email', c.email) + row('Phone number', fmtPhone(c.mobile)) + row('Recruitment source', src) + '</div>' +
+      '<p class="small muted" style="margin:8px 0 0">' + (c.booker_name ? 'Booked by <b>' + h(c.booker_name) + '</b> ' + (src === 'Personal Recruitment' ? '(a booker)' : '(the office)') : 'No booker') + ' → ' + h(src) + '</p>' +
       '<div class="row" style="margin-top:10px"><a class="btn ghost sm" href="' + DATABYTE_URL + '" target="_blank" rel="noopener">Open Databyte ↗</a>' +
       (onDb ? '<button type="button" class="btn ghost sm" id="dbundo">Undo</button>' : '<button type="button" class="btn green sm grow" id="dbdone">✅ Added to Databyte</button>') + '</div></div>' +
     '<div class="onb-step' + (sent ? ' done' : '') + (onDb ? '' : ' locked') + '"><div class="onb-t"><b>2 · Send the welcome email</b>' + (sent ? '<span class="pill green">✓ Sent ' + by(c.onboard_email_by, c.onboard_email_at) + '</span>' : '') + '</div>' +
-      '<p class="small muted">"' + brand + ' - Your Brand Ambassador Journey Begins!" with the FieldIQ link, to <b>' + h(c.email) + '</b>. ' +
-      (onDb ? 'Replies come to you, and you get a copy.' : '🔒 Unlocks once they\'re on Databyte: FieldIQ only works after that.') + '</p>' +
+      '<p class="small muted">"' + brand + ' - Your Brand Ambassador Journey Begins!" with FieldIQ and their Playbook, to <b>' + h(c.email) + '</b>.' +
+      (onDb ? '' : ' 🔒 Unlocks once they\'re on Databyte: FieldIQ only works after that.') + '</p>' +
+      (fr ? '<p class="small obfrom">📤 From <b>' + h(fr.name || fr.email) + '</b> · ' + h(fr.email) + (fr.ready ? '' : ' <span class="pill amber">not set up yet</span>') + '</p>' : '') +
       '<button type="button" class="btn block' + (sent ? ' ghost' : '') + '" id="obsend"' + (onDb ? '' : ' disabled') + '>' + (sent ? '📧 Send it again' : '📧 Preview &amp; send welcome email') + '</button></div></div>';
 }
 function bindOnboard(c) {
@@ -1897,12 +1904,11 @@ function bindOnboard(c) {
       .catch(e => { if (btn) busy(btn, false); toast(/Unknown action/.test(e.message) ? 'Paste the new Google code (Code.gs) first.' : e.message); });
   };
   box.querySelectorAll('[data-copy]').forEach(b => { b.onclick = () => copyText(b.dataset.copy, b.dataset.label); });
-  bindChips(box, (n, v) => { if (n === 'rsrc' && v) save({ source: v }, v); });
-  const done = box.querySelector('#dbdone'); if (done) done.onclick = () => save({ databyte: true, source: recruitSource(c) }, '✅ On Databyte. Now send the welcome email', done);
+  const done = box.querySelector('#dbdone'); if (done) done.onclick = () => save({ databyte: true }, '✅ On Databyte. Now send the welcome email', done);
   const undo = box.querySelector('#dbundo'); if (undo) undo.onclick = () => save({ databyte: false }, 'Undone', undo);
   const send = box.querySelector('#obsend'); if (send) send.onclick = () => onboardSheet(c);
 }
-/** See exactly what goes out, then send it (from the app, as you, replies to you). */
+/** See exactly what goes out and who it's from (Jess's or Rubal's address), then send it. */
 function onboardSheet(c) {
   closeSheet(true);
   const back = document.createElement('div');
@@ -1917,9 +1923,9 @@ function onboardSheet(c) {
   back.onclick = e => { if (e.target === back) closeSheet(); };
   back.querySelector('#obcancel').onclick = () => closeSheet();
   call('onboardPreview', { id: c.id }).then(m => {
-    back.querySelector('#obbody').innerHTML = '<div class="small" style="margin-bottom:6px"><b id="obsubj">' + h(m.subject) + '</b></div><iframe class="obframe" sandbox="" title="Email preview"></iframe>';
+    back.querySelector('#obbody').innerHTML = '<div class="small muted" id="obfrom">From ' + h(m.from) + '</div><div class="small" style="margin-bottom:6px"><b id="obsubj">' + h(m.subject) + '</b></div><iframe class="obframe" sandbox="" title="Email preview"></iframe>';
     back.querySelector('.obframe').srcdoc = m.html;
-    back.querySelector('#obgo').disabled = false;
+    if (m.notReady) showErr(back.querySelector('#oberr'), m.notReady); else back.querySelector('#obgo').disabled = false;
   }).catch(e => showErr(back.querySelector('#oberr'), /Unknown action/.test(e.message) ? 'Paste the new Google code (Code.gs) first.' : e.message));
   back.querySelector('#obgo').onclick = ev => {
     const b = ev.currentTarget; busy(b, true, 'Sending…');
