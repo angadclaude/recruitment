@@ -658,38 +658,65 @@ async function fillEval(p) {
   const rTeam = fri.find(p => p.body.include_aliases.external_id.includes(angadId) && /^📋 Team week/.test(p.body.headings.en));
   ok(rTeam && /Fiza Iqbal: \d+ in/.test(rTeam.body.contents.en) && /Day 1 texts sent \d+\/\d+/.test(rTeam.body.contents.en),
     'Friday 15:00 → admins get the team roundup: "' + (rTeam ? rTeam.body.headings.en + ' | ' + rTeam.body.contents.en.replace(/\n/g, ' | ') : 'none') + '"');
-  ok(rTeam && /Tap to chase them in one go/.test(rTeam.body.contents.en) && /\?c=chase$/.test(rTeam.body.web_url), 'the team roundup opens Chase outcomes when tapped');
+  ok(rTeam && /Tap to chase them in one go/.test(rTeam.body.contents.en) && /\?c=chase$/.test(rTeam.body.web_url), 'the team roundup opens the Chase tab when tapped');
+  ok(rFiza && /\?c=chase$/.test(rFiza.body.web_url), "each booker's roundup opens their own Chase tab");
 
-  // ── Chase outcomes: one tap nudges every booker with outcomes still to log (no copy-pasting from the sheet) ──
-  const wk = (await api(admin, 'listWeek', { weekEnding: '2026-10-18' })).items;
-  const isOpen = c => (c.in_room === true || c.in_room === 'TRUE') && !c.outcome && !c.non_qual;
-  const isUnsent = c => c.outcome === 'Academy booked' && c.admin_status !== 'rejected' && c.admin_status !== 'pending' && !c.offer_sent_at;
-  const toChase = [...new Set(wk.filter(c => c.booker_id && (isOpen(c) || isUnsent(c))).map(c => c.booker_id))];
-  ok(toChase.includes(fiza.id), 'Friday 15:00: ' + toChase.length + ' booker(s) still have outcomes to log or Day 1 texts to send (Fiza among them)');
+  // ── Chase tab: everyone who could drop out of the pipeline, one tap nudges every booker (no copy-pasting from the sheet) ──
+  const BL = ['log', 'callback', 'text', 'confirm', 'noshow'];
+  const pipe = (await api(admin, 'chaseList', {})).items;
+  const toChase = [...new Set(pipe.filter(c => c.booker_id && BL.includes(c.leak)).map(c => c.booker_id))];
+  const fizaLog = pipe.filter(c => c.booker_id === fiza.id && c.leak === 'log').map(c => c.first_name);
+  ok(toChase.includes(fiza.id) && fizaLog.length > 0 && !pipe.some(c => c.id === ishita.id) && pipe.some(c => c.leak === 'callback' && c.outcome === 'No answer'),
+    'Friday 15:00: ' + pipe.length + ' at risk across ' + toChase.length + ' bookers: ' + pipe.map(c => c.first_name + ' (' + c.leak + ')').join(', ') + '. "No answer" stays on until it\'s resolved; rejected Ishita isn\'t chased');
   await ap.goto(APP + 'index.html?c=chase');
   await ap.waitForSelector('#nudgeAll');
-  ok(await ap.textContent('#abTitle') === 'Chase outcomes' && (await ap.$$('[data-nudge]')).length === toChase.length &&
-    new RegExp(toChase.length + ' bookers? to chase').test(await ap.innerText('#page')), 'the alert opens Chase outcomes: one row per booker with something outstanding (' + toChase.length + ')');
-  const fizaOpen = wk.filter(c => c.booker_id === fiza.id && isOpen(c)).map(c => c.first_name);
+  ok(await ap.textContent('#abTitle') === 'Chase' && await ap.$('.tabbar button.on[data-tab=chase]') &&
+    JSON.stringify(await ap.$$eval('.tabbar button', b => b.map(x => x.dataset.tab))) === '["today","chase","all","pay","team"]',
+    'admin tab bar: Today · Chase · All · Incentive · Team, and the alert lands on Chase');
+  ok(await ap.textContent('.tabbar button[data-tab=chase] .tbadge') === String(pipe.length), 'the Chase tab shows how many are at risk: ' + pipe.length);
+  ok((await ap.$$('[data-nudge]')).length === toChase.length && new RegExp('across ' + toChase.length + ' bookers?').test(await ap.innerText('#page')),
+    'one card per booker with someone to chase (' + toChase.length + ')');
   const fizaRow = await ap.$eval('[data-nudge="' + fiza.id + '"]', b => b.closest('.trow').innerText);
-  ok(fizaOpen.length > 0 && fizaOpen.every(n => new RegExp('To log: .*' + n).test(fizaRow)), 'each row says who is still to log: "' + fizaRow.replace(/\n/g, ' | ') + '"');
+  ok(fizaLog.every(n => new RegExp('Log the call: .*' + n).test(fizaRow)), 'each card says exactly who: "' + fizaRow.replace(/\n/g, ' | ') + '"');
+  ok(!(await ap.$('.card.needs')), 'no "Needs you" box when the admins have nothing outstanding themselves');
   const grp = decodeURIComponent((await ap.getAttribute('#waGroup', 'href')).replace('https://wa.me/?text=', ''));
-  ok(/^⏰ \*Outcomes due Fri 18:00\*/.test(grp) && /\*Fiza\*/.test(grp) && /Do it now 👉 http/.test(grp), 'Post to team WhatsApp: the full list in one message, ready for the bookers\' group');
-  await shot(ap, '25-chase-outcomes', true);
+  ok(/^⏰ \*Pipeline check: don't lose anyone\*/.test(grp) && /Outcomes due Fri 18:00/.test(grp) && new RegExp('\\*Fiza\\*\\n📞 Log the call: ' + fizaLog[0]).test(grp) && /Sort them now 👉 http/.test(grp),
+    "Post to team WhatsApp: the whole list by booker in one message, ready for the bookers' group");
+  await shot(ap, '25-chase-admin', true);
+  await ap.click('[data-nudge="' + fiza.id + '"] >> xpath=.. >> .nm'); await ap.waitForSelector('text=Call outcome');
+  ok(true, 'tapping a name opens that candidate');
+  await ap.goBack(); await ap.waitForSelector('#nudgeAll');
   const beforeChase = (await getJson('/dev/pushes')).length;
   await ap.click('#nudgeAll');
   await ap.waitForSelector('#cres .flag');
   const chased = (await getJson('/dev/pushes')).slice(beforeChase);
   const cFiza = chased.find(p => p.body.include_aliases.external_id.includes(fiza.id));
   ok(chased.length === toChase.length && toChase.every(id => chased.some(p => p.body.include_aliases.external_id.includes(id))) &&
-    cFiza && /^⏰ Angad: /.test(cFiza.body.headings.en) && /Tap to do it now/.test(cFiza.body.contents.en),
-    'Nudge all → one alert to each of them: "' + (cFiza ? cFiza.body.headings.en + ' | ' + cFiza.body.contents.en.replace(/\n/g, ' | ') : 'none') + '"');
+    cFiza && /^⏰ Angad: \d+ (person|people) to chase$/.test(cFiza.body.headings.en) && new RegExp('📞 Log the call: ' + fizaLog[0] + '.*\\(by Fri 18:00\\)').test(cFiza.body.contents.en) && /\?c=chase$/.test(cFiza.body.web_url),
+    'Nudge all → each booker gets their own list: "' + (cFiza ? cFiza.body.headings.en + ' | ' + cFiza.body.contents.en.replace(/\n/g, ' | ') : 'none') + '"');
   ok(/Nudged: .*Fiza/.test(await ap.innerText('#cres')), 'the screen confirms who was nudged');
   await ap.click('#nudgeAll');
   await ap.waitForFunction(() => /Already nudged/.test(document.getElementById('cres').innerText));
   ok((await getJson('/dev/pushes')).length === beforeChase + chased.length, 'tapping again within 30 minutes doesn\'t spam them');
-  let notAdmin = null; try { await api(await loginApi('fiza@example.com'), 'chaseOutcomes', {}); } catch (e) { notAdmin = e.message; }
-  ok(/Admin only/.test(notAdmin), 'bookers can\'t chase each other (admins only)');
+  const fizaTok = await loginApi('fiza@example.com');
+  let notAdmin = null; try { await api(fizaTok, 'chaseOutcomes', {}); } catch (e) { notAdmin = e.message; }
+  ok(/Admin only/.test(notAdmin), 'bookers can\'t nudge each other (admins only)');
+  // The booker taps the nudge → their own Chase tab, grouped by what to do, buttons right there
+  const fc = await browser.newContext(PHONE);
+  const fcp = await fc.newPage();
+  await loginUi(fcp, 'fiza@example.com', APP + 'index.html?c=chase');
+  await fcp.waitForSelector('.section-h');
+  const fizaPipe = (await api(fizaTok, 'chaseList', {})).items;
+  ok(fizaPipe.length && fizaPipe.every(c => c.booker_id === fiza.id && BL.includes(c.leak)), 'a booker\'s Chase list is their own people only');
+  ok(await fcp.$('.tabbar button.on[data-tab=chase]') && JSON.stringify(await fcp.$$eval('.tabbar button', b => b.map(x => x.dataset.tab))) === '["mine","chase","pay"]' &&
+    new RegExp('^' + fizaPipe.length + ' to chase').test(await fcp.innerText('.card .display')) && await fcp.textContent('.tabbar button[data-tab=chase] .tbadge') === String(fizaPipe.length),
+    'Fiza taps it → her Chase tab: "' + fizaPipe.length + ' to chase" (tabs: Mine · Chase · Incentive)');
+  ok(/📞 Log the call · \d+/i.test(await fcp.innerText('#page')) && await fcp.$('.ccard .quick [data-out]'), 'grouped by what to do, with Call / WhatsApp / Log outcome on each');
+  await shot(fcp, '26-chase-booker', true);
+  await fcp.click('.ccard .quick [data-out]'); await fcp.waitForSelector('.sheet #sosave');
+  ok(/Log the call · /i.test(await fcp.innerText('.sheet')), 'Log outcome opens straight from the Chase tab (even for last week\'s appointments)');
+  await fcp.click('#socancel');
+  await fc.close();
   await setTime('2026-10-16T18:05:00+01:00');
   const before1805 = (await getJson('/dev/pushes')).length;
   await post('/dev/run', { fn: 'keepWarm' });
@@ -697,7 +724,7 @@ async function fillEval(p) {
 
   // ── 7. Sunday close → logged but LATE; pay ──
   await setTime('2026-10-18T15:00:00+01:00');
-  const late = await api(await loginApi('fiza@example.com'), 'saveOutcome', { id: ali.id, outcome: 'No answer', outcome_notes: '' });
+  const late = await api(fizaTok, 'saveOutcome', { id: ali.id, outcome: 'No answer', outcome_notes: '' });
   ok(late.outcome_late === 'TRUE', 'outcome logged on Sunday accepted but flagged LATE');
   const pay = await api(admin, 'payReport', { weekEnding: '2026-10-18' });
   ok(pay.deadline === '2026-10-16 18:00' && (await api(admin, 'me', {})).deadlineLabel === 'Fri 18:00', 'outcome deadline = Friday 18:00 (matches "by Friday 6PM" in the thank-you WhatsApp)');
@@ -759,7 +786,7 @@ async function fillEval(p) {
   ok((await getJson('/dev/pushes')).length === beforeBrief, 'no Academy briefing before 18:00');
   const monStarters = (await api(admin, 'academyList', {})).items.filter(c => c.academy_date === '2026-10-19');
   ok(monStarters.some(c => c.id === jasId) && monStarters.some(c => c.id === adham.id) && !monStarters.some(c => c.id === ishita.id),
-    'Day 1 list for Mon 19 Oct: ' + monStarters.map(c => c.first_name).join(', ') + ' (not Ishita: still waiting on an admin decision)');
+    'Day 1 list for Mon 19 Oct: ' + monStarters.map(c => c.first_name).join(', ') + ' (not Ishita: an admin rejected her booking)');
   await setTime('2026-10-18T18:05:00+01:00');
   await post('/dev/run', { fn: 'keepWarm' });
   const brief = (await getJson('/dev/pushes')).slice(beforeBrief);
@@ -783,10 +810,10 @@ async function fillEval(p) {
   ok(/BA Academy Day 1\* with \*LINK Marketing\* is \*TOMORROW, Monday 19 October at 1:30pm/.test(remind) && /Bring photo ID/.test(remind) && /– Angad, LINK Marketing/.test(remind),
     '💬 Remind: a ready-made WhatsApp ("your BA Academy Day 1 with LINK Marketing is TOMORROW…")');
   ok(!(await ap.$('[data-d1]')), 'no Arrived / No-show buttons before Day 1');
-  await shot(ap, '26-day1-list', true);
+  await shot(ap, '27-day1-list', true);
   let early = null; try { await api(admin, 'markDay1', { id: jasId, status: 'arrived' }); } catch (e) { early = e.message; }
   ok(/hasn't happened yet/.test(early), 'can\'t mark someone arrived before their Day 1');
-  const fizaD1 = (await api(await loginApi('fiza@example.com'), 'academyList', {})).items;
+  const fizaD1 = (await api(fizaTok, 'academyList', {})).items;
   ok(fizaD1.length && fizaD1.every(c => c.booker_id === fiza.id), 'a booker\'s Day 1 list shows their own starters only');
   ok(!(await api(nathan, 'academyList', {})).items.length, 'a presenter sees nobody (no access to other people\'s candidates)');
 
@@ -807,10 +834,17 @@ async function fillEval(p) {
   const jD1 = await api(admin, 'getCandidate', { id: jasId }), aD1 = await api(admin, 'getCandidate', { id: adham.id });
   ok(jD1.day1_status === 'arrived' && jD1.day1_by === 'Angad Oshan' && aD1.day1_status === 'no_show', 'saved on their row in the Sheet: Jasraj arrived, Adham no-show (with who marked it and when)');
   ok(/1 arrived · 1 no-show/.test(await ap.innerText('#page')), 'the day\'s count updates: "… 1 arrived · 1 no-show"');
-  await shot(ap, '27-day1-arrivals', true);
+  await shot(ap, '28-day1-arrivals', true);
+  const abdT = await loginApi('abdullahi@example.com');
+  ok((await api(abdT, 'chaseList', {})).items.some(c => c.id === adham.id && c.leak === 'noshow'), 'a no-show goes straight onto their booker\'s Chase list: "❌ No-show: rebook"');
   await ap.click('[data-d1="no_show"][data-id="' + adham.id + '"]');
   await ap.waitForSelector('[data-d1="no_show"][data-id="' + adham.id + '"].ghost');
   ok((await api(admin, 'getCandidate', { id: adham.id })).day1_status === '', 'tap again to undo a mistake');
+  await api(admin, 'markDay1', { id: adham.id, status: 'no_show' });
+  const reb = await api(abdT, 'saveOutcome', { id: adham.id, outcome: 'Academy booked', academy_date: '2026-10-26', outcome_notes: 'missed the train' });
+  ok(reb.day1_status === '' && !reb.academy_confirmed_at && (await api(abdT, 'chaseList', {})).items.some(c => c.id === adham.id && c.leak !== 'noshow'),
+    'rebooking (new Day 1 date) clears the no-show; they need confirming again');
+  await api(abdT, 'saveOutcome', { id: adham.id, outcome: 'Academy booked', academy_date: '2026-10-19', outcome_notes: '' });
   await api(admin, 'markDay1', { id: adham.id, status: 'arrived' });
 
   // ── 9. Rejected person returns next week → red; scheduled pushes ──
@@ -837,6 +871,9 @@ async function fillEval(p) {
   await jbp.click('.tabbar button[data-tab=mine]'); await jbp.waitForSelector('.item:has-text("Grace Okafor")');
   ok(!(await jbp.$('.hero .ring')) && /booked/i.test(await jbp.$eval('.hero', e => e.innerText)) && !/more to hit|target/i.test(await jbp.$eval('.hero', e => e.innerText)),
     'admin\'s "Mine": her numbers, no incentive ring or target');
+  const tb6 = await jbp.$$eval('.tabbar button', b => b.map(x => { const r = x.getBoundingClientRect(), s = x.querySelector('span'); return { t: x.dataset.tab, fits: s.scrollWidth <= r.width + 1 && r.right <= innerWidth }; }));
+  ok(tb6.map(x => x.t).join() === 'today,mine,chase,all,pay,team' && tb6.every(x => x.fits), 'an admin who also books gets all 6 tabs, every label fits on a phone');
+  await shot(jbp, '29-tabbar-admin-booker');
   await jbp.click('.item:has-text("Grace Okafor")'); await jbp.waitForSelector('.profile h1');
   ok(/Booked by Jess Grace \(admin\), so no incentive/.test(await jbp.$eval('#page', e => e.innerText)) && !(await jbp.$('#excl')), 'candidate page: "Booked by Jess Grace (admin), so no incentive"');
   await jb.close();
