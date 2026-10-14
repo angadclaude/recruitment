@@ -1,4 +1,4 @@
-window.APP_VERSION = '44f231a1';
+window.APP_VERSION = 'be3bfdc2';
 
 (function () {
 'use strict';
@@ -1680,7 +1680,7 @@ function chaseAdmin(list, today, due, late, count) {
   const noBooker = list.filter(x => BOOKER_LEAKS.indexOf(x.k) >= 0 && !x.c.booker_id), pending = list.filter(x => x.k === 'pending'), unticked = list.filter(x => x.k === 'unticked');
   const nm = l => l.map(x => '<button class="nm" data-cand="' + h(x.c.id) + '">' + h(x.c.first_name) + '</button>').join('');
   const names = l => l.map(x => x.c.first_name).join(', ');
-  const people = rows.reduce((t, b) => t + b.n, 0), lt = late(list);
+  const people = list.length, lt = late(list);
   const tally = BOOKER_LEAKS.map(k => count(k) ? LEAKS[k].split(' ')[0] + ' ' + count(k) + ' ' + { log: 'to log' + (lt ? ' (' + lt + ' LATE)' : ''), callback: 'call back', text: 'Day 1 text', confirm: 'not confirmed', noshow: 'no-show' }[k] : '').filter(String).join(' · ');
   const group = '⏰ *Pipeline check: don\'t lose anyone*\n_Outcomes due ' + due + '_\n' +
     rows.map(b => '\n*' + first(b.name) + '*\n' + BOOKER_LEAKS.filter(k => b.L[k]).map(k => LEAKS[k] + ': ' + names(b.L[k])).join('\n')).join('\n') +
@@ -1694,7 +1694,7 @@ function chaseAdmin(list, today, due, late, count) {
     (noBooker.length ? '<div class="leakline">❓ No booker: ' + nm(noBooker) + '</div>' : '') +
     (unticked.length ? '<div class="leakline">' + LEAKS.unticked + ': ' + nm(unticked) + '</div>' : '');
   return '<div class="card"><div class="display" style="font-size:24px">' + (people ? people + ' ' + (people === 1 ? 'person' : 'people') + ' to chase' : 'Nobody to chase 🎉') + '</div>' +
-    '<p class="hint" style="margin:6px 0 0">' + (people ? 'across ' + rows.length + ' booker' + (rows.length === 1 ? '' : 's') + ' · ' + h(tally) : 'Every appointment has an outcome, every starter has their Day 1 text and has confirmed.') + '</p>' +
+    '<p class="hint" style="margin:6px 0 0">' + (people ? 'across ' + rows.length + ' booker' + (rows.length === 1 ? '' : 's') + (noBooker.length ? ' + ' + noBooker.length + ' with no booker' : '') + ' · ' + h(tally) : 'Every appointment has an outcome, every starter has their Day 1 text and has confirmed.') + '</p>' +
     (rows.length ? '<div class="bullbtns" style="margin-top:12px"><button class="btn" id="nudgeAll">🔔 Nudge all ' + rows.length + '</button><a class="btn wa" id="waGroup" target="_blank" rel="noopener" href="' + h('https://wa.me/?text=' + encodeURIComponent(group)) + '">💬 Post to team WhatsApp</a></div>' +
       '<p class="hint" style="margin:8px 0 0">Nudge = an alert on each booker\'s phone listing exactly who to chase (email if they\'re not set up). WhatsApp = the same list for the bookers\' group.</p>' : '') + '</div>' +
     '<div id="cres"></div>' +
@@ -2480,9 +2480,11 @@ function renderCandidate(c, quiet) {
     const rb = document.getElementById('rb'), nbk = document.getElementById('nbk');
     rb.onchange = () => { nbk.hidden = rb.value !== '__new'; document.getElementById('reas').hidden = rb.value === '__new'; };
     bindChips(nbk);
-    document.getElementById('reas').onclick = () => {
-      const v = rb.value; if (!v || v === '__new') return toast('Choose a booker');
-      call('reassignBooker', { id: c.id, booker_id: v }).then(nc => saved(nc, 'Booker updated ✓')).catch(x => toast(x.message));
+    document.getElementById('reas').onclick = e => {
+      const v = rb.value, btn = e.currentTarget; if (!v || v === '__new') return toast('Choose a booker');
+      if (v === c.booker_id) return toast('Already ' + (c.booker_name || 'their booker') + ' ✓');
+      busy(btn, true, 'Saving…');
+      call('reassignBooker', { id: c.id, booker_id: v }).then(nc => saved(nc, 'Booker updated ✓')).catch(x => { busy(btn, false); toast(x.message); });
     };
     document.getElementById('nbksave').onclick = e => {
       const btn = e.currentTarget, name = document.getElementById('nbkn').value.trim();

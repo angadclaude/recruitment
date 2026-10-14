@@ -177,6 +177,9 @@ async function fillEval(p) {
   ok(ids(ishP) === [jId, rId, mo.id].sort().join() && /Student visa \(Tier 4\) · booked by Mo Aden/.test(ishP[0].body.contents.en), 'Tier 4 checks in → the same alert (to Jess, Rubal and Mo)');
   ok(!(await pushesTo(fiza.id)).some(p => /Young just checked in/.test(p.body.headings.en)) && (await pushesTo(abd.id)).some(p => /Adham just checked in/.test(p.body.headings.en)),
     'the booker gets the non-qualifier alert instead of "just checked in" (everyone else still gets "just checked in")');
+  const nbP = (await getJson('/dev/pushes')).filter(p => /^❓ No booker: Ali Yilmaz just checked in$/.test(p.body.headings.en));
+  ok(ids(nbP) === [jId, rId].sort().join() && /They typed "Ian" \(not on the team list\)/.test(nbP[0].body.contents.en),
+    'check-in with a booker not on the list → Jess + Rubal: "❓ No booker: Ali Yilmaz just checked in · They typed "Ian"…" (otherwise nobody hears about them)');
   let bad = null; try { await ci({ full_name: 'Bad', mobile: '123', email: 'x@y.z', booker_id: fiza.id }); } catch (e) { bad = e.message; }
   ok(/full name/.test(bad), 'validation: single-word name rejected');
   ok((await api(admin, 'getCandidate', { id: jag.id })).flags.some(f => /Seen before/.test(f.text)), 'repeat within 6 months flagged (Jagpreet, June)');
@@ -673,7 +676,8 @@ async function fillEval(p) {
   ok(await ap.textContent('#abTitle') === 'Chase' && await ap.$('.tabbar button.on[data-tab=chase]') &&
     JSON.stringify(await ap.$$eval('.tabbar button', b => b.map(x => x.dataset.tab))) === '["today","chase","academy","all","pay","team"]',
     'admin tab bar: Today · Chase · Day 1 · All · Incentive · Team, and the alert lands on Chase');
-  ok(await ap.textContent('.tabbar button[data-tab=chase] .tbadge') === String(pipe.length), 'the Chase tab shows how many are at risk: ' + pipe.length);
+  ok(await ap.textContent('.tabbar button[data-tab=chase] .tbadge') === String(pipe.length) && new RegExp('^' + pipe.length + ' (person|people) to chase').test(await ap.innerText('.card .display')),
+    'the Chase tab shows how many are at risk: ' + pipe.length + ' (badge and headline agree)');
   ok((await ap.$$('[data-nudge]')).length === toChase.length && new RegExp('across ' + toChase.length + ' bookers?').test(await ap.innerText('#page')),
     'one card per booker with someone to chase (' + toChase.length + ')');
   const fizaRow = await ap.$eval('[data-nudge="' + fiza.id + '"]', b => b.closest('.trow').innerText);
@@ -717,6 +721,10 @@ async function fillEval(p) {
   ok(/Log the call · /i.test(await fcp.innerText('.sheet')), 'Log outcome opens straight from the Chase tab (even for last week\'s appointments)');
   await fcp.click('#socancel');
   await fc.close();
+  const reLog = () => getJson('/dev/sheet?name=Log').then(rows => rows.filter(r => r[2] === 'reassign' && r[3] === ali.id).length);
+  const reBefore = await reLog();
+  const rsame = await api(admin, 'reassignBooker', { id: ali.id, booker_id: fiza.id });
+  ok(reBefore > 0 && rsame.booker_id === fiza.id && await reLog() === reBefore, 'saving the same booker again changes nothing (no duplicate Log lines)');
   await setTime('2026-10-16T18:05:00+01:00');
   const before1805 = (await getJson('/dev/pushes')).length;
   await post('/dev/run', { fn: 'keepWarm' });
@@ -939,6 +947,12 @@ async function fillEval(p) {
   await jbp.click('.tabbar button[data-tab=mine]'); await jbp.click('.item:has-text("Grace Okafor")'); await jbp.waitForSelector('.profile h1');
   ok(/Booked by Jess Grace \(admin\), so no incentive/.test(await jbp.$eval('#page', e => e.innerText)) && !(await jbp.$('#excl')), 'candidate page: "Booked by Jess Grace (admin), so no incentive"');
   await jb.close();
+  // Admins who book (like Jess) get nudged for their own people too
+  const jessU = (await api(admin, 'listUsers', {})).users.find(u => u.id === jessId);
+  await api(admin, 'saveUser', { user: Object.assign({}, jessU, { roles: ['admin'] }) });
+  const jn = await api(admin, 'chaseOutcomes', { ids: [jessId] });
+  ok(jn.nudged.includes('Jess Grace'), 'Nudge reaches an admin who booked someone (Jess → Grace), not just people with the booker role');
+  await api(admin, 'saveUser', { user: Object.assign({}, jessU, { roles: ['admin', 'booker'] }) });
   const tim = await ci({ full_name: 'Tiny Tim', mobile: '07700900888', email: 'tim@example.com', booker_id: abd.id, over18: 'No' });
   await api(nathan, 'saveNotes', { id: tim.id, rag: 'A', stars: 2, tags: [], notes: '' });
   const ev1 = await browser.newContext(PHONE); const evp = await ev1.newPage();

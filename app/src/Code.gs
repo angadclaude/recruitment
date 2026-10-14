@@ -522,6 +522,12 @@ function checkin(req) {
       '. No evaluation form for them. Have a word before they leave.', res.c.id);
   } else if (res.isNew && booker) {
     notify([booker], '🙌 ' + name.split(' ')[0] + ' just checked in', name + ' is in the room for your appointment.', res.c.id);
+  } else if (res.isNew) {
+    // Nobody to tell: no booker = no check-in or evaluation alert and nobody calls them. Jess + Rubal pick a booker.
+    const ids = [thanksTeam().LINK.id, thanksTeam().JUSS.id].filter(Boolean);
+    notify(usersAll().filter(u => ids.indexOf(u.id) >= 0), '❓ No booker: ' + name + ' just checked in',
+      (res.c.booker_typed ? 'They typed "' + res.c.booker_typed + '" (not on the team list).' : 'They didn\'t say who booked them.') +
+      ' Tap to set the booker, so someone gets their evaluation and calls them.', res.c.id);
   }
   return { id: res.c.id, resume: res.c.resume_token, first_name: res.c.full_name.split(' ')[0], company: res.c.company || '', evalDone: !!res.c.eval_at, nonQual: !!nq };
 }
@@ -855,6 +861,7 @@ function reassignBooker(req, u) {
     const c = getC(req.id);
     const b = userById(req.booker_id);
     if (!b) throw new Error('Booker not found');
+    if (c.booker_id === b.id) return shape(c, u);
     const before = c.booker_name || c.booker_typed;
     c.booker_id = b.id; c.booker_name = b.name; c.company = b.company;
     writeRow('Candidates', c);
@@ -1303,7 +1310,7 @@ function chaseOutcomes(req, u) {
   const by = {};
   chaseRows(u).forEach(x => { if (x.c.booker_id && BOOKER_LEAKS.indexOf(x.k) >= 0) { const b = (by[x.c.booker_id] = by[x.c.booker_id] || {}); (b[x.k] = b[x.k] || []).push(x.c); } });
   const cache = CacheService.getScriptCache(), out = { nudged: [], recently: [], noApp: [] };
-  usersAll().filter(b => truthy(b.active) && has(b, 'booker') && b.id !== u.id && by[b.id] && (!only || only.indexOf(b.id) >= 0)).forEach(b => {
+  usersAll().filter(b => truthy(b.active) && b.id !== u.id && by[b.id] && (!only || only.indexOf(b.id) >= 0)).forEach(b => {
     if (!b.email) { out.noApp.push(b.name); return; }
     const key = 'chase_' + b.id + '_' + today;
     if (cache.get(key)) { out.recently.push(b.name); return; }
