@@ -1,4 +1,4 @@
-window.APP_VERSION = 'db2a268d';
+window.APP_VERSION = '946ee56a';
 
 (function () {
 'use strict';
@@ -354,17 +354,17 @@ const EVAL = [
   { k: 'q2_stood_out', t: 'What stood out to you most from today?', type: 'text' },
   { k: 'q3_reason', t: 'Pick your #1 reason for joining (choose one)', opts: ['Uncapped earnings', 'Career progression', 'Learn new skills', 'Leadership', 'Sales skills', 'Personal development', 'Travel', 'Team environment'] },
   { k: 'q4_situation', t: 'What is your current situation?', opts: ['Working full-time', 'Working part-time', 'Studying', 'Looking for work'] },
-  { k: 'q4_looking_for', t: 'How long have you been looking for work?', opts: ['Less than 1 month', '1–3 months', '3–6 months', '6+ months'], showIf: a => a.q4_situation === 'Looking for work' },
+  { k: 'q4_looking_for', t: 'How long have you been looking for work?', opts: ['Less than 1 month', '1–3 months', '3–6 months', '6+ months'], under: 'q4_situation', showIf: a => a.q4_situation === 'Looking for work' },
   { k: 'q5_start_date', t: 'What is your earliest start date?', type: 'date' },
   { k: 'q6_days', t: 'How many days a week do you want to work?', opts: ['4 days', '5 days', '6–7 days'] },
   { k: 'q7_commute', t: 'Can you commute to our office in Slough (next to the train station) every day?', opts: ['Yes', 'No'] },
   { k: 'q8_resilience', t: 'Tell us about a time you kept going when things got tough. What did you do?', type: 'area' },
   { k: 'q9_results_paid', t: 'Have you ever earned money based on results? (commission, tips, targets, selling anything)', opts: ['Yes', 'No'] },
-  { k: 'q9_results_detail', t: 'Tell us in one line', type: 'text', optional: true, placeholder: 'e.g. Commission selling phones at Carphone Warehouse' },
+  { k: 'q9_results_detail', t: 'What was it? One line is fine', type: 'text', optional: true, placeholder: 'e.g. Commission selling phones at Carphone Warehouse', under: 'q9_results_paid', showIf: a => a.q9_results_paid === 'Yes' },
   { k: 'q10_door', t: 'A door gets shut in your face. What\'s your first thought?', opts: ['A) "Next door."', 'B) "What did I do wrong?"', 'C) "Maybe this isn\'t for me."', 'D) "Annoying, but I\'ll keep going."'], stack: true },
   { k: 'q11_coach', t: 'Your coach tells you your pitch isn\'t working. You…', opts: ['A) Ask them to show me, then copy it', 'B) Keep doing it my way', 'C) Feel knocked back', 'D) Practise it until it lands'], stack: true },
   { k: 'q12_bdp_stage', t: 'Where do you want to be in 2 years?', type: 'bdp', opts: ['Stage 2 – Brand Ambassador', 'Stage 3–4 – Leadership', 'Stage 5–6 – Ownership (my own business)', 'Not sure yet'], stack: true },
-  { k: 'q12_bdp_why', t: 'What would running your own business mean to you? (one line)', type: 'text', optional: true },
+  { k: 'q12_bdp_why', t: 'What would running your own business mean to you? (one line)', type: 'text', optional: true, under: 'q12_bdp_stage', showIf: a => !!a.q12_bdp_stage },
   { k: 'q13_unspent', t: 'Do you have any unspent criminal convictions?', opts: ['No', 'Yes'], help: 'You do not need to tell us about spent convictions. Only senior admin can see this answer.' },
   { k: 'q14_questions', t: 'Any questions for us?', type: 'area', optional: true },
 ];
@@ -384,9 +384,9 @@ const EVAL_EMOJI = { q1_excitement: '🔥', q2_stood_out: '👀', q3_reason: '�
   q12_bdp_stage: '🪜', q12_bdp_why: '👑', q13_unspent: '🔒', q14_questions: '💬' };
 const EVAL_SECTIONS = [
   ['⚡', 'The vibe', ['q1_excitement', 'q2_stood_out', 'q3_reason']],
-  ['📅', 'The practical stuff', ['q4_situation', 'q4_looking_for', 'q5_start_date', 'q6_days', 'q7_commute']],
-  ['🧠', 'Your mindset', ['q8_resilience', 'q9_results_paid', 'q9_results_detail', 'q10_door', 'q11_coach']],
-  ['🚀', 'Your future', ['q12_bdp_stage', 'q12_bdp_why'], 'ladders'],
+  ['📅', 'The practical stuff', ['q4_situation', 'q5_start_date', 'q6_days', 'q7_commute']],
+  ['🧠', 'Your mindset', ['q8_resilience', 'q9_results_paid', 'q10_door', 'q11_coach']],
+  ['🚀', 'Your future', ['q12_bdp_stage'], 'ladders'],
   ['🏁', 'Last bits', ['q13_unspent', 'q14_questions']],
 ];
 /** Angad's Sales Skill Ladder slide: [level, name, time, earnings, while…, what you learn] */
@@ -422,20 +422,24 @@ function renderEval(edit) {
   const a = store.get('evaldraft_' + C.rec.id) || {};
   const byKey = {}; EVAL.forEach(q => { byKey[q.k] = q; });
   let num = 0;
+  const input = q => {
+    if (q.type === 'scale') return chips(q.k, ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'], a[q.k]).replace('class="chips"', 'class="chips scale"') +
+      '<div class="row between small muted"><span>Not really</span><span>Can\'t wait</span></div><div class="react" id="react">' + excitementReact(a[q.k]) + '</div>';
+    if (q.type === 'text') return '<input type="text" name="' + q.k + '" maxlength="300" value="' + h(a[q.k] || '') + '" placeholder="' + h(q.placeholder || 'Type here…') + '">';
+    if (q.type === 'area') return '<textarea name="' + q.k + '" maxlength="1000" placeholder="Type here…">' + h(a[q.k] || '') + '</textarea>';
+    if (q.type === 'date') return '<input type="date" name="' + q.k + '" value="' + h(a[q.k] || '') + '">';
+    return chips(q.k, q.opts, a[q.k], q.stack);
+  };
+  // A follow-up ("What was it?" after Yes) sits inside its question's card: one question, one number
+  const follow = q => EVAL.filter(x => x.under === q.k && (!x.showIf || x.showIf(a))).map(x => '<div class="qwrap qsub" data-k="' + x.k + '">' +
+    '<label class="q">' + h(x.t) + (x.optional ? ' <span class="opt">optional</span>' : ' <span class="req">*</span>') + '</label>' + input(x) + '</div>').join('');
   const qhtml = q => {
-    if (q.showIf && !q.showIf(a)) return '';
+    if (q.under || (q.showIf && !q.showIf(a))) return '';
     num++;
     let w = '<div class="qwrap qcard" data-k="' + q.k + '"><div class="qhead"><span class="qn">' + (num < 10 ? '0' : '') + num + '</span><span class="qe">' + (EVAL_EMOJI[q.k] || '') + '</span></div>' +
       '<label class="q">' + h(q.t) + (q.optional ? ' <span class="opt">optional</span>' : ' <span class="req">*</span>') + '</label>';
     if (q.help) w += '<div class="help">' + h(q.help) + '</div>';
-    if (q.type === 'scale') {
-      w += chips(q.k, ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'], a[q.k]).replace('class="chips"', 'class="chips scale"') +
-        '<div class="row between small muted"><span>Not really</span><span>Can\'t wait</span></div><div class="react" id="react">' + excitementReact(a[q.k]) + '</div>';
-    } else if (q.type === 'text') w += '<input type="text" name="' + q.k + '" maxlength="300" value="' + h(a[q.k] || '') + '" placeholder="' + h(q.placeholder || 'Type here…') + '">';
-    else if (q.type === 'area') w += '<textarea name="' + q.k + '" maxlength="1000" placeholder="Type here…">' + h(a[q.k] || '') + '</textarea>';
-    else if (q.type === 'date') w += '<input type="date" name="' + q.k + '" value="' + h(a[q.k] || '') + '">';
-    else w += chips(q.k, q.opts, a[q.k], q.stack);
-    return w + '</div>';
+    return w + input(q) + follow(q) + '</div>';
   };
   const required = () => EVAL.filter(q => !q.optional && (!q.showIf || q.showIf(a)));
   const progress = () => {
@@ -443,7 +447,7 @@ function renderEval(edit) {
     if (!bar) return;
     bar.style.width = Math.round(done / r.length * 100) + '%';
     document.getElementById('evcount').textContent = done === r.length ? 'All done. Hit submit 🚀' : done + ' of ' + r.length + ' answered';
-    r.forEach(q => { const c = document.querySelector('.qcard[data-k="' + q.k + '"]'); if (c && String(a[q.k] || '').trim()) c.classList.remove('miss'); });
+    r.forEach(q => { const c = document.querySelector('.qwrap[data-k="' + q.k + '"]'); if (c && String(a[q.k] || '').trim()) c.classList.remove('miss'); });
   };
   const meter = () => { const v = Number(a.q1_excitement) || 0; document.querySelectorAll('.chips.scale .chip').forEach(c => c.classList.toggle('lit', Number(c.dataset.v) <= v)); };
   C.co = coOf(C.rec.company); setTheme(C.co);  // light page top (progress bar), so a light status bar
@@ -461,7 +465,7 @@ function renderEval(edit) {
     bindChips(f, (name, v) => {
       a[name] = v; store.set('evaldraft_' + C.rec.id, a);
       if (name === 'q1_excitement') { document.getElementById('react').textContent = excitementReact(v); meter(); }
-      if (name === 'q4_situation') { const y = window.scrollY; draw(); window.scrollTo(0, y); return; }
+      if (EVAL.some(x => x.under === name)) { const y = window.scrollY; draw(); window.scrollTo(0, y); return; }  // show / hide its follow-up
       progress();
     });
     f.addEventListener('input', e => { if (e.target.name) { a[e.target.name] = e.target.value; store.set('evaldraft_' + C.rec.id, a); progress(); } });
@@ -476,6 +480,7 @@ function renderEval(edit) {
         const w = f.querySelector('.qwrap[data-k="' + missing[0].k + '"]'); if (w) w.scrollIntoView({ block: 'center', behavior: 'smooth' });
         return;
       }
+      EVAL.forEach(q => { if (q.showIf && !q.showIf(a)) delete a[q.k]; });  // e.g. typed a detail, then changed to "No"
       const btn = document.getElementById('go'); busy(btn, true, 'Sending…');
       callRetry('submitEval', { id: C.rec.id, resume: C.rec.resume, answers: a, edit: !!edit }, () => { btn.innerHTML = 'Busy, still sending… (your answers are safe)'; })
         .then(r => { store.del('evaldraft_' + C.rec.id); renderDone(r.status === 'already' ? 'already' : r.status === 'edited' ? 'updated' : 'new', r.status === 'new' || r.status === 'edited'); })
