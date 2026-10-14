@@ -151,6 +151,8 @@ textarea.short { min-height: 64px; }
 .nm { border: 0; background: var(--soft); color: var(--ink); border-radius: 10px; padding: 3px 9px; margin: 0 2px; font: inherit; font-weight: 700; cursor: pointer; }
 .card.needs { margin-top: 12px; border: 2px solid var(--brand); }
 .d1tools { margin: 0 0 10px; }
+.qsub { margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--line); }
+.qsub .q { font-size: 15px; }
 .pill.yes { border: 0; cursor: pointer; font-family: inherit; background: var(--ink); color: #fff; }
 .sub.wrap, .item .sub.wrap, .trow .sub.wrap { white-space: normal; overflow-wrap: anywhere; }
 .d1btns { display: flex; flex-direction: column; gap: 6px; flex: none; }

@@ -283,7 +283,20 @@ async function fillEval(p) {
   ok(['Uncapped earnings', 'Career progression', 'Learn new skills'].every(x => q3.includes(x)), 'evaluation keeps the standard options: earnings, career progression, learn new skills');
   ok((await cp.$$('.sl .slc')).length === 6 && /Mastery/.test(await cp.innerText('.sl')) && !/£10k/.test(await cp.innerText('body')), 'evaluation shows the Sales Skill Ladder (6 levels); Stage 6 has no £10k line');
   ok(/£400\+ OTE in 30 days/.test(await cp.innerText('.sl-wrap')) && /OTE = On Target Earnings/.test(await cp.innerText('.sl-wrap')) && !/ABAE/.test(await cp.innerText('body')), 'ladder says OTE (On Target Earnings), not ABAE');
+  // A follow-up is part of its question: no number of its own, only there when it applies
+  ok(!(await cp.$('[name=q9_results_detail]')) && !(await cp.$('.chips[data-name=q4_looking_for]')), 'before answering: no follow-up boxes ("What was it?", "How long looking?")');
+  await cp.click('.chips[data-name=q9_results_paid] .chip:has-text("No")');
+  ok(!(await cp.$('[name=q9_results_detail]')), 'Q9 "earned money on results?" → No: no "What was it?" box');
+  await cp.click('.chips[data-name=q9_results_paid] .chip:has-text("Yes")');
+  await cp.waitForSelector('.qcard[data-k=q9_results_paid] .qsub [name=q9_results_detail]');
+  ok(/What was it\? One line is fine/.test(await cp.innerText('.qcard[data-k=q9_results_paid]')), 'Yes → "What was it? One line is fine" appears inside question 9 (one question, not a separate one)');
+  await cp.locator('.qcard[data-k=q9_results_paid]').screenshot({ path: SHOTS + '/05b-q9-one-question.png' });
+  const nums = await cp.$$eval('.qcard .qn', e => e.map(x => x.textContent));
+  ok(nums.join() === '01,02,03,04,05,06,07,08,09,10,11,12,13,14' && await cp.textContent('.qcard[data-k=q10_door] .qn') === '10',
+    'questions are numbered 1–14 with no extra numbers for follow-ups ("A door gets shut…" is 10)');
   await fillEval(cp);
+  ok(await cp.$('.qcard[data-k=q4_situation] .qsub .chips[data-name=q4_looking_for]') && await cp.$('.qcard[data-k=q12_bdp_stage] .qsub [name=q12_bdp_why]'),
+    '"How long looking for work?" sits inside Q4 and "What would your own business mean?" inside Q12');
   ok(/All done/.test(await cp.innerText('#evcount')), 'progress bar fills as they answer → "All done. Hit submit 🚀"');
   await shot(cp, '05-evaluation', true);
   await cp.click('#go');
