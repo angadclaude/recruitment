@@ -465,7 +465,7 @@ async function fillEval(p) {
   ok(/Southall/.test(snap) && /Commission selling phones/.test(snap), 'one-page snapshot: presenter notes + evaluation together');
   ok(/💡 Plays semi-pro football/.test(snap) && /Wants to earn on results, saving for a house/.test(snap), 'booker sees the room answers: 💡 ice-breaker + why sales');
   const hdr = (await getJson('/dev/sheet?name=Candidates'))[0];
-  ok(hdr.slice(-5).join() === 'day1_status,day1_by,day1_at,day1_reminded_at,day1_reminded_by', 'existing Sheet got the new columns automatically (no data moved)');
+  ok(hdr.slice(-5).join() === 'recruit_source,databyte_at,databyte_by,onboard_email_at,onboard_email_by', 'existing Sheet got the new columns automatically (no data moved)');
   ok(!/Unspent convictions/.test(snap), 'conviction answer hidden from bookers');
   await bp.click('.chips[data-name=outcome] .chip:has-text("Academy booked")');
   await bp.fill('#adate', '2026-10-19');
@@ -838,6 +838,51 @@ async function fillEval(p) {
   const fizaD1 = (await api(fizaTok, 'academyList', {})).items;
   ok(fizaD1.length && fizaD1.every(c => c.booker_id === fiza.id), 'a booker\'s Day 1 list shows their own starters only');
   ok(!(await api(nathan, 'academyList', {})).items.length, 'a presenter sees nobody (no access to other people\'s candidates)');
+
+  // ── New starter onboarding (admins only): 1 · Databyte, 2 · the welcome email with FieldIQ ──
+  console.log('onboarding');
+  const allP = await getJson('/dev/pushes');
+  const nsJ = allP.find(p => p.body.headings.en === '🚀 New starter to onboard: Jasraj Bhuller'), nsA = allP.find(p => p.body.headings.en === '🚀 New starter to onboard: Adham Soliman');
+  ok(nsJ && nsJ.body.include_aliases.external_id.join() === jessId && nsA && nsA.body.include_aliases.external_id.join() === rubalId &&
+    /^Booked by Abdullahi Ahmed for Monday 19th October\. Tap: add to Databyte, then send the welcome email\.$/.test(nsA.body.contents.en) && nsA.body.web_url.endsWith('?c=' + adham.id),
+    'booked → straight to Jess (LINK: Jasraj) / Rubal (JUSS: Adham): "🚀 New starter to onboard: Adham Soliman · ' + (nsA ? nsA.body.contents.en : '') + '"');
+  ok(!allP.some(p => /New starter to onboard: Ishita/.test(p.body.headings.en)), 'not for a booking waiting on an admin (Ishita was rejected)');
+  const denied = async (a, x) => { try { await api(fizaTok, a, x); return ''; } catch (e) { return e.message; } };
+  ok(/Admin only/.test(await denied('onboardStep', { id: jasId, databyte: true })) && /Admin only/.test(await denied('onboardPreview', { id: jasId })) && /Admin only/.test(await denied('onboardSend', { id: jasId })),
+    'bookers can\'t touch onboarding (Databyte, welcome email): admins only');
+  let tooSoon = null; try { await api(admin, 'onboardSend', { id: adham.id }); } catch (e) { tooSoon = e.message; }
+  ok(/Add them to Databyte first/.test(tooSoon), 'the welcome email can\'t go before they\'re on Databyte (FieldIQ wouldn\'t work yet)');
+  await ap.goto(APP + 'index.html?c=' + adham.id); await ap.waitForSelector('#onb');
+  const onbTxt = await ap.innerText('#onb');
+  ok(/First name\s*Adham/.test(onbTxt) && /Last name\s*Soliman/.test(onbTxt) && /adham@example\.com/.test(onbTxt) && /07700 900300/.test(onbTxt) && (await ap.$$('#onb [data-copy]')).length === 4,
+    'candidate page (admin): "🚀 Onboard Adham": first name, last name, email, phone (as 07700 900300), each with Copy');
+  ok(await ap.$eval('#onb .chips[data-name=rsrc] .chip.on', b => b.textContent) === 'Personal Recruitment' && /Recruiter: Abdullahi Ahmed/.test(onbTxt),
+    'Adham said a BA referred him → "Personal Recruitment" picked, recruiter Abdullahi Ahmed');
+  ok(await ap.$('#obsend[disabled]'), 'step 2 (welcome email) is locked until they\'re on Databyte');
+  await ap.locator('#onb').screenshot({ path: SHOTS + '/33-onboard.png' });
+  await ap.click('#dbdone'); await ap.waitForSelector('#obsend:not([disabled])');
+  const adOnb = await api(admin, 'getCandidate', { id: adham.id });
+  ok(!!adOnb.databyte_at && adOnb.databyte_by === 'Angad Oshan' && adOnb.recruit_source === 'Personal Recruitment', '"✅ Added to Databyte" saved (who, when, Personal Recruitment) and step 2 unlocks');
+  await ap.click('#obsend'); await ap.waitForSelector('.obframe');
+  await ap.waitForFunction(() => document.querySelector('#obgo') && !document.querySelector('#obgo').disabled);
+  const prevHtml = await ap.$eval('.obframe', f => f.srcdoc);
+  ok(await ap.textContent('#obsubj') === 'JUSS Marketing - Your Brand Ambassador Journey Begins!' && /Hi Adham,/.test(prevHtml) && /Monday 19th October @ 1:30 PM/.test(prevHtml) &&
+    /fieldiqdownload/.test(prevHtml) && /Hello Fresh/.test(prevHtml) && /077823 77774/.test(prevHtml) && /Monday at 1:30 PM/.test(prevHtml) && /Tuesday at 1:00 PM/.test(prevHtml) && /<b>Angad Oshan<\/b>/.test(prevHtml),
+    'preview: Rubal\'s JUSS email filled in for Adham (date, Day 1 / Day 2, FieldIQ, Hello Fresh, JUSS number, signed by the sender)');
+  await ap.locator('.sheet').screenshot({ path: SHOTS + '/34-welcome-email.png' });
+  const mbOnb = (await getJson('/dev/mail')).length;
+  await ap.click('#obgo'); await ap.waitForSelector('#onb .pill.green:has-text("Onboarded")');
+  const wm = (await getJson('/dev/mail')).slice(mbOnb).find(m => m.to === 'adham@example.com');
+  ok(wm && wm.subject === 'JUSS Marketing - Your Brand Ambassador Journey Begins!' && wm.name === 'Angad Oshan | JUSS Marketing' && wm.replyTo === 'angad@linkmarketing.org.uk' && wm.bcc === 'angad@linkmarketing.org.uk' && /FieldIQ/.test(wm.body),
+    'sent from the app as "Angad Oshan | JUSS Marketing": replies go to the sender, who gets a copy');
+  ok((await api(admin, 'getCandidate', { id: adham.id })).onboard_email_by === 'Angad Oshan', 'saved: welcome email sent (who, when)');
+  const lp = await api(admin, 'onboardPreview', { id: jasId });
+  ok(lp.subject === 'Link Marketing - Your Brand Ambassador Journey Begins!' && /NDCS/.test(lp.html) && /Pre Coaching Module/.test(lp.html) && /073110 27272/.test(lp.html) && /Day 3 Onwards/.test(lp.html) && /Link Magazine/.test(lp.html),
+    'LINK version: NDCS, the pre-coaching module, Day 3 timings, Link Magazine, LINK numbers');
+  await ap.goto(APP + 'index.html?c=academy'); await ap.waitForSelector('.onbq');
+  const onbq = await ap.innerText('.onbq');
+  ok(/To onboard · 1/.test(onbq) && /Jasraj/.test(onbq) && !/Adham/.test(onbq) && /Onboarded/.test(await ap.innerText('.trow[data-cand="' + adham.id + '"]')),
+    'Day 1 tab (admins): "🚀 To onboard · 1" (Jasraj); Adham shows 🚀 Onboarded');
 
   // ── Monday 10:00: Jess / Rubal get "N starters to remind" → Day 1 tab → Send reminders (one tap each) → print the sign-in sheet ──
   await setTime('2026-10-19T09:55:00+01:00');

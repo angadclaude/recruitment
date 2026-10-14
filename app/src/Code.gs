@@ -69,6 +69,21 @@ const ADMINS = [
 
 const OUTCOMES = ['Academy booked', 'Thinking it over', 'No answer', 'Declined', 'Not suitable'];
 
+/** New starter onboarding (admins): Databyte, then the "Your Brand Ambassador Journey Begins!" email (Rubal's wording, LINK / JUSS). */
+const ONBOARD = {
+  DATABYTE_URL: 'https://uk.databyte.live/cloud/users/list',
+  FIELDIQ_URL: 'https://www.tfo.group/fieldiqdownload',
+  LINK: {
+    brand: 'Link Marketing', colour: '#F3901D', phone: '073110 27272 / 074789 60080', maps: 'https://maps.app.goo.gl/2wmckhXokt3KhCyE9', day3: true,
+    preCoaching: ['Link Marketing BA Academy - Pre Coaching Module - Fill in form', 'https://forms.office.com/pages/responsepage.aspx?id=QT4blMNFxEuaVSUMKK6uNT5ZuU1A_UdDsSk-r6KY6olUQ0JEWFU0NDU1MEI5REZZRzY3WEc1SEVaTC4u&route=shorturl'],
+    client: ['NDCS', 'https://www.ndcs.org.uk/'], magazine: ['Link Magazine', 'https://linkmagflip-74ibv4pf.manus.space/'],
+  },
+  JUSS: {
+    brand: 'JUSS Marketing', colour: '#E4613F', phone: '077823 77774', maps: 'https://maps.app.goo.gl/n2wTFyzScHLr1Voy9', day3: false,
+    client: ['Hello Fresh', 'http://www.hellofresh.co.uk/'], website: ['JUSS Marketing', 'https://jussmarketing.co.uk/'], magazine: ['JUSS Magazine', 'https://jmomagazine-gjfukcw6.manus.space/'],
+  },
+};
+
 const SHEETS = {
   Users: ['id', 'name', 'email', 'company', 'roles', 'active', 'created_at', 'aliases'],
   Candidates: [
@@ -84,7 +99,7 @@ const SHEETS = {
     'admin_status', 'admin_note', 'admin_by', 'admin_at',
     'pay_excluded', 'pay_excluded_reason', 'thanks_sent_at', 'offer_sent_at',
     'welcome_token', 'academy_confirmed_at',
-    'p_why_sales', 'p_why_sales_note', 'p_interesting', 'eval_edited_at', 'thanks_by', 'no_whatsapp', 'day1_status', 'day1_by', 'day1_at', 'day1_reminded_at', 'day1_reminded_by',
+    'p_why_sales', 'p_why_sales_note', 'p_interesting', 'eval_edited_at', 'thanks_by', 'no_whatsapp', 'day1_status', 'day1_by', 'day1_at', 'day1_reminded_at', 'day1_reminded_by', 'recruit_source', 'databyte_at', 'databyte_by', 'onboard_email_at', 'onboard_email_by',
   ],
   History: ['attended_date', 'full_name', 'mobile', 'email', 'booker_raw', 'presenter_raw'],
   Codes: ['email', 'code_hash', 'expires', 'attempts'],
@@ -791,6 +806,7 @@ function saveOutcome(req, u) {
     if (req.outcome === 'Academy booked') {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(req.academy_date || '')) throw new Error('Pick the BA Academy Day 1 date.');
     }
+    c._wasBooked = c.outcome === 'Academy booked' && c.admin_status !== 'pending';
     const newDate = req.outcome === 'Academy booked' ? req.academy_date : '';
     if (newDate !== c.academy_date) { c.academy_confirmed_at = ''; c.day1_status = ''; c.day1_by = ''; c.day1_at = ''; }  // new date (e.g. rebooking a no-show) → confirm + mark again
     c.outcome = req.outcome;
@@ -804,11 +820,12 @@ function saveOutcome(req, u) {
       if (isAdmin(u)) { c.admin_status = 'approved'; c.admin_by = u.name; c.admin_at = nowStr(); }
       else if (c.admin_status !== 'approved') c.admin_status = 'pending';
     } else if (c.admin_status === 'pending') c.admin_status = '';
-    const wasPending = c._wasPending;
+    const wasPending = c._wasPending, wasBooked = c._wasBooked;
     writeRow('Candidates', c);
-    return { c: c, alert: c.admin_status === 'pending' && !wasPending };
+    return { c: c, alert: c.admin_status === 'pending' && !wasPending, starter: c.outcome === 'Academy booked' && c.admin_status !== 'pending' && !wasBooked };
   });
   const c = res.c;
+  if (res.starter) newStarterAlert(c);
   log(u, 'outcome', c.id, c.outcome + (c.outcome_late ? ' LATE' : ''));
   if (res.alert) {
     notify(usersAll().filter(isAdmin), '🔴 Decision needed: ' + c.full_name,
@@ -819,7 +836,7 @@ function saveOutcome(req, u) {
 
 function adminDecision(req, u) {
   if (!isAdmin(u)) throw new Error('Admin only');
-  return withLock(() => {
+  const c = withLock(() => {
     const c = getC(req.id);
     if (['approved', 'rejected'].indexOf(req.decision) < 0) throw new Error('Bad decision');
     c.admin_status = req.decision; c.admin_note = String(req.note || '').slice(0, 500);
@@ -827,8 +844,10 @@ function adminDecision(req, u) {
     if (req.decision === 'rejected') { c.outcome = 'Not suitable'; c.academy_date = ''; }
     writeRow('Candidates', c);
     log(u, 'admin_' + req.decision, c.id, c.admin_note);
-    return shape(c, u);
+    return c;
   });
+  if (req.decision === 'approved' && onboardable(c)) newStarterAlert(c);  // approved = a new starter to onboard
+  return shape(c, u);
 }
 
 function setPayExcluded(req, u) {
@@ -1123,6 +1142,7 @@ const STAFF_ACTIONS = {
   markSent: markSent, payReport: payReport, listUsers: listUsers, saveUser: saveUser, deleteUser: deleteUser,
   alertsCheck: alertsCheck, testAlert: testAlert, sendSetupEmails: sendSetupEmails, adminCode: adminCode,
   chaseOutcomes: chaseOutcomes, chaseList: chaseList, academyList: academyList, markDay1: markDay1, markConfirmed: markConfirmed,
+  onboardStep: onboardStep, onboardPreview: onboardPreview, onboardSend: onboardSend,
 };
 
 // ───────────────────────── LINKS ─────────────────────────
@@ -1488,6 +1508,95 @@ function maybeDay1Reminder() {
       (not.length ? '\n⏳ Not confirmed yet: ' + firstNames(not) + '.' : '') + '\nTap to send the reminders in one go.', 'remind');
   });
 }
+// ───────────────────────── NEW STARTER ONBOARDING (admins only: Databyte, then the welcome email) ─────────────────────────
+/** Someone's just been booked onto the Academy: Jess (LINK) / Rubal (JUSS) onboard them straight away. */
+function newStarterAlert(c) {
+  const t = thanksTeam()[c.company === 'JUSS' ? 'JUSS' : 'LINK'], u = t.id ? userById(t.id) : null;
+  if (u) notify([u], '🚀 New starter to onboard: ' + c.full_name, 'Booked by ' + (c.booker_name || 'their booker') + ' for ' + longDate(c.academy_date) + '. Tap: add to Databyte, then send the welcome email.', c.id);
+}
+const DAYS_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+/** "Monday 19th October" */
+function longDate(ymd) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd || '')) return '';
+  const d = new Date(ymd + 'T00:00:00Z'), n = d.getUTCDate(), v = n % 100, sx = ['th', 'st', 'nd', 'rd'];
+  return DAYS_LONG[d.getUTCDay()] + ' ' + n + (sx[(v - 20) % 10] || sx[v] || sx[0]) + ' ' + MONTHS_LONG[d.getUTCMonth()];
+}
+function onboardable(c) { return c.outcome === 'Academy booked' && c.admin_status !== 'pending' && c.admin_status !== 'rejected' && /^\d{4}-\d{2}-\d{2}$/.test(c.academy_date || ''); }
+/** Step 1: they're on Databyte (or undo), and Office / Personal Recruitment. */
+function onboardStep(req, u) {
+  if (!isAdmin(u)) throw new Error('Admin only');
+  return withLock(() => {
+    const c = getC(req.id);
+    if (!onboardable(c)) throw new Error('Only people booked onto the Academy are onboarded.');
+    if (req.source !== undefined) {
+      if (['Office Recruitment', 'Personal Recruitment'].indexOf(req.source) < 0) throw new Error('Office or Personal Recruitment');
+      c.recruit_source = req.source;
+    }
+    if (req.databyte !== undefined) { c.databyte_at = req.databyte ? nowStr() : ''; c.databyte_by = req.databyte ? u.name : ''; }
+    writeRow('Candidates', c);
+    if (req.databyte !== undefined) log(u, req.databyte ? 'databyte_added' : 'databyte_undone', c.id, c.recruit_source || '');
+    return shape(c, u);
+  });
+}
+/** Step 2: "Your Brand Ambassador Journey Begins!" in Rubal's wording, LINK or JUSS, filled in for this person. */
+function onboardEmail(c, u) {
+  const co = c.company === 'JUSS' ? 'JUSS' : 'LINK', o = ONBOARD[co], first = c.full_name.split(' ')[0];
+  const day1 = DAYS_LONG[weekday(c.academy_date)], day2 = DAYS_LONG[(weekday(c.academy_date) + 1) % 7];
+  const a = (label, url) => '<a href="' + esc(url) + '" style="color:#0563C1;font-weight:bold">' + esc(label) + '</a>';
+  const p = (html, more) => '<p style="margin:0 0 ' + (more ? 14 : 6) + 'px">' + html + '</p>';
+  const head = t => '<p style="margin:16px 0 4px;color:' + o.colour + ';font-weight:bold">' + esc(t) + '</p>';
+  const html = '<div style="font-family:Aptos,Calibri,Arial,sans-serif;font-size:11pt;color:#000;line-height:1.45">' +
+    p('Hi ' + esc(first) + ',', true) +
+    p('Welcome to the <b style="color:' + o.colour + '">' + esc(o.brand) + '</b> team, and <b style="color:#33088D;background:#DBCFF4">Congratulations</b> on being selected to join us!') +
+    p('You’re coming on board at an exciting time as we continue to expand our business and head into a highly productive season. We’re confident that with your enthusiasm and dedication, you’ll thrive in your new role as a Brand Ambassador.', true) +
+    p('<b>Important Information – Product Coaching</b>') +
+    p('<b>Product Training and Sales Coaching Begins: <span style="color:' + o.colour + '">' + esc(longDate(c.academy_date)) + ' @ 1:30 PM</span></b>') +
+    (co === 'JUSS' && c.welcome_token ? p('Your first week guide: ' + a('your Week 1 plan', welcomeUrl(c))) : '') +
+    head('Day 1: Induction Session') + p('🕜 <b>' + day1 + ' at 1:30 PM</b><br>📍 Expected finish: Between 5:30 – 6:00 PM<br>📝 Please bring a notepad and pen to take notes.') +
+    head('Day 2: Sales Coaching') + p('🕜 <b>' + day2 + ' at 1:00 PM</b><br>📍 Expected finish: Between 5:30 – 6:00 PM') +
+    (o.day3 ? p('<b>Day 3 Onwards will be the same timings as previously discussed: 10:00am-8:30pm.</b>') : '') +
+    head('Pre-Start Requirements') +
+    '<ol style="margin:0 0 10px;padding-left:22px"><li>Please download the app by clicking on ' + a('FieldIQ', ONBOARD.FIELDIQ_URL) + ' to complete the vetting form before your first day.</li>' +
+    (o.preCoaching ? '<li>You’ll need to complete a short online pre-coaching module.</li>' : '') + '</ol>' +
+    (o.preCoaching ? p('This takes around <b>15-20 minutes</b> and includes a few short videos followed by some quick questions. It’s important that this is completed before coming in on <b>' + day1 + '</b>, so you’re fully prepared for the coaching sessions.', true) +
+      p('<b>Click here to complete your pre-coaching:</b>') + p(a(o.preCoaching[0], o.preCoaching[1]), true) : '') +
+    (co === 'JUSS' ? head('Prepare for Success') + p('We highly recommend that you read up on our client, ' + esc(o.client[0]) + ', ahead of your training: 🌐 ' + a(o.client[0], o.client[1])) +
+        p('Also, feel free to browse our website channels to get a feel for our team culture and the work we do! ' + a(o.website[0], o.website[1]))
+      : p('We also suggest reading up &amp; doing some research on our Client in preparation for your product coaching: ' + a(o.client[0], o.client[1]))) +
+    p('Feel free to check out some of our social media content as well to familiarise yourself with the team via our online magazine! ' + a(o.magazine[0], o.magazine[1]), true) +
+    p('Click here to locate us: ' + a('2nd Floor East, Automotive House, Grays Place, Slough SL2 5AF', o.maps), true) +
+    p('If you have any questions' + (co === 'JUSS' ? ' regarding anything,' : '') + ' feel free to reply to this <b><i>EMAIL</i></b> or call on <b><i>' + esc(o.phone) + '</i></b>.') +
+    p('I’ll be in the office to meet you when you arrive - Excited to work with you!', true) +
+    p('Thanks,<br>Kind Regards,') + p('<b>' + esc(u.name) + '</b><br>' + esc(o.brand)) + '</div>';
+  const text = html.replace(/<br>/g, '\n').replace(/<\/(p|li|ol)>/g, '\n').replace(/<a href="([^"]+)"[^>]*>([^<]+)<\/a>/g, '$2 ($1)').replace(/<[^>]+>/g, '')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/\n{3,}/g, '\n\n').trim();
+  return { to: c.email, subject: o.brand + ' - Your Brand Ambassador Journey Begins!', html: html, text: text };
+}
+function onboardPreview(req, u) {
+  if (!isAdmin(u)) throw new Error('Admin only');
+  const c = getC(req.id);
+  if (!onboardable(c)) throw new Error('Only people booked onto the Academy are onboarded.');
+  return onboardEmail(c, u);
+}
+/** Sent from the app (as "Jess Grace | Link Marketing"); replies go to whoever sent it, who also gets a copy. Databyte first: FieldIQ only works once they're on it. */
+function onboardSend(req, u) {
+  if (!isAdmin(u)) throw new Error('Admin only');
+  const c = getC(req.id);
+  if (!onboardable(c)) throw new Error('Only people booked onto the Academy are onboarded.');
+  if (!c.databyte_at) throw new Error('Add them to Databyte first: FieldIQ only works once they\'re on Databyte.');
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(c.email || '')) throw new Error('No valid email for ' + c.full_name + '.');
+  const m = onboardEmail(c, u), brand = ONBOARD[c.company === 'JUSS' ? 'JUSS' : 'LINK'].brand;
+  MailApp.sendEmail({ to: m.to, subject: m.subject, htmlBody: m.html, body: m.text, name: u.name + ' | ' + brand, replyTo: u.email, bcc: u.email });
+  return withLock(() => {
+    const x = getC(req.id);
+    x.onboard_email_at = nowStr(); x.onboard_email_by = u.name;
+    writeRow('Candidates', x);
+    log(u, 'welcome_email', x.id, m.to);
+    return shape(x, u);
+  });
+}
+
 function firstNames(list, max) {
   const f = list.map(c => c.full_name.split(' ')[0]);
   return f.slice(0, max || 4).join(', ') + (f.length > (max || 4) ? ' +' + (f.length - (max || 4)) : '');
