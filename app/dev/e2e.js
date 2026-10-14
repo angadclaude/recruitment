@@ -847,6 +847,46 @@ async function fillEval(p) {
   const prView = await api(prTok, 'getCandidate', { id: tara.id });
   ok(!prView.limited && prView.mobile === '07700900801', 'she logs in and Tara is already hers, in full');
 
+  // ── 9c. Logging in: someone added mid-session can log in straight away; an admin can show them a code ──
+  console.log('login codes');
+  // The race that hit Monish: a check-in read the team list just before he was added, then saved that old list back afterwards
+  await post('/dev/eval', { js: "MEMO = {}; globalThis.__ver0 = PropertiesService.getScriptProperties().getProperty('USERS_VER') || '0'; globalThis.__stale = JSON.stringify(readTable('Users')); 1" });
+  const monish = await api(admin, 'saveUser', { user: { name: 'Monish Somalai', email: 'monish_m4@yahoo.com', company: 'LINK', roles: ['booker', 'presenter'], active: true } });
+  await post('/dev/eval', { js: "CacheService.getScriptCache().put('users_v2_' + __ver0, __stale, 600); 1" });
+  const mb3 = (await getJson('/dev/mail')).length;
+  await api('', 'requestCode', { email: ' Monish_M4@yahoo.com ' });
+  ok((await getJson('/dev/mail')).slice(mb3).some(m => m.to === 'monish_m4@yahoo.com' && /login code/.test(m.subject)),
+    'someone added a moment ago gets their login code, even if a check-in saved the old team list at that moment (capitals / spaces don\'t matter)');
+  await api('', 'requestCode', { email: 'nobody@example.com' });
+  const codeLog = (await getJson('/dev/sheet?name=Log')).filter(r => r[2] === 'login_code').map(r => r[4]);
+  ok(codeLog.some(d => /monish_m4@yahoo\.com · emailed/.test(d)) && codeLog.some(d => /nobody@example\.com · no active team member/.test(d)),
+    'every code request is logged (emailed / no such person), so "I never got a code" can be checked');
+  for (let i = 0; i < 4; i++) await api('', 'requestCode', { email: 'monish_m4@yahoo.com' });
+  const lim = await post('/api', { action: 'requestCode', email: 'monish_m4@yahoo.com' });
+  ok(!lim.ok && /Check Spam\/Junk/.test(lim.error) && /show you a code/.test(lim.error), 'after 5 codes in 15 minutes: "Check Spam/Junk… or ask an admin to show you a code"');
+  await ap.evaluate(() => localStorage.removeItem('lr_cache'));
+  await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button[data-tab=team]');
+  await ap.click('.tabbar button[data-tab=team]'); await ap.click('.item:has-text("Monish Somalai")');
+  await ap.click('#ucode'); await ap.waitForSelector('.codeshow .code');
+  const shown = (await ap.innerText('.codeshow .code')).trim();
+  ok(/^\d{6}$/.test(shown) && /BA login/.test(await ap.innerText('.codeshow')) && /Already have a code\?/.test(await ap.innerText('.codeshow')),
+    'Team → Monish → 🔑 shows a 6-digit login code on the admin\'s screen, with exactly what to tap');
+  await ap.locator('#uf').screenshot({ path: SHOTS + '/20-admin-login-code.png' });
+  const mc = await browser.newContext(PHONE); const mp = await mc.newPage();
+  await mp.goto(APP + 'index.html'); await mp.click('#doors button[data-door=ba]');
+  await mp.fill('#em', 'monish_m4@yahoo.com'); await mp.click('#haveCode'); await mp.fill('#code', shown); await mp.click('#go');
+  await mp.waitForSelector('.tabbar button');
+  ok(true, 'Monish logs in with that code via "Already have a code?", even after hitting the limit');
+  await mc.close();
+  const rc = await browser.newContext(PHONE); const rp = await rc.newPage();
+  await rp.goto(APP + 'index.html'); await rp.click('#doors button[data-door=ba]');
+  await rp.fill('#em', 'nobody2@example.com'); await rp.click('#go'); await rp.waitForSelector('#codeBox:not([hidden])');
+  await rp.reload(); await rp.waitForSelector('#em');
+  ok(!(await rp.$('#codeBox[hidden]')) && /We emailed a code to/.test(await rp.innerText('#err')) && (await rp.innerText('#go')).trim() === 'Log in',
+    'back from the email app: the code box is still open ("We emailed a code to…"), so nobody taps "Email me a code" again and again');
+  await rc.close();
+  await ap.click('#abBack');
+
   // ── 10. Access removed / Apps Script fallback / GDPR ──
   await api(admin, 'saveUser', { user: Object.assign({}, fiza, { active: false }) });
   const fz = await loginApi('mo@example.com');
