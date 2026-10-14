@@ -1,4 +1,4 @@
-window.APP_VERSION = 'aef102d4';
+window.APP_VERSION = '34ca81d0';
 
 (function () {
 'use strict';
@@ -216,6 +216,8 @@ function renderCheckin(then) {
   const f = document.getElementById('f');
   bindChips(f);
   let booker = null;
+  // Each booker under their own name and every other name they use (a team member, their company): same booker either way
+  const bookerNames = () => [].concat.apply([], C.cfg.bookers.map(b => [b].concat((b.aliases || []).map(a => ({ id: b.id, name: a, company: b.company })))));
   const bk = document.getElementById('bk');
   const withEl = document.getElementById('with');
   document.documentElement.classList.add('theme-anim');
@@ -236,15 +238,15 @@ function renderCheckin(then) {
     const draw = () => {
       const q = inp.value.trim().toLowerCase();
       if (q.length < 2) { sg.innerHTML = ''; return; }
-      const hits = C.cfg.bookers.filter(b => b.name.toLowerCase().split(' ').some(p => p.indexOf(q) === 0) || b.name.toLowerCase().indexOf(q) === 0).slice(0, 6);
+      const hits = bookerNames().filter(b => b.name.toLowerCase().split(/[\s-]+/).some(p => p.indexOf(q) === 0) || b.name.toLowerCase().indexOf(q) === 0).slice(0, 6);
       sg.innerHTML = hits.length
-        ? '<div class="suggest">' + hits.map(b => '<button type="button" data-id="' + h(b.id) + '"><span>' + h(b.name) + '</span><span class="co ' + h(b.company) + '">' + h(b.company) + '</span></button>').join('') + '</div>'
+        ? '<div class="suggest">' + hits.map(b => '<button type="button" data-id="' + h(b.id) + '" data-name="' + h(b.name) + '"><span>' + h(b.name) + '</span><span class="co ' + h(b.company) + '">' + h(b.company) + '</span></button>').join('') + '</div>'
         : '<div class="help" style="margin-top:6px">Not on the list? Type their <b>full name</b> and carry on, we\'ll match it up.</div>';
     };
     inp.addEventListener('input', draw);
     sg.addEventListener('click', e => {
       const b = e.target.closest('button[data-id]'); if (!b) return;
-      booker = C.cfg.bookers.filter(x => x.id === b.dataset.id)[0];
+      booker = bookerNames().filter(x => x.id === b.dataset.id && x.name === b.dataset.name)[0];
       document.getElementById('unsure').checked = false;
       drawBooker('');
     });
@@ -265,7 +267,7 @@ function renderCheckin(then) {
     const typed = typedEl ? typedEl.value.trim() : '';
     // Exact typed match counts as a pick.
     if (!booker && typed) {
-      const exact = C.cfg.bookers.filter(b => b.name.toLowerCase() === typed.toLowerCase());
+      const exact = bookerNames().filter(b => b.name.toLowerCase() === typed.toLowerCase());
       if (exact.length === 1) booker = exact[0];
     }
     const form = {
@@ -1501,7 +1503,8 @@ function viewTeam() {
   }
   const us = S.users;
   const row = u => '<button class="item" data-u="' + h(u.id) + '"><span class="av co-' + h(u.company) + '">' + h(initials(u.name)) + '</span><div class="main"><div class="name">' + h(u.name) + ' <span class="co ' + h(u.company) + '">' + h(u.company) + '</span>' +
-    (u.active ? '' : ' <span class="pill red">No access</span>') + '</div><div class="sub">' + (u.email ? h(u.email) : '<span class="pill amber">Not in the app yet · name only</span>') + '</div><div class="pills">' + u.roles.map(r => '<span class="pill">' + h(r) + '</span>').join('') + '</div></div><span class="chev">›</span></button>';
+    (u.active ? '' : ' <span class="pill red">No access</span>') + '</div><div class="sub">' + (u.email ? h(u.email) : '<span class="pill amber">Not in the app yet · name only</span>') + '</div>' +
+    ((u.aliases || []).length ? '<div class="sub wrap">also: ' + h(u.aliases.join(' · ')) + '</div>' : '') + '<div class="pills">' + u.roles.map(r => '<span class="pill">' + h(r) + '</span>').join('') + '</div></div><span class="chev">›</span></button>';
   const page = paint('Team', '<div class="tiles"><button class="tile hot" id="add"><i>＋</i><b>Add person</b><span>BA (booker, presenter) or admin</span></button>' +
     '<button class="tile" id="slideqr"><i>📲</i><b>Slide QR codes</b><span>Check-in + evaluation</span></button>' +
     '<button class="tile" id="alertsck"><i>🔔</i><b>Alerts check</b><span>Who gets their alerts?</span></button></div>' +
@@ -1521,6 +1524,8 @@ function editUser(u) {
     '<div class="help" style="margin-top:6px">No email yet? Add them by name: they\'re in the check-in list and credited on the bulletin and incentive straight away. Add their email later and they can log in, with everything already theirs.</div>' +
     '<label class="q">Company</label>' + chips('company', ['LINK', 'JUSS'], x.company) +
     '<div class="help" style="margin-top:6px">Decides which WhatsApp welcome message (LINK or JUSS) they send.</div>' +
+    '<label class="q">Other names they use</label><textarea id="ual" class="short" placeholder="One per line, e.g.\nDaniel Thompson\nStones Recruitment\nSophie - Skye Promotions">' + h((x.aliases || []).join('\n')) + '</textarea>' +
+    '<div class="help" style="margin-top:6px">Team members or company names candidates might say booked them. A check-in with any of these names is credited to ' + h(x.name ? x.name.split(' ')[0] : 'them') + ' automatically (bulletin, incentive, alerts), and so are the last 2 weeks\' check-ins that typed them.</div>' +
     '<label class="q">Access</label><div class="chips" data-name="roles" data-multi="1">' +
     [['booker', 'Booker'], ['presenter', 'Presenter'], ['admin', 'Admin (adds/removes people, sees everything)']].map(r => '<button type="button" class="chip' + (x.roles.indexOf(r[0]) >= 0 ? ' on' : '') + '" data-v="' + r[0] + '">' + r[1] + '</button>').join('') + '</div>' +
     '<div class="help" style="margin-top:8px">Booker or presenter = they log in with <b>BA login</b>. Admin = <b>Admin login</b>.</div>' +
@@ -1540,11 +1545,12 @@ function editUser(u) {
   };
   const doSave = (btn, allowSimilar) => {
     busy(btn, true);
-    call('saveUser', { allowSimilar: !!allowSimilar, user: { id: u ? u.id : '', name: document.getElementById('un').value, email: document.getElementById('ue').value, company: chipVal(uf, 'company'), roles: chipVals(uf, 'roles'), active: document.getElementById('ua').checked } })
+    call('saveUser', { allowSimilar: !!allowSimilar, user: { id: u ? u.id : '', name: document.getElementById('un').value, email: document.getElementById('ue').value, company: chipVal(uf, 'company'), roles: chipVals(uf, 'roles'), active: document.getElementById('ua').checked,
+      aliases: document.getElementById('ual').value.split('\n').map(a => a.trim()).filter(String) } })
       .then(saved => {
         S.users = (S.users || []).filter(o => o.id !== saved.id).concat([saved]).sort((a, b) => a.name.localeCompare(b.name));
         if (saved.id === S.me.user.id) { S.me.user = saved; }
-        saveCache(); toast(saved.linked ? 'Saved ✓ ' + saved.linked + ' check-in' + (saved.linked > 1 ? 's' : '') + ' that typed "' + saved.name.split(' ')[0] + '" now credited to them' : 'Saved ✓');
+        saveCache(); toast(saved.linked ? 'Saved ✓ ' + saved.linked + ' check-in' + (saved.linked > 1 ? 's' : '') + ' that typed their name' + ((saved.aliases || []).length ? ' or other names' : '') + ' now credited to them' : 'Saved ✓');
         // Just added (or email changed) and they can log in: stay on their page, ready to show a login code if they're with you
         if (saved.email && saved.active && (!u || String(u.email || '').toLowerCase() !== saved.email.toLowerCase())) {
           S.params = { id: saved.id }; hist('replace', { v: 'user', p: S.params });
@@ -1558,7 +1564,7 @@ function editUser(u) {
         busy(btn, false);
         const sim = similarOf(x2.message), err = document.getElementById('uerr');
         if (!sim) return showErr(err, x2.message);
-        err.innerHTML = '<div class="flag amber">' + h(sim.name) + ' (' + h(sim.company) + ') is already on the team. Same person? Tap them in the Team list to edit them instead.' +
+        err.innerHTML = '<div class="flag amber">' + similarText(sim) + ' Same person? Tap them in the Team list to edit them instead.' +
           '<button class="btn ghost sm block" id="usim" style="margin-top:8px">Different person: add anyway</button></div>';
         document.getElementById('usim').onclick = ev => doSave(ev.currentTarget, true);
       });
@@ -2006,7 +2012,8 @@ function viewCandidate(id) {
 }
 /** Same as the Google code's: lower case, letters and single spaces only ("  Hasini!" → "hasini"). */
 /** "SIMILAR|id|name|company" from saveUser: someone nearly the same is already on the team. */
-function similarOf(msg) { const m = /^SIMILAR\|([^|]*)\|([^|]*)\|([^|]*)$/.exec(String(msg || '')); return m ? { id: m[1], name: m[2], company: m[3] } : null; }
+function similarOf(msg) { const m = /^SIMILAR\|([^|]*)\|([^|]*)\|([^|]*)(?:\|([^|]*))?$/.exec(String(msg || '')); return m ? { id: m[1], name: m[2], company: m[3], via: m[4] || '' } : null; }
+function similarText(sim) { return sim.via ? '"' + h(sim.via) + '" is one of <b>' + h(sim.name) + '</b>\'s other names (' + h(sim.company) + ').' : '<b>' + h(sim.name) + '</b> (' + h(sim.company) + ') is already on the team.'; }
 function normName(s) { return String(s || '').toLowerCase().replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim(); }
 function saved(nc, msg) { upsert(nc); toast(msg); if (S.view === 'cand' && S.params.id === nc.id) renderCandidate(nc, true); }
 
@@ -2355,7 +2362,8 @@ function renderCandidate(c, quiet) {
 
   // Summary: who, how they did, one-tap contact
   const summary = '<div class="profile">' + avatar(c, 'xl') + '<h1>' + h(c.full_name) + '</h1>' +
-    '<div class="muted small">Attended ' + fmt(c.attended_date) + ' · ' + (c.booker_name ? 'booked by <b>' + h(c.booker_name) + '</b> <span class="co ' + h(c.company) + '">' + h(c.company) + '</span>' : '<b>booker not confirmed</b>' + (c.booker_typed ? ' ("' + h(c.booker_typed) + '")' : '')) + '</div>' +
+    '<div class="muted small">Attended ' + fmt(c.attended_date) + ' · ' + (c.booker_name ? 'booked by <b>' + h(c.booker_name) + '</b> <span class="co ' + h(c.company) + '">' + h(c.company) + '</span>' +
+      (c.booker_typed && normName(c.booker_typed) !== normName(c.booker_name) ? ' <span class="small">(they said "' + h(c.booker_typed) + '")</span>' : '') : '<b>booker not confirmed</b>' + (c.booker_typed ? ' ("' + h(c.booker_typed) + '")' : '')) + '</div>' +
     (c.stars ? '<div class="stars-lg">' + '★'.repeat(Number(c.stars)) + '<span>' + '★'.repeat(5 - Number(c.stars)) + '</span></div>' : '') +
     (c.p_interesting ? '<div class="icebreak">💡 ' + h(c.p_interesting) + '</div>' : '') +
     '<div class="pills center-pills">' + nqPill(c) + statusPill(c) + (c._pending ? '<span class="pill">⏳ Syncing…</span>' : '') + '</div>' +
@@ -2513,7 +2521,7 @@ function renderCandidate(c, quiet) {
           const sim = similarOf(x.message), box = document.getElementById('nbksim');
           if (!sim) return toast(x.message);
           // Nearly the same name as someone already on the team: almost always the same person
-          box.innerHTML = '<div class="flag amber" style="margin-top:10px"><b>' + h(sim.name) + '</b> (' + h(sim.company) + ') is already on the team. Same person?' +
+          box.innerHTML = '<div class="flag amber" style="margin-top:10px">' + similarText(sim) + ' Same person?' +
             '<button class="btn block" id="nbkuse" style="margin-top:8px">✅ Yes: credit ' + h(sim.name) + '</button>' +
             '<button class="btn ghost sm block" id="nbkany" style="margin-top:6px">Different person: add ' + h(name) + '</button></div>';
           document.getElementById('nbkuse').onclick = ev => { busy(ev.currentTarget, true, 'Saving…'); call('reassignBooker', { id: c.id, booker_id: sim.id }).then(nc => saved(nc, 'Booker updated ✓ ' + sim.name)).catch(y => toast(y.message)); };

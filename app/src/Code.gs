@@ -70,7 +70,7 @@ const ADMINS = [
 const OUTCOMES = ['Academy booked', 'Thinking it over', 'No answer', 'Declined', 'Not suitable'];
 
 const SHEETS = {
-  Users: ['id', 'name', 'email', 'company', 'roles', 'active', 'created_at'],
+  Users: ['id', 'name', 'email', 'company', 'roles', 'active', 'created_at', 'aliases'],
   Candidates: [
     'id', 'created_at', 'attended_date', 'week_ending', 'resume_token',
     'full_name', 'mobile', 'email', 'over18', 'booker_typed', 'booker_id', 'booker_name', 'company',
@@ -356,7 +356,7 @@ function usersAll() {
   if (MEMO._users) return MEMO._users;
   const cache = CacheService.getScriptCache();
   if (MEMO._usersVer === undefined) MEMO._usersVer = PropertiesService.getScriptProperties().getProperty('USERS_VER') || '0';
-  const key = 'users_v2_' + MEMO._usersVer, hit = cache.get(key);
+  const key = 'users_v3_' + MEMO._usersVer, hit = cache.get(key);
   if (hit) return (MEMO._users = JSON.parse(hit));
   const rows = readTable('Users');
   try { cache.put(key, JSON.stringify(rows), 600); } catch (e) { /* too big to cache: fine */ }
@@ -372,7 +372,7 @@ function has(u, role) { const r = rolesOf(u); return r.indexOf('admin') >= 0 || 
 function isAdmin(u) { return rolesOf(u).indexOf('admin') >= 0; }
 /** Recruitment incentive: bookers only. Admins can book people, but they don't earn it. */
 function earnsIncentive(u) { return !isAdmin(u) && rolesOf(u).indexOf('booker') >= 0; }
-function publicUser(u) { return { id: u.id, name: u.name, email: u.email, company: u.company, roles: rolesOf(u), active: truthy(u.active) }; }
+function publicUser(u) { return { id: u.id, name: u.name, email: u.email, company: u.company, roles: rolesOf(u), active: truthy(u.active), aliases: aliasesOf(u) }; }
 
 function userFromToken(tok) {
   if (!tok) return null;
@@ -472,7 +472,7 @@ function verifyCode(req) {
 // ───────────────────────── PUBLIC (candidate) ─────────────────────────
 function publicConfig(req) {
   const bookers = usersAll().filter(u => truthy(u.active) && has(u, 'booker'))
-    .map(u => ({ id: u.id, name: u.name, company: u.company }))
+    .map(u => ({ id: u.id, name: u.name, company: u.company, aliases: aliasesOf(u) }))
     .sort((a, b) => a.name.localeCompare(b.name));
   return { today: todayStr(), bookers: bookers, rtw: RTW.map(r => ({ label: r[0], level: r[1] })) };
 }
@@ -489,7 +489,10 @@ function checkin(req) {
   if (!f.rtw) throw new Error('Please choose your right to work status.');
   if (!truthy(f.privacy_ok)) throw new Error('Please tick the privacy notice to continue.');
   const today = todayStr();
-  const booker = f.booker_id ? userById(f.booker_id) : null;
+  let booker = f.booker_id ? userById(f.booker_id) : null;
+  // Typed rather than picked ("Daniel Thompson", "Skye Promotions", "Hasini"): credit the booker it clearly means
+  const auto = !booker && f.booker_typed ? matchBooker(f.booker_typed) : null;
+  if (auto) booker = auto;
   // Repeat check (last 6 months + old form history) before taking the lock: those rows don't change today.
   const rep = findRepeat(readTable('Candidates'), mobile, email, today);
 
@@ -513,6 +516,7 @@ function checkin(req) {
     return { c: c, isNew: true };
   });
   if (res.isNew) log(null, 'checkin', res.c.id, name);
+  if (res.isNew && auto) log(null, 'auto_booker', res.c.id, '"' + res.c.booker_typed + '" → ' + auto.name);
   const nq = nonQualifier(res.c);
   if (res.isNew && nq) {
     // Straight to Jess + Rubal and the booker, so someone speaks to them before they leave
@@ -967,20 +971,22 @@ function saveUser(req, u) {
     if (isNew && all.some(o => normName(o.name) === normName(x.name))) throw new Error(cleanName(x.name) + ' is already on the team. Tap their name to edit them.');
     // "Ali Abass" when "Ali Abbas" (or "Ramis - Ali Abbas") is already there = the same person twice, splitting their credit
     const sim = isNew && !req.allowSimilar ? similarUser(x.name, all) : null;
-    if (sim) throw new Error('SIMILAR|' + sim.id + '|' + sim.name + '|' + sim.company);
+    if (sim) throw new Error('SIMILAR|' + sim.u.id + '|' + sim.u.name + '|' + sim.u.company + '|' + (sim.via || ''));
     let rec = x.id ? all.filter(o => o.id === x.id)[0] : null;
     if (x.id && !rec) throw new Error('User not found');
     oldEmail = rec ? normEmail(rec.email) : '';
     const renamed = rec && rec.name !== cleanName(x.name);
     if (rec && rec.id === u.id && (roles.indexOf('admin') < 0 || !x.active)) throw new Error("You can't remove your own admin access.");
     if (!rec) rec = { id: uid(), created_at: nowStr() };
+    if (x.aliases !== undefined) rec.aliases = checkAliases(x.aliases, rec, x.name, all);
+    else rec.aliases = rec.aliases || '';
     rec.name = cleanName(x.name); rec.email = email; rec.company = x.company;
     rec.roles = roles.join(','); rec.active = x.active ? 'TRUE' : '';
     rec._row ? writeRow('Users', rec) : appendRow('Users', rec);
     usersChanged();
     // Renamed: their candidates show the new name too
     if (renamed) readTable('Candidates').filter(c => c.booker_id === rec.id && c.booker_name !== rec.name).forEach(c => { c.booker_name = rec.name; writeRow('Candidates', c); });
-    log(u, 'user_save', '', rec.name + ' ' + rec.roles + ' active=' + rec.active);
+    log(u, 'user_save', '', rec.name + ' ' + rec.roles + ' active=' + rec.active + (rec.aliases ? ' · other names: ' + rec.aliases : ''));
     return publicUser(rec);
   });
   // New person, email just added, or email corrected: the setup steps land in the (new) inbox
@@ -990,17 +996,70 @@ function saveUser(req, u) {
 }
 
 function normName(s) { return String(s || '').toLowerCase().replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim(); }
+// ── A booker's other names: what candidates might say booked them (a team member, their company) ──
+/** Stored in Users.aliases as "Stones Recruitment | Daniel Thompson". */
+function aliasesOf(u) {
+  const seen = {};
+  return String(u.aliases || '').split(/\n|\||;/).map(x => x.replace(/\s+/g, ' ').trim().slice(0, 60))
+    .filter(x => { const k = normName(x); if (!k || seen[k]) return false; seen[k] = 1; return true; });
+}
+/** Every way to say it: their name, each other name, and each half of "Sophie - Skye Promotions". */
+function bookerKeys(u) {
+  const keys = [];
+  [u.name].concat(aliasesOf(u)).forEach(a => {
+    const k = normName(a); if (k && keys.indexOf(k) < 0) keys.push(k);
+    String(a).split(/\s+-\s+|\s*[\/(),&]\s*/).forEach(p => { const q = normName(p); if (q && keys.indexOf(q) < 0) keys.push(q); });
+  });
+  return keys;
+}
+/** The booker a typed name clearly means, or null. Tried in order: exact ("Daniel Thompson", "MSA", "Amin"), inside what they
+ *  typed ("Sophie from Skye Promotions"), first name ("Daniel"; "Amin Musa" → Amin), typo ("Linas Rakaukas"). Two bookers fit = nobody:
+ *  Jess / Rubal get the "No booker" alert and pick. */
+function matchBooker(typed) {
+  const t = normName(typed); if (!t) return null;
+  const tt = t.split(' '), w = k => k.split(' ');
+  const people = usersAll().filter(u => truthy(u.active) && has(u, 'booker')).map(u => ({ u: u, keys: bookerKeys(u) }));
+  const rules = [
+    k => k === t,
+    k => w(k).length >= 2 && w(k).every(x => tt.indexOf(x) >= 0),
+    k => w(k)[0] === tt[0] && (tt.length === 1 || w(k).length === 1),
+    k => Math.min(k.length, t.length) >= 6 && editDistance(k, t) <= 2,
+  ];
+  for (let i = 0; i < rules.length; i++) {
+    const hit = people.filter(p => p.keys.some(rules[i]));
+    if (hit.length === 1) return hit[0].u;
+    if (hit.length > 1) return null;
+  }
+  return null;
+}
+/** Tidy the other names an admin typed; refuse one that already credits someone else (one name = one booker). */
+function checkAliases(list, rec, name, all) {
+  const raw = Array.isArray(list) ? list.join('\n') : String(list || '');
+  const out = aliasesOf({ aliases: raw }).filter(a => normName(a) !== normName(name));
+  if (out.length > 30) throw new Error('That\'s a lot of other names: 30 at most.');
+  out.forEach(a => {
+    const k = normName(a);
+    all.filter(o => o.id !== rec.id && truthy(o.active)).forEach(o => {
+      if (normName(o.name) === k) throw new Error('"' + a + '" is ' + o.name + ' on the team. One name can only credit one booker.');
+      if (aliasesOf(o).some(x => normName(x) === k)) throw new Error('"' + a + '" is already one of ' + o.name + '\'s other names. One name can only credit one booker.');
+    });
+  });
+  return out.join(' | ');
+}
 /** Someone already on the team with nearly the same name: a typo ("Ali Abass" / "Ali Abbas") or the same name
  *  inside a longer one ("Ali Abbas" / "Ramis - Ali Abbas"). Exact matches are caught before this. */
 function similarUser(name, all) {
   const a = normName(name), at = a.split(' ');
-  return all.filter(o => {
+  const al = all.filter(o => aliasesOf(o).some(x => normName(x) === a))[0];
+  if (al) return { u: al, via: aliasesOf(al).filter(x => normName(x) === a)[0] };
+  const near = all.filter(o => {
     const b = normName(o.name), bt = b.split(' ');
     if (!b || a === b) return false;
     const short = at.length <= bt.length ? at : bt, long = short === at ? bt : at;
     if (short.length >= 2 && short.every(t => long.indexOf(t) >= 0)) return true;
     return Math.min(a.length, b.length) >= 6 && editDistance(a, b) <= 2;
-  })[0] || null;
+  })[0];
+  return near ? { u: near, via: '' } : null;
 }
 function editDistance(a, b) {
   let prev = []; for (let j = 0; j <= b.length; j++) prev[j] = j;
@@ -1014,12 +1073,12 @@ function editDistance(a, b) {
 /** Check-ins from the last 14 days with no booker, where the candidate typed this person's name (full name, or first name
  *  when nobody else on the team shares it): credit them to this booker. Returns how many were linked. */
 function linkTypedBookings(b, u) {
-  const full = normName(b.name), first = full.split(' ')[0];
-  const firstShared = usersAll().some(o => o.id !== b.id && truthy(o.active) && normName(o.name).split(' ')[0] === first);
-  const since = addDays(todayStr(), -14);
+  const since = addDays(todayStr(), -14), memo = {};
   const match = c => {
-    const t = normName(c.booker_typed);
-    return !c.booker_id && c.attended_date >= since && t && (t === full || (t === first && !firstShared));
+    if (c.booker_id || c.attended_date < since || !normName(c.booker_typed)) return false;
+    const k = normName(c.booker_typed);
+    if (!(k in memo)) { const m = matchBooker(c.booker_typed); memo[k] = m ? m.id : ''; }
+    return memo[k] === b.id;
   };
   if (!readTable('Candidates').some(match)) return 0;
   const n = withLock(() => {
@@ -1027,7 +1086,7 @@ function linkTypedBookings(b, u) {
     rows.forEach(c => { c.booker_id = b.id; c.booker_name = b.name; c.company = b.company; writeRow('Candidates', c); });
     return rows.length;
   });
-  if (n) log(u, 'link_bookings', '', n + ' check-in' + (n > 1 ? 's' : '') + ' typed "' + b.name.split(' ')[0] + '" → ' + b.name);
+  if (n) log(u, 'link_bookings', '', n + ' check-in' + (n > 1 ? 's' : '') + ' typed their name or other names → ' + b.name);
   return n;
 }
 
