@@ -1124,7 +1124,7 @@ function quickRow(c, kind) {
   if (kind === 'noanswer') return '<div class="quick" data-for="' + h(c.id) + '"><a href="tel:' + h(c.mobile) + '">' + icon('phone', 16) + 'Call again</a>' +
     '<a class="q-wa" data-na="1" href="' + h(msgUrl(c, msgNoAnswer(c))) + '" target="_blank" rel="noopener">' + icon('chat', 16) + chanName(c) + '</a><button type="button" class="q-go" data-out="1">Update</button></div>';
   if (kind === 'remind') return '<div class="quick" data-for="' + h(c.id) + '"><a href="tel:' + h(c.mobile) + '">' + icon('phone', 16) + 'Call</a>' +
-    '<a class="q-wa" href="' + h(msgUrl(c, msgDay1Reminder(c))) + '" target="_blank" rel="noopener">' + icon('chat', 16) + 'Remind</a></div>';
+    '<a class="q-wa" href="' + h(msgUrl(c, msgDay1Reminder(c))) + '" target="_blank" rel="noopener">' + icon('chat', 16) + 'Remind</a><button type="button" class="q-go" data-yes="1">Said Yes 👍</button></div>';
   if (kind === 'rebook') return '<div class="quick" data-for="' + h(c.id) + '"><a href="tel:' + h(c.mobile) + '">' + icon('phone', 16) + 'Call</a>' +
     '<a class="q-wa" href="' + h(msgUrl(c, msgRebook(c))) + '" target="_blank" rel="noopener">' + icon('chat', 16) + chanName(c) + '</a><button type="button" class="q-go" data-out="1">Rebook</button></div>';
   if (kind === 'offer') return '<div class="quick" data-for="' + h(c.id) + '"><a class="q-go" data-send="offer" data-via="' + (c.no_whatsapp ? 'sms' : 'whatsapp') + '" href="' + h(msgUrl(c, msgAcademy(c))) + '" target="_blank" rel="noopener">🎉 Send Day 1 details ' + (c.no_whatsapp ? 'by text' : 'on WhatsApp') + '</a></div>';
@@ -1632,6 +1632,9 @@ function drawChase(quiet) {
   bindItems(page);
   page.querySelectorAll('[data-cand]').forEach(b => { b.onclick = () => nav('cand', { id: b.dataset.cand }, true); });
   const ga = page.querySelector('#goAcademy'); if (ga) ga.onclick = () => nav('academy', {}, true);
+  page.querySelectorAll('.quick [data-yes]').forEach(b => {
+    b.onclick = () => { const c = r.items.filter(x => x.id === b.closest('.quick').dataset.for)[0]; if (c) saidYes(c, b).then(() => { if (S.view === 'chase') drawChase(true); }); };
+  });
   // Sent the Day 1 text from here → they move to "not confirmed" straight away
   page.querySelectorAll('[data-send]').forEach(a => a.addEventListener('click', () => {
     const c = r.items.filter(x => x.id === a.closest('.quick').dataset.for)[0];
@@ -1699,17 +1702,21 @@ function chaseAdmin(list, today, due, late, count) {
 }
 
 // ───── Day 1 list: everyone booked onto the BA Academy, who's confirmed, who turned up ─────
-/** The Day 1 reminder: short and snappy. Jess / Rubal send it to every starter at 10:00 on the day (Day 1 tab → Send reminders). */
+/** "Monday 5th October" */
+function fmtOrd(ymd) { const d = D(ymd), n = d.getUTCDate(), v = n % 100, sx = ['th', 'st', 'nd', 'rd']; return DAYS_LONG[d.getUTCDay()] + ' ' + n + (sx[(v - 20) % 10] || sx[v] || sx[0]) + ' ' + MONTHS_LONG[d.getUTCMonth()]; }
+/** The Day 1 reminder (Jess / Rubal's wording). Jess / Rubal send it to every starter at 10:00 on the day (Day 1 tab → Send reminders).
+ *  Fills in: first name, today / tomorrow + the date, their company's Google Maps pin, the sender's full name. */
 function msgDay1Reminder(c) {
   const days = Math.round((D(c.academy_date) - D(S.me.today)) / 86400000);
-  const when = days === 0 ? 'TODAY' : days === 1 ? 'TOMORROW' : fmtLong(c.academy_date);
-  return 'Hey ' + c.first_name + '! 👋\n\n' +
-    'Your *BA Academy Day 1* is *' + when + '* 🎉\n' +
-    '⏰ *1:30pm*\n' +
-    '📍 ' + (S.me.address || 'Automotive House, Grays Place, Slough SL2 5AF') + '\n' +
-    '🪪 Bring photo ID + your share code\n\n' +
-    (c.academy_confirmed_at || !c.welcome_url ? 'See you there 🔥' : '👇 Tap *CONFIRM* so we know you\'re coming:\n' + c.welcome_url) + '\n\n' +
-    '– ' + S.me.user.name.split(' ')[0] + ', ' + brandOf(c);
+  const when = (days === 0 ? 'today, ' : days === 1 ? 'tomorrow, ' : 'on ') + fmtOrd(c.academy_date);
+  return 'Hi ' + c.first_name + ',\n\n' +
+    'Hope you are well.\n\n' +
+    'Just a quick reminder that you’re due to start your training ' + when + ' at 1:30 PM 🕜, with Juss Marketing & Link Marketing\n\n' +
+    '📍 Address:\n2nd Floor East, Automotive House,\nGrays Place, Slough, SL2 5AF.\n' + OFFICES[c.company === 'JUSS' ? 'JUSS' : 'LINK'].maps + '\n\n' +
+    'Please aim to arrive 10 minutes early ⏰ and let us know if you have any questions 😊\n\n' +
+    'Kindly reply ‘Yes’ to confirm your attendance ✅\n' +
+    'We look forward to seeing you! 👋\n\n' +
+    'Thanks\nKind Regards\n' + S.me.user.name + '\nIn Association with Juss Marketing and Link Marketing';
 }
 /** Day 1: a tab for admins (Jess / Rubal tap through it on the day), a page for bookers (their own starters). */
 function viewAcademy(quiet) {
@@ -1729,7 +1736,8 @@ function drawAcademy(r, quiet) {
   const label = x => { const n = Math.round((D(x) - D(today)) / 86400000); return fmtLong(x) + (n === 0 ? ' · TODAY' : n === 1 ? ' · TOMORROW' : ''); };
   const row = c => {
     const started = c.academy_date <= today;
-    const pills = (c.academy_confirmed_at ? '<span class="pill green">✅ Confirmed</span>' : '<span class="pill amber">⏳ Not confirmed</span>') +
+    const pills = (c.academy_confirmed_at ? '<span class="pill green">✅ Confirmed</span>' : '<span class="pill amber">⏳ Not confirmed</span>' +
+        (c.day1_status ? '' : '<button class="pill yes" data-yes="' + h(c.id) + '">👍 They replied Yes</button>')) +
       (c.offer_sent_at || started ? '' : '<span class="pill red">Day 1 text not sent</span>') +
       (remindedToday(c) && !c.day1_status ? '<span class="pill blue">📲 Reminded ' + h(String(c.day1_reminded_at).slice(11, 16)) + '</span>' : '') +
       (c.day1_status === 'arrived' ? '<span class="pill green">🎓 Arrived</span>' : c.day1_status === 'no_show' ? '<span class="pill red">❌ No-show</span>' : '');
@@ -1755,12 +1763,19 @@ function drawAcademy(r, quiet) {
     (r.items.length ? '' : empty('🎓', 'Nobody booked onto the Academy yet.')) +
     upcoming.map(block).join('') +
     (past.length ? '<div class="datehead" style="margin-top:22px">Last week</div>' + past.map(block).join('') : '') +
-    '<p class="hint">' + (admin ? '📲 Send reminders: a short WhatsApp to every starter, signed by you (Jess / Rubal: you get a nudge at 10:00 on the day). 📄 Print list: the sign-in sheet for the room. ' : '💬 Remind sends them a short WhatsApp (or text) with the time, address and what to bring. ') +
+    '<p class="hint">' + (admin ? '📲 Send reminders: the Day 1 reminder to every starter, signed by you (Jess / Rubal: you get a nudge at 10:00 on the day). 👍 When someone replies Yes, tap "They replied Yes". 📄 Print list: the sign-in sheet for the room. ' : '💬 Remind sends them the Day 1 reminder (time, address, Maps pin). 👍 When they reply Yes, tap "They replied Yes". ') +
     'On Day 1, tap Arrived or No-show for everyone: that\'s your show-up rate.</p>', quiet, !admin);
   page.querySelectorAll('.trow[data-cand] .main').forEach(el => { el.onclick = () => nav('cand', { id: el.parentNode.dataset.cand }, true); });
   page.querySelectorAll('[data-remall]').forEach(b => { b.onclick = () => day1Sheet(b.dataset.remall); });
   page.querySelectorAll('[data-pdf]').forEach(b => { b.onclick = () => { const x = b.dataset.pdf; savePdf(day1Pdf(x, r.items.filter(c => c.academy_date === x)), 'Day1-' + x + '.pdf'); }; });
   page.querySelectorAll('[data-rem1]').forEach(a => a.addEventListener('click', () => markReminded(r.items.filter(x => x.id === a.dataset.rem1)[0], a.dataset.via)));
+  page.querySelectorAll('[data-yes]').forEach(b => {
+    b.onclick = e => {
+      e.stopPropagation();
+      const c = r.items.filter(x => x.id === b.dataset.yes)[0]; if (!c) return;
+      saidYes(c, b).then(() => drawAcademy(r, true));
+    };
+  });
   page.querySelectorAll('[data-d1]').forEach(b => {
     b.onclick = () => {
       const c = r.items.filter(x => x.id === b.dataset.id)[0]; if (!c) return;
@@ -1770,6 +1785,12 @@ function drawAcademy(r, quiet) {
         .catch(e => { busy(b, false); toast(e.message); });
     };
   });
+}
+/** They replied "Yes" to the reminder on WhatsApp (instead of tapping CONFIRM): count them as confirmed in the app too. */
+function saidYes(c, btn) {
+  busy(btn, true, '…');
+  return call('markConfirmed', { id: c.id }).then(nc => { Object.assign(c, nc); upsert(nc); toast('✅ ' + c.first_name + ' confirmed'); })
+    .catch(e => { busy(btn, false); toast(/Unknown action/.test(e.message) ? 'Paste the new Google code (Code.gs) first.' : e.message); });
 }
 function markReminded(c, via) {
   if (!c) return;
