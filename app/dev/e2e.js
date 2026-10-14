@@ -1047,6 +1047,26 @@ async function fillEval(p) {
   const prTok = await loginApi('priya@example.com');
   const prView = await api(prTok, 'getCandidate', { id: tara.id });
   ok(!prView.limited && prView.mobile === '07700900801', 'she logs in and Tara is already hers, in full');
+  // Near-duplicate names: the same person added twice splits their credit (live: "Ramis - Ali Abbas" + "Ramis - Ali Abass")
+  const zed = await ci({ full_name: 'Zed Typo', mobile: '07700900803', email: 'zed@example.com', booker_id: '', booker_typed: 'Priya Sharmah' });
+  const tryAdd = async name => { try { await api(admin, 'saveUser', { user: { name: name, email: '', company: 'JUSS', roles: ['booker'], active: true } }); return 'added'; } catch (e) { return e.message; } };
+  ok(new RegExp('SIMILAR\\|' + priya.id + '\\|Priya Sharma\\|JUSS$').test(await tryAdd('Priya Sharmah')), 'adding "Priya Sharmah" when "Priya Sharma" is on the team is stopped (a typo = the same person twice)');
+  ok(/SIMILAR\|/.test(await tryAdd('Ramis - Priya Sharma')) && /SIMILAR\|/.test(await tryAdd('Sharma Priya')), '…and so is the same name inside a longer one ("Ramis - Priya Sharma") or the other way round');
+  await ap.goto(APP + 'index.html?c=' + zed.id); await ap.waitForSelector('#rb');
+  await ap.selectOption('#rb', '__new');
+  await ap.click('#nbksave'); await ap.waitForSelector('#nbkuse');
+  ok(/Priya Sharma \(JUSS\) is already on the team\. Same person\?/.test(await ap.innerText('#nbksim')), '"＋ Someone not on the list…" with a near-match asks: "Priya Sharma (JUSS) is already on the team. Same person?"');
+  await ap.locator('#sec-adm').screenshot({ path: SHOTS + '/19c-same-person.png' });
+  await ap.click('#nbkuse'); await ap.waitForSelector('text=Booker updated');
+  ok((await api(admin, 'getCandidate', { id: zed.id })).booker_id === priya.id && !(await api(admin, 'listUsers')).users.some(x => x.name === 'Priya Sharmah'),
+    '"✅ Yes: credit Priya Sharma" → Zed is credited to her, no duplicate created');
+  const twin = await api(admin, 'saveUser', { allowSimilar: true, user: { name: 'Priya Sharmah', email: '', company: 'LINK', roles: ['booker'], active: true } });
+  ok(twin.name === 'Priya Sharmah', 'a genuinely different person can still be added ("Different person: add anyway")');
+  await api(admin, 'deleteUser', { id: twin.id });
+  const priyaNow = (await api(admin, 'listUsers')).users.find(x => x.id === priya.id);
+  await api(admin, 'saveUser', { user: Object.assign({}, priyaNow, { name: 'Priya Sharma-Khan' }) });
+  ok((await api(admin, 'getCandidate', { id: tara.id })).booker_name === 'Priya Sharma-Khan', 'renaming someone updates "booked by" on all their candidates');
+  await api(admin, 'saveUser', { user: Object.assign({}, priyaNow, { name: 'Priya Sharma' }) });
 
   // ── 9c. Logging in: someone added mid-session can log in straight away; an admin can show them a code ──
   console.log('login codes');

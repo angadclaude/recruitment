@@ -1537,9 +1537,9 @@ function editUser(u) {
         '<p class="small">On their phone: open the app → <b>' + (r.door === 'admin' ? 'Admin login' : 'BA login') + '</b> → type <b>' + h(r.email) + '</b> → tap <b>Already have a code?</b> → type this code → Log in.</p></div>';
     }).catch(ex => { busy(uc, false); showErr(document.getElementById('uerr'), /Unknown action/.test(ex.message) ? 'Paste the new Google code (Code.gs) first.' : ex.message); });
   };
-  document.getElementById('usave').onclick = e => {
-    const btn = e.currentTarget; busy(btn, true);
-    call('saveUser', { user: { id: u ? u.id : '', name: document.getElementById('un').value, email: document.getElementById('ue').value, company: chipVal(uf, 'company'), roles: chipVals(uf, 'roles'), active: document.getElementById('ua').checked } })
+  const doSave = (btn, allowSimilar) => {
+    busy(btn, true);
+    call('saveUser', { allowSimilar: !!allowSimilar, user: { id: u ? u.id : '', name: document.getElementById('un').value, email: document.getElementById('ue').value, company: chipVal(uf, 'company'), roles: chipVals(uf, 'roles'), active: document.getElementById('ua').checked } })
       .then(saved => {
         S.users = (S.users || []).filter(o => o.id !== saved.id).concat([saved]).sort((a, b) => a.name.localeCompare(b.name));
         if (saved.id === S.me.user.id) { S.me.user = saved; }
@@ -1553,8 +1553,16 @@ function editUser(u) {
           return;
         }
         back();
-      }).catch(x2 => { busy(btn, false); showErr(document.getElementById('uerr'), x2.message); });
+      }).catch(x2 => {
+        busy(btn, false);
+        const sim = similarOf(x2.message), err = document.getElementById('uerr');
+        if (!sim) return showErr(err, x2.message);
+        err.innerHTML = '<div class="flag amber">' + h(sim.name) + ' (' + h(sim.company) + ') is already on the team. Same person? Tap them in the Team list to edit them instead.' +
+          '<button class="btn ghost sm block" id="usim" style="margin-top:8px">Different person: add anyway</button></div>';
+        document.getElementById('usim').onclick = ev => doSave(ev.currentTarget, true);
+      });
   };
+  document.getElementById('usave').onclick = e => doSave(e.currentTarget);
   const del = document.getElementById('udel');
   if (del) {
     let armed = false;
@@ -1996,6 +2004,8 @@ function viewCandidate(id) {
     .catch(e => { if (S.viewId === vid) paint('', '<div class="err">' + h(e.message) + '</div>', false, true); });
 }
 /** Same as the Google code's: lower case, letters and single spaces only ("  Hasini!" → "hasini"). */
+/** "SIMILAR|id|name|company" from saveUser: someone nearly the same is already on the team. */
+function similarOf(msg) { const m = /^SIMILAR\|([^|]*)\|([^|]*)\|([^|]*)$/.exec(String(msg || '')); return m ? { id: m[1], name: m[2], company: m[3] } : null; }
 function normName(s) { return String(s || '').toLowerCase().replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim(); }
 function saved(nc, msg) { upsert(nc); toast(msg); if (S.view === 'cand' && S.params.id === nc.id) renderCandidate(nc, true); }
 
@@ -2419,7 +2429,7 @@ function renderCandidate(c, quiet) {
       '<div id="nbk" hidden><label class="q">Their name</label><input type="text" id="nbkn" value="' + h(c.booker_id ? '' : c.booker_typed) + '" placeholder="First and last name">' +
       '<label class="q">Company</label>' + chips('nbkco', ['LINK', 'JUSS'], 'LINK') +
       '<div class="help" style="margin-top:6px">Added to the team by name: credited on the bulletin and incentive now. Add their email in Team later so they can log in.</div>' +
-      '<button class="btn block" id="nbksave" style="margin-top:10px">Add and credit them</button></div></div>';
+      '<button class="btn block" id="nbksave" style="margin-top:10px">Add and credit them</button><div id="nbksim"></div></div></div>';
   }
 
   // Sections, in the order this person works through them
@@ -2485,11 +2495,11 @@ function renderCandidate(c, quiet) {
       busy(btn, true, 'Saving…');
       call('reassignBooker', { id: c.id, booker_id: v }).then(nc => saved(nc, 'Booker updated ✓')).catch(x => { busy(btn, false); toast(x.message); });
     };
-    document.getElementById('nbksave').onclick = e => {
-      const btn = e.currentTarget, name = document.getElementById('nbkn').value.trim();
+    const addNew = (btn, allowSimilar) => {
+      const name = document.getElementById('nbkn').value.trim();
       if (name.split(/\s+/).length < 2) return toast('Add their first and last name');
       busy(btn, true, 'Adding…');
-      call('saveUser', { user: { id: '', name: name, email: '', company: chipVal(nbk, 'nbkco') || 'LINK', roles: ['booker'], active: true } })
+      call('saveUser', { allowSimilar: !!allowSimilar, user: { id: '', name: name, email: '', company: chipVal(nbk, 'nbkco') || 'LINK', roles: ['booker'], active: true } })
         .then(u2 => {
           S.users = (S.users || []).filter(o => o.id !== u2.id).concat([u2]).sort((a, b) => a.name.localeCompare(b.name)); saveCache();
           return call('reassignBooker', { id: c.id, booker_id: u2.id }).then(nc => {
@@ -2497,8 +2507,19 @@ function renderCandidate(c, quiet) {
             const more = Math.max(0, (u2.linked || 0) - (self ? 1 : 0));
             saved(nc, '✓ ' + u2.name.split(' ')[0] + ' added and credited' + (more ? ' (+' + more + ' more check-in' + (more > 1 ? 's' : '') + ' that typed their name)' : ''));
           });
-        }).catch(x => { busy(btn, false); toast(x.message); });
+        }).catch(x => {
+          busy(btn, false);
+          const sim = similarOf(x.message), box = document.getElementById('nbksim');
+          if (!sim) return toast(x.message);
+          // Nearly the same name as someone already on the team: almost always the same person
+          box.innerHTML = '<div class="flag amber" style="margin-top:10px"><b>' + h(sim.name) + '</b> (' + h(sim.company) + ') is already on the team. Same person?' +
+            '<button class="btn block" id="nbkuse" style="margin-top:8px">✅ Yes: credit ' + h(sim.name) + '</button>' +
+            '<button class="btn ghost sm block" id="nbkany" style="margin-top:6px">Different person: add ' + h(name) + '</button></div>';
+          document.getElementById('nbkuse').onclick = ev => { busy(ev.currentTarget, true, 'Saving…'); call('reassignBooker', { id: c.id, booker_id: sim.id }).then(nc => saved(nc, 'Booker updated ✓ ' + sim.name)).catch(y => toast(y.message)); };
+          document.getElementById('nbkany').onclick = ev => addNew(ev.currentTarget, true);
+        });
     };
+    document.getElementById('nbksave').onclick = e => addNew(e.currentTarget);
   }
 }
 

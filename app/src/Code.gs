@@ -965,15 +965,21 @@ function saveUser(req, u) {
     const all = readTable('Users');
     if (email && all.some(o => o.email.toLowerCase() === email && o.id !== x.id)) throw new Error('That email is already used.');
     if (isNew && all.some(o => normName(o.name) === normName(x.name))) throw new Error(cleanName(x.name) + ' is already on the team. Tap their name to edit them.');
+    // "Ali Abass" when "Ali Abbas" (or "Ramis - Ali Abbas") is already there = the same person twice, splitting their credit
+    const sim = isNew && !req.allowSimilar ? similarUser(x.name, all) : null;
+    if (sim) throw new Error('SIMILAR|' + sim.id + '|' + sim.name + '|' + sim.company);
     let rec = x.id ? all.filter(o => o.id === x.id)[0] : null;
     if (x.id && !rec) throw new Error('User not found');
     oldEmail = rec ? normEmail(rec.email) : '';
+    const renamed = rec && rec.name !== cleanName(x.name);
     if (rec && rec.id === u.id && (roles.indexOf('admin') < 0 || !x.active)) throw new Error("You can't remove your own admin access.");
     if (!rec) rec = { id: uid(), created_at: nowStr() };
     rec.name = cleanName(x.name); rec.email = email; rec.company = x.company;
     rec.roles = roles.join(','); rec.active = x.active ? 'TRUE' : '';
     rec._row ? writeRow('Users', rec) : appendRow('Users', rec);
     usersChanged();
+    // Renamed: their candidates show the new name too
+    if (renamed) readTable('Candidates').filter(c => c.booker_id === rec.id && c.booker_name !== rec.name).forEach(c => { c.booker_name = rec.name; writeRow('Candidates', c); });
     log(u, 'user_save', '', rec.name + ' ' + rec.roles + ' active=' + rec.active);
     return publicUser(rec);
   });
@@ -984,6 +990,27 @@ function saveUser(req, u) {
 }
 
 function normName(s) { return String(s || '').toLowerCase().replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim(); }
+/** Someone already on the team with nearly the same name: a typo ("Ali Abass" / "Ali Abbas") or the same name
+ *  inside a longer one ("Ali Abbas" / "Ramis - Ali Abbas"). Exact matches are caught before this. */
+function similarUser(name, all) {
+  const a = normName(name), at = a.split(' ');
+  return all.filter(o => {
+    const b = normName(o.name), bt = b.split(' ');
+    if (!b || a === b) return false;
+    const short = at.length <= bt.length ? at : bt, long = short === at ? bt : at;
+    if (short.length >= 2 && short.every(t => long.indexOf(t) >= 0)) return true;
+    return Math.min(a.length, b.length) >= 6 && editDistance(a, b) <= 2;
+  })[0] || null;
+}
+function editDistance(a, b) {
+  let prev = []; for (let j = 0; j <= b.length; j++) prev[j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[b.length];
+}
 /** Check-ins from the last 14 days with no booker, where the candidate typed this person's name (full name, or first name
  *  when nobody else on the team shares it): credit them to this booker. Returns how many were linked. */
 function linkTypedBookings(b, u) {
