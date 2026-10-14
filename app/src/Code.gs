@@ -71,16 +71,20 @@ const OUTCOMES = ['Academy booked', 'Thinking it over', 'No answer', 'Declined',
 
 /** New starter onboarding (admins): Databyte, then the "Your Brand Ambassador Journey Begins!" email (Rubal's wording, LINK / JUSS). */
 const ONBOARD = {
-  DATABYTE_URL: 'https://uk.databyte.live/cloud/users/list',
+  DATABYTE_URL: 'https://uk.databyte.live/onboarding/dashboard/list',
   FIELDIQ_URL: 'https://www.tfo.group/fieldiqdownload',
   LINK: {
     brand: 'Link Marketing', colour: '#F3901D', phone: '073110 27272 / 074789 60080', maps: 'https://maps.app.goo.gl/2wmckhXokt3KhCyE9', day3: true,
     preCoaching: ['Link Marketing BA Academy - Pre Coaching Module - Fill in form', 'https://forms.office.com/pages/responsepage.aspx?id=QT4blMNFxEuaVSUMKK6uNT5ZuU1A_UdDsSk-r6KY6olUQ0JEWFU0NDU1MEI5REZZRzY3WEc1SEVaTC4u&route=shorturl'],
     client: ['NDCS', 'https://www.ndcs.org.uk/'], magazine: ['Link Magazine', 'https://linkmagflip-74ibv4pf.manus.space/'],
+    playbook: ['Link FR Playbook', 'https://link-marketing-playbook.replit.app/'],
+    from: 'juss@linkmarketing.org.uk',  // welcome emails only ever go from Jess's or Rubal's inbox (either can send either brand)
   },
   JUSS: {
     brand: 'JUSS Marketing', colour: '#E4613F', phone: '077823 77774', maps: 'https://maps.app.goo.gl/n2wTFyzScHLr1Voy9', day3: false,
     client: ['Hello Fresh', 'http://www.hellofresh.co.uk/'], website: ['JUSS Marketing', 'https://jussmarketing.co.uk/'], magazine: ['JUSS Magazine', 'https://jmomagazine-gjfukcw6.manus.space/'],
+    playbook: ['JUSS HF Playbook', 'https://hf-playbook.replit.app/'],
+    from: 'rubal@jussmarketing.co.uk',
   },
 };
 
@@ -698,6 +702,7 @@ function shape(c, u) {
   o.non_qual = nonQualifier(c);
   o.deadline = outcomeDeadline(c.attended_date);
   o.first_name = c.full_name.split(' ')[0];
+  if (isAdmin(u)) o.recruit_source = recruitSourceOf(c);
   return o;
 }
 function getC(id) {
@@ -719,6 +724,7 @@ function me(req, u) {
     links: { checkin: publicLink('checkin'), eval: publicLink('eval'), staff: staffUrl('') },
     signoff: CONFIG.ACADEMY_SIGNOFF,
     thanksTeam: thanksTeam(),
+    welcomeFrom: isAdmin(u) ? welcomeFromInfo() : null,
   };
 }
 
@@ -1523,17 +1529,18 @@ function longDate(ymd) {
   return DAYS_LONG[d.getUTCDay()] + ' ' + n + (sx[(v - 20) % 10] || sx[v] || sx[0]) + ' ' + MONTHS_LONG[d.getUTCMonth()];
 }
 function onboardable(c) { return c.outcome === 'Academy booked' && c.admin_status !== 'pending' && c.admin_status !== 'rejected' && /^\d{4}-\d{2}-\d{2}$/.test(c.academy_date || ''); }
-/** Step 1: they're on Databyte (or undo), and Office / Personal Recruitment. */
+/** Office Recruitment = booked by the office (Jess, Rubal: any admin) or nobody; Personal Recruitment = booked by any booker. */
+function recruitSourceOf(c) {
+  const b = c.booker_id ? userById(c.booker_id) : null;
+  return b && !isAdmin(b) ? 'Personal Recruitment' : 'Office Recruitment';
+}
+/** Step 1: they're on Databyte (or undo). The recruitment source is saved as it stood then. */
 function onboardStep(req, u) {
   if (!isAdmin(u)) throw new Error('Admin only');
   return withLock(() => {
     const c = getC(req.id);
     if (!onboardable(c)) throw new Error('Only people booked onto the Academy are onboarded.');
-    if (req.source !== undefined) {
-      if (['Office Recruitment', 'Personal Recruitment'].indexOf(req.source) < 0) throw new Error('Office or Personal Recruitment');
-      c.recruit_source = req.source;
-    }
-    if (req.databyte !== undefined) { c.databyte_at = req.databyte ? nowStr() : ''; c.databyte_by = req.databyte ? u.name : ''; }
+    if (req.databyte !== undefined) { c.databyte_at = req.databyte ? nowStr() : ''; c.databyte_by = req.databyte ? u.name : ''; c.recruit_source = req.databyte ? recruitSourceOf(c) : ''; }
     writeRow('Candidates', c);
     if (req.databyte !== undefined) log(u, req.databyte ? 'databyte_added' : 'databyte_undone', c.id, c.recruit_source || '');
     return shape(c, u);
@@ -1560,7 +1567,7 @@ function onboardEmail(c, u) {
   const pill = t => '<span style="display:inline-block;padding:7px 14px;border-radius:999px;background:' + T.tint + ';color:' + T.ink + ';font-weight:800;font-size:15px">' + t + '</span>';
   const big = t => '<div style="font-size:24px;font-weight:900;letter-spacing:-.01em;margin:0 0 10px">' + t + '</div>';
   const step = (n, t) => '<tr><td style="vertical-align:top;width:34px;padding:8px 0"><span style="display:inline-block;width:26px;height:26px;line-height:26px;border-radius:50%;text-align:center;background:' + T.solid + ';color:#fff;font-weight:800;font-size:13px">' + n + '</span></td><td style="padding:8px 0;' + F + 'font-size:15px;line-height:1.45">' + t + '</td></tr>';
-  const pre = '<div style="display:none;max-height:0;overflow:hidden;opacity:0">You\'re in, ' + esc(first) + ' 🎉 Day 1: ' + esc(longDate(d1)) + ' @ 1:30 PM. Download FieldIQ before you come in.</div>';
+  const pre = '<div style="display:none;max-height:0;overflow:hidden;opacity:0">You\'re in, ' + esc(first) + ' 🎉 Day 1: ' + esc(longDate(d1)) + ' @ 1:30 PM. Download FieldIQ and read your ' + esc(o.playbook[0]) + ' before you come in.</div>';
 
   const html = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"></head>' +
     '<body style="margin:0;padding:0;background:#F5F1EC">' + pre +
@@ -1580,7 +1587,9 @@ function onboardEmail(c, u) {
     card('<table role="presentation" width="100%" cellpadding="0" cellspacing="0">' +
       step(1, '<b>Download FieldIQ</b> and complete your vetting form before your first day.') +
       (o.preCoaching ? step(2, 'Complete the short online <b>Pre-Coaching Module</b>: around <b>15–20 minutes</b> of short videos and quick questions. It’s important it’s done before ' + DAYS_LONG[weekday(d1)] + ', so you’re fully prepared for coaching.') : '') +
-      '</table>' + bigBtn('📲 Download FieldIQ', ONBOARD.FIELDIQ_URL) + (o.preCoaching ? bigBtn('📝 Open the Pre-Coaching Module', o.preCoaching[1]) : '')) +
+      step(o.preCoaching ? 3 : 2, 'Read your <b>' + esc(o.playbook[0]) + '</b>, so you walk in on Day 1 already knowing how we work.') +
+      '</table>' + bigBtn('📲 Download FieldIQ', ONBOARD.FIELDIQ_URL) + (o.preCoaching ? bigBtn('📝 Open the Pre-Coaching Module', o.preCoaching[1]) : '') +
+      bigBtn('📘 Open my ' + esc(o.playbook[0]), o.playbook[1])) +
     // Day 1
     head('📅', 'Day 1 · Induction') +
     card(big(esc(longDate(d1))) + pill('⏰ 1:30pm – 6:00pm') +
@@ -1612,6 +1621,7 @@ function onboardEmail(c, u) {
     'Product training and sales coaching begins ' + longDate(d1) + ' @ 1:30 PM.\n\n' +
     'BEFORE DAY 1\n1. Download FieldIQ and complete your vetting form before your first day: ' + ONBOARD.FIELDIQ_URL + '\n' +
     (o.preCoaching ? '2. Complete the Pre-Coaching Module (15-20 minutes): ' + o.preCoaching[1] + '\n' : '') +
+    (o.preCoaching ? '3' : '2') + '. Read your ' + o.playbook[0] + ': ' + o.playbook[1] + '\n' +
     '\nDAY 1 · INDUCTION: ' + longDate(d1) + ', 1:30pm (finish 5:30-6:00pm)\n' + CONFIG.OFFICE_ADDRESS + ' · ' + o.maps + '\n' +
     'DAY 2 · SALES COACHING: ' + longDate(d2) + ', 1:00pm (finish 5:30-6:00pm)\n' + (o.day3 ? 'Day 3 onwards: 10:00am - 8:30pm\n' : '') +
     '\nBRING: notepad and pen, photo ID, your right-to-work share code\n' +
@@ -1624,24 +1634,64 @@ function onboardPreview(req, u) {
   if (!isAdmin(u)) throw new Error('Admin only');
   const c = getC(req.id);
   if (!onboardable(c)) throw new Error('Only people booked onto the Academy are onboarded.');
-  return onboardEmail(c, u);
+  const s = welcomeSender(c, u);
+  return Object.assign(onboardEmail(c, s), { from: s.name + ' <' + s.email + '>', notReady: welcomeNotReady(s) });
 }
-/** Sent from the app (as "Jess Grace | Link Marketing"); replies go to whoever sent it, who also gets a copy. Databyte first: FieldIQ only works once they're on it. */
+/** Goes from Jess's or Rubal's address (ONBOARD.*.from), signed by them: replies go straight to them and they get a copy.
+ *  Databyte first: FieldIQ only works once they're on it. */
 function onboardSend(req, u) {
   if (!isAdmin(u)) throw new Error('Admin only');
   const c = getC(req.id);
   if (!onboardable(c)) throw new Error('Only people booked onto the Academy are onboarded.');
   if (!c.databyte_at) throw new Error('Add them to Databyte first: FieldIQ only works once they\'re on Databyte.');
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(c.email || '')) throw new Error('No valid email for ' + c.full_name + '.');
-  const m = onboardEmail(c, u), brand = ONBOARD[c.company === 'JUSS' ? 'JUSS' : 'LINK'].brand;
-  MailApp.sendEmail({ to: m.to, subject: m.subject, htmlBody: m.html, body: m.text, name: u.name + ' | ' + brand, replyTo: u.email, bcc: u.email });
+  const s = welcomeSender(c, u), bad = welcomeNotReady(s);
+  if (bad) throw new Error(bad);
+  const m = onboardEmail(c, s), brand = ONBOARD[c.company === 'JUSS' ? 'JUSS' : 'LINK'].brand;
+  const opts = { htmlBody: m.html, name: s.name + ' | ' + brand, bcc: s.email };
+  if (s.email !== scriptEmail()) opts.from = s.email;
+  GmailApp.sendEmail(m.to, m.subject, m.text, opts);
   return withLock(() => {
     const x = getC(req.id);
     x.onboard_email_at = nowStr(); x.onboard_email_by = u.name;
     writeRow('Candidates', x);
-    log(u, 'welcome_email', x.id, m.to);
+    log(u, 'welcome_email', x.id, m.to + ' from ' + s.email);
     return shape(x, u);
   });
+}
+
+// ───── Welcome emails only ever go from Jess's or Rubal's address (ONBOARD.*.from), never this script's own ─────
+// One-time, by whoever owns this script: Gmail → Settings → Accounts → "Send mail as" → add both, then run setupWelcomeEmail.
+/** You, if you're on the recruitment team (Jess / Rubal: either can send either brand), else the brand's (LINK: Jess, JUSS: Rubal). */
+function welcomeSender(c, u) {
+  const team = thanksTeam(), mine = Object.keys(team).filter(k => team[k].id === u.id)[0], k = mine || (c.company === 'JUSS' ? 'JUSS' : 'LINK');
+  return { co: k, name: team[k].name || (k === 'JUSS' ? 'Rubal Oshan' : 'Jess Grace'), email: ONBOARD[k].from };
+}
+function scriptEmail() { try { return String(Session.getEffectiveUser().getEmail()).toLowerCase(); } catch (e) { return ''; } }
+/** Addresses this script's Gmail can send as: its own + its "Send mail as" addresses (checked every 10 minutes). */
+function sendableFrom() {
+  const cache = CacheService.getScriptCache(), hit = cache.get('send_as');
+  if (hit) return JSON.parse(hit);
+  let list = [];
+  try { list = [scriptEmail()].concat(GmailApp.getAliases().map(x => String(x).toLowerCase())); } catch (e) { console.error(e); }
+  cache.put('send_as', JSON.stringify(list), 600);
+  return list;
+}
+function welcomeNotReady(s) {
+  return sendableFrom().indexOf(s.email) >= 0 ? '' : 'Can\'t send as ' + s.email + ' yet. Angad: add it in Gmail → Settings → Accounts → "Send mail as" (SETUP.md, "Welcome emails"), then try again in 10 minutes.';
+}
+/** For the admin cards: who each brand's welcome email comes from, and whether it's ready. */
+function welcomeFromInfo() {
+  const team = thanksTeam(), can = sendableFrom(), out = {};
+  ['LINK', 'JUSS'].forEach(k => { out[k] = { name: team[k] ? team[k].name : '', email: ONBOARD[k].from, ready: can.indexOf(ONBOARD[k].from) >= 0 }; });
+  return out;
+}
+/** Run once from the Apps Script editor (after adding the "Send mail as" addresses): approves Gmail and says what's ready. */
+function setupWelcomeEmail() {
+  CacheService.getScriptCache().remove('send_as');
+  const can = sendableFrom();
+  console.log('This script sends as: ' + can.join(', '));
+  [ONBOARD.LINK.from, ONBOARD.JUSS.from].forEach(a => console.log(can.indexOf(a) >= 0 ? '✅ ' + a + ' ready' : '❌ ' + a + ': add it in Gmail → Settings → Accounts → "Send mail as", then run this again'));
 }
 
 function firstNames(list, max) {

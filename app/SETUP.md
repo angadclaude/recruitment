@@ -187,19 +187,28 @@ Someone stuck later (email slow, in Spam, or "too many codes")? Same thing: Team
 ## 🚀 New starter onboarding (Jess / Rubal, admins only)
 When a booker books someone onto the Academy (or an admin approves a 🔴 booking), Jess (LINK) or Rubal (JUSS) gets **"🚀 New starter to onboard: Adham Soliman · Booked by Abdullahi for Monday 19th October"**. Tap it to open their page, which has the **🚀 Onboard** card at the top:
 
-1. **Add to Databyte:** tap **Open Databyte ↗**, then Organize → Users → Manage → ＋ New user.
-   - Copy each box across: first name, last name, email, phone (07700 900300).
-   - **Recruitment source** is picked for you: *Personal Recruitment* if they said a BA referred them, otherwise *Office Recruitment*. Tap to change it. The recruiter is shown too.
-   - Tap **✅ Added to Databyte**.
-2. **Welcome email:** **📧 Preview & send** shows the exact email ("LINK / JUSS Marketing - Your Brand Ambassador Journey Begins!"): their name, Day 1 date, Day 1 / Day 2 times, FieldIQ, pre-coaching (LINK), client, magazine, map and contact number, signed by you. Tap **Send**.
+1. **Add to Databyte:** tap **Open Databyte ↗** (the onboarding dashboard) and add them as a new starter.
+   - Copy each box across: first name, last name, email, phone (07700 900300), recruitment source.
+   - **Recruitment source is a rule, not a choice:** booked by any booker → *Personal Recruitment*; booked by Jess / Rubal (any admin) or no booker → *Office Recruitment*. Wrong? Fix the booker on their page and it follows.
+   - Tap **✅ Added to Databyte**. (There's no Databyte API, so this step stays copy-and-paste.)
+2. **Welcome email:** **📧 Preview & send** shows the exact email ("LINK / JUSS Marketing - Your Brand Ambassador Journey Begins!"): their name, Day 1 date, Day 1 / Day 2 times, FieldIQ, pre-coaching (LINK), their Playbook (Link FR Playbook / JUSS HF Playbook), client, magazine, map and contact number. Tap **Send**.
    - It's locked until step 1, because FieldIQ only works once they're on Databyte.
-   - It goes from the app with your name ("Rubal Oshan | JUSS Marketing"). Replies come to your email, and you get a copy.
+   - **It only ever goes from Jess's or Rubal's address**, signed by them: Jess sends from `juss@linkmarketing.org.uk`, Rubal from `rubal@jussmarketing.co.uk` (either can send either brand). Anyone else pressing Send (Angad, Satpal) sends from the brand's person: LINK → Jess, JUSS → Rubal. Replies go to that address, and it gets a copy.
+   - The card and preview say who it's from. If the app can't send as that address yet, Send stays off: it never falls back to another address.
+
+### Welcome emails: one-time setup (whoever owns the Apps Script, usually Angad, on a computer)
+The app sends through the script owner's Gmail, so that Gmail has to be allowed to send as both addresses:
+1. In that Gmail: ⚙️ → **See all settings** → **Accounts** → **Send mail as** → **Add another email address**.
+2. Name `Jess Grace`, email `juss@linkmarketing.org.uk`, untick **Treat as an alias** → **Next**. Google emails a code to that inbox: Jess reads it to you → **Verify**.
+3. Do the same for `Rubal Oshan`, `rubal@jussmarketing.co.uk`. If Gmail asks for an SMTP server (a different Google account): server `smtp.gmail.com`, port `587`, username `rubal@jussmarketing.co.uk`, password = an **app password** Rubal makes at myaccount.google.com → Security → App passwords (needs 2-Step Verification on). Then the code goes to Rubal's inbox.
+4. In Apps Script: pick **setupWelcomeEmail** in the function menu → **Run** → approve the Gmail permission. The log shows ✅ ready (or ❌ and what's missing) for each address.
+5. **Deploy → Manage deployments → ✏️ → New version** (as for any code change). The app picks it up within 10 minutes.
 
 **Day 1 tab:** **🚀 To onboard · N** lists everyone still to do. Each starter shows *Not on Databyte / Welcome email to send / Onboarded*.
 
 **Who sees it:** admins only. Bookers never see the card, and the Google side refuses them too.
 
-**Changing the email:** the links, numbers and wording are in `ONBOARD` and `onboardEmail` at the top of `Code.gs`. The Sheet keeps `recruit_source`, `databyte_at/by` and `onboard_email_at/by`.
+**Changing the email:** the links, numbers, playbooks, sending addresses (`from`) and wording are in `ONBOARD` and `onboardEmail` at the top of `Code.gs`. The Sheet keeps `recruit_source`, `databyte_at/by` and `onboard_email_at/by`.
 
 ## Bookers' other names (team members, their company)
 Some bookers recruit under other names: a team member ("Daniel Thompson"), their company ("Stones Recruitment"), or both ("Sophie - Skye Promotions"). Candidates type whichever name they know.

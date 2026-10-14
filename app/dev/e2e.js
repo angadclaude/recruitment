@@ -854,22 +854,35 @@ async function fillEval(p) {
   ok(/Add them to Databyte first/.test(tooSoon), 'the welcome email can\'t go before they\'re on Databyte (FieldIQ wouldn\'t work yet)');
   await ap.goto(APP + 'index.html?c=' + adham.id); await ap.waitForSelector('#onb');
   const onbTxt = await ap.innerText('#onb');
-  ok(/First name\s*Adham/.test(onbTxt) && /Last name\s*Soliman/.test(onbTxt) && /adham@example\.com/.test(onbTxt) && /07700 900300/.test(onbTxt) && (await ap.$$('#onb [data-copy]')).length === 4,
-    'candidate page (admin): "🚀 Onboard Adham": first name, last name, email, phone (as 07700 900300), each with Copy');
-  ok(await ap.$eval('#onb .chips[data-name=rsrc] .chip.on', b => b.textContent) === 'Personal Recruitment' && /Recruiter: Abdullahi Ahmed/.test(onbTxt),
-    'Adham said a BA referred him → "Personal Recruitment" picked, recruiter Abdullahi Ahmed');
+  ok(/First name\s*Adham/.test(onbTxt) && /Last name\s*Soliman/.test(onbTxt) && /adham@example\.com/.test(onbTxt) && /07700 900300/.test(onbTxt) && /Recruitment source\s*Personal Recruitment/.test(onbTxt) && (await ap.$$('#onb [data-copy]')).length === 5,
+    'candidate page (admin): "🚀 Onboard Adham": first name, last name, email, phone (as 07700 900300), recruitment source, each with Copy');
+  ok(/Booked by Abdullahi Ahmed \(a booker\) → Personal Recruitment/.test(onbTxt) && !(await ap.$('#onb .chips')),
+    'recruitment source is a rule, not a choice: booked by a booker → "Personal Recruitment"');
+  const srcOf = async id => (await post('/dev/eval', { js: `recruitSourceOf({ booker_id: '${id}' })` })).out;
+  ok(await srcOf(abd.id) === 'Personal Recruitment' && await srcOf(jessId) === 'Office Recruitment' && await srcOf(rubalId) === 'Office Recruitment' && await srcOf('') === 'Office Recruitment',
+    'the rule: any booker → Personal Recruitment; Jess / Rubal (the office) or no booker → Office Recruitment');
+  ok(/📤 From Rubal Oshan · rubal@jussmarketing\.co\.uk not set up yet/i.test(onbTxt) && (await ap.getAttribute('#onb a[href*="databyte"]', 'href')) === 'https://uk.databyte.live/onboarding/dashboard/list',
+    'step 2 says who it comes from (Angad onboarding a JUSS starter → Rubal\'s address), flagged until Gmail can send as it; Databyte opens its onboarding dashboard');
   ok(await ap.$('#obsend[disabled]'), 'step 2 (welcome email) is locked until they\'re on Databyte');
   await ap.locator('#onb').screenshot({ path: SHOTS + '/33-onboard.png' });
   await ap.click('#dbdone'); await ap.waitForSelector('#obsend:not([disabled])');
   const adOnb = await api(admin, 'getCandidate', { id: adham.id });
   ok(!!adOnb.databyte_at && adOnb.databyte_by === 'Angad Oshan' && adOnb.recruit_source === 'Personal Recruitment', '"✅ Added to Databyte" saved (who, when, Personal Recruitment) and step 2 unlocks');
+  await ap.click('#obsend'); await ap.waitForSelector('.obframe'); await ap.waitForSelector('#oberr .err');
+  ok(/Can't send as rubal@jussmarketing\.co\.uk yet/.test(await ap.innerText('#oberr')) && await ap.$('#obgo[disabled]') && /From Rubal Oshan <rubal@jussmarketing\.co\.uk>/.test(await ap.innerText('#obfrom')),
+    'until the app\'s Gmail can send as Rubal: the preview says so and Send stays off (never falls back to another address)');
+  let notReady = null; try { await api(admin, 'onboardSend', { id: adham.id }); } catch (e) { notReady = e.message; }
+  ok(/Can't send as rubal@jussmarketing\.co\.uk yet/.test(notReady), 'the server refuses too');
+  await post('/dev/eval', { js: "globalThis.__sendAs = ['rubal@jussmarketing.co.uk', 'juss@linkmarketing.org.uk']; CacheService.getScriptCache().remove('send_as'); 1" });
+  await ap.click('#obcancel'); await ap.waitForSelector('.sheet-back', { state: 'detached' });
   await ap.click('#obsend'); await ap.waitForSelector('.obframe');
   await ap.waitForFunction(() => document.querySelector('#obgo') && !document.querySelector('#obgo').disabled);
   const prevHtml = await ap.$eval('.obframe', f => f.srcdoc);
   ok(await ap.textContent('#obsubj') === 'JUSS Marketing - Your Brand Ambassador Journey Begins!' && /Hi Adham,/.test(prevHtml) && /Monday 19th October @ 1:30 PM/.test(prevHtml) &&
     /fieldiqdownload/.test(prevHtml) && /Hello Fresh/.test(prevHtml) && /077823 77774/.test(prevHtml) && /You're in, Adham 🎉/.test(prevHtml) && /Tuesday 20th October/.test(prevHtml) &&
-    /1:30pm – 6:00pm/.test(prevHtml) && /1:00pm – 6:00pm/.test(prevHtml) && /img\/logo-juss\.png/.test(prevHtml) && /See my Week 1 plan \+ CONFIRM/.test(prevHtml) && /<b>Angad Oshan<\/b>/.test(prevHtml),
-    'preview: Rubal\'s JUSS email in the congratulations-page look ("You\'re in, Adham 🎉", JUSS logo, Day 1 / Day 2 cards, FieldIQ, Week 1 plan + CONFIRM, Hello Fresh, JUSS number, signed by the sender)');
+    /1:30pm – 6:00pm/.test(prevHtml) && /1:00pm – 6:00pm/.test(prevHtml) && /img\/logo-juss\.png/.test(prevHtml) && /See my Week 1 plan \+ CONFIRM/.test(prevHtml) && /<b>Rubal Oshan<\/b>/.test(prevHtml) &&
+    /Read your <b>JUSS HF Playbook<\/b>/.test(prevHtml) && /href="https:\/\/hf-playbook\.replit\.app\/"[^>]*>📘 Open my JUSS HF Playbook/.test(prevHtml),
+    'preview: Rubal\'s JUSS email in the congratulations-page look ("You\'re in, Adham 🎉", JUSS logo, Day 1 / Day 2 cards, FieldIQ, JUSS HF Playbook, Week 1 plan + CONFIRM, Hello Fresh, JUSS number, signed Rubal: it\'s from her address)');
   // The whole email as the candidate sees it (images from this dev server instead of GitHub Pages)
   fs.writeFileSync(`${SHOTS}/welcome-email-juss.html`, prevHtml);
   const ep = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
@@ -881,10 +894,17 @@ async function fillEval(p) {
   const mbOnb = (await getJson('/dev/mail')).length;
   await ap.click('#obgo'); await ap.waitForSelector('#onb .pill.green:has-text("Onboarded")');
   const wm = (await getJson('/dev/mail')).slice(mbOnb).find(m => m.to === 'adham@example.com');
-  ok(wm && wm.subject === 'JUSS Marketing - Your Brand Ambassador Journey Begins!' && wm.name === 'Angad Oshan | JUSS Marketing' && wm.replyTo === 'angad@linkmarketing.org.uk' && wm.bcc === 'angad@linkmarketing.org.uk' && /FieldIQ/.test(wm.body),
-    'sent from the app as "Angad Oshan | JUSS Marketing": replies go to the sender, who gets a copy');
+  ok(wm && wm.via === 'gmail' && wm.subject === 'JUSS Marketing - Your Brand Ambassador Journey Begins!' && wm.from === 'rubal@jussmarketing.co.uk' && wm.name === 'Rubal Oshan | JUSS Marketing' &&
+    wm.bcc === 'rubal@jussmarketing.co.uk' && !wm.replyTo && /FieldIQ/.test(wm.body) && /hf-playbook\.replit\.app/.test(wm.body),
+    'sent from rubal@jussmarketing.co.uk as "Rubal Oshan | JUSS Marketing" (replies go to Rubal, who gets a copy), even though Angad pressed Send');
   ok((await api(admin, 'getCandidate', { id: adham.id })).onboard_email_by === 'Angad Oshan', 'saved: welcome email sent (who, when)');
   const lp = await api(admin, 'onboardPreview', { id: jasId });
+  ok(lp.from === 'Jess Grace <juss@linkmarketing.org.uk>' && !lp.notReady && /<b>Jess Grace<\/b>/.test(lp.html) && /Read your <b>Link FR Playbook<\/b>/.test(lp.html) &&
+    /href="https:\/\/link-marketing-playbook\.replit\.app\/"[^>]*>📘 Open my Link FR Playbook/.test(lp.html) && /3\. Read your Link FR Playbook: https:\/\/link-marketing-playbook\.replit\.app\//.test(lp.text),
+    'LINK starter → from Jess (juss@linkmarketing.org.uk), signed Jess, with the Link FR Playbook as step 3 (after FieldIQ and the Pre-Coaching Module)');
+  const jessPrev = await api(await loginApi('jess@linkmarketing.org.uk'), 'onboardPreview', { id: adham.id });
+  ok(jessPrev.from === 'Jess Grace <juss@linkmarketing.org.uk>' && /<b>Jess Grace<\/b>/.test(jessPrev.html) && /^JUSS Marketing - /.test(jessPrev.subject),
+    'Jess or Rubal can send either brand: Jess sending a JUSS starter\'s email → from her address, signed by her');
   ok(lp.subject === 'Link Marketing - Your Brand Ambassador Journey Begins!' && /NDCS/.test(lp.html) && /Pre-Coaching Module/.test(lp.html) && /073110 27272/.test(lp.html) && /Day 3 onwards/.test(lp.html) && /img\/logo-link\.png/.test(lp.html) && /Link Magazine/.test(lp.html),
     'LINK version: NDCS, the pre-coaching module, Day 3 timings, Link Magazine, LINK numbers');
   await ap.goto(APP + 'index.html?c=academy'); await ap.waitForSelector('.onbq');
