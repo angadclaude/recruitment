@@ -1048,12 +1048,15 @@ async function fillEval(p) {
   const prView = await api(prTok, 'getCandidate', { id: tara.id });
   ok(!prView.limited && prView.mobile === '07700900801', 'she logs in and Tara is already hers, in full');
   // Near-duplicate names: the same person added twice splits their credit (live: "Ramis - Ali Abbas" + "Ramis - Ali Abass")
-  const zed = await ci({ full_name: 'Zed Typo', mobile: '07700900803', email: 'zed@example.com', booker_id: '', booker_typed: 'Priya Sharmah' });
+  const zedTypo = await ci({ full_name: 'Zed Typo', mobile: '07700900804', email: 'zedt@example.com', booker_id: '', booker_typed: 'Priya Sharmah' });
+  ok((await api(admin, 'getCandidate', { id: zedTypo.id })).booker_id === priya.id, 'a check-in typed "Priya Sharmah" (typo) is credited to Priya Sharma straight away');
+  const zed = await ci({ full_name: 'Zed Unsure', mobile: '07700900803', email: 'zed@example.com', booker_id: '', booker_typed: 'Not sure' });
   const tryAdd = async name => { try { await api(admin, 'saveUser', { user: { name: name, email: '', company: 'JUSS', roles: ['booker'], active: true } }); return 'added'; } catch (e) { return e.message; } };
-  ok(new RegExp('SIMILAR\\|' + priya.id + '\\|Priya Sharma\\|JUSS$').test(await tryAdd('Priya Sharmah')), 'adding "Priya Sharmah" when "Priya Sharma" is on the team is stopped (a typo = the same person twice)');
+  ok(new RegExp('SIMILAR\\|' + priya.id + '\\|Priya Sharma\\|JUSS\\|$').test(await tryAdd('Priya Sharmah')), 'adding "Priya Sharmah" when "Priya Sharma" is on the team is stopped (a typo = the same person twice)');
   ok(/SIMILAR\|/.test(await tryAdd('Ramis - Priya Sharma')) && /SIMILAR\|/.test(await tryAdd('Sharma Priya')), '…and so is the same name inside a longer one ("Ramis - Priya Sharma") or the other way round');
   await ap.goto(APP + 'index.html?c=' + zed.id); await ap.waitForSelector('#rb');
   await ap.selectOption('#rb', '__new');
+  await ap.fill('#nbkn', 'Priya Sharmah');
   await ap.click('#nbksave'); await ap.waitForSelector('#nbkuse');
   ok(/Priya Sharma \(JUSS\) is already on the team\. Same person\?/.test(await ap.innerText('#nbksim')), '"＋ Someone not on the list…" with a near-match asks: "Priya Sharma (JUSS) is already on the team. Same person?"');
   await ap.locator('#sec-adm').screenshot({ path: SHOTS + '/19c-same-person.png' });
@@ -1068,12 +1071,65 @@ async function fillEval(p) {
   ok((await api(admin, 'getCandidate', { id: tara.id })).booker_name === 'Priya Sharma-Khan', 'renaming someone updates "booked by" on all their candidates');
   await api(admin, 'saveUser', { user: Object.assign({}, priyaNow, { name: 'Priya Sharma' }) });
 
+  // ── 9d. A booker's other names (team members, their company): typed at check-in → credited automatically ──
+  console.log('other names');
+  const userOf = async id => (await api(admin, 'listUsers', {})).users.find(x => x.id === id);
+  const saveAl = (usr, al) => api(admin, 'saveUser', { user: Object.assign({}, usr, { aliases: al }) });
+  const fzAl = await saveAl(await userOf(fiza.id), ['Daniel Thompson', 'Sophie - Skye Promotions', '  ', 'daniel thompson', 'Fiza Iqbal']);
+  ok(JSON.stringify(fzAl.aliases) === '["Daniel Thompson","Sophie - Skye Promotions"]', 'other names saved and tidied (blanks, repeats and their own name dropped): ' + fzAl.aliases.join(' · '));
+  ok((await api('', 'publicConfig')).bookers.find(x => x.id === fiza.id).aliases.includes('Daniel Thompson'), 'they\'re in the check-in booker list');
+  let clash = null; try { await saveAl(await userOf(abd.id), ['Daniel Thompson']); } catch (e) { clash = e.message; }
+  ok(/"Daniel Thompson" is already one of Fiza Iqbal's other names/.test(clash), 'one name can only credit one booker: "Daniel Thompson is already one of Fiza Iqbal\'s other names"');
+  await saveAl(await userOf(abd.id), ['Ali Milad']);
+  await saveAl(await userOf(mo.id), ['Ramis - Ali Abbas']);
+  const before9d = (await getJson('/dev/pushes')).length;
+  let alN = 10;
+  const alc = (n, typed) => ci({ full_name: 'Alias ' + n, mobile: '077009008' + (alN++), email: 'al' + n.toLowerCase() + '@example.com', booker_id: '', booker_typed: typed });
+  const al1 = await alc('One', 'Daniel Thompson'), al2 = await alc('Two', 'Sophie from Skye Promotions'), al3 = await alc('Three', 'daniel'),
+    al4 = await alc('Four', 'Daniel Thomson'), al5 = await alc('Fiver', 'Ali'), al6 = await alc('Sixteen', 'Ali Abbas');
+  const bOf = async c => (await api(admin, 'getCandidate', { id: c.id })).booker_id;
+  ok(await bOf(al1) === fiza.id, 'typed "Daniel Thompson" (one of Fiza\'s other names) → credited to Fiza straight away');
+  ok(await bOf(al2) === fiza.id && await bOf(al3) === fiza.id && await bOf(al4) === fiza.id, '…and "Sophie from Skye Promotions", "daniel" and the typo "Daniel Thomson"');
+  ok(!(await bOf(al5)) && await bOf(al6) === mo.id, '"Ali" could be Abdullahi\'s Ali Milad or Mo\'s Ali Abbas → nobody guessed; "Ali Abbas" → Mo');
+  const p9d = (await getJson('/dev/pushes')).slice(before9d);
+  ok(p9d.filter(p => p.body.include_aliases.external_id.includes(fiza.id) && /just checked in$/.test(p.body.headings.en)).length === 4 && p9d.some(p => /^❓ No booker: Alias Fiver/.test(p.body.headings.en)),
+    'Fiza gets her 4 "just checked in" alerts; the unclear one goes to Jess + Rubal as "❓ No booker"');
+  ok((await getJson('/dev/sheet?name=Log')).some(r => r[2] === 'auto_booker' && /"Daniel Thompson" → Fiza Iqbal/.test(r[4])), 'each automatic match is in the Log ("Daniel Thompson" → Fiza Iqbal)');
+  const al7 = await alc('Seventeen', 'Zuzanna Sroda');
+  ok(!(await bOf(al7)), 'typed "Zuzanna Sroda" (nobody\'s other name yet) → no booker');
+  await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button[data-tab=team]'); await ap.click('.tabbar button[data-tab=team]');
+  await ap.click('.item[data-u="' + mo.id + '"]'); await ap.waitForSelector('#ual');
+  ok(await ap.inputValue('#ual') === 'Ramis - Ali Abbas', 'Team → Mo: "Other names they use" shows what he has');
+  await ap.fill('#ual', 'Ramis - Ali Abbas\nZuzanna Sroda');
+  await shot(ap, '32-other-names', true);
+  await ap.click('#usave'); await ap.waitForSelector('text=1 check-in that typed their name or other names now credited');
+  ok(await bOf(al7) === mo.id, 'admin adds "Zuzanna Sroda" to Mo in the app → the check-in that typed it earlier is credited to Mo there and then');
+  await ap.waitForSelector('.item[data-u="' + mo.id + '"]');
+  ok(/also: Ramis - Ali Abbas · Zuzanna Sroda/.test(await ap.innerText('.item[data-u="' + mo.id + '"]')), 'the Team list shows everyone\'s other names');
+  await ap.goto(APP + 'index.html?c=' + al1.id); await ap.waitForSelector('.profile h1');
+  ok(/booked by Fiza Iqbal.*\(they said "Daniel Thompson"\)/.test(await ap.innerText('#page')), 'candidate page: "booked by Fiza Iqbal (they said "Daniel Thompson")" so admins can see why');
+  let simA = null; try { await api(admin, 'saveUser', { user: { name: 'Daniel Thompson', email: '', company: 'LINK', roles: ['booker'], active: true } }); } catch (e) { simA = e.message; }
+  ok(new RegExp('SIMILAR\\|' + fiza.id + '\\|Fiza Iqbal\\|LINK\\|Daniel Thompson').test(simA), 'adding "Daniel Thompson" as a new person → "Daniel Thompson is one of Fiza Iqbal\'s other names. Same person?"');
+  const cx = await browser.newContext(PHONE); const cxp = await cx.newPage();
+  await cxp.goto(APP + 'checkin.html'); await cxp.waitForSelector('#f');
+  await cxp.fill('#bkq', 'Skye');
+  await cxp.waitForSelector('#sg button[data-name="Sophie - Skye Promotions"]');
+  ok(/Sophie - Skye Promotions\s*LINK/.test(await cxp.innerText('#sg')), 'check-in: typing "Skye" suggests "Sophie - Skye Promotions"');
+  await cxp.click('#sg button[data-name="Sophie - Skye Promotions"]');
+  ok(/Sophie - Skye Promotions/.test(await cxp.innerText('.picked')) && await coOf(cxp) === 'LINK', '…picking it switches to Fiza\'s LINK colours');
+  await cxp.fill('[name=full_name]', 'Picked Alias'); await cxp.fill('[name=mobile]', '07700900899'); await cxp.fill('[name=email]', 'pickal@example.com');
+  await cxp.click('.chips[data-name=over18] .chip:has-text("Yes")'); await cxp.selectOption('[name=rtw]', 'British or Irish citizen'); await cxp.check('[name=privacy_ok]');
+  await cxp.click('#go'); await cxp.waitForSelector('text=You\'re checked in, Picked!');
+  const pa = (await api(admin, 'search', { q: 'Picked Alias' })).items[0];
+  ok(pa.booker_id === fiza.id && pa.booker_typed === 'Sophie - Skye Promotions', '…and the check-in is Fiza\'s (it remembers they picked "Sophie - Skye Promotions")');
+  await cx.close();
+
   // ── 9c. Logging in: someone added mid-session can log in straight away; an admin can show them a code ──
   console.log('login codes');
   // The race that hit Monish: a check-in read the team list just before he was added, then saved that old list back afterwards
   await post('/dev/eval', { js: "MEMO = {}; globalThis.__ver0 = PropertiesService.getScriptProperties().getProperty('USERS_VER') || '0'; globalThis.__stale = JSON.stringify(readTable('Users')); 1" });
   const monish = await api(admin, 'saveUser', { user: { name: 'Monish Somalai', email: 'monish_m4@yahoo.com', company: 'LINK', roles: ['booker', 'presenter'], active: true } });
-  await post('/dev/eval', { js: "CacheService.getScriptCache().put('users_v2_' + __ver0, __stale, 600); 1" });
+  await post('/dev/eval', { js: "CacheService.getScriptCache().put('users_v3_' + __ver0, __stale, 600); 1" });
   const mb3 = (await getJson('/dev/mail')).length;
   await api('', 'requestCode', { email: ' Monish_M4@yahoo.com ' });
   ok((await getJson('/dev/mail')).slice(mb3).some(m => m.to === 'monish_m4@yahoo.com' && /login code/.test(m.subject)),

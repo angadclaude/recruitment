@@ -184,6 +184,20 @@ Someone stuck later (email slow, in Spam, or "too many codes")? Same thing: Team
 - **Same person twice?** If the name is nearly the same as someone already on the team (a typo like "Ali Abass" for "Ali Abbas", or the same name inside a longer one like "Ali Abbas" and "Ramis - Ali Abbas"), the app asks *"… is already on the team. Same person?"*. Tap **✅ Yes: credit them**. Only add a new person if they really are someone else, because two entries split their incentive and bulletin credit.
 - **Renaming someone** (Team → tap them → name) updates "booked by" on all their candidates.
 
+## Bookers' other names (team members, their company)
+Some bookers recruit under other names: a team member ("Daniel Thompson"), their company ("Stones Recruitment"), or both ("Sophie - Skye Promotions"). Candidates type whichever name they know.
+
+- **Set them:** Team → tap the booker → **Other names they use**, one per line → **Save**. Check-ins from the last 2 weeks that typed any of them are credited to that booker straight away ("Saved ✓ 3 check-ins … now credited").
+- **At check-in:** the other names appear as suggestions, so typing "Skye" offers "Sophie - Skye Promotions". If a candidate just types a name, the app credits the booker it clearly means:
+  - an exact name ("Daniel Thompson", "MSA", "Amin");
+  - a name inside what they typed ("Sophie from Skye Promotions");
+  - a first name only one booker uses ("Daniel"; "Amin Musa" → Amin);
+  - a small typo ("Linas Rakaukas").
+- **If two bookers fit** (e.g. "Ali": Ali Milad or Ali Abbas), nobody is guessed. Jess and Rubal get the **❓ No booker** alert and pick.
+- **Credit follows automatically:** bulletin, recruitment incentive, the booker's alerts, Chase. The candidate page shows *(they said "Daniel Thompson")* so you can see why, and the Log has an `auto_booker` line for each one.
+- **One name, one booker:** a name already used by someone else is refused. Adding a new person whose name is someone's other name asks *"Same person?"*.
+- Stored in the **Users** tab, column `aliases`, separated by `|`.
+
 ## Not on WhatsApp?
 Every WhatsApp button has **Not on WhatsApp? 📱 Text · ✉️ Email** under it: the same message, sent from your own phone's texts or email. Once someone texts or emails a candidate, the app remembers **📵 Not on WhatsApp**, so the next person (e.g. the booker sending Day 1 details) gets a **Text** button instead.
 
