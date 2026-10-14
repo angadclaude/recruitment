@@ -1,4 +1,4 @@
-window.APP_VERSION = 'ecd7a46e';
+window.APP_VERSION = 'a7c14724';
 
 (function () {
 'use strict';
@@ -679,6 +679,7 @@ function fetchWeek(we, extra) {
     if (pend.length) b.items = b.items.map(x => pend.indexOf(x.id) >= 0 ? (findCand(x.id) || x) : x);
     S.data[b.weekEnding] = { items: b.items, pay: b.pay, at: Date.now() };
     if (b.users) S.users = b.users;
+    if (typeof b.chase === 'number' && b.chase !== S.chaseN) { S.chaseN = b.chase; paintTabs(); }
     if (b.me) {
       const old = S.me;
       S.me = b.me;
@@ -704,9 +705,11 @@ function want(we) {
 }
 function findCand(id) {
   for (const k of Object.keys(S.data)) { const c = S.data[k].items.filter(x => x.id === id)[0]; if (c) return c; }
-  return null;
+  return S.chase ? S.chase.items.filter(x => x.id === id)[0] || null : null;
 }
+function chaseKeep(c) { if (S.chase) { const i = S.chase.items.findIndex(x => x.id === c.id); if (i >= 0) S.chase.items[i] = Object.assign({ leak: S.chase.items[i].leak }, c); } }
 function upsert(c) {
+  chaseKeep(c);
   const d = S.data[c.week_ending];
   if (d) {
     const i = d.items.findIndex(x => x.id === c.id);
@@ -784,7 +787,7 @@ function renderLogin() {
       door = r.wrongDoor; store.set('door', door); drawDoor();
       return verify(email, door === 'admin' ? 'You\'re an admin, so you\'re in through Admin login 👍' : 'You\'re a BA, so you\'re in through BA login 👍');
     }
-    S.token = r.token; store.set('tok', r.token); store.del('cache'); store.del('codeSent'); S.data = {}; S.users = null; startStaff();
+    S.token = r.token; store.set('tok', r.token); store.del('cache'); store.del('codeSent'); S.data = {}; S.users = null; S.chase = null; S.chaseN = 0; startStaff();
     if (note) toast(note);
   });
   btn.onclick = () => {
@@ -816,9 +819,10 @@ function boot() {
     let tries = 0;
     const open = () => { if (S.view !== 'today') return; if (S.data[weekEndingOf(S.day)] || tries++ > 40) thanksSheet(); else setTimeout(open, 250); };
     if (S.tab === 'today') setTimeout(open, 300);
-  } else if (BOOT.cid === 'chase' || BOOT.cid === 'academy') {
-    const v = BOOT.cid; BOOT.cid = ''; nav(S.tab, {}, false);
-    if (v === 'academy' || isAdmin()) nav(v, {}, true);
+  } else if (BOOT.cid === 'chase') {
+    BOOT.cid = ''; if (isAdmin() || isBooker()) S.tab = 'chase'; nav(S.tab, {}, false);
+  } else if (BOOT.cid === 'academy') {
+    BOOT.cid = ''; nav(S.tab, {}, false); nav('academy', {}, true);
   } else if (BOOT.cid) { const id = BOOT.cid; BOOT.cid = ''; nav('cand', { id: id }, true); } else nav(S.tab, {}, false);
   stopTimer();
   S.lastPoll = Date.now();
@@ -880,15 +884,15 @@ window.addEventListener('popstate', e => {
 });
 
 function nav(view, params, push) {
-  if (['today', 'mine', 'all', 'pay', 'team'].indexOf(view) >= 0) S.tab = view;
+  if (['today', 'mine', 'chase', 'all', 'pay', 'team'].indexOf(view) >= 0) S.tab = view;
   S.view = view; S.params = params || {}; S.viewId++;
   hist(push ? 'push' : 'replace', { v: view, p: S.params });
   render();
 }
 function hist(kind, st) { try { kind === 'push' ? history.pushState(st, '') : history.replaceState(st, ''); S.hist = kind === 'push' ? (S.hist || 0) + 1 : (S.hist || 0); } catch (e) { /* not allowed in this frame */ } }
-function back() { if (S.hist > 0 && history.state && ['cand', 'user', 'slideqr', 'bulletin', 'alerts', 'chase', 'academy'].indexOf(history.state.v) >= 0) { S.hist--; history.back(); } else nav(S.tab); }
+function back() { if (S.hist > 0 && history.state && ['cand', 'user', 'slideqr', 'bulletin', 'alerts', 'academy'].indexOf(history.state.v) >= 0) { S.hist--; history.back(); } else nav(S.tab); }
 function go(tab) { nav(tab, {}, false); }
-function titleOf(v) { return { today: 'Today', mine: 'My candidates', all: 'All candidates', pay: 'Recruitment incentive', team: 'Team', slideqr: 'Slide QR codes', user: 'Team', bulletin: 'Bulletin', alerts: 'Alerts check', chase: 'Chase outcomes', academy: 'Day 1 list' }[v] || ''; }
+function titleOf(v) { return { today: 'Today', mine: 'My candidates', all: 'All candidates', pay: 'Recruitment incentive', team: 'Team', slideqr: 'Slide QR codes', user: 'Team', bulletin: 'Bulletin', alerts: 'Alerts check', chase: 'Chase', academy: 'Day 1 list' }[v] || ''; }
 
 function render(quiet) {
   const v = S.view;
@@ -896,7 +900,7 @@ function render(quiet) {
   if (v === 'user') return editUser(S.params.id ? (S.users || []).filter(u => u.id === S.params.id)[0] : null);
   if (v === 'slideqr') return viewSlideQR();
   if (v === 'alerts') return viewAlerts();
-  if (v === 'chase') return viewChase();
+  if (v === 'chase') return viewChase(quiet);
   if (v === 'academy') return viewAcademy();
   if (v === 'bulletin') return viewBulletin();
   ({ today: viewToday, mine: viewMine, all: viewAll, pay: viewPay, team: viewTeam }[v] || viewToday)(quiet);
@@ -907,6 +911,7 @@ const ICONS = {
   today: '<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/>',
   mine: '<path d="M5 4h3.5l2 5-2.4 1.6a11 11 0 0 0 5.3 5.3L15 13.5l5 2V19a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/>',
   all: '<path d="M9 6h12M9 12h12M9 18h12"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/>',
+  chase: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
   pay: '<path d="M17 7.5A4.5 4.5 0 0 0 9 10v9M6 13.5h8M6 19h12"/>',
   team: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17.5" cy="9" r="2.5"/><path d="M16.5 14.6A5 5 0 0 1 21.5 19.5"/>',
   back: '<path d="M15 5l-7 7 7 7"/>',
@@ -920,6 +925,7 @@ function tabs() {
   const t = [];
   if (isPresenter()) t.push(['today', 'Today']);
   if (isBooker()) t.push(['mine', 'Mine']);
+  if (isAdmin() || isBooker()) t.push(['chase', 'Chase']);
   if (isAdmin()) t.push(['all', 'All']);
   t.push(['pay', 'Incentive']);
   if (isAdmin()) t.push(['team', 'Team']);
@@ -951,7 +957,7 @@ function paint(title, html, quiet, sub) {
   abt.textContent = title; abt.classList.toggle('long', title.length > 16);  // e.g. "Recruitment incentive": smaller, so it fits
   document.getElementById('abBack').hidden = !sub;
   document.getElementById('abBrand').hidden = !!sub;
-  document.getElementById('tabbar').innerHTML = tabs().map(t => '<button data-tab="' + t[0] + '" class="' + (S.tab === t[0] ? 'on' : '') + '">' + icon(t[0]) + '<span>' + t[1] + '</span></button>').join('');
+  paintTabs();
   document.getElementById('sync').classList.toggle('on', S.syncing > 0);
   refreshBars();
   const page = document.getElementById('page');
@@ -1011,7 +1017,7 @@ function toggleMenu() {
   document.getElementById('mRefresh').onclick = () => { m.hidden = true; pullRefresh(); };
   document.getElementById('mLogout').onclick = () => {
     if (outbox().length && !navigator.onLine) { toast('Wait for signal first: you have changes that haven\'t synced'); return; }
-    store.del('outbox'); store.del('tok'); store.del('cache'); S.token = ''; S.me = null; S.data = {}; S.users = null; S.booted = false; S.tab = '';
+    store.del('outbox'); store.del('tok'); store.del('cache'); S.token = ''; S.me = null; S.data = {}; S.users = null; S.chase = null; S.chaseN = 0; S.booted = false; S.tab = '';
     if (PUSH.os) PUSH.os.logout().catch(() => {});
     startStaff();
   };
@@ -1112,6 +1118,10 @@ function quickRow(c, kind) {
     '<a class="q-wa" href="' + h(waFor(c)) + '" target="_blank" rel="noopener">' + icon('chat', 16) + chanName(c) + '</a><button type="button" class="q-go" data-out="1">Log outcome</button></div>';
   if (kind === 'noanswer') return '<div class="quick" data-for="' + h(c.id) + '"><a href="tel:' + h(c.mobile) + '">' + icon('phone', 16) + 'Call again</a>' +
     '<a class="q-wa" data-na="1" href="' + h(msgUrl(c, msgNoAnswer(c))) + '" target="_blank" rel="noopener">' + icon('chat', 16) + chanName(c) + '</a><button type="button" class="q-go" data-out="1">Update</button></div>';
+  if (kind === 'remind') return '<div class="quick" data-for="' + h(c.id) + '"><a href="tel:' + h(c.mobile) + '">' + icon('phone', 16) + 'Call</a>' +
+    '<a class="q-wa" href="' + h(msgUrl(c, msgDay1Reminder(c))) + '" target="_blank" rel="noopener">' + icon('chat', 16) + 'Remind</a></div>';
+  if (kind === 'rebook') return '<div class="quick" data-for="' + h(c.id) + '"><a href="tel:' + h(c.mobile) + '">' + icon('phone', 16) + 'Call</a>' +
+    '<a class="q-wa" href="' + h(msgUrl(c, msgRebook(c))) + '" target="_blank" rel="noopener">' + icon('chat', 16) + chanName(c) + '</a><button type="button" class="q-go" data-out="1">Rebook</button></div>';
   if (kind === 'offer') return '<div class="quick" data-for="' + h(c.id) + '"><a class="q-go" data-send="offer" data-via="' + (c.no_whatsapp ? 'sms' : 'whatsapp') + '" href="' + h(msgUrl(c, msgAcademy(c))) + '" target="_blank" rel="noopener">🎉 Send Day 1 details ' + (c.no_whatsapp ? 'by text' : 'on WhatsApp') + '</a></div>';
   return '';
 }
@@ -1221,7 +1231,7 @@ function viewToday(quiet) {
     body = '<div class="hero">' + top + kpis([[items.length, 'Checked in'], [rated, 'Rated'], [items.filter(c => c.eval_at).length, 'Evaluated'], [toCall, 'To call', toCall > 0]]) + '</div>' +
       (isAdmin() || canThank() ? thanksButton(items) : '') +
       (isAdmin() ? '<div class="bullbtns"><button class="btn" id="bullDaily">📣 ' + (isToday ? 'Today\'s' : DAYS[D(S.day).getUTCDay()]) + ' bulletin</button><button class="btn ghost" id="bullWeek">🏆 Week top 5</button></div>' +
-        '<div class="bullbtns"><button class="btn ghost" id="goChase">📞 Chase outcomes</button><button class="btn ghost" id="goAcademy">🎓 Day 1 list</button></div>' : '') +
+        '<button class="btn ghost block" id="goAcademy" style="margin-bottom:10px">🎓 Day 1 list: who\'s starting</button>' : '') +
       (items.length ? '<div class="section-h"><b>In the room</b><span>' + rated + ' of ' + items.length + ' rated</span></div>' +
         (isPresenter() && rated < items.length ? '<p class="hint">Tap Green, Amber or Red to rate. Rating = they were in the room (that\'s what counts for the recruitment incentive). Tap a name for stars and notes.</p>' : '') +
         (items.some(c => c.limited) ? '<p class="hint">🔒 You see your own candidates in full. Everyone else\'s: name and room rating only.</p>' : '') +
@@ -1232,7 +1242,7 @@ function viewToday(quiet) {
   bindItems(page);
   const ta = document.getElementById('thanksAll'); if (ta) ta.onclick = thanksSheet;
   [['bullDaily', 'daily'], ['bullWeek', 'weekly']].forEach(b => { const el = document.getElementById(b[0]); if (el) el.onclick = () => nav('bulletin', { day: S.day, kind: b[1] }, true); });
-  [['goChase', 'chase'], ['goAcademy', 'academy']].forEach(b => { const el = document.getElementById(b[0]); if (el) el.onclick = () => nav(b[1], {}, true); });
+  const ga = document.getElementById('goAcademy'); if (ga) ga.onclick = () => nav('academy', {}, true);
   document.getElementById('dprev').onclick = () => { S.day = addDays(S.day, -1); render(); };
   document.getElementById('dnext').onclick = () => { if (S.day < S.me.today) { S.day = addDays(S.day, 1); render(); } };
 }
@@ -1289,10 +1299,8 @@ function viewAll(quiet) {
     body = '<div class="chips scroll fchips" id="flt">' + Object.keys(F).map(k => '<button class="chip' + (S.filter === k ? ' on' : '') + '" data-f="' + k + '">' + F[k][0] + ' <b>' + d.items.filter(F[k][1]).length + '</b></button>').join('') + '</div>' +
       (items.length ? groupByDate(items) : empty('✨', 'Nothing here.'));
   }
-  const page = paint('All', '<div class="search"><input type="search" id="q" placeholder="Search name, mobile or email" value="' + h(S.q || '') + '"></div><div id="sr"></div>' +
-    '<div class="bullbtns"><button class="btn ghost" id="goChase">📞 Chase outcomes</button><button class="btn ghost" id="goAcademy">🎓 Day 1 list</button></div>' + weekNav() + body, quiet);
+  const page = paint('All', '<div class="search"><input type="search" id="q" placeholder="Search name, mobile or email" value="' + h(S.q || '') + '"></div><div id="sr"></div>' + weekNav() + body, quiet);
   bindItems(page); bindWeekNav();
-  [['goChase', 'chase'], ['goAcademy', 'academy']].forEach(b => { const el = document.getElementById(b[0]); if (el) el.onclick = () => nav(b[1], {}, true); });
   page.querySelectorAll('#flt .chip').forEach(b => { b.onclick = () => { S.filter = b.dataset.f; render(true); }; });
   let t;
   const q = document.getElementById('q');
@@ -1578,59 +1586,114 @@ function slideQR(url, title, caption, colour) {
 }
 
 const QR_CAPTIONS = { checkin: 'Takes 1 minute 👋', eval: '4 minutes · your answers shape your next step' };
-// ───── Chase outcomes (admin): everyone with appointments still to log, nudged in one tap ─────
-function chaseList(items) {
-  const by = {}, noBooker = [];
-  items.forEach(c => {
-    const open = c.in_room && !c.outcome && !c.non_qual;
-    const unsent = c.outcome === 'Academy booked' && c.admin_status !== 'rejected' && c.admin_status !== 'pending' && !c.offer_sent_at;
-    if (!open && !unsent) return;
-    if (!c.booker_id) { if (open) noBooker.push(c); return; }
-    const r = (by[c.booker_id] = by[c.booker_id] || { id: c.booker_id, name: c.booker_name, company: c.company, open: [], unsent: [] });
-    (open ? r.open : r.unsent).push(c);
-  });
-  const rows = Object.keys(by).map(k => by[k]).sort((a, b) => (b.open.length + b.unsent.length) - (a.open.length + a.unsent.length) || a.name.localeCompare(b.name));
-  return { rows: rows, noBooker: noBooker };
+// ───── Chase tab: nobody drops out of the pipeline. Admins: everyone, by booker (one tap nudges them). Bookers: their own. ─────
+// Same rule as leakOf() in Code.gs (the nudges and the badge use that one); re-run here so a change shows straight away.
+const LEAKS = { log: '📞 Log the call', callback: '🔁 Call back', text: '📲 Send Day 1 text', confirm: '⏳ Day 1 not confirmed', noshow: '❌ No-show: rebook', pending: '⚖️ Waiting on your decision', unticked: '🎓 Day 1 not ticked' };
+const BOOKER_LEAKS = ['log', 'callback', 'text', 'confirm', 'noshow'];
+function leakOf(c, today, days) {
+  const from = addDays(today, -((days || 14) - 1));
+  if (c.outcome === 'Academy booked') {
+    if (c.admin_status === 'rejected' || c.day1_status === 'arrived' || !c.academy_date || c.academy_date < from) return '';
+    if (c.admin_status === 'pending') return 'pending';
+    if (c.day1_status === 'no_show') return 'noshow';
+    if (c.academy_date >= today) return c.academy_confirmed_at ? '' : c.offer_sent_at ? 'confirm' : 'text';
+    return 'unticked';
+  }
+  if (c.attended_date < from || !(c.in_room === true || c.in_room === 'TRUE') || c.non_qual) return '';
+  if (!c.outcome) return 'log';
+  return c.outcome === 'No answer' || c.outcome === 'Thinking it over' ? 'callback' : '';
 }
-function viewChase() {
-  const d = want(S.week);
-  if (!d) return paint('Chase outcomes', skeleton(4), false, true);
-  const L = chaseList(d.items), rows = L.rows, users = S.users || [];
-  const first = n => String(n).split(' ')[0], names = l => l.map(c => c.first_name).join(', ');
-  const nOpen = rows.reduce((n, r) => n + r.open.length, 0), nUnsent = rows.reduce((n, r) => n + r.unsent.length, 0);
-  const due = S.me.deadlineLabel || 'Fri 18:00';
-  const group = '⏰ *Outcomes due ' + due + '*\n' +
-    (nOpen ? '\n📞 *Still to log in the app:*\n' + rows.filter(r => r.open.length).map(r => '• *' + first(r.name) + '*: ' + names(r.open)).join('\n') + '\n' : '') +
-    (nUnsent ? '\n📲 *Day 1 text not sent:*\n' + rows.filter(r => r.unsent.length).map(r => '• *' + first(r.name) + '*: ' + names(r.unsent)).join('\n') + '\n' : '') +
-    '\nDo it now 👉 ' + ((S.me.links && S.me.links.staff) || '');
-  const noApp = id => { const u = users.filter(x => x.id === id)[0]; return u && !u.email; };
-  const row = r => '<div class="trow"><span class="av co-' + h(r.company) + '">' + h(initials(r.name)) + '</span><div class="main"><div class="name">' + h(r.name) + ' <span class="co ' + h(r.company) + '">' + h(r.company) + '</span></div>' +
-    (r.open.length ? '<div class="sub wrap">📞 To log: <b>' + h(names(r.open)) + '</b></div>' : '') +
-    (r.unsent.length ? '<div class="sub wrap">📲 Day 1 text: <b>' + h(names(r.unsent)) + '</b></div>' : '') +
-    (noApp(r.id) ? '<div class="sub wrap muted">Not in the app yet: WhatsApp only</div>' : '') + '</div>' +
-    (noApp(r.id) ? '' : '<button class="btn ghost sm" data-nudge="' + h(r.id) + '">🔔 Nudge</button>') + '</div>';
-  const page = paint('Chase outcomes', weekNav() +
-    '<div class="card"><div class="display" style="font-size:22px">' + (rows.length ? rows.length + ' booker' + (rows.length > 1 ? 's' : '') + ' to chase' : 'Nobody to chase 🎉') + '</div>' +
-    '<p class="hint" style="margin:6px 0 0">' + (rows.length ? nOpen + ' outcome' + (nOpen === 1 ? '' : 's') + ' to log (due ' + h(due) + ')' + (nUnsent ? ' · ' + nUnsent + ' Day 1 text' + (nUnsent === 1 ? '' : 's') + ' not sent' : '') : 'Every appointment rated in the room has an outcome, and every Day 1 text has gone.') + '</p>' +
-    (rows.length ? '<div class="bullbtns" style="margin-top:12px"><button class="btn" id="nudgeAll">🔔 Nudge all ' + rows.length + '</button><a class="btn wa" id="waGroup" target="_blank" rel="noopener" href="' + h('https://wa.me/?text=' + encodeURIComponent(group)) + '">💬 Post to team WhatsApp</a></div>' +
-      '<p class="hint" style="margin:8px 0 0">Nudge = an alert on each booker\'s phone (email if they\'re not set up). WhatsApp = the full list, ready to drop into your bookers\' group.</p>' : '') + '</div>' +
-    '<div id="cres"></div>' +
-    (rows.length ? '<div class="list alist">' + rows.map(row).join('') + '</div>' : '') +
-    (L.noBooker.length ? '<div class="flag amber" style="margin-top:12px">No booker yet: ' + h(names(L.noBooker)) + '. Open them and set the booker (All → No booker).</div>' : ''), false, true);
-  bindWeekNav();
-  const res = page.querySelector('#cres');
+function msgRebook(c) {
+  return 'Hey ' + c.first_name + '! 👋' + heartOf(c) + '\n\n' +
+    'We missed you at *BA Academy Day 1* with *' + brandOf(c) + '* on ' + fmtLong(c.academy_date) + ' 😕 Everything OK?\n\n' +
+    'Your place is still there: let\'s get you *rebooked*. Which day works for you? 📅\n\n' +
+    '– ' + S.me.user.name.split(' ')[0] + ', ' + brandOf(c);
+}
+function paintTabs() { const tb = document.getElementById('tabbar'); if (tb && S.me) tb.innerHTML = tabs().map(t => '<button data-tab="' + t[0] + '" class="' + (S.tab === t[0] ? 'on' : '') + '">' + icon(t[0]) + (t[0] === 'chase' && S.chaseN ? '<i class="tbadge">' + (S.chaseN > 99 ? '99+' : S.chaseN) + '</i>' : '') + '<span>' + t[1] + '</span></button>').join(''); }
+function viewChase(quiet) {
+  const id = S.viewId;
+  if (S.chase) drawChase(quiet); else paint('Chase', '<p class="hint">Finding everyone who needs chasing…</p>' + skeleton(4));
+  call('chaseList').then(r => {
+    const pend = pendingIds(), old = S.chase;  // keep changes still on their way to the Sheet
+    if (old && pend.length) r.items = r.items.map(x => pend.indexOf(x.id) >= 0 ? old.items.filter(y => y.id === x.id)[0] || x : x);
+    S.chase = r; if (S.viewId === id) drawChase(true);
+  }).catch(e => { if (S.viewId === id && !S.chase) paint('Chase', '<div class="err">' + h(/Unknown action/.test(e.message) ? 'Paste the new Google code (Code.gs) into Apps Script first, then open this again.' : e.message) + '</div>'); });
+}
+function drawChase(quiet) {
+  const r = S.chase, today = r.today || S.me.today, admin = isAdmin(), due = S.me.deadlineLabel || 'Fri 18:00';
+  const list = r.items.map(c => ({ c: c, k: leakOf(c, today, r.days) })).filter(x => x.k && (admin || BOOKER_LEAKS.indexOf(x.k) >= 0));
+  S.chaseN = list.length;
+  const late = l => l.filter(x => x.k === 'log' && x.c.deadline && londonNow() > x.c.deadline).length;
+  const count = (k, l) => (l || list).filter(x => x.k === k).length;
+  const page = paint('Chase', admin ? chaseAdmin(list, today, due, late, count) : chaseBooker(list, due, late), quiet);
+  bindItems(page);
+  page.querySelectorAll('[data-cand]').forEach(b => { b.onclick = () => nav('cand', { id: b.dataset.cand }, true); });
+  const ga = page.querySelector('#goAcademy'); if (ga) ga.onclick = () => nav('academy', {}, true);
+  // Sent the Day 1 text from here → they move to "not confirmed" straight away
+  page.querySelectorAll('[data-send]').forEach(a => a.addEventListener('click', () => {
+    const c = r.items.filter(x => x.id === a.closest('.quick').dataset.for)[0];
+    if (c) { c.offer_sent_at = londonNow(); setTimeout(() => { if (S.view === 'chase') drawChase(true); }, 400); }
+  }));
+  if (!admin) return;
+  const res = page.querySelector('#cres'), first = n => String(n).split(' ')[0];
   const nudge = (ids, btn) => {
     busy(btn, true, 'Sending…');
-    call('chaseOutcomes', { weekEnding: S.week, ids: ids }).then(r => {
+    call('chaseOutcomes', { ids: ids }).then(x => {
       busy(btn, false);
-      res.innerHTML = (r.nudged.length ? '<div class="flag green">🔔 Nudged: ' + h(r.nudged.map(first).join(', ')) + '</div>' : '') +
-        (r.recently.length ? '<div class="flag amber">Already nudged in the last 30 min: ' + h(r.recently.map(first).join(', ')) + '</div>' : '') +
-        (r.noApp.length ? '<div class="flag amber">Not in the app (use WhatsApp): ' + h(r.noApp.map(first).join(', ')) + '</div>' : '') +
-        (!r.nudged.length && !r.recently.length && !r.noApp.length ? '<div class="flag green">Nothing left to chase 🎉</div>' : '');
+      res.innerHTML = (x.nudged.length ? '<div class="flag green">🔔 Nudged: ' + h(x.nudged.map(first).join(', ')) + '</div>' : '') +
+        (x.recently.length ? '<div class="flag amber">Already nudged in the last 30 min: ' + h(x.recently.map(first).join(', ')) + '</div>' : '') +
+        (x.noApp.length ? '<div class="flag amber">Not in the app (use WhatsApp): ' + h(x.noApp.map(first).join(', ')) + '</div>' : '') +
+        (!x.nudged.length && !x.recently.length && !x.noApp.length ? '<div class="flag green">Nothing left to chase 🎉</div>' : '');
     }).catch(e => { busy(btn, false); toast(/Unknown action/.test(e.message) ? 'Paste the new Google code (Code.gs) first.' : e.message); });
   };
   const na = page.querySelector('#nudgeAll'); if (na) na.onclick = () => nudge([], na);
   page.querySelectorAll('[data-nudge]').forEach(b => { b.onclick = () => nudge([b.dataset.nudge], b); });
+}
+/** Booker: their own people, grouped by what to do, with the call / WhatsApp / log buttons right there. */
+function chaseBooker(list, due, late) {
+  const kind = x => x.k === 'log' ? 'call' : x.k === 'callback' ? (x.c.outcome === 'No answer' ? 'noanswer' : 'call') : x.k === 'text' ? 'offer' : x.k === 'confirm' ? 'remind' : 'rebook';
+  const why = { log: 'by ' + due, callback: 'still warm: call them', text: 'they can\'t confirm without it', confirm: 'remind them', noshow: 'find out why, rebook' };
+  const n = list.length, lt = late(list);
+  return '<div class="card"><div class="display" style="font-size:24px">' + (n ? n + ' to chase' : 'Nobody to chase 🎉') + '</div>' +
+    '<p class="hint" style="margin:6px 0 0">' + (n ? 'Everyone here could drop out of your pipeline. Sort them before ' + h(due) + '.' + (lt ? ' <b class="red">' + lt + ' outcome' + (lt === 1 ? '' : 's') + ' LATE.</b>' : '') : 'Your pipeline\'s clean. Keep it that way.') + '</p></div>' +
+    BOOKER_LEAKS.map(k => {
+      const l = list.filter(x => x.k === k);
+      return l.length ? '<div class="section-h"><b>' + LEAKS[k] + ' · ' + l.length + '</b><span>' + h(k === 'log' && late(l) ? late(l) + ' LATE' : why[k]) + '</span></div><div class="list">' + l.map(x => item(x.c, true, kind(x))).join('') + '</div>' : '';
+    }).join('') +
+    '<button class="btn ghost block" id="goAcademy" style="margin-top:14px">🎓 My Day 1 starters</button>';
+}
+/** Admin: everyone at risk, one card per booker, one tap to nudge them all (or post the list to the team WhatsApp). */
+function chaseAdmin(list, today, due, late, count) {
+  const users = S.users || [], first = n => String(n).split(' ')[0], by = {};
+  list.filter(x => BOOKER_LEAKS.indexOf(x.k) >= 0 && x.c.booker_id).forEach(x => {
+    const b = (by[x.c.booker_id] = by[x.c.booker_id] || { id: x.c.booker_id, name: x.c.booker_name, company: x.c.company, L: {}, n: 0 });
+    (b.L[x.k] = b.L[x.k] || []).push(x); b.n++;
+  });
+  const rows = Object.keys(by).map(k => by[k]).sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
+  const noBooker = list.filter(x => BOOKER_LEAKS.indexOf(x.k) >= 0 && !x.c.booker_id), pending = list.filter(x => x.k === 'pending'), unticked = list.filter(x => x.k === 'unticked');
+  const nm = l => l.map(x => '<button class="nm" data-cand="' + h(x.c.id) + '">' + h(x.c.first_name) + '</button>').join('');
+  const names = l => l.map(x => x.c.first_name).join(', ');
+  const people = rows.reduce((t, b) => t + b.n, 0), lt = late(list);
+  const tally = BOOKER_LEAKS.map(k => count(k) ? LEAKS[k].split(' ')[0] + ' ' + count(k) + ' ' + { log: 'to log' + (lt ? ' (' + lt + ' LATE)' : ''), callback: 'call back', text: 'Day 1 text', confirm: 'not confirmed', noshow: 'no-show' }[k] : '').filter(String).join(' · ');
+  const group = '⏰ *Pipeline check: don\'t lose anyone*\n_Outcomes due ' + due + '_\n' +
+    rows.map(b => '\n*' + first(b.name) + '*\n' + BOOKER_LEAKS.filter(k => b.L[k]).map(k => LEAKS[k] + ': ' + names(b.L[k])).join('\n')).join('\n') +
+    '\n\nSort them now 👉 ' + ((S.me.links && S.me.links.staff) || '');
+  const noApp = id => { const u = users.filter(x => x.id === id)[0]; return u && !u.email; };
+  const row = b => '<div class="trow"><span class="av co-' + h(b.company) + '">' + h(initials(b.name)) + '</span><div class="main"><div class="name">' + h(b.name) + ' <span class="co ' + h(b.company) + '">' + h(b.company) + '</span></div>' +
+    BOOKER_LEAKS.filter(k => b.L[k]).map(k => '<div class="leakline">' + LEAKS[k] + ': ' + nm(b.L[k]) + '</div>').join('') +
+    (noApp(b.id) ? '<div class="sub wrap muted">Not in the app yet: WhatsApp only</div>' : '') + '</div>' +
+    (noApp(b.id) ? '' : '<button class="btn ghost sm" data-nudge="' + h(b.id) + '">🔔 Nudge</button>') + '</div>';
+  const yours = (pending.length ? '<div class="leakline">' + LEAKS.pending + ': ' + nm(pending) + '</div>' : '') +
+    (noBooker.length ? '<div class="leakline">❓ No booker: ' + nm(noBooker) + '</div>' : '') +
+    (unticked.length ? '<div class="leakline">' + LEAKS.unticked + ': ' + nm(unticked) + '</div>' : '');
+  return '<div class="card"><div class="display" style="font-size:24px">' + (people ? people + ' ' + (people === 1 ? 'person' : 'people') + ' to chase' : 'Nobody to chase 🎉') + '</div>' +
+    '<p class="hint" style="margin:6px 0 0">' + (people ? 'across ' + rows.length + ' booker' + (rows.length === 1 ? '' : 's') + ' · ' + h(tally) : 'Every appointment has an outcome, every starter has their Day 1 text and has confirmed.') + '</p>' +
+    (rows.length ? '<div class="bullbtns" style="margin-top:12px"><button class="btn" id="nudgeAll">🔔 Nudge all ' + rows.length + '</button><a class="btn wa" id="waGroup" target="_blank" rel="noopener" href="' + h('https://wa.me/?text=' + encodeURIComponent(group)) + '">💬 Post to team WhatsApp</a></div>' +
+      '<p class="hint" style="margin:8px 0 0">Nudge = an alert on each booker\'s phone listing exactly who to chase (email if they\'re not set up). WhatsApp = the same list for the bookers\' group.</p>' : '') + '</div>' +
+    '<div id="cres"></div>' +
+    (yours ? '<div class="card needs"><b>👀 Needs you</b>' + yours + '</div>' : '') +
+    (rows.length ? '<div class="list alist">' + rows.map(row).join('') + '</div>' : '') +
+    '<button class="btn ghost block" id="goAcademy" style="margin-top:14px">🎓 Day 1 list: who\'s starting</button>';
 }
 
 // ───── Day 1 list: everyone booked onto the BA Academy, who's confirmed, who turned up ─────
@@ -1811,6 +1874,7 @@ function showPending() {
 }
 function queueSave(action, payload, local, msg) {
   local._pending = true;
+  chaseKeep(local);
   const d = S.data[local.week_ending];
   if (d) { const i = d.items.findIndex(x => x.id === local.id); if (i >= 0) d.items[i] = local; else d.items.push(local); }
   saveCache();
@@ -1945,6 +2009,7 @@ function submitOutcome(c, payload, errEl) {
   const local = Object.assign({}, c, {
     outcome: payload.outcome, academy_date: acad, outcome_notes: payload.outcome_notes, outcome_by: S.me.user.name, outcome_at: now,
     outcome_late: now > c.deadline ? 'TRUE' : '', academy_confirmed_at: acad === c.academy_date ? c.academy_confirmed_at : '',
+    day1_status: acad === c.academy_date ? c.day1_status : '',
     admin_status: acad && (c.rag === 'R' || c.repeat_block) && !isAdmin() && c.admin_status !== 'approved' ? 'pending' : (acad ? c.admin_status : (c.admin_status === 'pending' ? '' : c.admin_status)),
   });
   queueSave('saveOutcome', payload, local, local.outcome_late ? 'Saved — flagged late' : 'Outcome saved ✓');

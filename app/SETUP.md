@@ -119,20 +119,35 @@ Put the two QR codes on the presentation once. They never change:
 | Wed + Fri 10:00: "3/5 net attended" (recruitment incentive) | every booker (not admins) |
 | Mon–Thu 18:00: your day (who came in, evaluations) + who still needs closing, sending Day 1 details or confirming | every booker who had appointments (nothing to say = no message) |
 | **Fri 15:00 week roundup:** appointments, who's booked, who's not, no outcome yet, who's been sent the Day 1 WhatsApp (and who hasn't), net vs target | every booker who had appointments |
-| **Fri 15:00 team roundup:** the same, one line per booker, loose ends first. Tap it → **Chase outcomes** | admins |
+| **Fri 15:00 team roundup:** the same, one line per booker, loose ends first. Tap it → **Chase** tab | admins |
 | **18:00 the evening before an Academy day:** "🎓 Tomorrow's BA Academy: 2 starters of yours · Jasraj ✅ · Adham ⏳" | each booker with a starter tomorrow |
 | **18:00 the evening before an Academy day:** "🎓 Tomorrow: 6 starters expected · 4 confirmed" | admins |
 | Sat 14:00: "🔴 2 outcomes LATE (due Fri 18:00)" | bookers who missed the deadline |
 | Mon 09:00: recruitment incentive report | admins |
 
-## Friday chase (admins, 30 seconds)
-**Today → 📞 Chase outcomes** (or tap the Friday 15:00 team roundup). Every booker with an appointment still to log, or a Day 1 text not sent, on one screen:
-- **🔔 Nudge all**: an alert on each of their phones with their own list ("⏰ Jess: 2 outcomes to log by Fri 18:00 · To log: Ali, Sam"). Email instead if they're not set up. Tapping it twice within 30 minutes won't spam them.
-- **🔔 Nudge** on one row: just that booker.
-- **💬 Post to team WhatsApp**: the whole list as one message for the bookers' group, so everyone sees who's holding the team up.
+## 🔔 Chase tab: nobody drops out of the pipeline
+A tab in the bottom bar for admins and bookers. The red number on it shows how many people are at risk right now. Someone is on it if, in the last 2 weeks (`CHASE_DAYS` in `Code.gs`):
+
+| On the list as | Means | Off the list when |
+|---|---|---|
+| 📞 Log the call | rated in the room, no outcome yet (LATE after Fri 18:00) | an outcome is logged |
+| 🔁 Call back | outcome is *No answer* or *Thinking it over* | updated to Booked / Declined / Not suitable |
+| 📲 Send Day 1 text | booked onto the Academy, Day 1 WhatsApp not sent | it's sent (or they confirm) |
+| ⏳ Day 1 not confirmed | text sent, they haven't tapped CONFIRM | they confirm |
+| ❌ No-show: rebook | marked no-show on the Day 1 list | rebooked with a new date |
+
+**Bookers** see their own, grouped like that, with Call / WhatsApp / Log outcome / Remind / Rebook on each person.
+
+**Admins** see everyone, one card per booker. Tap a name to open them.
+- **🔔 Nudge all** (Friday 3pm, or any time): each booker gets an alert listing exactly who ("⏰ Jess: 3 people to chase · 📞 Log the call: Ali (by Fri 18:00) · 🔁 Call back: Sam"). Tapping it opens their Chase tab. Email if they're not set up; no repeat within 30 minutes.
+- **🔔 Nudge** on one card: just that booker.
+- **💬 Post to team WhatsApp**: the same list, by booker, for the bookers' group.
+- **👀 Needs you**: the admins' own loose ends: 🔴 bookings waiting on your decision, appointments with no booker, Day 1 not ticked.
+
+The Friday 15:00 round-ups open the Chase tab: each booker's opens theirs, the team one opens everyone's.
 
 ## Who's starting Monday (the Day 1 list)
-**Today → 🎓 Day 1 list** (bookers: **Mine → 🎓 My Day 1 starters**). Everyone booked onto the BA Academy, by date:
+**Today → 🎓 Day 1 list** or the bottom of **Chase** (bookers: **Chase / Mine → 🎓 My Day 1 starters**). Everyone booked onto the BA Academy, by date:
 - **Before Day 1:** ✅ Confirmed / ⏳ Not confirmed / Day 1 text not sent, and a **💬 Remind** button (date, 1:30pm, address, bring ID + share code, and the CONFIRM link if they haven't tapped it).
 - **On Day 1:** tap **Arrived** or **No-show** for each person (tap again to undo). That's your real show-up rate, saved on their row in the Sheet (`day1_status`, `day1_by`, `day1_at`).
 - Bookers see their own starters only. Someone the admins haven't approved yet (🔴, pending) isn't on it.

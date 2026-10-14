@@ -30,6 +30,7 @@ const CONFIG = {
   DIGEST_TIME: '18:00',           // Mon–Thu: each booker's round-up of their day
   ROUNDUP_TIME: '15:00',          // Friday: week roundup to each booker + a team roundup to admins
   TEAM_ROUNDUP: true,             // false = admins don't get the Friday team roundup
+  CHASE_DAYS: 14,                 // Chase tab: appointments and no-shows from the last 2 weeks stay on it until they're dealt with
   EMAIL_ALERTS: false,            // true = also email every alert. Push is used when OneSignal keys are set.
   SESSION_DAYS: 30,               // staff stay logged in for this long
   SHEET_ID: '',                   // the data Sheet; only needed if this script isn't opened from the Sheet itself
@@ -714,6 +715,7 @@ function bundle(req, u) {
   const out = { weekEnding: we, items: listWeek({ weekEnding: we }, u).items, pay: payReport({ weekEnding: we }, u) };
   if (req.withMe) out.me = me(req, u);
   if (req.withUsers && isAdmin(u)) out.users = listUsers(req, u).users;
+  out.chase = chaseRows(u).length;  // the number on the Chase tab
   return out;
 }
 
@@ -779,7 +781,7 @@ function saveOutcome(req, u) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(req.academy_date || '')) throw new Error('Pick the BA Academy Day 1 date.');
     }
     const newDate = req.outcome === 'Academy booked' ? req.academy_date : '';
-    if (newDate !== c.academy_date) c.academy_confirmed_at = '';   // new date → needs confirming again
+    if (newDate !== c.academy_date) { c.academy_confirmed_at = ''; c.day1_status = ''; c.day1_by = ''; c.day1_at = ''; }  // new date (e.g. rebooking a no-show) → confirm + mark again
     c.outcome = req.outcome;
     c.academy_date = newDate;
     if (newDate && !c.welcome_token) c.welcome_token = token().slice(0, 20);
@@ -1025,7 +1027,7 @@ const STAFF_ACTIONS = {
   adminDecision: adminDecision, setPayExcluded: setPayExcluded, fixEligibility: fixEligibility, reassignBooker: reassignBooker,
   markSent: markSent, payReport: payReport, listUsers: listUsers, saveUser: saveUser, deleteUser: deleteUser,
   alertsCheck: alertsCheck, testAlert: testAlert, sendSetupEmails: sendSetupEmails, adminCode: adminCode,
-  chaseOutcomes: chaseOutcomes, academyList: academyList, markDay1: markDay1,
+  chaseOutcomes: chaseOutcomes, chaseList: chaseList, academyList: academyList, markDay1: markDay1,
 };
 
 // ───────────────────────── LINKS ─────────────────────────
@@ -1258,25 +1260,54 @@ function maybeDailyDigest() {
   p.setProperty('DIGEST_SENT', today);  // claim it first so an overlapping run can't send twice
   if (fri) weeklyRoundups(today); else dailyDigests(today);
 }
-/** Admin, one tap ("Chase outcomes"; the Friday 15:00 team alert opens it): every booker with appointments still to log
- *  or Day 1 texts not sent gets an alert (email if they're not set up). The same booker isn't nudged twice in 30 minutes. */
+// ───────────────────────── CHASE: nobody drops out of the pipeline ─────────────────────────
+/** Why this candidate needs chasing ('' = they don't). One rule for the Chase tab, the nudges and the badge.
+ *  Booker's job: log (rated in the room, no outcome yet) · callback (No answer / Thinking it over) · text (Day 1 details not sent)
+ *  · confirm (sent, not confirmed) · noshow (rebook them). Admins': pending (your decision) · unticked (Day 1 gone, nobody marked arrived / no-show). */
+const BOOKER_LEAKS = ['log', 'callback', 'text', 'confirm', 'noshow'];
+function leakOf(c, today) {
+  const from = addDays(today, -(CONFIG.CHASE_DAYS - 1));
+  if (c.outcome === 'Academy booked') {
+    if (c.admin_status === 'rejected' || c.day1_status === 'arrived' || !c.academy_date || c.academy_date < from) return '';
+    if (c.admin_status === 'pending') return 'pending';
+    if (c.day1_status === 'no_show') return 'noshow';
+    if (c.academy_date >= today) return c.academy_confirmed_at ? '' : c.offer_sent_at ? 'confirm' : 'text';
+    return 'unticked';
+  }
+  if (c.attended_date < from || !truthy(c.in_room) || nonQualifier(c)) return '';
+  if (!c.outcome) return 'log';
+  return c.outcome === 'No answer' || c.outcome === 'Thinking it over' ? 'callback' : '';
+}
+/** Rows that need chasing that this person can act on: admins see everyone, a booker their own (booker jobs only). */
+function chaseRows(u) {
+  const today = todayStr(), admin = isAdmin(u);
+  if (!admin && !has(u, 'booker')) return [];
+  return readTable('Candidates').map(c => {
+    if (!admin && c.booker_id !== u.id) return null;
+    const k = leakOf(c, today);
+    return k && (admin || BOOKER_LEAKS.indexOf(k) >= 0) ? { c: c, k: k } : null;
+  }).filter(Boolean);
+}
+function chaseList(req, u) {
+  return { today: todayStr(), days: CONFIG.CHASE_DAYS, items: chaseRows(u).map(x => Object.assign(shape(x.c, u), { leak: x.k })) };
+}
+const LEAK_LINES = [['log', '📞 Log the call'], ['callback', '🔁 Call back'], ['text', '📲 Send Day 1 text'], ['confirm', '⏳ Day 1 not confirmed'], ['noshow', '❌ No-show, rebook']];
+/** Admin, one tap (Chase tab): every booker with someone to chase gets an alert listing exactly who (email if they're not set up).
+ *  The same booker isn't nudged twice in 30 minutes. */
 function chaseOutcomes(req, u) {
   if (!isAdmin(u)) throw new Error('Admin only');
-  const we = req.weekEnding || weekEnding(todayStr());
-  const only = Array.isArray(req.ids) && req.ids.length ? req.ids : null;
-  const rows = readTable('Candidates').filter(c => c.week_ending === we);
+  const today = todayStr(), now = nowStr(), only = Array.isArray(req.ids) && req.ids.length ? req.ids : null;
+  const by = {};
+  chaseRows(u).forEach(x => { if (x.c.booker_id && BOOKER_LEAKS.indexOf(x.k) >= 0) { const b = (by[x.c.booker_id] = by[x.c.booker_id] || {}); (b[x.k] = b[x.k] || []).push(x.c); } });
   const cache = CacheService.getScriptCache(), out = { nudged: [], recently: [], noApp: [] };
-  usersAll().filter(b => truthy(b.active) && has(b, 'booker') && b.id !== u.id && (!only || only.indexOf(b.id) >= 0)).forEach(b => {
-    const s = weekStats(b, rows), unsent = s.unsent.filter(c => c.admin_status !== 'pending');
-    if (!s.open.length && !unsent.length) return;
+  usersAll().filter(b => truthy(b.active) && has(b, 'booker') && b.id !== u.id && by[b.id] && (!only || only.indexOf(b.id) >= 0)).forEach(b => {
     if (!b.email) { out.noApp.push(b.name); return; }
-    const key = 'chase_' + b.id + '_' + we;
+    const key = 'chase_' + b.id + '_' + today;
     if (cache.get(key)) { out.recently.push(b.name); return; }
-    const lines = [];
-    if (s.open.length) lines.push('📞 To log: ' + firstNames(s.open, 6));
-    if (unsent.length) lines.push('📲 Day 1 text not sent: ' + firstNames(unsent, 6));
-    notify([b], '⏰ ' + u.name.split(' ')[0] + ': ' + (s.open.length ? plural(s.open.length, 'outcome') + ' to log by ' + deadlineLabel() : plural(unsent.length, 'Day 1 text') + ' to send'),
-      lines.join('\n') + '\nTap to do it now.', '');
+    const L = by[b.id], n = BOOKER_LEAKS.reduce((t, k) => t + (L[k] || []).length, 0);
+    const late = (L.log || []).filter(c => now > outcomeDeadline(c.attended_date)).length;
+    const lines = LEAK_LINES.filter(x => L[x[0]]).map(x => x[1] + ': ' + firstNames(L[x[0]], 6) + (x[0] === 'log' ? (late ? ' (' + late + ' LATE)' : ' (by ' + deadlineLabel() + ')') : ''));
+    notify([b], '⏰ ' + u.name.split(' ')[0] + ': ' + n + (n === 1 ? ' person' : ' people') + ' to chase', lines.join('\n') + '\nDon\'t let them drop out. Tap to do it now.', 'chase');
     cache.put(key, '1', 1800);
     out.nudged.push(b.name);
   });
@@ -1383,7 +1414,7 @@ function weeklyRoundups(today) {
   const rows = readTable('Candidates').filter(c => c.week_ending === weekEnding(today));
   const users = usersAll().filter(u => truthy(u.active));
   const stats = users.filter(u => has(u, 'booker')).map(u => weekStats(u, rows)).filter(s => s.all.length);
-  stats.forEach(s => { const r = roundupFor(s); notify([s.user], r.title, r.body, ''); });
+  stats.forEach(s => { const r = roundupFor(s); notify([s.user], r.title, r.body, 'chase'); });
   const admins = users.filter(isAdmin);
   if (CONFIG.TEAM_ROUNDUP && admins.length && stats.length) { const t = teamRoundup(stats); notify(admins, t.title, t.body + '\nTap to chase them in one go.', 'chase'); }
 }
