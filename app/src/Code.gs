@@ -903,21 +903,27 @@ function listUsers(req, u) {
   return { users: usersAll().map(publicUser).sort((a, b) => a.name.localeCompare(b.name)) };
 }
 
+/** Email is optional: a booker added by name only ("not in the app yet") is credited on the bulletin and incentive
+ *  straight away, and logs in once you add their email. Check-ins where the candidate typed their name get linked. */
 function saveUser(req, u) {
   if (!isAdmin(u)) throw new Error('Admin only');
   const x = req.user || {};
   const email = String(x.email || '').trim().toLowerCase();
   if (!String(x.name || '').trim()) throw new Error('Name required');
-  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error('Valid email required');
+  if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error('That email doesn\'t look right.');
   if (['LINK', 'JUSS'].indexOf(x.company) < 0) throw new Error('Company must be LINK or JUSS');
   const roles = (x.roles || []).filter(r => ['admin', 'presenter', 'booker'].indexOf(r) >= 0);
   if (!roles.length) throw new Error('Pick at least one role');
+  if (!email && roles.indexOf('booker') < 0) throw new Error('Add their email: only bookers can be added by name alone.');
   const isNew = !x.id;
+  let hadEmail = false;
   const saved = withLock(() => {
     const all = readTable('Users');
-    if (all.some(o => o.email.toLowerCase() === email && o.id !== x.id)) throw new Error('That email is already used.');
+    if (email && all.some(o => o.email.toLowerCase() === email && o.id !== x.id)) throw new Error('That email is already used.');
+    if (isNew && all.some(o => normName(o.name) === normName(x.name))) throw new Error(cleanName(x.name) + ' is already on the team. Tap their name to edit them.');
     let rec = x.id ? all.filter(o => o.id === x.id)[0] : null;
     if (x.id && !rec) throw new Error('User not found');
+    hadEmail = !!(rec && rec.email);
     if (rec && rec.id === u.id && (roles.indexOf('admin') < 0 || !x.active)) throw new Error("You can't remove your own admin access.");
     if (!rec) rec = { id: uid(), created_at: nowStr() };
     rec.name = cleanName(x.name); rec.email = email; rec.company = x.company;
@@ -927,8 +933,30 @@ function saveUser(req, u) {
     log(u, 'user_save', '', rec.name + ' ' + rec.roles + ' active=' + rec.active);
     return publicUser(rec);
   });
-  if (isNew && saved.active) sendSetupEmail(saved);  // new person: the setup steps land in their inbox straight away
-  return saved;
+  if (saved.active && saved.email && !hadEmail) sendSetupEmail(saved);  // new person (or email just added): the setup steps land in their inbox
+  const linked = saved.active && rolesOf(saved).indexOf('booker') >= 0 ? linkTypedBookings(saved, u) : 0;
+  return Object.assign(saved, { linked: linked });
+}
+
+function normName(s) { return String(s || '').toLowerCase().replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim(); }
+/** Check-ins from the last 14 days with no booker, where the candidate typed this person's name (full name, or first name
+ *  when nobody else on the team shares it): credit them to this booker. Returns how many were linked. */
+function linkTypedBookings(b, u) {
+  const full = normName(b.name), first = full.split(' ')[0];
+  const firstShared = usersAll().some(o => o.id !== b.id && truthy(o.active) && normName(o.name).split(' ')[0] === first);
+  const since = addDays(todayStr(), -14);
+  const match = c => {
+    const t = normName(c.booker_typed);
+    return !c.booker_id && c.attended_date >= since && t && (t === full || (t === first && !firstShared));
+  };
+  if (!readTable('Candidates').some(match)) return 0;
+  const n = withLock(() => {
+    const rows = readTable('Candidates').filter(match);
+    rows.forEach(c => { c.booker_id = b.id; c.booker_name = b.name; c.company = b.company; writeRow('Candidates', c); });
+    return rows.length;
+  });
+  if (n) log(u, 'link_bookings', '', n + ' check-in' + (n > 1 ? 's' : '') + ' typed "' + b.name.split(' ')[0] + '" → ' + b.name);
+  return n;
 }
 
 /** Delete a user outright. If they still own candidates, switch them off instead (keeps pay history intact). */
@@ -1022,7 +1050,7 @@ function pushTo(userIds, title, body, url) {
 
 /** Send an alert: phone push when set up; email to anyone the push didn't reach (or everyone, if EMAIL_ALERTS is on). */
 function notify(users, title, body, cid) {
-  const list = users.filter(u => u && truthy(u.active));
+  const list = users.filter(u => u && truthy(u.active) && u.email);  // no email = added by name only, not in the app yet
   if (!list.length) return;
   const url = staffUrl(cid || '');
   const reached = pushTo(list.map(u => u.id), title, body, url);
@@ -1068,7 +1096,7 @@ const SETUP_TIMERS = ['keepWarm', 'dailyMaintenance', 'weeklyProgressEmails', 's
  *  (OneSignal keys, email allowance left today, scheduled timers, last round-ups). */
 function alertsCheck(req, u) {
   if (!isAdmin(u)) throw new Error('Admin only');
-  const users = usersAll().filter(x => truthy(x.active));
+  const users = usersAll().filter(x => truthy(x.active) && x.email);  // name-only bookers aren't in the app yet
   const now = nowStr(), logins = {};
   readTable('Sessions').forEach(x => { if (String(x.expires) > now) logins[x.user_id] = (logins[x.user_id] || 0) + 1; });
   const k = pushKeys();
@@ -1089,8 +1117,8 @@ function alertsCheck(req, u) {
 /** Admin: send a test push to some people (or everyone). Says who it reached. */
 function testAlert(req, u) {
   if (!isAdmin(u)) throw new Error('Admin only');
-  const ids = Array.isArray(req.ids) && req.ids.length ? req.ids : usersAll().filter(x => truthy(x.active)).map(x => x.id);
-  const users = usersAll().filter(x => truthy(x.active) && ids.indexOf(x.id) >= 0);
+  const ids = Array.isArray(req.ids) && req.ids.length ? req.ids : usersAll().filter(x => truthy(x.active) && x.email).map(x => x.id);
+  const users = usersAll().filter(x => truthy(x.active) && x.email && ids.indexOf(x.id) >= 0);
   const reached = pushTo(users.map(x => x.id), '🔔 Test alert from ' + u.name.split(' ')[0], 'If you can see this, your alerts work ✅', staffUrl(''));
   log(u, 'alert_test', '', users.length + ' sent, ' + reached.length + ' reached');
   return { reached: users.filter(x => reached.indexOf(x.id) >= 0).map(x => x.name), missed: users.filter(x => reached.indexOf(x.id) < 0).map(x => x.name) };
@@ -1112,7 +1140,7 @@ function sendSetupEmail(x) { return mail(x.email, '🔔 Set up the ' + CONFIG.AP
 function sendSetupEmails(req, u) {
   if (!isAdmin(u)) throw new Error('Admin only');
   const ids = Array.isArray(req.ids) ? req.ids : [];
-  const users = usersAll().filter(x => truthy(x.active) && ids.indexOf(x.id) >= 0);
+  const users = usersAll().filter(x => truthy(x.active) && x.email && ids.indexOf(x.id) >= 0);
   const sent = users.filter(sendSetupEmail);
   log(u, 'setup_emails', '', sent.length + ' sent: ' + sent.map(x => x.name.split(' ')[0]).join(', '));
   return { sent: sent.map(x => x.name), failed: users.filter(x => sent.indexOf(x) < 0).map(x => x.name) };

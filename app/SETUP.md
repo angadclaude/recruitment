@@ -123,6 +123,15 @@ Put the two QR codes on the presentation once. They never change:
 | Sat 14:00: "🔴 2 outcomes LATE (due Fri 18:00)" | bookers who missed the deadline |
 | Mon 09:00: recruitment incentive report | admins |
 
+## A booker who isn't on the app yet
+- **At check-in:** if their name isn't in the list, the candidate types it and carries on. It shows as *Booker not confirmed: "Priya"*.
+- **On the candidate page:** Admin → **Booker → ＋ Someone not on the list…**. The name is pre-filled from what the candidate typed; pick LINK/JUSS and tap **Add and credit them**. They're added to the team **by name only** (no email). From then on:
+  - they're on the bulletin and the recruitment incentive;
+  - they're in the check-in list;
+  - any other check-in from the last 14 days where the candidate typed their name is credited to them automatically.
+- **Later:** Team → tap them → add their email. They get the setup email, log in, and every candidate is already theirs.
+- **Team → ＋ Add person:** works the same way. Leave the email blank for "not in the app yet".
+
 ## Not on WhatsApp?
 Every WhatsApp button has **Not on WhatsApp? 📱 Text · ✉️ Email** under it: the same message, sent from your own phone's texts or email. Once someone texts or emails a candidate, the app remembers **📵 Not on WhatsApp**, so the next person (e.g. the booker sending Day 1 details) gets a **Text** button instead.
 
