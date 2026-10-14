@@ -338,9 +338,11 @@ async function fillEval(p) {
   const tEdit = Date.now();
   await p2e.click('#go');
   await p2e.waitForSelector('text=Updated, Jasraj!', { timeout: 30000 });
-
-  const jasNow = await api(admin, 'getCandidate', { id: jasId });
-  ok(jasNow.q14_questions === 'Changed my mind: when is Day 1?' && !!jasNow.eval_edited_at, 'Google busy → the save waits its turn and goes through by itself (' + Math.round((Date.now() - tEdit) / 1000) + 's), answers updated');
+  const tShown = Date.now() - tEdit;
+  let jasNow = null;
+  for (let i = 0; i < 60 && !(jasNow && jasNow.eval_edited_at); i++) { jasNow = await api(admin, 'getCandidate', { id: jasId }); if (!jasNow.eval_edited_at) await new Promise(r => setTimeout(r, 500)); }
+  ok(tShown < 1500 && jasNow.q14_questions === 'Changed my mind: when is Day 1?' && !!jasNow.eval_edited_at && !(await p2e.evaluate(() => Object.keys(JSON.parse(localStorage.getItem('lr_sendq') || '{}')).length)),
+    'Google busy → "Updated" shows straight away (' + tShown + 'ms); the save waits its turn behind and goes through by itself (' + Math.round((Date.now() - tEdit) / 1000) + 's), answers updated');
   ok((await pushesTo(fiza.id)).some(p => /Jasraj changed their evaluation answers/.test(p.body.headings.en)), 'PUSH → booker: "Jasraj changed their evaluation answers"');
   await p2d.close();
 
@@ -1278,6 +1280,67 @@ async function fillEval(p) {
   const mb4 = (await getJson('/dev/mail')).length;
   await api(admin, 'saveUser', { user: Object.assign({}, monish, { email: 'monish.somalai@example.com' }) });
   ok((await getJson('/dev/mail')).slice(mb4).some(m => m.to === 'monish.somalai@example.com' && /Set up the/.test(m.subject)), 'correcting someone\'s email sends the setup steps to the new address');
+
+  // ── Candidate side is instant, and nothing is ever lost: no signal, Google busy, or Google says no ──
+  console.log('candidate: instant + nothing lost');
+  const pollFor = async (fn, ms) => { for (let i = 0; i < (ms || 30000) / 400; i++) { const v = await fn(); if (v) return v; await new Promise(r => setTimeout(r, 400)); } return null; };
+  const nsC = await browser.newContext(PHONE); const nsP = await nsC.newPage();
+  await nsP.goto(APP + 'checkin.html'); await nsP.waitForSelector('[name=full_name]');
+  await nsP.waitForFunction(() => !!localStorage.getItem('lr_cfg'));  // bookers' names have arrived
+  await nsC.setOffline(true);
+  await fillCheckin(nsP, { name: 'nia offline', mobile: '07700 911111', email: 'nia@example.com', booker: 'Fiza Iqbal' });
+  const tNsCi = Date.now(); await nsP.click('#go'); await nsP.waitForSelector('text=You\'re checked in, Nia');
+  ok(Date.now() - tNsCi < 1000 && !(await api(admin, 'search', { q: 'Nia Offline' })).items.length,
+    'no signal: "You\'re checked in, Nia!" straight away (' + (Date.now() - tNsCi) + 'ms); the check-in waits on the phone');
+  await nsC.setOffline(false);
+  const niaC = await pollFor(async () => (await api(admin, 'search', { q: 'Nia Offline' })).items[0]);
+  ok(niaC && niaC.booker_name === 'Fiza Iqbal' && await nsP.evaluate(() => !!JSON.parse(localStorage.getItem('lr_cand') || '{}').id && localStorage.getItem('lr_sendq') === '{}'),
+    'signal back → the check-in reaches Google by itself (booked by Fiza), the phone now knows who she is');
+  const tNsEv = Date.now(); await nsP.goto(APP + 'eval.html'); await nsP.waitForSelector('text=Your evaluation, Nia');
+  ok(Date.now() - tNsEv < 1500, 'same phone scans the evaluation QR → her form, straight in (' + (Date.now() - tNsEv) + 'ms, Google double-checks behind)');
+  await nsC.setOffline(true);
+  await fillEval(nsP);
+  const tNsSub = Date.now(); await nsP.click('#go'); await nsP.waitForSelector('text=Thank you, Nia');
+  ok(Date.now() - tNsSub < 1000 && !(await api(admin, 'getCandidate', { id: niaC.id })).eval_at, 'no signal: "Thank you, Nia!" straight away; the answers wait safely on the phone');
+  await nsC.setOffline(false);
+  ok(await pollFor(async () => (await api(admin, 'getCandidate', { id: niaC.id })).eval_at) && await nsP.evaluate(id => !localStorage.getItem('lr_evaldraft_' + id), niaC.id),
+    'signal back → her evaluation reaches Google by itself, and the copy on the phone is cleared');
+  await nsC.close();
+  // Google says no (something only Google can check): back to her form, everything still filled in, with the reason
+  const nsX = await browser.newContext(PHONE); const nsXP = await nsX.newPage();
+  await nsXP.route('**/api', route => {
+    const b = JSON.parse(route.request().postData() || '{}');
+    if (b.action === 'checkin') return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: false, error: 'This mobile is already checked in under another name today.' }) });
+    return route.continue();
+  });
+  await nsXP.goto(APP + 'checkin.html'); await nsXP.waitForSelector('[name=full_name]'); await nsXP.waitForFunction(() => !!localStorage.getItem('lr_cfg'));
+  await fillCheckin(nsXP, { name: 'Omar Refused', mobile: '07700 922222', email: 'omar@example.com', booker: 'Fiza Iqbal' });
+  await nsXP.click('#go'); await nsXP.waitForSelector('text=We couldn\'t check you in');
+  ok(await nsXP.inputValue('[name=full_name]') === 'Omar Refused' && await nsXP.inputValue('[name=email]') === 'omar@example.com' && /Fiza Iqbal/.test(await nsXP.innerText('.picked')) &&
+    await nsXP.$eval('[name=privacy_ok]', e => e.checked) && /already checked in under another name/.test(await nsXP.innerText('#err')),
+    'Google says no → back to the form with everything still filled in (booker too) and the reason');
+  await nsXP.unroute('**/api');
+  await nsXP.click('#go'); await nsXP.waitForSelector('text=You\'re checked in, Omar');
+  ok(await pollFor(async () => (await api(admin, 'search', { q: 'Omar Refused' })).items.length), 'fix it, tap again → checked in');
+  await nsX.close();
+  // The congratulations link: on screen without waiting for Google; Confirm with no signal still lands
+  await api(admin, 'saveOutcome', { id: niaC.id, outcome: 'Academy booked', academy_date: '2026-10-26', outcome_notes: '' });
+  const niaLink = (await api(admin, 'getCandidate', { id: niaC.id })).welcome_url;
+  ok(/[?&]n=Nia&d=2026-10-26$/.test(niaLink), 'the congratulations link carries her first name and Day 1 date');
+  const nsW = await browser.newContext(PHONE); const nsWP = await nsW.newPage();
+  let slowG = true;  // Google slow today
+  await nsWP.route('**/api', route => (slowG ? new Promise(r => setTimeout(r, 4000)) : Promise.resolve()).then(() => route.continue()).catch(() => {}));
+  const tNsWl = Date.now(); await nsWP.goto(niaLink.replace(PUBLIC, APP)); await nsWP.waitForSelector('text=You\'re in, Nia');
+  ok(Date.now() - tNsWl < 2500 && /Monday 26 October/.test(await nsWP.innerText('.wl-date')), 'welcome page on screen without waiting for Google (' + (Date.now() - tNsWl) + 'ms, Google taking 4s)');
+  slowG = false; await nsWP.waitForTimeout(4500);
+  await nsW.setOffline(true);
+  await nsWP.click('#conf'); await nsWP.waitForSelector('.wl-done');
+  ok(!(await api(admin, 'getCandidate', { id: niaC.id })).academy_confirmed_at, 'no signal: tap Confirm → "You\'re locked in" straight away');
+  await nsW.setOffline(false);
+  ok(await pollFor(async () => (await api(admin, 'getCandidate', { id: niaC.id })).academy_confirmed_at), 'signal back → her confirmation reaches Google by itself');
+  const tNsAgain = Date.now(); await nsWP.reload(); await nsWP.waitForSelector('.wl-done');
+  ok(Date.now() - tNsAgain < 1500 && (await nsWP.$$('link[rel=preconnect]')).length >= 3, 'opens again later already locked in, instantly; Maps / Calendar / Pre-Coaching links warmed up before the tap');
+  await nsW.close();
 
   // ── 10. Access removed / Apps Script fallback / GDPR ──
   await api(admin, 'saveUser', { user: Object.assign({}, fiza, { active: false }) });

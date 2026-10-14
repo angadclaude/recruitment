@@ -1163,7 +1163,9 @@ function staffUrl(cid) {
   return scriptUrl() + '?app=staff' + (cid ? '&c=' + cid : '');
 }
 function welcomeUrl(c) {
-  if (CONFIG.PUBLIC_URL) return CONFIG.PUBLIC_URL + 'welcome-' + (c.company === 'JUSS' ? 'juss' : 'link') + '.html?t=' + c.welcome_token;
+  // n + d: the page shows their name and Day 1 straight away, without waiting on Google
+  const quick = c.academy_date ? '&n=' + encodeURIComponent(c.full_name.split(' ')[0]) + '&d=' + c.academy_date : '';
+  if (CONFIG.PUBLIC_URL) return CONFIG.PUBLIC_URL + 'welcome-' + (c.company === 'JUSS' ? 'juss' : 'link') + '.html?t=' + c.welcome_token + quick;
   return scriptUrl() + '?go=welcome&t=' + c.welcome_token;
 }
 

@@ -74,7 +74,7 @@ function page(opts) {
   <script>(function () { var q = new URLSearchParams(location.search), b = document.getElementById('boot').dataset; b.k = q.get('t') || ''; b.cid = q.get('c') || ''; })();</script>
   <script src="config.js?v=${v}"></script>
   <script src="logos.js?v=${v}"></script>
-  <script src="qr.js?v=${v}"></script>
+  ${staff ? `<script src="qr.js?v=${v}"></script>` : ''}
   ${staff ? `<script>
     window.OneSignalDeferred = window.OneSignalDeferred || [];
     if ((window.APP_CONFIG || {}).ONESIGNAL_APP_ID) {
