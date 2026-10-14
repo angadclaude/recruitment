@@ -1,4 +1,4 @@
-window.APP_VERSION = 'a11de05a';
+window.APP_VERSION = 'ea7dfca2';
 
 (function () {
 'use strict';
@@ -56,6 +56,50 @@ function callRetry(action, payload, onWait, tries) {
   return attempt(0);
 }
 function stopTimer() { if (S.timer) { clearInterval(S.timer); S.timer = null; } }
+function londonToday() { return londonNow().slice(0, 10); }
+/** Same rule as Google's: a UK mobile, however it's typed (+44, 0044, spaces). '' if it isn't one. */
+function ukMobile(s) {
+  let d = String(s || '').replace(/[^\d+]/g, '');
+  if (d.indexOf('+44') === 0) d = '0' + d.slice(3); else if (d.indexOf('0044') === 0) d = '0' + d.slice(4); else if (d.indexOf('44') === 0 && d.length === 12) d = '0' + d.slice(2);
+  d = d.replace(/\D/g, ''); if (/^7\d{9}$/.test(d)) d = '0' + d;
+  return /^07\d{9}$/.test(d) ? d : '';
+}
+function firstOf(name) { return String(name || '').trim().split(/\s+/)[0].toLowerCase().replace(/\b\w/g, c => c.toUpperCase()); }
+// ───── Candidate sends (check-in, evaluation, Confirm): shown as done straight away, delivered in the background ─────
+// Kept on the phone until Google has it: retried with back-off, and again the next time any of our pages opens.
+const SEND_GEN = {};
+function sendq() { return store.get('sendq') || {}; }
+function sendSoon(key, action, payload, onDone, onFail) {
+  const q = sendq(); q[key] = { action: action, payload: payload }; store.set('sendq', q);
+  const gen = SEND_GEN[key] = (SEND_GEN[key] || 0) + 1;
+  const drop = () => { const x = sendq(); delete x[key]; store.set('sendq', x); };
+  const go = n => call(action, payload).then(r => {
+    if (SEND_GEN[key] === gen) drop();
+    afterSend(action, payload, r); if (onDone) onDone(r);
+  }, e => {
+    if (SEND_GEN[key] !== gen) return;  // a newer send of the same thing took over
+    if (e.retry) return void setTimeout(() => go(n + 1), Math.min(30000, 2000 * Math.pow(2, n)));
+    drop(); if (onFail) onFail(e);
+  });
+  go(0);
+}
+function resendPending() { const q = sendq(); Object.keys(q).forEach(k => sendSoon(k, q[k].action, q[k].payload)); }
+/** What the phone remembers once Google has it (also when it lands after the page was closed and opened again). */
+function afterSend(action, p, r) {
+  if (action === 'submitEval') store.del('evaldraft_' + p.id);
+  if (action === 'confirmAcademy') { const w = store.get('wl_' + p.t); if (w && !w.confirmed_at) { w.confirmed_at = londonNow(); store.set('wl_' + p.t, w); } }
+  if (action === 'checkin' && r && r.id && ukMobile(p.form.mobile) === store.get('lastCheckin')) {
+    store.set('cand', { id: r.id, resume: r.resume, first_name: r.first_name, company: coOf(r.company), nq: !!r.nonQual, date: londonToday(), evalDone: !!r.evalDone });
+  }
+}
+/** Warm up the sites behind a page's buttons (DNS + secure connection), so they open the moment they're tapped. */
+function warm(urls) {
+  urls.filter(Boolean).forEach(u => {
+    let o; try { o = new URL(u).origin; } catch (e) { return; }
+    if (document.querySelector('link[rel=preconnect][href="' + o + '"]')) return;
+    ['preconnect', 'dns-prefetch'].forEach(rel => { const l = document.createElement('link'); l.rel = rel; l.href = o; if (rel === 'preconnect') l.crossOrigin = ''; document.head.appendChild(l); });
+  });
+}
 function scrollTop() { window.scrollTo(0, 0); }
 function logos(size) {
   if (C.co) return '<div class="brandbar"><img alt="' + C.co + ' Marketing" src="' + LOGOS[C.co] + '" style="height:' + size + 'px"></div>';
@@ -154,6 +198,17 @@ function brandTheme(co) { C.co = coOf(co); setTheme(C.co, true); }
 function startCandidate() {
   if (BOOT.mode === 'welcome') return startWelcome();
   const saved = store.get('cand');
+  resendPending();
+  if (saved && saved.id && saved.date === londonToday()) {
+    C.rec = saved; brandTheme(saved.company);
+    if (BOOT.mode === 'eval') saved.evalDone ? renderDone('already') : saved.nq ? renderNoEval() : renderEval();
+    else renderCheckedIn(saved.first_name, saved.evalDone, false, saved.nq);
+    callRetry('candidateStatus', { id: saved.id, resume: saved.resume }, null, 2).then(reconcile).catch(e => { if (!e.retry) reconcile(null); });
+    return;
+  }
+  // Checked in moments ago and it's still on its way to Google: show that, not an empty form
+  const ci = Object.keys(sendq()).filter(k => /^checkin_/.test(k)).map(k => sendq()[k].payload.form).filter(f => ukMobile(f.mobile) === store.get('lastCheckin'))[0];
+  if (ci && BOOT.mode !== 'eval') { C.rec = { first_name: firstOf(ci.full_name), company: '', nq: false }; brandTheme(''); return renderCheckedIn(C.rec.first_name, false, false, false); }
   const known = saved && saved.id
     ? callRetry('candidateStatus', { id: saved.id, resume: saved.resume }, null, 2).then(st => (st.attended_date === st.today ? st : null))
       // Busy or no signal: carry on with what this phone already knows (only forget it if Google says it doesn't exist)
@@ -176,15 +231,42 @@ function startCandidate() {
 }
 
 /** then = 'eval' when someone scans the evaluation QR without having checked in. */
-function loadCheckin(then) {
-  brandTheme('');
-  $app.innerHTML = '<div class="splash">' + logos(56) + '<div class="spinner"></div></div>';
-  call('publicConfig').then(cfg => { C.cfg = cfg; renderCheckin(then); })
-    .catch(e => { $app.innerHTML = logos(48) + '<div class="err">' + h(e.message) + '</div>'; });
+/** Google's answer about someone this phone showed straight in: put right anything it knows better. */
+function reconcile(st) {
+  if (!st || st.attended_date !== st.today) {
+    store.del('cand'); C.rec = null;
+    if ($app.dataset.screen !== 'done') BOOT.mode === 'eval' ? renderFind() : loadCheckin('');
+    return;
+  }
+  const was = { nq: !!C.rec.nq, co: C.rec.company }, scr = $app.dataset.screen;
+  Object.assign(C.rec, { first_name: st.first_name || C.rec.first_name, company: coOf(st.company) || C.rec.company, nq: !!st.nonQual, evalDone: !!st.evalDone || !!C.rec.evalDone });
+  store.set('cand', C.rec);
+  if (C.rec.company !== was.co) brandTheme(C.rec.company);
+  if (st.evalDone && (scr === 'eval' || scr === 'checkedin')) return renderDone('already', st.canEdit);
+  if (scr === 'done' && $app.dataset.donemode === 'already' && st.canEdit) return renderDone('already', true);
+  if (C.rec.nq !== was.nq) {
+    if (BOOT.mode === 'eval' && scr !== 'done') return C.rec.nq ? renderNoEval() : renderEval();
+    if (scr === 'checkedin') return renderCheckedIn(C.rec.first_name, false, false, C.rec.nq);
+  }
 }
 
-function renderCheckin(then) {
+// Same list as Google's (RTW in Code.gs): the form shows straight away; Google's own copy replaces it the moment it arrives.
+const RTW_DEFAULT = [['British or Irish citizen', 'ok'], ['Settled status / Indefinite Leave to Remain', 'ok'], ['Pre-settled status', 'ok'], ['Refugee / humanitarian protection', 'ok'],
+  ['Graduate visa (PSW)', 'visa'], ['Spouse / partner / family visa', 'visa'], ['Dependant of a Skilled Worker', 'visa'], ['Youth Mobility visa', 'visa'], ['BNO visa', 'visa'], ['Ukraine scheme', 'visa'],
+  ['Dependant of a student', 'check'], ['Student visa (Tier 4)', 'no'], ['Skilled Worker / Health & Care visa', 'no'], ['Asylum seeker (decision pending)', 'no'], ['I need visa sponsorship', 'no'], ['Other', 'check']]
+  .map(r => ({ label: r[0], level: r[1] }));
+/** The check-in form is on screen at once (bookers' names arrive a moment later, before anyone gets to that box). */
+function loadCheckin(then, pre, preErr) {
+  brandTheme('');
+  C.cfg = store.get('cfg') || { bookers: null, rtw: RTW_DEFAULT };
+  C.cfg.today = londonToday();
+  renderCheckin(then, pre, preErr);
+  callRetry('publicConfig', {}, null, 3).then(cfg => { store.set('cfg', cfg); C.cfg = cfg; if (C.onCfg) C.onCfg(); }).catch(() => {});  // typed names are still matched by Google
+}
+
+function renderCheckin(then, pre, preErr) {
   scrollTop(); brandTheme('');
+  pre = pre || {}; $app.dataset.screen = 'checkin'; $app.dataset.mark = '';
   const sources = ['Indeed', 'TikTok', 'Instagram', 'Facebook', 'LinkedIn', BA_REFERRAL, 'Other'];
   const sec = (icon, title) => '<section class="evsec"><div class="evsec-h"><span>' + icon + '</span>' + title + '</div><div class="qcard ci">';
   $app.innerHTML = '<div class="c-hero">' + heroLogos() + '<span class="label">Recruitment day' + (C.cfg.today ? ' · ' + h(fmtLong(C.cfg.today)) : '') + '</span>' +
@@ -193,31 +275,36 @@ function renderCheckin(then) {
     '<div class="evtags"><span>⏱ 1 min</span><span>🔒 Private</span></div><div id="with"></div></div>' +
     '<form id="f" class="evform" novalidate autocomplete="on">' +
     sec('🙋', 'About you') +
-    '<label class="q">Full name <span class="req">*</span></label><input type="text" name="full_name" autocomplete="name" placeholder="First and last name">' +
-    '<label class="q">Mobile number <span class="req">*</span></label><input type="tel" name="mobile" autocomplete="tel" inputmode="tel" placeholder="07…">' +
-    '<label class="q">Email <span class="req">*</span></label><input type="email" name="email" autocomplete="email" placeholder="you@email.com">' +
-    '<label class="q">Are you 18 or over? <span class="req">*</span></label>' + chips('over18', ['Yes', 'No']) + '</div></section>' +
+    '<label class="q">Full name <span class="req">*</span></label><input type="text" name="full_name" autocomplete="name" placeholder="First and last name" value="' + h(pre.full_name || '') + '">' +
+    '<label class="q">Mobile number <span class="req">*</span></label><input type="tel" name="mobile" autocomplete="tel" inputmode="tel" placeholder="07…" value="' + h(pre.mobile || '') + '">' +
+    '<label class="q">Email <span class="req">*</span></label><input type="email" name="email" autocomplete="email" placeholder="you@email.com" value="' + h(pre.email || '') + '">' +
+    '<label class="q">Are you 18 or over? <span class="req">*</span></label>' + chips('over18', ['Yes', 'No'], pre.over18) + '</div></section>' +
     sec('🤝', 'Your booking') +
     '<label class="q">Who booked you in today? <span class="req">*</span></label>' +
     '<div class="help">Start typing their name, then tap it.</div>' +
     '<div id="bk"></div>' +
-    '<label class="check"><input type="checkbox" id="unsure"> I\'m not sure who booked me</label>' +
-    '<label class="q">Where did you find us?</label>' + chips('source', sources) + '</div></section>' +
+    '<label class="check"><input type="checkbox" id="unsure"' + (pre.unsure ? ' checked' : '') + '> I\'m not sure who booked me</label>' +
+    '<label class="q">Where did you find us?</label>' + chips('source', sources, pre.source) + '</div></section>' +
     sec('🛂', 'Right to work') +
     '<label class="q">Your right to work in the UK <span class="req">*</span></label>' +
-    '<select name="rtw"><option value="">Choose one…</option>' + C.cfg.rtw.map(r => '<option>' + h(r.label) + '</option>').join('') + '</select>' +
-    '<div id="exp" hidden><label class="q">Visa expiry date <span class="req">*</span></label><input type="date" name="visa_expiry"></div>' +
-    '<label class="check"><input type="checkbox" name="privacy_ok"> <span>I agree that LINK Marketing and JUSS Marketing can use these details to assess my application and contact me about it. They are kept in full for 12 weeks. After that, only basic details and the result of my application are kept, for up to 6 months, then deleted.</span></label>' +
+    '<select name="rtw">' + rtwOptions(pre.rtw) + '</select>' +
+    '<div id="exp"' + (rtwLevelOf(pre.rtw) === 'visa' ? '' : ' hidden') + '><label class="q">Visa expiry date <span class="req">*</span></label><input type="date" name="visa_expiry" value="' + h(pre.visa_expiry || '') + '"></div>' +
+    '<label class="check"><input type="checkbox" name="privacy_ok"' + (pre.privacy_ok ? ' checked' : '') + '> <span>I agree that LINK Marketing and JUSS Marketing can use these details to assess my application and contact me about it. They are kept in full for 12 weeks. After that, only basic details and the result of my application are kept, for up to 6 months, then deleted.</span></label>' +
     '</div></section>' +
-    '<div id="err"></div>' +
+    '<div id="err">' + (preErr ? '<div class="err">' + h(preErr) + '</div>' : '') + '</div>' +
     '<button class="btn block evsubmit" id="go" type="submit">Check me in ✅</button>' +
     '</form>';
 
   const f = document.getElementById('f');
   bindChips(f);
-  let booker = null;
+  let booker = pre.booker || null, redraw = null;
   // Each booker under their own name and every other name they use (a team member, their company): same booker either way
-  const bookerNames = () => [].concat.apply([], C.cfg.bookers.map(b => [b].concat((b.aliases || []).map(a => ({ id: b.id, name: a, company: b.company })))));
+  const bookerNames = () => [].concat.apply([], (C.cfg.bookers || []).map(b => [b].concat((b.aliases || []).map(a => ({ id: b.id, name: a, company: b.company })))));
+  // Google's names (and its right-to-work list) landing after the form is already on screen
+  C.onCfg = () => {
+    if (redraw && document.getElementById('bkq')) redraw();
+    if (f.isConnected && !f.rtw.value) f.rtw.innerHTML = rtwOptions('');
+  };
   const bk = document.getElementById('bk');
   const withEl = document.getElementById('with');
   document.documentElement.classList.add('theme-anim');
@@ -238,12 +325,14 @@ function renderCheckin(then) {
     const draw = () => {
       const q = inp.value.trim().toLowerCase();
       if (q.length < 2) { sg.innerHTML = ''; return; }
+      if (!C.cfg.bookers) { sg.innerHTML = '<div class="help" style="margin-top:6px"><span class="spinner inline"></span>Loading names…</div>'; return; }
       const hits = bookerNames().filter(b => b.name.toLowerCase().split(/[\s-]+/).some(p => p.indexOf(q) === 0) || b.name.toLowerCase().indexOf(q) === 0).slice(0, 6);
       sg.innerHTML = hits.length
         ? '<div class="suggest">' + hits.map(b => '<button type="button" data-id="' + h(b.id) + '" data-name="' + h(b.name) + '"><span>' + h(b.name) + '</span><span class="co ' + h(b.company) + '">' + h(b.company) + '</span></button>').join('') + '</div>'
         : '<div class="help" style="margin-top:6px">Not on the list? Type their <b>full name</b> and carry on, we\'ll match it up.</div>';
     };
     inp.addEventListener('input', draw);
+    redraw = draw;
     sg.addEventListener('click', e => {
       const b = e.target.closest('button[data-id]'); if (!b) return;
       booker = bookerNames().filter(x => x.id === b.dataset.id && x.name === b.dataset.name)[0];
@@ -254,10 +343,7 @@ function renderCheckin(then) {
   };
   drawBooker('');
 
-  f.rtw.addEventListener('change', () => {
-    const r = C.cfg.rtw.filter(x => x.label === f.rtw.value)[0];
-    document.getElementById('exp').hidden = !(r && r.level === 'visa');
-  });
+  f.rtw.addEventListener('change', () => { document.getElementById('exp').hidden = rtwLevelOf(f.rtw.value) !== 'visa'; });
 
   f.addEventListener('submit', e => {
     e.preventDefault();
@@ -277,26 +363,52 @@ function renderCheckin(then) {
       rtw: f.rtw.value, visa_expiry: f.visa_expiry.value, privacy_ok: f.privacy_ok.checked,
     };
     if (!form.full_name.trim() || !form.mobile.trim() || !form.email.trim()) return showErr(err, 'Please fill in your name, mobile and email.');
+    // Google's own checks, here first: a check-in shown as done is one Google will take
+    if (form.full_name.trim().split(/\s+/).length < 2) return showErr(err, 'Please enter your full name (first and last).');
+    if (!ukMobile(form.mobile)) return showErr(err, 'Please enter a valid UK mobile number (07…).');
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email.trim())) return showErr(err, 'Please enter a valid email.');
     if (!form.over18) return showErr(err, 'Please answer whether you are 18 or over.');
     if (!booker && !unsure && typed.length < 2) return showErr(err, 'Who booked you in? Tap their name from the list as you type, or tick "I\'m not sure".');
     if (!form.rtw) return showErr(err, 'Please choose your right to work status.');
     if (!document.getElementById('exp').hidden && !form.visa_expiry) return showErr(err, 'Please add your visa expiry date.');
     if (!form.privacy_ok) return showErr(err, 'Please tick the privacy box to continue.');
     showErr(err, '');
-    const btn = document.getElementById('go'); busy(btn, true, 'Checking in…');
-    callRetry('checkin', { form: form }, () => { btn.innerHTML = 'Busy, still checking you in…'; }).then(r => {
-      C.rec = { id: r.id, resume: r.resume, first_name: r.first_name, company: coOf(r.company) || (booker ? coOf(booker.company) : ''), nq: !!r.nonQual };
-      store.set('cand', C.rec); brandTheme(C.rec.company);
+    const mobile = ukMobile(form.mobile), today = londonToday();
+    store.set('lastCheckin', mobile);
+    if (then === 'eval') {
+      // Scanned the evaluation QR without checking in: the evaluation needs the check-in's id, so wait for it here
+      const btn = document.getElementById('go'); busy(btn, true, 'Checking in…');
+      return callRetry('checkin', { form: form }, () => { btn.innerHTML = 'Busy, still checking you in…'; }).then(r => {
+        C.rec = { id: r.id, resume: r.resume, first_name: r.first_name, company: coOf(r.company) || (booker ? coOf(booker.company) : ''), nq: !!r.nonQual, date: today, evalDone: !!r.evalDone };
+        store.set('cand', C.rec); brandTheme(C.rec.company);
+        if (r.evalDone) return renderDone('already');
+        r.nonQual ? renderNoEval() : renderEval();
+      }).catch(ex => { busy(btn, false); showErr(err, ex.message); });
+    }
+    // Checked in, on screen now. The check-in carries on to Google in the background (busy moments, no signal: it keeps trying).
+    const nq = form.over18 !== 'Yes' || rtwLevelOf(form.rtw) === 'no' || !!(form.visa_expiry && form.visa_expiry < today);
+    store.del('cand');
+    C.rec = { first_name: firstOf(form.full_name), company: booker ? coOf(booker.company) : '', nq: nq, date: today };
+    brandTheme(C.rec.company);
+    renderCheckedIn(C.rec.first_name, false, false, nq);
+    const mark = $app.dataset.mark = 'ci' + Date.now();
+    sendSoon('checkin_' + mobile, 'checkin', { form: form }, r => {
+      if ($app.dataset.mark !== mark) return;  // the phone has moved on to the next person
+      C.rec = store.get('cand') || C.rec;
       if (r.evalDone) return renderDone('already');
-      if (then === 'eval') return r.nonQual ? renderNoEval() : renderEval();
-      renderCheckedIn(r.first_name, false, false, r.nonQual);
-    }).catch(ex => { busy(btn, false); showErr(err, ex.message); });
+      if (!!r.nonQual !== nq || C.rec.company !== C.co) { brandTheme(C.rec.company); renderCheckedIn(C.rec.first_name, false, false, !!r.nonQual); $app.dataset.mark = mark; }
+    }, ex => {
+      if ($app.dataset.mark !== mark) return;
+      loadCheckin(then, Object.assign({}, form, { booker: booker, unsure: unsure }), 'We couldn\'t check you in: ' + ex.message);
+    });
   });
 }
+function rtwLevelOf(label) { const r = (C.cfg && C.cfg.rtw || RTW_DEFAULT).filter(x => x.label === label)[0]; return r ? r.level : ''; }
+function rtwOptions(sel) { return '<option value="">Choose one…</option>' + (C.cfg && C.cfg.rtw || RTW_DEFAULT).map(r => '<option' + (r.label === sel ? ' selected' : '') + '>' + h(r.label) + '</option>').join(''); }
 
 /** Evaluation QR scanned on a phone we don't recognise: find today's check-in by mobile. */
 function renderFind(notFound) {
-  scrollTop(); brandTheme('');
+  scrollTop(); brandTheme(''); $app.dataset.screen = 'find';
   $app.innerHTML = '<div class="c-hero">' + heroLogos() + '<span class="label">Last slide · evaluation</span><h1><span class="gtext">Evaluation</span> time 📝</h1>' +
     '<p>Enter the mobile number you checked in with this morning.</p></div>' +
     '<div class="card c-form"><label class="q">Your mobile</label><input type="tel" id="m" inputmode="tel" autocomplete="tel" placeholder="07…" value="' + h(store.get('lastMobile') || '') + '"><div id="err">' +
@@ -309,7 +421,7 @@ function renderFind(notFound) {
     store.set('lastMobile', mobile);
     callRetry('resumeByMobile', { mobile: mobile }, () => { btn.innerHTML = 'Busy, still looking…'; }).then(r => {
       if (!r.found) return renderFind(true);
-      C.rec = { id: r.id, resume: r.resume, first_name: r.first_name, company: coOf(r.company), nq: !!r.nonQual }; store.set('cand', C.rec); brandTheme(C.rec.company);
+      C.rec = { id: r.id, resume: r.resume, first_name: r.first_name, company: coOf(r.company), nq: !!r.nonQual, date: londonToday(), evalDone: !!r.evalDone }; store.set('cand', C.rec); brandTheme(C.rec.company);
       r.evalDone ? renderDone('already', r.canEdit) : r.nonQual ? renderNoEval() : renderIsThisYou();
     }).catch(ex => { busy(btn, false); showErr(document.getElementById('err'), ex.message); });
   };
@@ -327,7 +439,7 @@ function renderIsThisYou() {
 }
 function renderCheckedIn(first, evalDone, canEdit, nonQual) {
   if (evalDone) return renderDone('already', canEdit);
-  scrollTop(); brandTheme(C.rec && C.rec.company);
+  scrollTop(); brandTheme(C.rec && C.rec.company); $app.dataset.screen = 'checkedin';
   $app.innerHTML = '<div class="c-hero">' + heroLogos() + '<span class="label">Checked in</span><h1>You\'re checked in, <span class="gname">' + h(first) + '</span>!</h1>' +
     '<p>We aim to begin at 10 AM 🕙</p></div><div class="card c-done">' + tickSvg() +
     (nonQual ? '<div class="ok">🙋 <b>Thanks for coming in.</b> A member of our team will have a quick chat with you today.</div></div>'
@@ -340,13 +452,14 @@ function renderCheckedIn(first, evalDone, canEdit, nonQual) {
 
 /** Non-qualifier (under 18 / no right to work self-employed) scanned the evaluation QR: no form, the team speaks to them. */
 function renderNoEval() {
-  stopTimer(); scrollTop(); brandTheme(C.rec && C.rec.company);
+  stopTimer(); scrollTop(); brandTheme(C.rec && C.rec.company); $app.dataset.screen = 'noeval';
   $app.innerHTML = '<div class="c-hero">' + heroLogos() + '<span class="label">Evaluation</span><h1>No form needed, <span class="gname">' + h(C.rec.first_name) + '</span></h1>' +
     '<p>Thanks for coming in today 🙏</p></div><div class="card c-done">' + tickSvg() +
     '<p>You don\'t need to fill in the evaluation. <b>Our team will speak to you directly</b> about your options 📲</p>' +
     (C.co ? magCard(C.co) : magCard('LINK') + magCard('JUSS')) +
     '<button class="btn ghost sm" id="notme" style="margin-top:10px">Not you? ' + (BOOT.mode === 'eval' ? 'Enter your number again' : 'Check someone else in') + '</button></div>';
   document.getElementById('notme').onclick = () => { store.del('cand'); C.rec = null; if (BOOT.mode === 'eval') renderFind(); else loadCheckin(''); };
+  warm(Object.keys(MAGAZINES).map(k => MAGAZINES[k].url));
 }
 
 const EVAL = [
@@ -418,7 +531,7 @@ function bdpHtml() {
     '<ol class="steps">' + LADDER.map((l, i) => '<li><b>' + (i + 1) + '</b><div><strong>' + h(l[1].split(' · ')[1] || l[1]) + '</strong><span>' + h(l[2]) + '</span></div></li>').join('') + '</ol></div>';
 }
 function renderEval(edit) {
-  stopTimer(); scrollTop();
+  stopTimer(); scrollTop(); $app.dataset.screen = 'eval';
   const a = store.get('evaldraft_' + C.rec.id) || {};
   const byKey = {}; EVAL.forEach(q => { byKey[q.k] = q; });
   let num = 0;
@@ -481,10 +594,19 @@ function renderEval(edit) {
         return;
       }
       EVAL.forEach(q => { if (q.showIf && !q.showIf(a)) delete a[q.k]; });  // e.g. typed a detail, then changed to "No"
-      const btn = document.getElementById('go'); busy(btn, true, 'Sending…');
-      callRetry('submitEval', { id: C.rec.id, resume: C.rec.resume, answers: a, edit: !!edit }, () => { btn.innerHTML = 'Busy, still sending… (your answers are safe)'; })
-        .then(r => { store.del('evaldraft_' + C.rec.id); renderDone(r.status === 'already' ? 'already' : r.status === 'edited' ? 'updated' : 'new', r.status === 'new' || r.status === 'edited'); })
-        .catch(ex => { busy(btn, false); showErr(err, ex.message); });
+      const id = C.rec.id;
+      store.set('evaldraft_' + id, a);  // stays until Google has it
+      C.rec.evalDone = true; store.set('cand', C.rec);
+      renderDone(edit ? 'updated' : 'new', true);
+      sendSoon('eval_' + id, 'submitEval', { id: id, resume: C.rec.resume, answers: a, edit: !!edit }, r => {
+        if (r.status === 'already' && $app.dataset.screen === 'done') renderDone('already', false);
+      }, ex => {
+        if (C.rec && C.rec.id === id) { C.rec.evalDone = false; store.set('cand', C.rec); }
+        const card = $app.dataset.screen === 'done' && $app.querySelector('.c-done');
+        if (!card) return;
+        card.insertAdjacentHTML('afterbegin', '<div class="err">Your answers didn\'t send: ' + h(ex.message) + '</div><button class="btn block" id="evretry">Try again (your answers are saved)</button>');
+        document.getElementById('evretry').onclick = () => renderEval(edit);
+      });
     });
   };
   draw();
@@ -493,7 +615,7 @@ function renderEval(edit) {
 /** mode: 'new' (just sent) · 'already' (sent before: one evaluation per person per day) · 'updated' (answers changed).
  *  canEdit: same day and the booker hasn't logged the call yet → they can fix a mistake. */
 function renderDone(mode, canEdit) {
-  stopTimer(); scrollTop(); brandTheme(C.rec && C.rec.company);
+  stopTimer(); scrollTop(); brandTheme(C.rec && C.rec.company); $app.dataset.screen = 'done'; $app.dataset.donemode = mode;
   const first = C.rec && C.rec.first_name ? ', <span class="gname">' + h(C.rec.first_name) + '</span>' : '';
   const top = mode === 'already' ? ['Evaluation', 'Already done' + first, '<p>You\'ve already sent your evaluation today. No need to do it again.</p>']
     : mode === 'updated' ? ['Evaluation', 'Updated' + first + '!', '<p>Your changes have been saved.</p>'] : ['Evaluation sent 🙌', 'Thank you' + first + '!', '<p>Your evaluation is in 🚀</p>'];
@@ -505,8 +627,10 @@ function renderDone(mode, canEdit) {
     (canEdit && C.rec ? '<div id="err"></div><button class="btn ghost block" id="edit" style="margin-top:14px">✏️ Made a mistake? Change my answers</button>' : '') +
     (mode === 'already' ? '<button class="btn ghost sm" id="notme" style="margin-top:10px">Not you? ' + (BOOT.mode === 'eval' ? 'Enter your number again' : 'Check someone else in') + '</button>' : '') + '</div>';
   if (mode === 'new') burst();
+  warm(Object.keys(MAGAZINES).map(k => MAGAZINES[k].url));
   const ed = document.getElementById('edit');
   if (ed) ed.onclick = () => {
+    if (C.rec && store.get('evaldraft_' + C.rec.id)) return renderEval(true);  // still on the phone: no need to ask Google
     busy(ed, true, 'Opening your answers…');
     callRetry('myEval', { id: C.rec.id, resume: C.rec.resume }).then(r => { store.set('evaldraft_' + C.rec.id, r.answers); renderEval(true); })
       .catch(ex => { busy(ed, false); showErr(document.getElementById('err'), ex.message); });
@@ -568,12 +692,24 @@ function magCard(co) {
 const PRE_COACHING = { LINK: 'https://forms.office.com/pages/responsepage.aspx?id=QT4blMNFxEuaVSUMKK6uNT5ZuU1A_UdDsSk-r6KY6olUQ0JEWFU0NDU1MEI5REZZRzY3WEc1SEVaTC4u&route=shorturl' };
 
 function startWelcome() {
-  call('welcomeInfo', { t: BOOT.k }).then(renderWelcome)
-    .catch(e => { $app.innerHTML = logos(56) + '<div class="card center"><div class="big-emoji">🔗</div><p>' + h(e.message) + '</p></div>'; });
+  const q = new URLSearchParams(location.search), key = 'wl_' + BOOT.k;
+  const pageCo = document.documentElement.classList.contains('t-JUSS') ? 'JUSS' : 'LINK';
+  // The link carries the first name + Day 1 date, so the page needs nothing from Google to appear
+  const quick = store.get(key) || (q.get('n') && /^\d{4}-\d{2}-\d{2}$/.test(q.get('d') || '')
+    ? { first_name: q.get('n').slice(0, 40), academy_date: q.get('d'), company: pageCo, confirmed_at: '' } : null);
+  if (quick) { quick.today = londonToday(); renderWelcome(quick); }
+  resendPending();
+  const confirming = !!sendq()['confirm_' + BOOT.k];
+  callRetry('welcomeInfo', { t: BOOT.k }, null, 3).then(w => {
+    if (confirming && !w.confirmed_at) w.confirmed_at = londonNow();
+    store.set(key, w);
+    if (!quick || quick.first_name !== w.first_name || quick.academy_date !== w.academy_date || coOf(quick.company) !== coOf(w.company)) renderWelcome(w, !!quick);
+    else if (!!quick.confirmed_at !== !!w.confirmed_at && C.wlCta) C.wlCta(!!w.confirmed_at);
+  }).catch(e => { if (!quick) $app.innerHTML = logos(56) + '<div class="card center"><div class="big-emoji">🔗</div><p>' + h(e.message) + '</p></div>'; });
 }
 
-function renderWelcome(w) {
-  scrollTop();
+function renderWelcome(w, keepScroll) {
+  if (!keepScroll) scrollTop();
   const co = w.company === 'JUSS' ? 'JUSS' : 'LINK';
   brandTheme(co);
   const brand = co + ' Marketing';
@@ -630,12 +766,20 @@ function renderWelcome(w) {
       ? '<div class="wl-done">✅ You\'re locked in. See you ' + h(mon ? 'Monday' : fmt(w.academy_date)) + '! 🔥</div>'
       : '<button class="btn block evsubmit wl-btn" id="conf">🔒 Confirm I\'m coming</button>';
     const b = document.getElementById('conf');
+    // Locked in the moment they tap; it reaches Google in the background (and keeps trying with no signal)
     if (b) b.onclick = () => {
-      busy(b, true, 'Locking in…');
-      call('confirmAcademy', { t: BOOT.k }).then(() => { drawCta(true); burst(); }).catch(ex => { busy(b, false); toast(ex.message); });
+      const key = 'wl_' + BOOT.k, saved = store.get(key) || w;
+      saved.confirmed_at = londonNow(); store.set(key, saved);
+      drawCta(true); burst();
+      sendSoon('confirm_' + BOOT.k, 'confirmAcademy', { t: BOOT.k }, null, ex => {
+        const x = store.get(key); if (x) { x.confirmed_at = ''; store.set(key, x); }
+        drawCta(false); toast('Couldn\'t confirm: ' + ex.message);
+      });
     };
   };
+  C.wlCta = drawCta;
   drawCta(!!w.confirmed_at);
+  warm([office.maps, 'https://www.google.com/maps', gcal, PRE_COACHING[co]]);
 }
 
 function burst() {

@@ -1,4 +1,5 @@
-// How fast does the staff app move between pages? Times every tap the way a phone feels it, with Google's
+// How fast does every step feel? Staff app (moving between pages, presenter notes) and the candidate's
+// journey (check-in, evaluation, the congratulations link + Confirm). Times every tap the way a phone feels it, with Google's
 // real ~1.5 s response time switched on. Prints a table; exits non-zero if a page that should be instant isn't.
 // Usage: node app/build.js && node app/dev/speed.js [video-folder]
 'use strict';
@@ -40,6 +41,34 @@ async function tap(page, sel) {
     return false;
   }, null, { timeout: 15000, polling: 16 });
   return page.evaluate(() => ({ ready: Math.round(window.__ready - window.__t0), still: Math.round(window.__still - window.__t0) }));
+}
+
+/** ms from the tap to `text` appearing anywhere on screen. */
+async function tapText(page, sel, text) {
+  await page.evaluate(t => {
+    window.__t0 = 0; window.__seen = 0;
+    document.addEventListener('click', () => { window.__t0 = performance.now(); }, { capture: true, once: true });
+    const mo = new MutationObserver(() => { if (window.__t0 && !window.__seen && document.body.innerText.includes(t)) { window.__seen = performance.now(); mo.disconnect(); } });
+    mo.observe(document.body, { subtree: true, childList: true, characterData: true });
+  }, text);
+  await page.click(sel);
+  await page.waitForFunction(() => window.__seen > 0, null, { timeout: 15000, polling: 16 });
+  return Math.round(await page.evaluate(() => window.__seen - window.__t0));
+}
+async function fillEval(p) {
+  await p.click('.chips[data-name=q1_excitement] .chip[data-v="9"]');
+  await p.fill('[name=q2_stood_out]', 'The ladder to ownership');
+  await p.click('.chips[data-name=q3_reason] .chip:has-text("Uncapped earnings")');
+  await p.click('.chips[data-name=q4_situation] .chip:has-text("Working part-time")');
+  await p.fill('[name=q5_start_date]', '2026-10-19');
+  await p.click('.chips[data-name=q6_days] .chip:has-text("5 days")');
+  await p.click('.chips[data-name=q7_commute] .chip:has-text("Yes")');
+  await p.fill('[name=q8_resilience]', 'Kept going through exams while working weekends.');
+  await p.click('.chips[data-name=q9_results_paid] .chip:has-text("No")');
+  await p.click('.chips[data-name=q10_door] .chip:has-text("A)")');
+  await p.click('.chips[data-name=q11_coach] .chip:has-text("D)")');
+  await p.click('.chips[data-name=q12_bdp_stage] .chip:has-text("Ownership")');
+  await p.click('.chips[data-name=q13_unspent] .chip:has-text("No")');
 }
 
 (async () => {
@@ -119,8 +148,60 @@ async function tap(page, sel) {
   await page.waitForFunction(() => { const p = document.getElementById('page'); return p && !p.querySelector('.sk') && /chase|Nudge|nobody/i.test(p.innerText); }, null, { timeout: 15000, polling: 16 });
   rows.push({ what: 'Chase straight after opening the app', ready: Date.now() - t1, still: '', bad: Date.now() - t1 > 400 });
 
+  // ── Presenter: type notes on someone in the room, save, back to the list ──
+  await page.click('.tabbar button[data-tab=today]'); await page.waitForSelector('#page .item');
+  await page.click('#page .item'); await page.waitForSelector('#savenotes');
+  await page.fill('#notes', 'Strong eye contact, asked about progression.');
+  rows.push({ what: 'presenter: save notes', ready: await tapText(page, '#savenotes', 'Notes saved'), still: '', must: INSTANT });
+  rows.push({ what: 'presenter: ← back to the room', ready: (await tap(page, '#abBack')).ready, still: '', must: INSTANT });
+
+  // ── Candidate: a brand-new phone scans QR 1 (check-in), later QR 2 (evaluation) ──
+  const cctx = await browser.newContext(PHONE);
+  const cp = await cctx.newPage();
+  let kb = 0; cp.on('response', r => r.body().then(b => { kb += b.length / 1024; }).catch(() => {}));
+  let t = Date.now();
+  await cp.goto(APP + 'checkin.html', { waitUntil: 'commit' });
+  await cp.waitForSelector('[name=full_name]', { timeout: 15000 });
+  rows.push({ what: 'check-in: form on screen (new phone)', ready: Date.now() - t, still: '', must: 800 });
+  await cp.fill('[name=full_name]', 'Zara Hughes'); await cp.fill('[name=mobile]', '07700 955555'); await cp.fill('[name=email]', 'zara@example.com');
+  await cp.click('.chips[data-name=over18] .chip:has-text("Yes")');
+  await cp.fill('#bkq', 'Fiz'); await cp.waitForSelector('#sg button', { timeout: 15000 });
+  rows.push({ what: 'check-in: booker names ready to pick', ready: Date.now() - t, still: '', note: 'from opening the page' });
+  await cp.click('#sg button:has-text("Fiza")');
+  await cp.selectOption('[name=rtw]', 'British or Irish citizen'); await cp.check('[name=privacy_ok]');
+  rows.push({ what: 'check-in: tap "Check me in" → done', ready: await tapText(cp, '#go', "checked in"), still: '', must: INSTANT });
+  rows.push({ what: 'check-in page weight', ready: '', still: '', note: Math.round(kb) + ' KB downloaded (before compression)' });
+  await cp.waitForTimeout(LATENCY + 500);  // presentation happens; the check-in has reached Google
+  t = Date.now();
+  await cp.goto(APP + 'eval.html', { waitUntil: 'commit' });
+  await cp.waitForSelector('.evform .qcard', { timeout: 15000 });
+  rows.push({ what: 'evaluation: form on screen (same phone)', ready: Date.now() - t, still: '', must: 800 });
+  await fillEval(cp);
+  rows.push({ what: 'evaluation: tap Submit → thank-you screen', ready: await tapText(cp, '#go', 'Thank you'), still: '', must: INSTANT });
+  await cp.waitForTimeout(LATENCY + 500);
+
+  // ── New starter: the congratulations link (WhatsApp / welcome email) ──
+  const zara = (await api(admin, 'search', { q: 'Zara' })).items[0];
+  await api(admin, 'saveOutcome', { id: zara.id, outcome: 'Academy booked', academy_date: '2026-10-19', outcome_notes: '' });
+  const wurl = (await api(admin, 'getCandidate', { id: zara.id })).welcome_url.replace(/^https?:\/\/[^/]+\/recruitment\/join\//, APP);
+  const wctx = await browser.newContext(PHONE);
+  const wp = await wctx.newPage();
+  t = Date.now();
+  await wp.goto(wurl, { waitUntil: 'commit' });
+  await wp.waitForSelector('text=You\'re in', { timeout: 15000 });
+  rows.push({ what: 'welcome page: on screen (from the text / email)', ready: Date.now() - t, still: '', must: 800 });
+  await wp.waitForSelector('#conf', { timeout: 15000 });
+  rows.push({ what: 'welcome page: tap Confirm → locked in', ready: await tapText(wp, '#conf', 'locked in'), still: '', must: INSTANT });
+  t = Date.now();
+  await wp.reload({ waitUntil: 'commit' });
+  await wp.waitForSelector('.wl-done', { timeout: 15000 });
+  rows.push({ what: 'welcome page: opened again later', ready: Date.now() - t, still: '', must: 800 });
+  const pre = await wp.$$eval('link[rel=preconnect]', ls => ls.map(l => new URL(l.href).host));
+  rows.push({ what: 'welcome page: links warmed up before the tap', ready: '', still: '', note: pre.length ? pre.join(', ') : 'none', bad: pre.length < 3 });
+  rows.forEach(r => { if (r.must && typeof r.ready === 'number' && r.ready > r.must) r.bad = true; });
+
   console.log('\nGoogle delay ' + LATENCY + ' ms per request · "content" = real content on screen · "settled" = animations finished\n');
-  console.log('page'.padEnd(46) + 'content'.padStart(9) + 'settled'.padStart(9));
+  console.log('step'.padEnd(46) + 'content'.padStart(9) + 'settled'.padStart(9));
   rows.forEach(r => console.log((r.bad ? '✗ ' : '  ') + r.what.padEnd(44) + String(r.ready === '' ? '' : r.ready + 'ms').padStart(9) + String(r.still === '' ? '' : r.still + 'ms').padStart(9) + (r.note ? '   ' + r.note : '')));
   const bad = rows.filter(r => r.bad).length;
   console.log('\n' + (bad ? bad + ' slow' : 'ALL INSTANT'));
