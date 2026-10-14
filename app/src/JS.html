@@ -749,7 +749,8 @@ function renderLogin() {
     '<div class="card c-form"><div id="doorHead"></div>' +
     '<label class="q">Work email</label><input type="email" id="em" autocomplete="email" placeholder="you@company.co.uk" value="' + h(store.get('lastEmail') || '') + '">' +
     '<div id="codeBox" hidden><label class="q">6-digit code</label><input type="text" id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••" style="letter-spacing:.4em;font-weight:800;text-align:center"></div>' +
-    '<div id="err"></div><button class="btn block" id="go" style="margin-top:16px">Email me a code</button></div></div>';
+    '<div id="err"></div><button class="btn block" id="go" style="margin-top:16px">Email me a code</button>' +
+    '<div class="login-alt"><button type="button" class="linkbtn" id="haveCode">Already have a code?</button><button type="button" class="linkbtn" id="newCode" hidden>Send me a new code</button></div></div></div>';
   const drawDoor = () => {
     document.querySelectorAll('#doors button').forEach(b => { const on = b.dataset.door === door; b.classList.toggle('on', on); b.setAttribute('aria-selected', on); });
     document.getElementById('doorHead').innerHTML = '<h1 style="margin-top:12px">' + DOORS[door][1] + '</h1><p class="muted">' + h(DOORS[door][2]) + ' We\'ll email you a 6-digit code. No password needed.</p>';
@@ -758,13 +759,31 @@ function renderLogin() {
   drawDoor();
   let sent = false;
   const btn = document.getElementById('go');
+  // Code box open, button = Log in. Remembered for 10 minutes, so coming back from the email app doesn't start over.
+  const showCodeBox = msg => {
+    sent = true; btn.textContent = 'Log in';
+    document.getElementById('codeBox').hidden = false;
+    document.getElementById('haveCode').hidden = true; document.getElementById('newCode').hidden = false;
+    if (msg) document.getElementById('err').innerHTML = msg;
+    document.getElementById('code').focus();
+  };
+  const pending = store.get('codeSent');
+  if (pending && Date.now() - pending.at < 10 * 60000 && pending.email === (store.get('lastEmail') || '')) {
+    showCodeBox('<div class="ok">We emailed a code to <b>' + h(pending.email) + '</b> at ' + h(new Date(pending.at).toTimeString().slice(0, 5)) + '. Type it below.<br><span class="small">Not there? Check Spam/Junk.</span></div>');
+  }
+  document.getElementById('haveCode').onclick = () => showCodeBox('<div class="ok">Type your work email and the 6-digit code.</div>');
+  document.getElementById('newCode').onclick = () => {
+    sent = false; store.del('codeSent'); btn.textContent = 'Email me a code';
+    document.getElementById('codeBox').hidden = true; document.getElementById('newCode').hidden = true; document.getElementById('haveCode').hidden = false;
+    document.getElementById('err').innerHTML = ''; btn.click();
+  };
   const verify = (email, note) => call('verifyCode', { email: email, code: document.getElementById('code').value, door: door }).then(r => {
     if (r.wrongDoor && !note) {
       // Their door is the other one: switch to it and carry on (the code is still good)
       door = r.wrongDoor; store.set('door', door); drawDoor();
       return verify(email, door === 'admin' ? 'You\'re an admin, so you\'re in through Admin login 👍' : 'You\'re a BA, so you\'re in through BA login 👍');
     }
-    S.token = r.token; store.set('tok', r.token); store.del('cache'); S.data = {}; S.users = null; startStaff();
+    S.token = r.token; store.set('tok', r.token); store.del('cache'); store.del('codeSent'); S.data = {}; S.users = null; startStaff();
     if (note) toast(note);
   });
   btn.onclick = () => {
@@ -773,11 +792,8 @@ function renderLogin() {
     if (!sent) {
       busy(btn, true, 'Sending…');
       call('requestCode', { email: email }).then(() => {
-        sent = true; store.set('lastEmail', email); busy(btn, false);
-        btn.textContent = 'Log in';
-        document.getElementById('codeBox').hidden = false;
-        err.innerHTML = '<div class="ok">If that email has access, a code is on its way. Check your inbox (and junk).</div>';
-        document.getElementById('code').focus();
+        store.set('lastEmail', email); store.set('codeSent', { email: email, at: Date.now() }); busy(btn, false);
+        showCodeBox('<div class="ok">If that email has access, a code is on its way.<br><span class="small">Not there in a minute? Check Spam/Junk. Still nothing? Ask an admin to show you a code (Team → your name → 🔑).</span></div>');
       }).catch(ex => { busy(btn, false); showErr(err, ex.message); });
     } else {
       busy(btn, true, 'Checking…');
@@ -1487,8 +1503,18 @@ function editUser(u) {
     '<div class="help" style="margin-top:8px">Booker or presenter = they log in with <b>BA login</b>. Admin = <b>Admin login</b>.</div>' +
     '<label class="check"><input type="checkbox" id="ua"' + (x.active ? ' checked' : '') + '> Has access (untick to switch off instantly)</label>' +
     '<div id="uerr"></div><button class="btn block" id="usave">Save</button>' +
+    (u && u.email && u.active ? '<button class="btn ghost block" id="ucode" style="margin-top:8px">🔑 Show a login code for ' + h(u.name.split(' ')[0]) + '</button><div id="ucodebox"></div>' : '') +
     (u && u.id !== S.me.user.id ? '<button class="btn ghost block" id="udel" style="margin-top:8px;color:var(--red)">Delete person</button>' : '') + '</div>', false, true);
   const uf = page.querySelector('#uf'); bindChips(uf);
+  const uc = document.getElementById('ucode');
+  if (uc) uc.onclick = () => {
+    busy(uc, true, 'Making a code…');
+    call('adminCode', { id: u.id }).then(r => {
+      busy(uc, false);
+      document.getElementById('ucodebox').innerHTML = '<div class="codeshow"><div class="small muted">Login code for ' + h(u.name.split(' ')[0]) + ' · valid 10 minutes</div><div class="code">' + h(r.code) + '</div>' +
+        '<p class="small">On their phone: open the app → <b>' + (r.door === 'admin' ? 'Admin login' : 'BA login') + '</b> → type <b>' + h(r.email) + '</b> → tap <b>Already have a code?</b> → type this code → Log in.</p></div>';
+    }).catch(ex => { busy(uc, false); showErr(document.getElementById('uerr'), /Unknown action/.test(ex.message) ? 'Paste the new Google code (Code.gs) first.' : ex.message); });
+  };
   document.getElementById('usave').onclick = e => {
     const btn = e.currentTarget; busy(btn, true);
     call('saveUser', { user: { id: u ? u.id : '', name: document.getElementById('un').value, email: document.getElementById('ue').value, company: chipVal(uf, 'company'), roles: chipVals(uf, 'roles'), active: document.getElementById('ua').checked } })

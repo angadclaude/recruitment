@@ -348,15 +348,22 @@ function payExclusion(c) {
 
 // ───────────────────────── AUTH ─────────────────────────
 /** Staff list, cached between requests for speed (cleared whenever a user is saved or deleted). */
+/** The team, cached for 10 minutes. The cache key carries a version that changes whenever someone is added or edited,
+ *  so a request that read the old list at that moment can't put it back (a new person could log in straight away). */
 function usersAll() {
+  if (MEMO._users) return MEMO._users;
   const cache = CacheService.getScriptCache();
-  const hit = cache.get('users_v1');
-  if (hit) return JSON.parse(hit);
+  if (MEMO._usersVer === undefined) MEMO._usersVer = PropertiesService.getScriptProperties().getProperty('USERS_VER') || '0';
+  const key = 'users_v2_' + MEMO._usersVer, hit = cache.get(key);
+  if (hit) return (MEMO._users = JSON.parse(hit));
   const rows = readTable('Users');
-  try { cache.put('users_v1', JSON.stringify(rows), 600); } catch (e) { /* too big to cache: fine */ }
-  return rows;
+  try { cache.put(key, JSON.stringify(rows), 600); } catch (e) { /* too big to cache: fine */ }
+  return (MEMO._users = rows);
 }
-function usersChanged() { CacheService.getScriptCache().remove('users_v1'); delete MEMO.Users; }
+function usersChanged() {
+  PropertiesService.getScriptProperties().setProperty('USERS_VER', String(Date.now()));
+  delete MEMO.Users; delete MEMO._users; delete MEMO._usersVer;
+}
 function userById(id) { return usersAll().filter(u => u.id === id)[0]; }
 function rolesOf(u) { return String(u.roles || '').split(',').map(s => s.trim()).filter(String); }
 function has(u, role) { const r = rolesOf(u); return r.indexOf('admin') >= 0 || r.indexOf(role) >= 0; }
@@ -379,14 +386,11 @@ function userFromToken(tok) {
   return u && truthy(u.active) ? u : null;
 }
 
-function requestCode(req) {
-  const email = String(req.email || '').trim().toLowerCase();
-  const cache = CacheService.getScriptCache(), rk = 'codes_' + sha(email).slice(0, 20), n = Number(cache.get(rk) || 0);
-  if (n >= 3) throw new Error('Too many codes requested. Use the last code we emailed, or wait 15 minutes.');
-  cache.put(rk, String(n + 1), 900);
-  const u = usersAll().filter(x => x.email.toLowerCase() === email && truthy(x.active))[0];
-  // Same response whether or not the email exists, so the list of staff can't be probed.
-  if (!u) return { sent: true };
+/** Emails are compared without spaces or invisible characters (copy-paste and phone keyboards add them). */
+function normEmail(s) { return String(s || '').replace(/[\s\u200B-\u200D\uFEFF]/g, '').toLowerCase(); }
+function codeLimitKey(email) { return 'codes_' + sha(email).slice(0, 20); }
+/** A fresh 6-digit login code for this email (replaces any earlier one), valid 10 minutes. */
+function issueCode(email) {
   const code = String(Math.floor(100000 + Math.random() * 900000));
   withLock(() => {
     const rows = readTable('Codes').filter(x => x.email === email);
@@ -396,6 +400,21 @@ function requestCode(req) {
     rec.attempts = '0';
     rec._row ? writeRow('Codes', rec) : appendRow('Codes', rec);
   });
+  return code;
+}
+function requestCode(req) {
+  const email = normEmail(req.email);
+  const cache = CacheService.getScriptCache(), rk = codeLimitKey(email), n = Number(cache.get(rk) || 0);
+  if (n >= 5) {
+    log(null, 'login_code', '', email + ' · limit reached');
+    throw new Error('That\'s 5 codes in 15 minutes. Check Spam/Junk for the newest one, or ask Angad, Jess, Satpal or Rubal to show you a code in the app (Team → your name → 🔑).');
+  }
+  cache.put(rk, String(n + 1), 900);
+  const u = usersAll().filter(x => normEmail(x.email) === email && truthy(x.active))[0];
+  // Same response whether or not the email exists, so the list of staff can't be probed. The Log says which (admins only).
+  log(null, 'login_code', '', email + (u ? ' · emailed' : ' · no active team member with this email'));
+  if (!u) return { sent: true };
+  const code = issueCode(email);
   MailApp.sendEmail({
     to: email,
     subject: 'Your login code: ' + code,
@@ -407,8 +426,22 @@ function requestCode(req) {
   return { sent: true };
 }
 
+/** Admin: show a login code for someone on the admin's screen (no email needed: when their email is slow, in Spam, or they hit the limit). */
+function adminCode(req, u) {
+  if (!isAdmin(u)) throw new Error('Admin only');
+  const x = usersAll().filter(o => o.id === req.id)[0];
+  if (!x) throw new Error('Person not found');
+  if (!x.email) throw new Error('Add their email first: it\'s what they log in with.');
+  if (!truthy(x.active)) throw new Error('Tick "Has access" and save first.');
+  const email = normEmail(x.email);
+  CacheService.getScriptCache().remove(codeLimitKey(email));  // fresh start on the limit too
+  const code = issueCode(email);
+  log(u, 'admin_code', '', 'login code shown for ' + x.name);
+  return { code: code, email: x.email, door: isAdmin(x) ? 'admin' : 'ba' };
+}
+
 function verifyCode(req) {
-  const email = String(req.email || '').trim().toLowerCase();
+  const email = normEmail(req.email);
   const code = String(req.code || '').trim();
   return withLock(() => {
     const rec = readTable('Codes').filter(x => x.email === email)[0];
@@ -418,7 +451,7 @@ function verifyCode(req) {
       rec.attempts = String(Number(rec.attempts) + 1); writeRow('Codes', rec);
       throw new Error("That code isn't right or has expired. Check the latest email, or request a new code.");
     }
-    const u = usersAll().filter(x => x.email.toLowerCase() === email && truthy(x.active))[0];
+    const u = usersAll().filter(x => normEmail(x.email) === email && truthy(x.active))[0];
     // Two doors on the login screen: Admin login (admins) and BA login (everyone else Angad gives access).
     // Wrong door: say which one is theirs and keep the code, so the app carries on through the right door.
     const door = u && isAdmin(u) ? 'admin' : 'ba';
@@ -990,7 +1023,7 @@ const STAFF_ACTIONS = {
   saveNotes: saveNotes, markInRoom: markInRoom, saveOutcome: saveOutcome,
   adminDecision: adminDecision, setPayExcluded: setPayExcluded, fixEligibility: fixEligibility, reassignBooker: reassignBooker,
   markSent: markSent, payReport: payReport, listUsers: listUsers, saveUser: saveUser, deleteUser: deleteUser,
-  alertsCheck: alertsCheck, testAlert: testAlert, sendSetupEmails: sendSetupEmails,
+  alertsCheck: alertsCheck, testAlert: testAlert, sendSetupEmails: sendSetupEmails, adminCode: adminCode,
 };
 
 // ───────────────────────── LINKS ─────────────────────────
