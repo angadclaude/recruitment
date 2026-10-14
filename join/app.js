@@ -1,4 +1,4 @@
-window.APP_VERSION = '34ca81d0';
+window.APP_VERSION = 'db2a268d';
 
 (function () {
 'use strict';
