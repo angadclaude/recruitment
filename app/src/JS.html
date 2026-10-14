@@ -656,13 +656,15 @@ function isPresenter() { return isAdmin() || roles().indexOf('presenter') >= 0; 
 function isBooker() { return roles().indexOf('booker') >= 0; }
 
 Object.assign(S, { data: {}, inflight: {}, view: '', params: {}, viewId: 0, booted: false, syncing: 0 });
-const STALE_MS = 20000, POLL_MS = 30000;
+const STALE_MS = 20000, POLL_MS = 30000, LIST_STALE_MS = 300000;
 
 function weekEndingOf(ymd) { const w = D(ymd).getUTCDay(); return addDays(ymd, w === 0 ? 0 : 7 - w); }
 function saveCache() {
   const keep = {};
   Object.keys(S.data).sort().slice(-3).forEach(k => { keep[k] = S.data[k]; });
-  store.set('cache', { me: S.me, data: keep, users: S.users });
+  const base = { me: S.me, data: keep, users: S.users };
+  // Phone storage full? Keep the essentials rather than lose the whole cache.
+  try { localStorage.setItem('lr_cache', JSON.stringify(Object.assign({ chase: S.chase || null, academy: S.academy || null }, base))); } catch (e) { store.set('cache', base); }
 }
 function setSync(d) {
   S.syncing = Math.max(0, S.syncing + d);
@@ -711,11 +713,13 @@ function want(we) {
 }
 function findCand(id) {
   for (const k of Object.keys(S.data)) { const c = S.data[k].items.filter(x => x.id === id)[0]; if (c) return c; }
-  return S.chase ? S.chase.items.filter(x => x.id === id)[0] || null : null;
+  const ch = S.chase ? S.chase.items.filter(x => x.id === id)[0] : null;
+  return ch || (S.academy ? S.academy.items.filter(x => x.id === id)[0] || null : null);
 }
 function chaseKeep(c) { if (S.chase) { const i = S.chase.items.findIndex(x => x.id === c.id); if (i >= 0) S.chase.items[i] = Object.assign({ leak: S.chase.items[i].leak }, c); } }
 function upsert(c) {
   chaseKeep(c);
+  if (S.academy) { const i = S.academy.items.findIndex(x => x.id === c.id); if (i >= 0) S.academy.items[i] = c; }
   const d = S.data[c.week_ending];
   if (d) {
     const i = d.items.findIndex(x => x.id === c.id);
@@ -733,6 +737,7 @@ function startStaff() {
   const first = fetchWeek(weekEndingOf(cached && cached.me ? cached.me.today : new Date().toISOString().slice(0, 10)), { withMe: true, withUsers: true });
   if (cached && cached.me) {
     S.me = cached.me; S.data = Object.assign(cached.data || {}, S.data); S.users = cached.users || null;
+    S.chase = S.chase || cached.chase || null; S.academy = S.academy || cached.academy || null;
     Object.keys(S.data).forEach(k => { if (!S.inflight[k]) S.data[k].at = 0; });
     boot();
   } else {
@@ -813,7 +818,7 @@ function renderLogin() {
 }
 
 function boot() {
-  S.booted = true;
+  S.booted = true; S.painted = false;
   S.week = S.week || S.me.weekEnding; S.day = S.day || S.me.today;
   setTheme(S.me.user.company); store.set('lastCo', coOf(S.me.user.company)); store.set('door', isAdmin() ? 'admin' : 'ba');
   initPush();
@@ -837,6 +842,7 @@ function boot() {
   S.timer = setInterval(tick, 5000);
   FLUSHING = false; flush();
   registerSW();
+  setTimeout(() => prefetchLists(1), 600);
 }
 function registerSW() {
   if (!CFG.API_URL || !('serviceWorker' in navigator) || !window.isSecureContext) return;
@@ -878,6 +884,7 @@ function tick() {
 function refreshQuiet() {
   if (!S.me) return;
   const we = S.view === 'today' ? weekEndingOf(S.day) : S.week;
+  prefetchLists();
   fetchWeek(we).then(() => {
     const typing = document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
     if (['today', 'mine', 'all', 'pay'].indexOf(S.view) >= 0 && !typing) render(true);
@@ -887,12 +894,19 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 window.addEventListener('popstate', e => {
   if (BOOT.mode !== 'staff' || !S.booted) return;
   const st = e.state || { v: S.tab, p: {} };
-  S.view = st.v; S.params = st.p || {}; S.viewId++;
+  S.view = st.v; S.params = st.p || {}; S.viewId++; S.navKind = 'back';
   render();
 });
+if ('scrollRestoration' in history) history.scrollRestoration = 'manual';  // we put you back where you were ourselves
 
+/** Where you were on each page, so coming back (a tab, or ← back) lands you in the same place, like a native app. */
+function scrollKey(v, p) { return v === 'cand' || v === 'user' ? v + ':' + ((p && p.id) || '') : v; }
 function nav(view, params, push) {
-  if (tabs().some(t => t[0] === view)) S.tab = view;
+  S.scrollMem = S.scrollMem || {};
+  if (S.view) S.scrollMem[scrollKey(S.view, S.params)] = window.scrollY;
+  const isTab = tabs().some(t => t[0] === view);
+  if (isTab) S.tab = view;
+  S.navKind = push ? 'sub' : isTab ? 'tab' : 'back';
   S.view = view; S.params = params || {}; S.viewId++;
   hist(push ? 'push' : 'replace', { v: view, p: S.params });
   render();
@@ -977,11 +991,22 @@ function paint(title, html, quiet, sub) {
     page.classList.remove('cascade'); window.scrollTo(0, y); countUp(page, true);
     page.querySelectorAll('.ring-fg[data-dash]').forEach(el => { el.style.transition = 'none'; el.setAttribute('stroke-dasharray', el.dataset.dash); });
   } else {
-    window.scrollTo(0, 0);
-    page.classList.remove('enter', 'enter-sub', 'cascade'); void page.offsetWidth;
-    page.classList.add(sub ? 'enter-sub' : 'enter', 'cascade');
-    stagger(page); countUp(page); fillRings(page);
-    paint._t = setTimeout(() => page.classList.remove('cascade'), 1000);
+    // The full rise-in only on the first screen after opening the app. Moving between pages is instant:
+    // a quick fade (or a slide for a page you open), numbers already in place, and you land where you were.
+    const kind = S.painted ? S.navKind || '' : 'first';
+    S.painted = true; S.navKind = '';
+    page.classList.remove('enter', 'enter-sub', 'enter-fade', 'cascade'); void page.offsetWidth;
+    if (kind === 'first') {
+      window.scrollTo(0, 0);
+      page.classList.add(sub ? 'enter-sub' : 'enter', 'cascade');
+      stagger(page); countUp(page); fillRings(page);
+      paint._t = setTimeout(() => page.classList.remove('cascade'), 1000);
+    } else {
+      window.scrollTo(0, kind === 'tab' || kind === 'back' ? (S.scrollMem || {})[scrollKey(S.view, S.params)] || 0 : 0);
+      page.classList.add(kind === 'sub' ? 'enter-sub' : 'enter-fade');
+      countUp(page, true);
+      page.querySelectorAll('.ring-fg[data-dash]').forEach(el => { el.style.transition = 'none'; el.setAttribute('stroke-dasharray', el.dataset.dash); });
+    }
   }
   return page;
 }
@@ -1632,14 +1657,36 @@ function msgRebook(c) {
     '– ' + S.me.user.name.split(' ')[0] + ', ' + brandOf(c);
 }
 function paintTabs() { const tb = document.getElementById('tabbar'); if (tb && S.me) tb.innerHTML = tabs().map(t => '<button data-tab="' + t[0] + '" class="' + (S.tab === t[0] ? 'on' : '') + '">' + icon(t[0]) + (t[0] === 'chase' && S.chaseN ? '<i class="tbadge">' + (S.chaseN > 99 ? '99+' : S.chaseN) + '</i>' : '') + '<span>' + t[1] + '</span></button>').join(''); }
+function loadChase() {
+  if (S.chaseP) return S.chaseP;
+  S.chaseP = call('chaseList').then(r => {
+    const pend = pendingIds(), old = S.chase;  // keep changes still on their way to the Sheet
+    if (old && pend.length) r.items = r.items.map(x => pend.indexOf(x.id) >= 0 ? old.items.filter(y => y.id === x.id)[0] || x : x);
+    S.chase = r; S.chaseAt = Date.now(); saveCache();
+    return r;
+  });
+  const done = () => { S.chaseP = null; }; S.chaseP.then(done, done);
+  return S.chaseP;
+}
+function loadAcademy() {
+  if (S.academyP) return S.academyP;
+  S.academyP = call('academyList').then(r => { S.academy = r; S.academyAt = Date.now(); saveCache(); return r; });
+  const done = () => { S.academyP = null; }; S.academyP.then(done, done);
+  return S.academyP;
+}
+/** Chase and Day 1 load quietly in the background when the app opens (and every few minutes while it's open),
+ *  so the first tap on them is as instant as every other tab. */
+function prefetchLists(maxAge) {
+  if (!S.me) return;
+  const old = at => Date.now() - (at || 0) > (maxAge || LIST_STALE_MS);
+  if ((isAdmin() || isBooker()) && old(S.chaseAt)) loadChase().then(() => { if (S.view === 'chase' && !document.querySelector('.sheet-back')) drawChase(true); }).catch(() => {});
+  if ((isAdmin() || isBooker()) && old(S.academyAt)) loadAcademy().then(r => { if (S.view === 'academy' && !document.querySelector('.sheet-back')) drawAcademy(r, true); }).catch(() => {});
+}
 function viewChase(quiet) {
   const id = S.viewId;
   if (S.chase) drawChase(quiet); else paint('Chase', '<p class="hint">Finding everyone who needs chasing…</p>' + skeleton(4));
-  call('chaseList').then(r => {
-    const pend = pendingIds(), old = S.chase;  // keep changes still on their way to the Sheet
-    if (old && pend.length) r.items = r.items.map(x => pend.indexOf(x.id) >= 0 ? old.items.filter(y => y.id === x.id)[0] || x : x);
-    S.chase = r; if (S.viewId === id) drawChase(true);
-  }).catch(e => { if (S.viewId === id && !S.chase) paint('Chase', '<div class="err">' + h(/Unknown action/.test(e.message) ? 'Paste the new Google code (Code.gs) into Apps Script first, then open this again.' : e.message) + '</div>'); });
+  if (S.chase && Date.now() - (S.chaseAt || 0) < STALE_MS) return;  // fetched moments ago
+  loadChase().then(() => { if (S.viewId === id) drawChase(true); }).catch(e => { if (S.viewId === id && !S.chase) paint('Chase', '<div class="err">' + h(/Unknown action/.test(e.message) ? 'Paste the new Google code (Code.gs) into Apps Script first, then open this again.' : e.message) + '</div>'); });
 }
 function drawChase(quiet) {
   const r = S.chase, today = r.today || S.me.today, admin = isAdmin(), due = S.me.deadlineLabel || 'Fri 18:00';
@@ -1741,8 +1788,9 @@ function msgDay1Reminder(c) {
 function viewAcademy(quiet) {
   const id = S.viewId;
   if (S.academy) drawAcademy(S.academy, quiet); else paint('Day 1', '<p class="hint">Loading everyone booked onto the Academy…</p>' + skeleton(4), false, !isAdmin());
-  call('academyList').then(r => {
-    S.academy = r; if (S.viewId !== id) return;
+  if (S.academy && Date.now() - (S.academyAt || 0) < STALE_MS && !S.openRemind) return;  // fetched moments ago
+  loadAcademy().then(r => {
+    if (S.viewId !== id) return;
     if (!document.querySelector('.sheet-back')) drawAcademy(r, true);
     if (S.openRemind) { S.openRemind = false; const next = r.items.map(c => c.academy_date).filter(x => x >= r.today).sort()[0]; if (next) day1Sheet(next); }
   }).catch(e => { if (S.viewId === id && !S.academy) paint('Day 1', '<div class="err">' + h(/Unknown action/.test(e.message) ? 'Paste the new Google code (Code.gs) into Apps Script first, then open this again.' : e.message) + '</div>', false, !isAdmin()); });
