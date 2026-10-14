@@ -27,6 +27,7 @@ const CONFIG = {
   // The same email for both = one person sends them all.
   THANKS_TEAM: { LINK: 'jess@linkmarketing.org.uk', JUSS: 'rubal@jussmarketing.co.uk' },  // recruitment team: thank-yous (either can send LINK or JUSS) + non-qualifier alerts
   THANKS_TIME: '12:00',           // every day: "N thank-you messages to send" to Jess / Rubal (only if there are any)
+  DAY1_REMIND_TIME: '10:00',      // on a BA Academy Day 1: Jess / Rubal get "N starters to remind" (Day 1 tab → Send reminders)
   DIGEST_TIME: '18:00',           // Mon–Thu: each booker's round-up of their day
   ROUNDUP_TIME: '15:00',          // Friday: week roundup to each booker + a team roundup to admins
   TEAM_ROUNDUP: true,             // false = admins don't get the Friday team roundup
@@ -83,7 +84,7 @@ const SHEETS = {
     'admin_status', 'admin_note', 'admin_by', 'admin_at',
     'pay_excluded', 'pay_excluded_reason', 'thanks_sent_at', 'offer_sent_at',
     'welcome_token', 'academy_confirmed_at',
-    'p_why_sales', 'p_why_sales_note', 'p_interesting', 'eval_edited_at', 'thanks_by', 'no_whatsapp', 'day1_status', 'day1_by', 'day1_at',
+    'p_why_sales', 'p_why_sales_note', 'p_interesting', 'eval_edited_at', 'thanks_by', 'no_whatsapp', 'day1_status', 'day1_by', 'day1_at', 'day1_reminded_at', 'day1_reminded_by',
   ],
   History: ['attended_date', 'full_name', 'mobile', 'email', 'booker_raw', 'presenter_raw'],
   Codes: ['email', 'code_hash', 'expires', 'attempts'],
@@ -879,7 +880,7 @@ function thanksCo(c) { return c.company === 'JUSS' ? 'JUSS' : 'LINK'; }
  *  Sending by text or email means they're not on WhatsApp: remembered, so the next message goes by text too. */
 function markSent(req, u) {
   const via = ['sms', 'email'].indexOf(req.via) >= 0 ? req.via : 'whatsapp';
-  if (['thanks', 'offer', 'noanswer'].indexOf(req.kind) < 0) throw new Error('Unknown message');
+  if (['thanks', 'offer', 'noanswer', 'day1'].indexOf(req.kind) < 0) throw new Error('Unknown message');
   return withLock(() => {
     const c = getC(req.id);
     if (!fullAccess(u, c)) throw new Error('No access');
@@ -892,6 +893,7 @@ function markSent(req, u) {
       c.thanks_sent_at = nowStr(); c.thanks_by = u.name;
     }
     if (req.kind === 'offer') c.offer_sent_at = nowStr();
+    if (req.kind === 'day1') { c.day1_reminded_at = nowStr(); c.day1_reminded_by = u.name; }
     if (via !== 'whatsapp') c.no_whatsapp = 'TRUE';
     writeRow('Candidates', c);
     log(u, via + '_' + req.kind, c.id, '');
@@ -1227,6 +1229,7 @@ function keepWarm() {
   maybeDailyDigest();
   maybeThanksReminder();
   maybeAcademyBriefing();
+  maybeDay1Reminder();
 }
 
 /** Every day at THANKS_TIME: Jess / Rubal get "N thank-you messages to send" for today's appointments not thanked yet.
@@ -1360,6 +1363,28 @@ function maybeAcademyBriefing() {
     not.length ? '⏳ Not confirmed: ' + firstNames(not, 8) : 'Everyone has confirmed 🔥', 'academy');
 }
 
+/** DAY1_REMIND_TIME on an Academy day: Jess (LINK) / Rubal (JUSS) get "N starters to remind today". Tapping it opens the Day 1 tab
+ *  with the send list ready. Nobody starting today, or everyone already reminded = no message. */
+function maybeDay1Reminder() {
+  const now = nowStr(), today = now.slice(0, 10), hm = now.slice(11, 16);
+  if (hm < CONFIG.DAY1_REMIND_TIME || hm > '16:59') return;
+  const p = PropertiesService.getScriptProperties();
+  if (p.getProperty('DAY1_REMINDED') === today) return;
+  p.setProperty('DAY1_REMINDED', today);  // claim it first so an overlapping run can't send twice
+  const rows = readTable('Candidates').filter(c => c.outcome === 'Academy booked' && c.academy_date === today && c.admin_status !== 'rejected' && c.admin_status !== 'pending' &&
+    !c.day1_status && String(c.day1_reminded_at).slice(0, 10) !== today);
+  const team = thanksTeam(), byUser = {};
+  Object.keys(team).forEach(co => {
+    const t = team[co]; if (!t.id) return;
+    const mine = rows.filter(c => thanksCo(c) === co);
+    if (mine.length) (byUser[t.id] = byUser[t.id] || []).push.apply(byUser[t.id], mine);
+  });
+  Object.keys(byUser).forEach(id => {
+    const list = byUser[id], not = list.filter(c => !c.academy_confirmed_at);
+    notify([userById(id)], '🎓 Day 1 today: ' + plural(list.length, 'starter') + ' to remind', list.map(c => c.full_name.split(' ')[0] + (c.academy_confirmed_at ? ' ✅' : ' ⏳')).join(', ') +
+      (not.length ? '\n⏳ Not confirmed yet: ' + firstNames(not) + '.' : '') + '\nTap to send the reminders in one go.', 'remind');
+  });
+}
 function firstNames(list, max) {
   const f = list.map(c => c.full_name.split(' ')[0]);
   return f.slice(0, max || 4).join(', ') + (f.length > (max || 4) ? ' +' + (f.length - (max || 4)) : '');

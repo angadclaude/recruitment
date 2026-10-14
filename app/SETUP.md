@@ -122,6 +122,7 @@ Put the two QR codes on the presentation once. They never change:
 | **Fri 15:00 team roundup:** the same, one line per booker, loose ends first. Tap it → **Chase** tab | admins |
 | **18:00 the evening before an Academy day:** "🎓 Tomorrow's BA Academy: 2 starters of yours · Jasraj ✅ · Adham ⏳" | each booker with a starter tomorrow |
 | **18:00 the evening before an Academy day:** "🎓 Tomorrow: 6 starters expected · 4 confirmed" | admins |
+| **10:00 on an Academy day:** "🎓 Day 1 today: 4 starters to remind" → opens the send list | Jess (LINK starters), Rubal (JUSS) |
 | Sat 14:00: "🔴 2 outcomes LATE (due Fri 18:00)" | bookers who missed the deadline |
 | Mon 09:00: recruitment incentive report | admins |
 
@@ -144,13 +145,22 @@ A tab in the bottom bar for admins and bookers. The red number on it shows how m
 - **💬 Post to team WhatsApp**: the same list, by booker, for the bookers' group.
 - **👀 Needs you**: the admins' own loose ends: 🔴 bookings waiting on your decision, appointments with no booker, Day 1 not ticked.
 
+An admin who also books has 7 tabs' worth, which won't fit a phone: their **Team** moves under their initials (top right).
+
 The Friday 15:00 round-ups open the Chase tab: each booker's opens theirs, the team one opens everyone's.
 
-## Who's starting Monday (the Day 1 list)
-**Today → 🎓 Day 1 list** or the bottom of **Chase** (bookers: **Chase / Mine → 🎓 My Day 1 starters**). Everyone booked onto the BA Academy, by date:
-- **Before Day 1:** ✅ Confirmed / ⏳ Not confirmed / Day 1 text not sent, and a **💬 Remind** button (date, 1:30pm, address, bring ID + share code, and the CONFIRM link if they haven't tapped it).
-- **On Day 1:** tap **Arrived** or **No-show** for each person (tap again to undo). That's your real show-up rate, saved on their row in the Sheet (`day1_status`, `day1_by`, `day1_at`).
-- Bookers see their own starters only. Someone the admins haven't approved yet (🔴, pending) isn't on it.
+## 🎓 Day 1 tab (admins): who's starting, reminders, the printed list
+A tab in the bottom bar for admins (bookers: **Chase / Mine → 🎓 My Day 1 starters**, their own only). Everyone booked onto the BA Academy, by date.
+
+**Monday morning (Jess / Rubal):**
+1. **10:00:** Jess gets *"🎓 Day 1 today: 4 starters to remind"* (her LINK starters), Rubal gets the JUSS ones. Tap it.
+2. The **Send reminders** list opens: one row per starter, theirs first. Tap **💬 Send** → WhatsApp opens with the message ready, signed by you → send → come back → next. Not on WhatsApp = **📱 Text**. It counts "3 of 6 sent", and either of you can send any of them.
+3. **📄 Print list (PDF)**: the A4 sign-in sheet (name, mobile, company, booker, confirmed, an Arrived box to tick, notes). On a phone it opens the share sheet: **Print**, Save to Files or AirDrop. Shred it after Day 1 (it has phone numbers on it).
+4. **On the day:** tap **Arrived** or **No-show** for each person (tap again to undo). That's your real show-up rate (`day1_status`, `day1_by`, `day1_at` on their row). A no-show goes straight onto their booker's Chase list to rebook.
+
+**The reminder message** is in `msgDay1Reminder` in `src/JS.html`. It fills in their first name, TODAY / TOMORROW, the time, the office address, the CONFIRM link (only if they haven't confirmed) and the sender's name + company. Who was reminded and by whom: `day1_reminded_at`, `day1_reminded_by`.
+
+Someone the admins haven't approved yet (🔴, pending) isn't on the list.
 
 ## Getting someone logged in (do it in the room)
 1. **👥 Team → ＋ Add person** → name, email, LINK/JUSS → **Save**. You stay on their page; they also get the setup email.
