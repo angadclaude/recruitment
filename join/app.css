@@ -143,6 +143,10 @@ textarea.short { min-height: 64px; }
 .codeshow { margin-top: 12px; text-align: center; background: var(--soft, #F3F1EE); border-radius: 16px; padding: 14px; }
 .codeshow .code { font-size: 40px; font-weight: 900; letter-spacing: .25em; margin: 6px 0; }
 .codeshow p { margin: 6px 0 0; }
+/* Chase outcomes + Day 1 list */
+.sub.wrap { white-space: normal; }
+.d1btns { display: flex; flex-direction: column; gap: 6px; flex: none; }
+.trow[data-cand] .main { cursor: pointer; }
 /* Alerts check (admin) */
 .achk { display: grid; gap: 6px; margin-top: 12px; font-size: 14px; }
 .achk div { background: var(--soft, #F3F1EE); border-radius: 12px; padding: 8px 11px; }

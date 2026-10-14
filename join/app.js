@@ -1,4 +1,4 @@
-window.APP_VERSION = '13ec76b3';
+window.APP_VERSION = 'ecd7a46e';
 
 (function () {
 'use strict';
@@ -816,6 +816,9 @@ function boot() {
     let tries = 0;
     const open = () => { if (S.view !== 'today') return; if (S.data[weekEndingOf(S.day)] || tries++ > 40) thanksSheet(); else setTimeout(open, 250); };
     if (S.tab === 'today') setTimeout(open, 300);
+  } else if (BOOT.cid === 'chase' || BOOT.cid === 'academy') {
+    const v = BOOT.cid; BOOT.cid = ''; nav(S.tab, {}, false);
+    if (v === 'academy' || isAdmin()) nav(v, {}, true);
   } else if (BOOT.cid) { const id = BOOT.cid; BOOT.cid = ''; nav('cand', { id: id }, true); } else nav(S.tab, {}, false);
   stopTimer();
   S.lastPoll = Date.now();
@@ -883,9 +886,9 @@ function nav(view, params, push) {
   render();
 }
 function hist(kind, st) { try { kind === 'push' ? history.pushState(st, '') : history.replaceState(st, ''); S.hist = kind === 'push' ? (S.hist || 0) + 1 : (S.hist || 0); } catch (e) { /* not allowed in this frame */ } }
-function back() { if (S.hist > 0 && history.state && ['cand', 'user', 'slideqr', 'bulletin', 'alerts'].indexOf(history.state.v) >= 0) { S.hist--; history.back(); } else nav(S.tab); }
+function back() { if (S.hist > 0 && history.state && ['cand', 'user', 'slideqr', 'bulletin', 'alerts', 'chase', 'academy'].indexOf(history.state.v) >= 0) { S.hist--; history.back(); } else nav(S.tab); }
 function go(tab) { nav(tab, {}, false); }
-function titleOf(v) { return { today: 'Today', mine: 'My candidates', all: 'All candidates', pay: 'Recruitment incentive', team: 'Team', slideqr: 'Slide QR codes', user: 'Team', bulletin: 'Bulletin', alerts: 'Alerts check' }[v] || ''; }
+function titleOf(v) { return { today: 'Today', mine: 'My candidates', all: 'All candidates', pay: 'Recruitment incentive', team: 'Team', slideqr: 'Slide QR codes', user: 'Team', bulletin: 'Bulletin', alerts: 'Alerts check', chase: 'Chase outcomes', academy: 'Day 1 list' }[v] || ''; }
 
 function render(quiet) {
   const v = S.view;
@@ -893,6 +896,8 @@ function render(quiet) {
   if (v === 'user') return editUser(S.params.id ? (S.users || []).filter(u => u.id === S.params.id)[0] : null);
   if (v === 'slideqr') return viewSlideQR();
   if (v === 'alerts') return viewAlerts();
+  if (v === 'chase') return viewChase();
+  if (v === 'academy') return viewAcademy();
   if (v === 'bulletin') return viewBulletin();
   ({ today: viewToday, mine: viewMine, all: viewAll, pay: viewPay, team: viewTeam }[v] || viewToday)(quiet);
 }
@@ -1215,7 +1220,8 @@ function viewToday(quiet) {
     const rated = items.filter(c => c.in_room).length, toCall = items.filter(c => !c.limited && c.eval_at && !c.outcome).length;
     body = '<div class="hero">' + top + kpis([[items.length, 'Checked in'], [rated, 'Rated'], [items.filter(c => c.eval_at).length, 'Evaluated'], [toCall, 'To call', toCall > 0]]) + '</div>' +
       (isAdmin() || canThank() ? thanksButton(items) : '') +
-      (isAdmin() ? '<div class="bullbtns"><button class="btn" id="bullDaily">📣 ' + (isToday ? 'Today\'s' : DAYS[D(S.day).getUTCDay()]) + ' bulletin</button><button class="btn ghost" id="bullWeek">🏆 Week top 5</button></div>' : '') +
+      (isAdmin() ? '<div class="bullbtns"><button class="btn" id="bullDaily">📣 ' + (isToday ? 'Today\'s' : DAYS[D(S.day).getUTCDay()]) + ' bulletin</button><button class="btn ghost" id="bullWeek">🏆 Week top 5</button></div>' +
+        '<div class="bullbtns"><button class="btn ghost" id="goChase">📞 Chase outcomes</button><button class="btn ghost" id="goAcademy">🎓 Day 1 list</button></div>' : '') +
       (items.length ? '<div class="section-h"><b>In the room</b><span>' + rated + ' of ' + items.length + ' rated</span></div>' +
         (isPresenter() && rated < items.length ? '<p class="hint">Tap Green, Amber or Red to rate. Rating = they were in the room (that\'s what counts for the recruitment incentive). Tap a name for stars and notes.</p>' : '') +
         (items.some(c => c.limited) ? '<p class="hint">🔒 You see your own candidates in full. Everyone else\'s: name and room rating only.</p>' : '') +
@@ -1226,6 +1232,7 @@ function viewToday(quiet) {
   bindItems(page);
   const ta = document.getElementById('thanksAll'); if (ta) ta.onclick = thanksSheet;
   [['bullDaily', 'daily'], ['bullWeek', 'weekly']].forEach(b => { const el = document.getElementById(b[0]); if (el) el.onclick = () => nav('bulletin', { day: S.day, kind: b[1] }, true); });
+  [['goChase', 'chase'], ['goAcademy', 'academy']].forEach(b => { const el = document.getElementById(b[0]); if (el) el.onclick = () => nav(b[1], {}, true); });
   document.getElementById('dprev').onclick = () => { S.day = addDays(S.day, -1); render(); };
   document.getElementById('dnext').onclick = () => { if (S.day < S.me.today) { S.day = addDays(S.day, 1); render(); } };
 }
@@ -1258,8 +1265,9 @@ function viewMine(quiet) {
       (items.length > toCall.length + toSend.length + noAnswer.length ? '<div class="section-h"><b>' + (toCall.length || toSend.length || noAnswer.length ? 'Everyone else' : 'This week') + '</b></div>' + groupByDate(items.filter(c => toCall.indexOf(c) < 0 && toSend.indexOf(c) < 0 && noAnswer.indexOf(c) < 0))
         : items.length ? '' : empty('🗓️', 'No candidates this week yet.'));
   }
-  const page = paint('', body, quiet);
+  const page = paint('', body + (d ? '<button class="btn ghost block" id="goAcademy" style="margin-top:14px">🎓 My Day 1 starters</button>' : ''), quiet);
   bindItems(page); bindWeekNav();
+  const ga = document.getElementById('goAcademy'); if (ga) ga.onclick = () => nav('academy', {}, true);
 }
 
 // ───── All (admin) ─────
@@ -1281,8 +1289,10 @@ function viewAll(quiet) {
     body = '<div class="chips scroll fchips" id="flt">' + Object.keys(F).map(k => '<button class="chip' + (S.filter === k ? ' on' : '') + '" data-f="' + k + '">' + F[k][0] + ' <b>' + d.items.filter(F[k][1]).length + '</b></button>').join('') + '</div>' +
       (items.length ? groupByDate(items) : empty('✨', 'Nothing here.'));
   }
-  const page = paint('All', '<div class="search"><input type="search" id="q" placeholder="Search name, mobile or email" value="' + h(S.q || '') + '"></div><div id="sr"></div>' + weekNav() + body, quiet);
+  const page = paint('All', '<div class="search"><input type="search" id="q" placeholder="Search name, mobile or email" value="' + h(S.q || '') + '"></div><div id="sr"></div>' +
+    '<div class="bullbtns"><button class="btn ghost" id="goChase">📞 Chase outcomes</button><button class="btn ghost" id="goAcademy">🎓 Day 1 list</button></div>' + weekNav() + body, quiet);
   bindItems(page); bindWeekNav();
+  [['goChase', 'chase'], ['goAcademy', 'academy']].forEach(b => { const el = document.getElementById(b[0]); if (el) el.onclick = () => nav(b[1], {}, true); });
   page.querySelectorAll('#flt .chip').forEach(b => { b.onclick = () => { S.filter = b.dataset.f; render(true); }; });
   let t;
   const q = document.getElementById('q');
@@ -1568,6 +1578,119 @@ function slideQR(url, title, caption, colour) {
 }
 
 const QR_CAPTIONS = { checkin: 'Takes 1 minute 👋', eval: '4 minutes · your answers shape your next step' };
+// ───── Chase outcomes (admin): everyone with appointments still to log, nudged in one tap ─────
+function chaseList(items) {
+  const by = {}, noBooker = [];
+  items.forEach(c => {
+    const open = c.in_room && !c.outcome && !c.non_qual;
+    const unsent = c.outcome === 'Academy booked' && c.admin_status !== 'rejected' && c.admin_status !== 'pending' && !c.offer_sent_at;
+    if (!open && !unsent) return;
+    if (!c.booker_id) { if (open) noBooker.push(c); return; }
+    const r = (by[c.booker_id] = by[c.booker_id] || { id: c.booker_id, name: c.booker_name, company: c.company, open: [], unsent: [] });
+    (open ? r.open : r.unsent).push(c);
+  });
+  const rows = Object.keys(by).map(k => by[k]).sort((a, b) => (b.open.length + b.unsent.length) - (a.open.length + a.unsent.length) || a.name.localeCompare(b.name));
+  return { rows: rows, noBooker: noBooker };
+}
+function viewChase() {
+  const d = want(S.week);
+  if (!d) return paint('Chase outcomes', skeleton(4), false, true);
+  const L = chaseList(d.items), rows = L.rows, users = S.users || [];
+  const first = n => String(n).split(' ')[0], names = l => l.map(c => c.first_name).join(', ');
+  const nOpen = rows.reduce((n, r) => n + r.open.length, 0), nUnsent = rows.reduce((n, r) => n + r.unsent.length, 0);
+  const due = S.me.deadlineLabel || 'Fri 18:00';
+  const group = '⏰ *Outcomes due ' + due + '*\n' +
+    (nOpen ? '\n📞 *Still to log in the app:*\n' + rows.filter(r => r.open.length).map(r => '• *' + first(r.name) + '*: ' + names(r.open)).join('\n') + '\n' : '') +
+    (nUnsent ? '\n📲 *Day 1 text not sent:*\n' + rows.filter(r => r.unsent.length).map(r => '• *' + first(r.name) + '*: ' + names(r.unsent)).join('\n') + '\n' : '') +
+    '\nDo it now 👉 ' + ((S.me.links && S.me.links.staff) || '');
+  const noApp = id => { const u = users.filter(x => x.id === id)[0]; return u && !u.email; };
+  const row = r => '<div class="trow"><span class="av co-' + h(r.company) + '">' + h(initials(r.name)) + '</span><div class="main"><div class="name">' + h(r.name) + ' <span class="co ' + h(r.company) + '">' + h(r.company) + '</span></div>' +
+    (r.open.length ? '<div class="sub wrap">📞 To log: <b>' + h(names(r.open)) + '</b></div>' : '') +
+    (r.unsent.length ? '<div class="sub wrap">📲 Day 1 text: <b>' + h(names(r.unsent)) + '</b></div>' : '') +
+    (noApp(r.id) ? '<div class="sub wrap muted">Not in the app yet: WhatsApp only</div>' : '') + '</div>' +
+    (noApp(r.id) ? '' : '<button class="btn ghost sm" data-nudge="' + h(r.id) + '">🔔 Nudge</button>') + '</div>';
+  const page = paint('Chase outcomes', weekNav() +
+    '<div class="card"><div class="display" style="font-size:22px">' + (rows.length ? rows.length + ' booker' + (rows.length > 1 ? 's' : '') + ' to chase' : 'Nobody to chase 🎉') + '</div>' +
+    '<p class="hint" style="margin:6px 0 0">' + (rows.length ? nOpen + ' outcome' + (nOpen === 1 ? '' : 's') + ' to log (due ' + h(due) + ')' + (nUnsent ? ' · ' + nUnsent + ' Day 1 text' + (nUnsent === 1 ? '' : 's') + ' not sent' : '') : 'Every appointment rated in the room has an outcome, and every Day 1 text has gone.') + '</p>' +
+    (rows.length ? '<div class="bullbtns" style="margin-top:12px"><button class="btn" id="nudgeAll">🔔 Nudge all ' + rows.length + '</button><a class="btn wa" id="waGroup" target="_blank" rel="noopener" href="' + h('https://wa.me/?text=' + encodeURIComponent(group)) + '">💬 Post to team WhatsApp</a></div>' +
+      '<p class="hint" style="margin:8px 0 0">Nudge = an alert on each booker\'s phone (email if they\'re not set up). WhatsApp = the full list, ready to drop into your bookers\' group.</p>' : '') + '</div>' +
+    '<div id="cres"></div>' +
+    (rows.length ? '<div class="list alist">' + rows.map(row).join('') + '</div>' : '') +
+    (L.noBooker.length ? '<div class="flag amber" style="margin-top:12px">No booker yet: ' + h(names(L.noBooker)) + '. Open them and set the booker (All → No booker).</div>' : ''), false, true);
+  bindWeekNav();
+  const res = page.querySelector('#cres');
+  const nudge = (ids, btn) => {
+    busy(btn, true, 'Sending…');
+    call('chaseOutcomes', { weekEnding: S.week, ids: ids }).then(r => {
+      busy(btn, false);
+      res.innerHTML = (r.nudged.length ? '<div class="flag green">🔔 Nudged: ' + h(r.nudged.map(first).join(', ')) + '</div>' : '') +
+        (r.recently.length ? '<div class="flag amber">Already nudged in the last 30 min: ' + h(r.recently.map(first).join(', ')) + '</div>' : '') +
+        (r.noApp.length ? '<div class="flag amber">Not in the app (use WhatsApp): ' + h(r.noApp.map(first).join(', ')) + '</div>' : '') +
+        (!r.nudged.length && !r.recently.length && !r.noApp.length ? '<div class="flag green">Nothing left to chase 🎉</div>' : '');
+    }).catch(e => { busy(btn, false); toast(/Unknown action/.test(e.message) ? 'Paste the new Google code (Code.gs) first.' : e.message); });
+  };
+  const na = page.querySelector('#nudgeAll'); if (na) na.onclick = () => nudge([], na);
+  page.querySelectorAll('[data-nudge]').forEach(b => { b.onclick = () => nudge([b.dataset.nudge], b); });
+}
+
+// ───── Day 1 list: everyone booked onto the BA Academy, who's confirmed, who turned up ─────
+function msgDay1Reminder(c) {
+  const days = Math.round((D(c.academy_date) - D(S.me.today)) / 86400000);
+  const when = (days === 0 ? 'TODAY, ' : days === 1 ? 'TOMORROW, ' : '') + fmtLong(c.academy_date);
+  return 'Hey ' + c.first_name + '! 👋' + heartOf(c) + '\n\n' +
+    'Just a reminder: your *BA Academy Day 1* with *' + brandOf(c) + '* is *' + when + ' at 1:30pm* 📅\n' +
+    '📍 Automotive House, Slough (2 mins from the station)\n' +
+    '🪪 Bring photo ID + your right-to-work share code\n\n' +
+    (c.academy_confirmed_at || !c.welcome_url ? '' : '👇 Tap *CONFIRM* so we know you\'re coming:\n' + c.welcome_url + '\n\n') +
+    'See you there 🔥\n– ' + S.me.user.name.split(' ')[0] + ', ' + brandOf(c);
+}
+function viewAcademy() {
+  const id = S.viewId;
+  if (S.academy) drawAcademy(S.academy); else paint('Day 1 list', '<p class="hint">Loading everyone booked onto the Academy…</p>' + skeleton(4), false, true);
+  call('academyList').then(r => { S.academy = r; if (S.viewId === id) drawAcademy(r); })
+    .catch(e => { if (S.viewId === id && !S.academy) paint('Day 1 list', '<div class="err">' + h(/Unknown action/.test(e.message) ? 'Paste the new Google code (Code.gs) into Apps Script first, then open this again.' : e.message) + '</div>', false, true); });
+}
+function drawAcademy(r) {
+  const today = r.today || S.me.today, dates = [];
+  r.items.forEach(c => { if (dates.indexOf(c.academy_date) < 0) dates.push(c.academy_date); });
+  const upcoming = dates.filter(x => x >= today), past = dates.filter(x => x < today).reverse();
+  const label = x => { const n = Math.round((D(x) - D(today)) / 86400000); return fmtLong(x) + (n === 0 ? ' · TODAY' : n === 1 ? ' · TOMORROW' : ''); };
+  const row = c => {
+    const started = c.academy_date <= today;
+    const pills = (c.academy_confirmed_at ? '<span class="pill green">✅ Confirmed</span>' : '<span class="pill amber">⏳ Not confirmed</span>') +
+      (c.offer_sent_at || started ? '' : '<span class="pill red">Day 1 text not sent</span>') +
+      (c.day1_status === 'arrived' ? '<span class="pill green">🎓 Arrived</span>' : c.day1_status === 'no_show' ? '<span class="pill red">❌ No-show</span>' : '');
+    const act = started
+      ? '<div class="d1btns"><button class="btn sm ' + (c.day1_status === 'arrived' ? 'green' : 'ghost') + '" data-d1="arrived" data-id="' + h(c.id) + '">Arrived</button>' +
+        '<button class="btn sm ' + (c.day1_status === 'no_show' ? 'red' : 'ghost') + '" data-d1="no_show" data-id="' + h(c.id) + '">No-show</button></div>'
+      : '<a class="btn ' + (c.no_whatsapp ? 'sms' : 'wa') + ' sm" target="_blank" rel="noopener" href="' + h(msgUrl(c, msgDay1Reminder(c))) + '">💬 Remind</a>';
+    return '<div class="trow" data-cand="' + h(c.id) + '">' + avatar(c) + '<div class="main"><div class="name">' + h(c.full_name) + ' <span class="co ' + h(c.company) + '">' + h(c.company) + '</span></div>' +
+      '<div class="sub">' + (c.booker_name ? 'booked by ' + h(c.booker_name) : 'no booker') + '</div><div class="pills">' + pills + '</div></div>' + act + '</div>';
+  };
+  const block = x => {
+    const l = r.items.filter(c => c.academy_date === x), conf = l.filter(c => c.academy_confirmed_at).length;
+    const arr = l.filter(c => c.day1_status === 'arrived').length, ns = l.filter(c => c.day1_status === 'no_show').length;
+    const counts = l.length + ' expected · ' + conf + ' confirmed' + (l.length - conf ? ' · ' + (l.length - conf) + ' not' : '') +
+      (x <= today ? ' · ' + arr + ' arrived' + (ns ? ' · ' + ns + ' no-show' : '') : '');
+    return '<div class="datehead">' + h(label(x)) + '</div><p class="hint" style="margin:-4px 4px 8px">' + h(counts) + '</p><div class="list alist">' + l.map(row).join('') + '</div>';
+  };
+  const page = paint('Day 1 list',
+    (r.items.length ? '' : empty('🎓', 'Nobody booked onto the Academy yet.')) +
+    upcoming.map(block).join('') +
+    (past.length ? '<div class="datehead" style="margin-top:22px">Last week</div>' + past.map(block).join('') : '') +
+    '<p class="hint">💬 Remind sends them a WhatsApp (or text) with their date, what to bring and the CONFIRM link. On Day 1, tap Arrived or No-show for everyone: that\'s your show-up rate.</p>', false, true);
+  page.querySelectorAll('.trow[data-cand] .main').forEach(el => { el.onclick = () => nav('cand', { id: el.parentNode.dataset.cand }, true); });
+  page.querySelectorAll('[data-d1]').forEach(b => {
+    b.onclick = () => {
+      const c = r.items.filter(x => x.id === b.dataset.id)[0]; if (!c) return;
+      const st = c.day1_status === b.dataset.d1 ? '' : b.dataset.d1;  // tap again to clear
+      busy(b, true, '…');
+      call('markDay1', { id: c.id, status: st }).then(nc => { Object.assign(c, nc); upsert(nc); drawAcademy(r); toast(st === 'arrived' ? '🎓 ' + c.first_name + ' arrived' : st === 'no_show' ? c.first_name + ': no-show' : 'Cleared'); })
+        .catch(e => { busy(b, false); toast(e.message); });
+    };
+  });
+}
+
 // ───── Alerts check (admin): is everyone actually getting their alerts? ─────
 function viewAlerts() {
   const id = S.viewId;
