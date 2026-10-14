@@ -786,7 +786,7 @@ function renderLogin() {
       door = r.wrongDoor; store.set('door', door); drawDoor();
       return verify(email, door === 'admin' ? 'You\'re an admin, so you\'re in through Admin login 👍' : 'You\'re a BA, so you\'re in through BA login 👍');
     }
-    S.token = r.token; store.set('tok', r.token); store.del('cache'); store.del('codeSent'); S.data = {}; S.users = null; S.chase = null; S.chaseN = 0; startStaff();
+    S.token = r.token; store.set('tok', r.token); store.del('cache'); store.del('codeSent'); S.data = {}; S.users = null; S.chase = null; S.chaseN = 0; S.academy = null; startStaff();
     if (note) toast(note);
   });
   btn.onclick = () => {
@@ -820,8 +820,10 @@ function boot() {
     if (S.tab === 'today') setTimeout(open, 300);
   } else if (BOOT.cid === 'chase') {
     BOOT.cid = ''; if (isAdmin() || isBooker()) S.tab = 'chase'; nav(S.tab, {}, false);
-  } else if (BOOT.cid === 'academy') {
-    BOOT.cid = ''; nav(S.tab, {}, false); nav('academy', {}, true);
+  } else if (BOOT.cid === 'academy' || BOOT.cid === 'remind') {
+    // From the evening-before briefing / the 10:00 "starters to remind" alert (that one opens the send list too)
+    S.openRemind = BOOT.cid === 'remind' && isAdmin(); BOOT.cid = '';
+    if (isAdmin()) { S.tab = 'academy'; nav('academy', {}, false); } else { nav(S.tab, {}, false); nav('academy', {}, true); }
   } else if (BOOT.cid) { const id = BOOT.cid; BOOT.cid = ''; nav('cand', { id: id }, true); } else nav(S.tab, {}, false);
   stopTimer();
   S.lastPoll = Date.now();
@@ -883,7 +885,7 @@ window.addEventListener('popstate', e => {
 });
 
 function nav(view, params, push) {
-  if (['today', 'mine', 'chase', 'all', 'pay', 'team'].indexOf(view) >= 0) S.tab = view;
+  if (tabs().some(t => t[0] === view)) S.tab = view;
   S.view = view; S.params = params || {}; S.viewId++;
   hist(push ? 'push' : 'replace', { v: view, p: S.params });
   render();
@@ -891,7 +893,7 @@ function nav(view, params, push) {
 function hist(kind, st) { try { kind === 'push' ? history.pushState(st, '') : history.replaceState(st, ''); S.hist = kind === 'push' ? (S.hist || 0) + 1 : (S.hist || 0); } catch (e) { /* not allowed in this frame */ } }
 function back() { if (S.hist > 0 && history.state && ['cand', 'user', 'slideqr', 'bulletin', 'alerts', 'academy'].indexOf(history.state.v) >= 0) { S.hist--; history.back(); } else nav(S.tab); }
 function go(tab) { nav(tab, {}, false); }
-function titleOf(v) { return { today: 'Today', mine: 'My candidates', all: 'All candidates', pay: 'Recruitment incentive', team: 'Team', slideqr: 'Slide QR codes', user: 'Team', bulletin: 'Bulletin', alerts: 'Alerts check', chase: 'Chase', academy: 'Day 1 list' }[v] || ''; }
+function titleOf(v) { return { today: 'Today', mine: 'My candidates', all: 'All candidates', pay: 'Recruitment incentive', team: 'Team', slideqr: 'Slide QR codes', user: 'Team', bulletin: 'Bulletin', alerts: 'Alerts check', chase: 'Chase', academy: 'Day 1' }[v] || ''; }
 
 function render(quiet) {
   const v = S.view;
@@ -900,7 +902,7 @@ function render(quiet) {
   if (v === 'slideqr') return viewSlideQR();
   if (v === 'alerts') return viewAlerts();
   if (v === 'chase') return viewChase(quiet);
-  if (v === 'academy') return viewAcademy();
+  if (v === 'academy') return viewAcademy(quiet);
   if (v === 'bulletin') return viewBulletin();
   ({ today: viewToday, mine: viewMine, all: viewAll, pay: viewPay, team: viewTeam }[v] || viewToday)(quiet);
 }
@@ -911,6 +913,7 @@ const ICONS = {
   mine: '<path d="M5 4h3.5l2 5-2.4 1.6a11 11 0 0 0 5.3 5.3L15 13.5l5 2V19a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/>',
   all: '<path d="M9 6h12M9 12h12M9 18h12"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/>',
   chase: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+  academy: '<path d="M22 10 12 5 2 10l10 5 10-5z"/><path d="M6 12v5c3 2 9 2 12 0v-5"/><path d="M22 10v6"/>',
   pay: '<path d="M17 7.5A4.5 4.5 0 0 0 9 10v9M6 13.5h8M6 19h12"/>',
   team: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17.5" cy="9" r="2.5"/><path d="M16.5 14.6A5 5 0 0 1 21.5 19.5"/>',
   back: '<path d="M15 5l-7 7 7 7"/>',
@@ -925,9 +928,10 @@ function tabs() {
   if (isPresenter()) t.push(['today', 'Today']);
   if (isBooker()) t.push(['mine', 'Mine']);
   if (isAdmin() || isBooker()) t.push(['chase', 'Chase']);
+  if (isAdmin()) t.push(['academy', 'Day 1']);
   if (isAdmin()) t.push(['all', 'All']);
   t.push(['pay', 'Incentive']);
-  if (isAdmin()) t.push(['team', 'Team']);
+  if (isAdmin() && !isBooker()) t.push(['team', 'Team']);  // an admin who also books: Team is in the menu (7 tabs don't fit a phone)
   return t;
 }
 function ensureShell() {
@@ -1008,15 +1012,17 @@ function toggleMenu() {
   const u = S.me.user;
   m.innerHTML = '<div class="menu-card"><div class="row" style="flex-wrap:nowrap"><span class="av lg co-' + h(coOf(u.company) || 'LINK') + '">' + h(initials(u.name)) + '</span><div style="min-width:0"><b>' + h(u.name) + '</b><div class="small muted" style="overflow:hidden;text-overflow:ellipsis">' + h(u.email) + '</div>' +
     '<div class="small muted"><span class="co ' + h(u.company) + '">' + h(u.company) + '</span> · ' + (isAdmin() ? '<b>Admin</b>' : '<b>BA</b> · ' + h(u.roles.join(', '))) + '</div></div></div>' +
-    '<button class="btn ghost block" id="mRefresh" style="margin-top:12px">↻ Refresh now</button>' +
+    (isAdmin() && isBooker() ? '<button class="btn ghost block" id="mTeam" style="margin-top:12px">👥 Team</button>' : '') +
+    '<button class="btn ghost block" id="mRefresh" style="margin-top:' + (isAdmin() && isBooker() ? 8 : 12) + 'px">↻ Refresh now</button>' +
     '<button class="btn ghost block" id="mLogout" style="margin-top:8px;color:var(--red)">Log out</button>' +
     '<p class="small muted center" style="margin:10px 0 0">App version ' + h(window.APP_VERSION || 'dev') + '<br>Alerts: ' + h(pushStatus()) + '</p></div>';
   m.hidden = false;
   m.onclick = e => { if (e.target === m) m.hidden = true; };
   document.getElementById('mRefresh').onclick = () => { m.hidden = true; pullRefresh(); };
+  const mt = document.getElementById('mTeam'); if (mt) mt.onclick = () => { m.hidden = true; nav('team', {}, true); };
   document.getElementById('mLogout').onclick = () => {
     if (outbox().length && !navigator.onLine) { toast('Wait for signal first: you have changes that haven\'t synced'); return; }
-    store.del('outbox'); store.del('tok'); store.del('cache'); S.token = ''; S.me = null; S.data = {}; S.users = null; S.chase = null; S.chaseN = 0; S.booted = false; S.tab = '';
+    store.del('outbox'); store.del('tok'); store.del('cache'); S.token = ''; S.me = null; S.data = {}; S.users = null; S.chase = null; S.chaseN = 0; S.academy = null; S.booted = false; S.tab = '';
     if (PUSH.os) PUSH.os.logout().catch(() => {});
     startStaff();
   };
@@ -1229,8 +1235,7 @@ function viewToday(quiet) {
     const rated = items.filter(c => c.in_room).length, toCall = items.filter(c => !c.limited && c.eval_at && !c.outcome).length;
     body = '<div class="hero">' + top + kpis([[items.length, 'Checked in'], [rated, 'Rated'], [items.filter(c => c.eval_at).length, 'Evaluated'], [toCall, 'To call', toCall > 0]]) + '</div>' +
       (isAdmin() || canThank() ? thanksButton(items) : '') +
-      (isAdmin() ? '<div class="bullbtns"><button class="btn" id="bullDaily">📣 ' + (isToday ? 'Today\'s' : DAYS[D(S.day).getUTCDay()]) + ' bulletin</button><button class="btn ghost" id="bullWeek">🏆 Week top 5</button></div>' +
-        '<button class="btn ghost block" id="goAcademy" style="margin-bottom:10px">🎓 Day 1 list: who\'s starting</button>' : '') +
+      (isAdmin() ? '<div class="bullbtns"><button class="btn" id="bullDaily">📣 ' + (isToday ? 'Today\'s' : DAYS[D(S.day).getUTCDay()]) + ' bulletin</button><button class="btn ghost" id="bullWeek">🏆 Week top 5</button></div>' : '') +
       (items.length ? '<div class="section-h"><b>In the room</b><span>' + rated + ' of ' + items.length + ' rated</span></div>' +
         (isPresenter() && rated < items.length ? '<p class="hint">Tap Green, Amber or Red to rate. Rating = they were in the room (that\'s what counts for the recruitment incentive). Tap a name for stars and notes.</p>' : '') +
         (items.some(c => c.limited) ? '<p class="hint">🔒 You see your own candidates in full. Everyone else\'s: name and room rating only.</p>' : '') +
@@ -1241,7 +1246,6 @@ function viewToday(quiet) {
   bindItems(page);
   const ta = document.getElementById('thanksAll'); if (ta) ta.onclick = thanksSheet;
   [['bullDaily', 'daily'], ['bullWeek', 'weekly']].forEach(b => { const el = document.getElementById(b[0]); if (el) el.onclick = () => nav('bulletin', { day: S.day, kind: b[1] }, true); });
-  const ga = document.getElementById('goAcademy'); if (ga) ga.onclick = () => nav('academy', {}, true);
   document.getElementById('dprev').onclick = () => { S.day = addDays(S.day, -1); render(); };
   document.getElementById('dnext').onclick = () => { if (S.day < S.me.today) { S.day = addDays(S.day, 1); render(); } };
 }
@@ -1691,29 +1695,35 @@ function chaseAdmin(list, today, due, late, count) {
       '<p class="hint" style="margin:8px 0 0">Nudge = an alert on each booker\'s phone listing exactly who to chase (email if they\'re not set up). WhatsApp = the same list for the bookers\' group.</p>' : '') + '</div>' +
     '<div id="cres"></div>' +
     (yours ? '<div class="card needs"><b>👀 Needs you</b>' + yours + '</div>' : '') +
-    (rows.length ? '<div class="list alist">' + rows.map(row).join('') + '</div>' : '') +
-    '<button class="btn ghost block" id="goAcademy" style="margin-top:14px">🎓 Day 1 list: who\'s starting</button>';
+    (rows.length ? '<div class="list alist">' + rows.map(row).join('') + '</div>' : '');
 }
 
 // ───── Day 1 list: everyone booked onto the BA Academy, who's confirmed, who turned up ─────
+/** The Day 1 reminder: short and snappy. Jess / Rubal send it to every starter at 10:00 on the day (Day 1 tab → Send reminders). */
 function msgDay1Reminder(c) {
   const days = Math.round((D(c.academy_date) - D(S.me.today)) / 86400000);
-  const when = (days === 0 ? 'TODAY, ' : days === 1 ? 'TOMORROW, ' : '') + fmtLong(c.academy_date);
-  return 'Hey ' + c.first_name + '! 👋' + heartOf(c) + '\n\n' +
-    'Just a reminder: your *BA Academy Day 1* with *' + brandOf(c) + '* is *' + when + ' at 1:30pm* 📅\n' +
-    '📍 Automotive House, Slough (2 mins from the station)\n' +
-    '🪪 Bring photo ID + your right-to-work share code\n\n' +
-    (c.academy_confirmed_at || !c.welcome_url ? '' : '👇 Tap *CONFIRM* so we know you\'re coming:\n' + c.welcome_url + '\n\n') +
-    'See you there 🔥\n– ' + S.me.user.name.split(' ')[0] + ', ' + brandOf(c);
+  const when = days === 0 ? 'TODAY' : days === 1 ? 'TOMORROW' : fmtLong(c.academy_date);
+  return 'Hey ' + c.first_name + '! 👋\n\n' +
+    'Your *BA Academy Day 1* is *' + when + '* 🎉\n' +
+    '⏰ *1:30pm*\n' +
+    '📍 ' + (S.me.address || 'Automotive House, Grays Place, Slough SL2 5AF') + '\n' +
+    '🪪 Bring photo ID + your share code\n\n' +
+    (c.academy_confirmed_at || !c.welcome_url ? 'See you there 🔥' : '👇 Tap *CONFIRM* so we know you\'re coming:\n' + c.welcome_url) + '\n\n' +
+    '– ' + S.me.user.name.split(' ')[0] + ', ' + brandOf(c);
 }
-function viewAcademy() {
+/** Day 1: a tab for admins (Jess / Rubal tap through it on the day), a page for bookers (their own starters). */
+function viewAcademy(quiet) {
   const id = S.viewId;
-  if (S.academy) drawAcademy(S.academy); else paint('Day 1 list', '<p class="hint">Loading everyone booked onto the Academy…</p>' + skeleton(4), false, true);
-  call('academyList').then(r => { S.academy = r; if (S.viewId === id) drawAcademy(r); })
-    .catch(e => { if (S.viewId === id && !S.academy) paint('Day 1 list', '<div class="err">' + h(/Unknown action/.test(e.message) ? 'Paste the new Google code (Code.gs) into Apps Script first, then open this again.' : e.message) + '</div>', false, true); });
+  if (S.academy) drawAcademy(S.academy, quiet); else paint('Day 1', '<p class="hint">Loading everyone booked onto the Academy…</p>' + skeleton(4), false, !isAdmin());
+  call('academyList').then(r => {
+    S.academy = r; if (S.viewId !== id) return;
+    if (!document.querySelector('.sheet-back')) drawAcademy(r, true);
+    if (S.openRemind) { S.openRemind = false; const next = r.items.map(c => c.academy_date).filter(x => x >= r.today).sort()[0]; if (next) day1Sheet(next); }
+  }).catch(e => { if (S.viewId === id && !S.academy) paint('Day 1', '<div class="err">' + h(/Unknown action/.test(e.message) ? 'Paste the new Google code (Code.gs) into Apps Script first, then open this again.' : e.message) + '</div>', false, !isAdmin()); });
 }
-function drawAcademy(r) {
-  const today = r.today || S.me.today, dates = [];
+function remindedToday(c) { return String(c.day1_reminded_at || '').slice(0, 10) === ((S.academy && S.academy.today) || S.me.today); }
+function drawAcademy(r, quiet) {
+  const today = r.today || S.me.today, dates = [], admin = isAdmin();
   r.items.forEach(c => { if (dates.indexOf(c.academy_date) < 0) dates.push(c.academy_date); });
   const upcoming = dates.filter(x => x >= today), past = dates.filter(x => x < today).reverse();
   const label = x => { const n = Math.round((D(x) - D(today)) / 86400000); return fmtLong(x) + (n === 0 ? ' · TODAY' : n === 1 ? ' · TOMORROW' : ''); };
@@ -1721,36 +1731,153 @@ function drawAcademy(r) {
     const started = c.academy_date <= today;
     const pills = (c.academy_confirmed_at ? '<span class="pill green">✅ Confirmed</span>' : '<span class="pill amber">⏳ Not confirmed</span>') +
       (c.offer_sent_at || started ? '' : '<span class="pill red">Day 1 text not sent</span>') +
+      (remindedToday(c) && !c.day1_status ? '<span class="pill blue">📲 Reminded ' + h(String(c.day1_reminded_at).slice(11, 16)) + '</span>' : '') +
       (c.day1_status === 'arrived' ? '<span class="pill green">🎓 Arrived</span>' : c.day1_status === 'no_show' ? '<span class="pill red">❌ No-show</span>' : '');
     const act = started
       ? '<div class="d1btns"><button class="btn sm ' + (c.day1_status === 'arrived' ? 'green' : 'ghost') + '" data-d1="arrived" data-id="' + h(c.id) + '">Arrived</button>' +
         '<button class="btn sm ' + (c.day1_status === 'no_show' ? 'red' : 'ghost') + '" data-d1="no_show" data-id="' + h(c.id) + '">No-show</button></div>'
-      : '<a class="btn ' + (c.no_whatsapp ? 'sms' : 'wa') + ' sm" target="_blank" rel="noopener" href="' + h(msgUrl(c, msgDay1Reminder(c))) + '">💬 Remind</a>';
+      : '<a class="btn ' + (c.no_whatsapp ? 'sms' : 'wa') + ' sm" data-rem1="' + h(c.id) + '" data-via="' + (c.no_whatsapp ? 'sms' : 'whatsapp') + '" target="_blank" rel="noopener" href="' + h(msgUrl(c, msgDay1Reminder(c))) + '">💬 Remind</a>';
     return '<div class="trow" data-cand="' + h(c.id) + '">' + avatar(c) + '<div class="main"><div class="name">' + h(c.full_name) + ' <span class="co ' + h(c.company) + '">' + h(c.company) + '</span></div>' +
       '<div class="sub">' + (c.booker_name ? 'booked by ' + h(c.booker_name) : 'no booker') + '</div><div class="pills">' + pills + '</div></div>' + act + '</div>';
   };
   const block = x => {
     const l = r.items.filter(c => c.academy_date === x), conf = l.filter(c => c.academy_confirmed_at).length;
     const arr = l.filter(c => c.day1_status === 'arrived').length, ns = l.filter(c => c.day1_status === 'no_show').length;
+    const toRemind = l.filter(c => !c.day1_status), rem = toRemind.filter(remindedToday).length;
     const counts = l.length + ' expected · ' + conf + ' confirmed' + (l.length - conf ? ' · ' + (l.length - conf) + ' not' : '') +
       (x <= today ? ' · ' + arr + ' arrived' + (ns ? ' · ' + ns + ' no-show' : '') : '');
-    return '<div class="datehead">' + h(label(x)) + '</div><p class="hint" style="margin:-4px 4px 8px">' + h(counts) + '</p><div class="list alist">' + l.map(row).join('') + '</div>';
+    const tools = admin ? '<div class="bullbtns d1tools">' +
+      (x >= today && toRemind.length ? '<button class="btn ' + (rem < toRemind.length ? 'wa' : 'ghost') + '" data-remall="' + x + '">📲 Send reminders · ' + rem + '/' + toRemind.length + '</button>' : '') +
+      '<button class="btn ghost" data-pdf="' + x + '">📄 Print list (PDF)</button></div>' : '';
+    return '<div class="datehead">' + h(label(x)) + '</div><p class="hint" style="margin:-4px 4px 8px">' + h(counts) + '</p>' + tools + '<div class="list alist">' + l.map(row).join('') + '</div>';
   };
-  const page = paint('Day 1 list',
+  const page = paint('Day 1',
     (r.items.length ? '' : empty('🎓', 'Nobody booked onto the Academy yet.')) +
     upcoming.map(block).join('') +
     (past.length ? '<div class="datehead" style="margin-top:22px">Last week</div>' + past.map(block).join('') : '') +
-    '<p class="hint">💬 Remind sends them a WhatsApp (or text) with their date, what to bring and the CONFIRM link. On Day 1, tap Arrived or No-show for everyone: that\'s your show-up rate.</p>', false, true);
+    '<p class="hint">' + (admin ? '📲 Send reminders: a short WhatsApp to every starter, signed by you (Jess / Rubal: you get a nudge at 10:00 on the day). 📄 Print list: the sign-in sheet for the room. ' : '💬 Remind sends them a short WhatsApp (or text) with the time, address and what to bring. ') +
+    'On Day 1, tap Arrived or No-show for everyone: that\'s your show-up rate.</p>', quiet, !admin);
   page.querySelectorAll('.trow[data-cand] .main').forEach(el => { el.onclick = () => nav('cand', { id: el.parentNode.dataset.cand }, true); });
+  page.querySelectorAll('[data-remall]').forEach(b => { b.onclick = () => day1Sheet(b.dataset.remall); });
+  page.querySelectorAll('[data-pdf]').forEach(b => { b.onclick = () => { const x = b.dataset.pdf; savePdf(day1Pdf(x, r.items.filter(c => c.academy_date === x)), 'Day1-' + x + '.pdf'); }; });
+  page.querySelectorAll('[data-rem1]').forEach(a => a.addEventListener('click', () => markReminded(r.items.filter(x => x.id === a.dataset.rem1)[0], a.dataset.via)));
   page.querySelectorAll('[data-d1]').forEach(b => {
     b.onclick = () => {
       const c = r.items.filter(x => x.id === b.dataset.id)[0]; if (!c) return;
       const st = c.day1_status === b.dataset.d1 ? '' : b.dataset.d1;  // tap again to clear
       busy(b, true, '…');
-      call('markDay1', { id: c.id, status: st }).then(nc => { Object.assign(c, nc); upsert(nc); drawAcademy(r); toast(st === 'arrived' ? '🎓 ' + c.first_name + ' arrived' : st === 'no_show' ? c.first_name + ': no-show' : 'Cleared'); })
+      call('markDay1', { id: c.id, status: st }).then(nc => { Object.assign(c, nc); upsert(nc); drawAcademy(r, true); toast(st === 'arrived' ? '🎓 ' + c.first_name + ' arrived' : st === 'no_show' ? c.first_name + ': no-show' : 'Cleared'); })
         .catch(e => { busy(b, false); toast(e.message); });
     };
   });
+}
+function markReminded(c, via) {
+  if (!c) return;
+  c.day1_reminded_at = ((S.academy && S.academy.today) || S.me.today) + ' ' + londonNow().slice(11); c.day1_reminded_by = S.me.user.name;
+  if (via && via !== 'whatsapp') c.no_whatsapp = 'TRUE';
+  call('markSent', { id: c.id, kind: 'day1', via: via || 'whatsapp' }).catch(e => toast(e.message));
+}
+/** Day 1 reminders, one after another: tap send, WhatsApp opens with the message ready (signed by you), come back, next one. */
+function day1Sheet(date) {
+  const r = S.academy; if (!r) return;
+  const mine = myThanks(), all = r.items.filter(c => c.academy_date === date && !c.day1_status);
+  const items = all.filter(c => mine.indexOf(thanksCo(c)) >= 0).concat(all.filter(c => mine.indexOf(thanksCo(c)) < 0));
+  const n = (r.today === date ? 'TODAY · ' : '') + fmtLong(date);
+  closeSheet(true);
+  const back = document.createElement('div');
+  back.className = 'sheet-back';
+  const sent = c => '<span class="pill green">✓ Sent ' + h(String(c.day1_reminded_at).slice(11, 16)) + (!c.day1_reminded_by || c.day1_reminded_by === S.me.user.name ? '' : ' · ' + h(String(c.day1_reminded_by).split(' ')[0])) + '</span>';
+  const prog = () => items.filter(remindedToday).length + ' of ' + items.length + ' sent';
+  const send = c => {
+    const msg = msgDay1Reminder(c), sms = !!c.no_whatsapp;
+    return '<span class="tsend"><a class="btn ' + (sms ? 'sms' : 'wa') + ' sm" data-r1="' + h(c.id) + '" data-via="' + (sms ? 'sms' : 'whatsapp') + '" href="' + h(sms ? smsUrl(c.mobile, msg) : waUrl(c.mobile, msg)) + '" target="_blank" rel="noopener">' + (sms ? '📱 Text' : '💬 Send') + '</a>' +
+      '<a class="tx" data-r1="' + h(c.id) + '" data-via="' + (sms ? 'whatsapp' : 'sms') + '" href="' + h(sms ? waUrl(c.mobile, msg) : smsUrl(c.mobile, msg)) + '" target="_blank" rel="noopener">' + (sms ? '💬 WhatsApp' : '📱 Text instead') + '</a></span>';
+  };
+  back.innerHTML = '<div class="sheet" role="dialog" aria-label="Day 1 reminders"><div class="grab"></div>' +
+    '<div class="sheet-h"><div><div class="label muted">BA Academy Day 1 · ' + h(n) + '</div><div class="display">Send reminders 📲</div></div></div>' +
+    '<p class="hint" style="margin-top:-6px"><b id="d1prog">' + prog() + '</b>. Short and snappy, signed by you' + (mine.length ? ', your ' + mine.join(' + ') + ' starters first' : '') + '. Tap send, come back, next one.</p>' +
+    '<div class="list">' + items.map(c => '<div class="trow">' + avatar(c) + '<div class="main"><div class="name">' + h(c.full_name) + '</div><div class="sub"><span class="co ' + thanksCo(c) + '">' + thanksCo(c) + '</span> ' +
+      (c.academy_confirmed_at ? '✅ confirmed' : '⏳ not confirmed') + '</div></div>' + (remindedToday(c) ? sent(c) : send(c)) + '</div>').join('') + '</div>' +
+    '<button class="btn ghost block" id="d1done" style="margin-top:14px">Done</button></div>';
+  document.body.appendChild(back);
+  document.body.style.overflow = 'hidden';
+  const done = () => { closeSheet(); drawAcademy(r, true); };
+  back.onclick = e => { if (e.target === back) done(); };
+  back.querySelector('#d1done').onclick = done;
+  back.querySelectorAll('[data-r1]').forEach(a => a.addEventListener('click', () => {
+    const c = items.filter(x => x.id === a.dataset.r1)[0]; if (!c) return;
+    markReminded(c, a.dataset.via);
+    setTimeout(() => { (a.closest('.tsend') || a).outerHTML = sent(c); back.querySelector('#d1prog').textContent = prog(); }, 300);  // after WhatsApp / Messages has opened
+  }));
+}
+
+// ───── Day 1 sign-in sheet as a PDF (A4). Built by hand: no library to load, works offline. ─────
+function pdfStr(s) {
+  return String(s == null ? '' : s).replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/[–—]/g, '-')
+    .replace(/[^\x20-\x7E\xA0-\xFF]/g, '').replace(/[\\()]/g, '\\$&');
+}
+function day1Pdf(date, list) {
+  const W = 595.28, H = 841.89, M = 36, RH = 24, PER = 24;
+  const cols = [['#', 20], ['Name', 128], ['Co', 40], ['Mobile', 82], ['Booked by', 88], ['Confirmed', 52], ['Arrived', 46], ['Notes', 67]];
+  const rows = list.slice().sort((a, b) => a.full_name.localeCompare(b.full_name)), conf = rows.filter(c => c.academy_confirmed_at).length;
+  const fit = (s, w, size) => { s = String(s || ''); const max = Math.floor(w / (size * 0.55)); return s.length <= max ? s : s.slice(0, Math.max(1, max - 2)) + '...'; };
+  const pages = [];
+  for (let p = 0; p === 0 || p * PER < rows.length; p++) pages.push(rows.slice(p * PER, (p + 1) * PER));
+  const streams = pages.map((chunk, p) => {
+    const o = [];
+    const txt = (x, y, s, size, bold, grey) => o.push((grey ? '0.42 0.42 0.47' : '0.13 0.13 0.17') + ' rg BT /' + (bold ? 'F2' : 'F1') + ' ' + size + ' Tf ' + x.toFixed(2) + ' ' + y.toFixed(2) + ' Td (' + pdfStr(s) + ') Tj ET');
+    o.push('0.95 0.42 0.11 rg 0 ' + (H - 10).toFixed(2) + ' ' + (W / 2).toFixed(2) + ' 10 re f', '0.05 0.6 0.6 rg ' + (W / 2).toFixed(2) + ' ' + (H - 10).toFixed(2) + ' ' + (W / 2).toFixed(2) + ' 10 re f');
+    txt(M, H - 50, 'BA Academy · Day 1 sign-in', 20, true);
+    txt(M, H - 68, fmtLong(date) + ' ' + date.slice(0, 4) + ' · 1:30pm · ' + (S.me.address || 'Automotive House, Grays Place, Slough SL2 5AF'), 10);
+    txt(M, H - 84, rows.length + ' expected · ' + conf + ' confirmed · ' + (rows.length - conf) + ' not confirmed  |  LINK Marketing & JUSS Marketing  |  printed ' + fmt(S.me.today) + ' ' + londonNow().slice(11) + ' by ' + S.me.user.name, 8.5, false, true);
+    const top = H - 100;
+    o.push('0.94 0.93 0.91 rg ' + M + ' ' + (top - 20).toFixed(2) + ' 523 20 re f');
+    let x = M; cols.forEach(c => { txt(x + 4, top - 14, c[0], 8.5, true); x += c[1]; });
+    chunk.forEach((c, i) => {
+      const t = top - 20 - i * RH, b = t - RH, y = t - 15;
+      const at = k => { let v = M; for (let j = 0; j < k; j++) v += cols[j][1]; return v + 4; };
+      txt(at(0), y, String(p * PER + i + 1), 9, false, true);
+      txt(at(1), y, fit(c.full_name, cols[1][1] - 8, 10), 10, true);
+      txt(at(2), y, c.company || '', 9);
+      txt(at(3), y, c.mobile || '', 9);
+      txt(at(4), y, fit(c.booker_name || '-', cols[4][1] - 8, 9), 9);
+      txt(at(5), y, c.academy_confirmed_at ? 'Yes' : 'No', 9, !c.academy_confirmed_at);
+      o.push('0.2 0.2 0.25 RG 0.8 w ' + (at(6) + 12).toFixed(2) + ' ' + (b + 6.5).toFixed(2) + ' 11 11 re S');
+      o.push('0.85 0.84 0.82 RG 0.5 w ' + M + ' ' + b.toFixed(2) + ' m ' + (M + 523) + ' ' + b.toFixed(2) + ' l S');
+    });
+    if (!chunk.length) txt(M + 4, top - 38, 'Nobody booked for this day.', 10, false, true);
+    if (p === pages.length - 1) {
+      const y = top - 20 - Math.max(chunk.length, 1) * RH - 34;
+      txt(M, y, 'Arrived: ______ of ' + rows.length + '          Checked by: ___________________________', 10);
+    }
+    txt(M, 24, 'Personal data: keep this sheet safe and shred it after Day 1.', 8, false, true);
+    txt(W - M - 52, 24, 'Page ' + (p + 1) + ' of ' + pages.length, 8, false, true);
+    return o.join('\n');
+  });
+  const objs = ['<< /Type /Catalog /Pages 2 0 R >>', '', '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>'], kids = [];
+  streams.forEach(st => {
+    kids.push(objs.length + 1);
+    objs.push('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + W + ' ' + H + '] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ' + (objs.length + 2) + ' 0 R >>');
+    objs.push('<< /Length ' + st.length + ' >>\nstream\n' + st + '\nendstream');
+  });
+  objs[1] = '<< /Type /Pages /Kids [' + kids.map(k => k + ' 0 R').join(' ') + '] /Count ' + kids.length + ' >>';
+  let out = '%PDF-1.4\n', offs = [];
+  objs.forEach((ob, i) => { offs.push(out.length); out += (i + 1) + ' 0 obj\n' + ob + '\nendobj\n'; });
+  const xref = out.length;
+  out += 'xref\n0 ' + (objs.length + 1) + '\n0000000000 65535 f \n' + offs.map(n => String(n).padStart(10, '0') + ' 00000 n \n').join('') +
+    'trailer\n<< /Size ' + (objs.length + 1) + ' /Root 1 0 R >>\nstartxref\n' + xref + '\n%%EOF\n';
+  const bytes = new Uint8Array(out.length);
+  for (let i = 0; i < out.length; i++) bytes[i] = out.charCodeAt(i) & 255;
+  return bytes;
+}
+/** Phone: the share sheet (Print, Save to Files, WhatsApp, AirDrop). Computer: a download. */
+function savePdf(bytes, name) {
+  const blob = new Blob([bytes], { type: 'application/pdf' });
+  let file = null; try { file = new File([blob], name, { type: 'application/pdf' }); } catch (e) { /* old browser */ }
+  if (file && navigator.canShare && navigator.canShare({ files: [file] })) { navigator.share({ files: [file], title: name }).catch(() => {}); return; }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
 }
 
 // ───── Alerts check (admin): is everyone actually getting their alerts? ─────

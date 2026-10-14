@@ -449,7 +449,7 @@ async function fillEval(p) {
   ok(/Southall/.test(snap) && /Commission selling phones/.test(snap), 'one-page snapshot: presenter notes + evaluation together');
   ok(/💡 Plays semi-pro football/.test(snap) && /Wants to earn on results, saving for a house/.test(snap), 'booker sees the room answers: 💡 ice-breaker + why sales');
   const hdr = (await getJson('/dev/sheet?name=Candidates'))[0];
-  ok(hdr.slice(-5).join() === 'thanks_by,no_whatsapp,day1_status,day1_by,day1_at', 'existing Sheet got the new columns automatically (no data moved)');
+  ok(hdr.slice(-5).join() === 'day1_status,day1_by,day1_at,day1_reminded_at,day1_reminded_by', 'existing Sheet got the new columns automatically (no data moved)');
   ok(!/Unspent convictions/.test(snap), 'conviction answer hidden from bookers');
   await bp.click('.chips[data-name=outcome] .chip:has-text("Academy booked")');
   await bp.fill('#adate', '2026-10-19');
@@ -671,8 +671,8 @@ async function fillEval(p) {
   await ap.goto(APP + 'index.html?c=chase');
   await ap.waitForSelector('#nudgeAll');
   ok(await ap.textContent('#abTitle') === 'Chase' && await ap.$('.tabbar button.on[data-tab=chase]') &&
-    JSON.stringify(await ap.$$eval('.tabbar button', b => b.map(x => x.dataset.tab))) === '["today","chase","all","pay","team"]',
-    'admin tab bar: Today · Chase · All · Incentive · Team, and the alert lands on Chase');
+    JSON.stringify(await ap.$$eval('.tabbar button', b => b.map(x => x.dataset.tab))) === '["today","chase","academy","all","pay","team"]',
+    'admin tab bar: Today · Chase · Day 1 · All · Incentive · Team, and the alert lands on Chase');
   ok(await ap.textContent('.tabbar button[data-tab=chase] .tbadge') === String(pipe.length), 'the Chase tab shows how many are at risk: ' + pipe.length);
   ok((await ap.$$('[data-nudge]')).length === toChase.length && new RegExp('across ' + toChase.length + ' bookers?').test(await ap.innerText('#page')),
     'one card per booker with someone to chase (' + toChase.length + ')');
@@ -804,11 +804,11 @@ async function fillEval(p) {
   await ap.goto(APP + 'index.html?c=academy');
   await ap.waitForSelector('.trow[data-cand="' + jasId + '"]');
   const d1Txt = await ap.innerText('#page');
-  ok(await ap.textContent('#abTitle') === 'Day 1 list' && /Monday 19 October · TOMORROW/i.test(d1Txt) && new RegExp(monStarters.length + ' expected · ' + nConf + ' confirmed').test(d1Txt),
-    'tapping it opens the Day 1 list: "Monday 19 October · TOMORROW · ' + monStarters.length + ' expected · ' + nConf + ' confirmed"');
+  ok(await ap.textContent('#abTitle') === 'Day 1' && await ap.$('.tabbar button.on[data-tab=academy]') && /Monday 19 October · TOMORROW/i.test(d1Txt) && new RegExp(monStarters.length + ' expected · ' + nConf + ' confirmed').test(d1Txt),
+    'tapping it opens the Day 1 tab: "Monday 19 October · TOMORROW · ' + monStarters.length + ' expected · ' + nConf + ' confirmed"');
   const remind = decodeURIComponent(await ap.$eval('.trow[data-cand="' + jasId + '"] a.btn', a => a.href));
-  ok(/BA Academy Day 1\* with \*LINK Marketing\* is \*TOMORROW, Monday 19 October at 1:30pm/.test(remind) && /Bring photo ID/.test(remind) && /– Angad, LINK Marketing/.test(remind),
-    '💬 Remind: a ready-made WhatsApp ("your BA Academy Day 1 with LINK Marketing is TOMORROW…")');
+  ok(/Your \*BA Academy Day 1\* is \*TOMORROW\* 🎉\n⏰ \*1:30pm\*/.test(remind) && /Bring photo ID/.test(remind) && /– Angad, LINK Marketing$/.test(remind),
+    '💬 Remind: a short ready-made WhatsApp ("Your BA Academy Day 1 is TOMORROW 🎉 ⏰ 1:30pm …")');
   ok(!(await ap.$('[data-d1]')), 'no Arrived / No-show buttons before Day 1');
   await shot(ap, '27-day1-list', true);
   let early = null; try { await api(admin, 'markDay1', { id: jasId, status: 'arrived' }); } catch (e) { early = e.message; }
@@ -816,6 +816,54 @@ async function fillEval(p) {
   const fizaD1 = (await api(fizaTok, 'academyList', {})).items;
   ok(fizaD1.length && fizaD1.every(c => c.booker_id === fiza.id), 'a booker\'s Day 1 list shows their own starters only');
   ok(!(await api(nathan, 'academyList', {})).items.length, 'a presenter sees nobody (no access to other people\'s candidates)');
+
+  // ── Monday 10:00: Jess / Rubal get "N starters to remind" → Day 1 tab → Send reminders (one tap each) → print the sign-in sheet ──
+  await setTime('2026-10-19T09:55:00+01:00');
+  const beforeRem = (await getJson('/dev/pushes')).length;
+  await post('/dev/run', { fn: 'keepWarm' });
+  ok(!(await getJson('/dev/pushes')).slice(beforeRem).some(p => /to remind$/.test(p.body.headings.en)), 'no Day 1 reminder alert before 10:00');
+  await setTime('2026-10-19T10:05:00+01:00');
+  await post('/dev/run', { fn: 'keepWarm' });
+  const remP = (await getJson('/dev/pushes')).slice(beforeRem).filter(p => /to remind$/.test(p.body.headings.en));
+  const rmJ = remP.find(p => p.body.include_aliases.external_id.includes(jessId)), rmR = remP.find(p => p.body.include_aliases.external_id.includes(rubalId));
+  ok(remP.length === 2 && rmJ && rmJ.body.headings.en === '🎓 Day 1 today: 1 starter to remind' && /Jasraj ✅/.test(rmJ.body.contents.en) && /\?c=remind$/.test(rmJ.body.web_url) &&
+    rmR && /Adham ⏳/.test(rmR.body.contents.en) && /Not confirmed yet: Adham/.test(rmR.body.contents.en),
+    '10:00 on Day 1 → Jess: "' + (rmJ ? rmJ.body.headings.en + ' | ' + rmJ.body.contents.en.replace(/\n/g, ' | ') : 'none') + '"; Rubal gets the JUSS starter (Adham)');
+  const afterRem = (await getJson('/dev/pushes')).length;
+  await post('/dev/run', { fn: 'keepWarm' });
+  ok((await getJson('/dev/pushes')).length === afterRem, 'the 10:00 reminder alert goes once');
+  const jr = await browser.newContext(PHONE); const jrp = await jr.newPage();
+  await loginUi(jrp, 'jess@linkmarketing.org.uk', APP + 'index.html?c=remind');
+  await jrp.waitForSelector('.sheet [data-r1]');
+  ok(await jrp.$('.tabbar button.on[data-tab=academy]') && JSON.stringify(await jrp.$$eval('.tabbar button', b => b.map(x => x.dataset.tab))) === '["today","chase","academy","all","pay","team"]',
+    'Jess taps it → the Day 1 tab with the send list already open');
+  const remSheet = await jrp.innerText('.sheet');
+  ok(/0 of 2 sent/.test(remSheet) && remSheet.indexOf('Jasraj') < remSheet.indexOf('Adham') && /TODAY · Monday 19 October/i.test(remSheet), 'send list: "0 of 2 sent", her LINK starters first');
+  const remMsg = decodeURIComponent((await jrp.getAttribute('.sheet a.btn[data-r1="' + jasId + '"]', 'href')).split('?text=')[1]);
+  ok(remMsg === 'Hey Jasraj! 👋\n\nYour *BA Academy Day 1* is *TODAY* 🎉\n⏰ *1:30pm*\n📍 2nd Floor East, Automotive House, Grays Place, Slough SL2 5AF\n🪪 Bring photo ID + your share code\n\nSee you there 🔥\n\n– Jess, LINK Marketing',
+    'the reminder, short and snappy: "' + remMsg.replace(/\n+/g, ' | ') + '"');
+  const adhamSend = await jrp.getAttribute('.sheet a.btn[data-r1="' + adham.id + '"]', 'href');
+  ok(/^sms:/.test(adhamSend) && /CONFIRM/.test(decodeURIComponent(adhamSend)) && (await jrp.textContent('.sheet a.btn[data-r1="' + adham.id + '"]')).trim() === '📱 Text',
+    'Adham isn\'t on WhatsApp → 📱 Text, with the CONFIRM link (he hasn\'t confirmed)');
+  await shot(jrp, '29-day1-reminders');
+  for (const id of [jasId, adham.id]) await jrp.$eval('.sheet a.btn[data-r1="' + id + '"]', a => { a.addEventListener('click', e => e.preventDefault()); a.click(); });
+  await jrp.waitForFunction(() => /2 of 2 sent/.test(document.getElementById('d1prog').textContent));
+  let jR = null; for (let i = 0; i < 25 && !(jR && jR.day1_reminded_at); i++) { jR = await api(admin, 'getCandidate', { id: jasId }); if (!jR.day1_reminded_at) await new Promise(r => setTimeout(r, 200)); }
+  ok(jR.day1_reminded_by === 'Jess Grace' && /^2026-10-19 /.test(jR.day1_reminded_at), 'each tap ticks them off ("2 of 2 sent") and saves who sent it and when');
+  await jrp.click('#d1done');
+  await jrp.waitForSelector('[data-remall="2026-10-19"]');
+  ok(/Send reminders · 2\/2/.test(await jrp.textContent('[data-remall="2026-10-19"]')) && /Reminded/.test(await jrp.innerText('#page')), 'the Day 1 tab shows 2/2 reminded');
+  const [pdl] = await Promise.all([jrp.waitForEvent('download'), jrp.click('[data-pdf="2026-10-19"]')]);
+  const pdfPath = `${SHOTS}/30-day1-signin.pdf`; await pdl.saveAs(pdfPath);
+  const pdfRaw = fs.readFileSync(pdfPath, 'latin1');
+  ok(pdl.suggestedFilename() === 'Day1-2026-10-19.pdf' && /^%PDF-1\.4/.test(pdfRaw) && /%%EOF\s*$/.test(pdfRaw), '📄 Print list → Day1-2026-10-19.pdf');
+  let pdfTxt = '';
+  try { pdfTxt = require('child_process').execFileSync('pdftotext', ['-layout', pdfPath, '-'], { encoding: 'utf8' }); } catch (e) { pdfTxt = pdfRaw; }
+  ok(/BA Academy · Day 1 sign-in/.test(pdfTxt) && /Monday 19 October 2026 · 1:30pm/.test(pdfTxt) && /Adham Soliman/.test(pdfTxt) && /Jasraj Bhuller/.test(pdfTxt) &&
+    /2 expected · 1 confirmed/.test(pdfTxt) && /Arrived: ______ of 2/.test(pdfTxt) && /shred it after Day 1/.test(pdfTxt) && /Page 1 of 1/.test(pdfTxt),
+    'the PDF is a real sign-in sheet: names, mobiles, booker, confirmed, an Arrived box to tick, totals, "shred after Day 1"');
+  try { require('child_process').execFileSync('pdftoppm', ['-png', '-r', '70', '-singlefile', pdfPath, `${SHOTS}/30-day1-signin`]); } catch (e) { /* no renderer here */ }
+  await jr.close();
 
   // ── 8. Check-in outside hours: accepted, flagged amber for admins only ──
   await setTime('2026-10-19T21:00:00+01:00');
@@ -872,9 +920,11 @@ async function fillEval(p) {
   ok(!(await jbp.$('.hero .ring')) && /booked/i.test(await jbp.$eval('.hero', e => e.innerText)) && !/more to hit|target/i.test(await jbp.$eval('.hero', e => e.innerText)),
     'admin\'s "Mine": her numbers, no incentive ring or target');
   const tb6 = await jbp.$$eval('.tabbar button', b => b.map(x => { const r = x.getBoundingClientRect(), s = x.querySelector('span'); return { t: x.dataset.tab, fits: s.scrollWidth <= r.width + 1 && r.right <= innerWidth }; }));
-  ok(tb6.map(x => x.t).join() === 'today,mine,chase,all,pay,team' && tb6.every(x => x.fits), 'an admin who also books gets all 6 tabs, every label fits on a phone');
-  await shot(jbp, '29-tabbar-admin-booker');
-  await jbp.click('.item:has-text("Grace Okafor")'); await jbp.waitForSelector('.profile h1');
+  ok(tb6.map(x => x.t).join() === 'today,mine,chase,academy,all,pay' && tb6.every(x => x.fits), 'an admin who also books: Today · Mine · Chase · Day 1 · All · Incentive, every label fits on a phone');
+  await jbp.click('#abMe'); await jbp.click('#mTeam'); await jbp.waitForSelector('#slideqr');
+  ok(await jbp.textContent('#abTitle') === 'Team', '…and Team is under their initials (7 tabs don\'t fit a phone)');
+  await shot(jbp, '31-team-from-menu');
+  await jbp.click('.tabbar button[data-tab=mine]'); await jbp.click('.item:has-text("Grace Okafor")'); await jbp.waitForSelector('.profile h1');
   ok(/Booked by Jess Grace \(admin\), so no incentive/.test(await jbp.$eval('#page', e => e.innerText)) && !(await jbp.$('#excl')), 'candidate page: "Booked by Jess Grace (admin), so no incentive"');
   await jb.close();
   const tim = await ci({ full_name: 'Tiny Tim', mobile: '07700900888', email: 'tim@example.com', booker_id: abd.id, over18: 'No' });
