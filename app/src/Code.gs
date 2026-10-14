@@ -1029,7 +1029,7 @@ const STAFF_ACTIONS = {
   adminDecision: adminDecision, setPayExcluded: setPayExcluded, fixEligibility: fixEligibility, reassignBooker: reassignBooker,
   markSent: markSent, payReport: payReport, listUsers: listUsers, saveUser: saveUser, deleteUser: deleteUser,
   alertsCheck: alertsCheck, testAlert: testAlert, sendSetupEmails: sendSetupEmails, adminCode: adminCode,
-  chaseOutcomes: chaseOutcomes, chaseList: chaseList, academyList: academyList, markDay1: markDay1,
+  chaseOutcomes: chaseOutcomes, chaseList: chaseList, academyList: academyList, markDay1: markDay1, markConfirmed: markConfirmed,
 };
 
 // ───────────────────────── LINKS ─────────────────────────
@@ -1336,6 +1336,16 @@ function markDay1(req, u) {
     c.day1_status = req.status; c.day1_by = req.status ? u.name : ''; c.day1_at = req.status ? nowStr() : '';
     writeRow('Candidates', c);
     log(u, 'day1_' + (req.status || 'cleared'), c.id, '');
+    return shape(c, u);
+  });
+}
+/** They replied "Yes" to the Day 1 reminder on WhatsApp (instead of tapping CONFIRM): an admin or their booker marks them confirmed. */
+function markConfirmed(req, u) {
+  return withLock(() => {
+    const c = getC(req.id);
+    if (!fullAccess(u, c)) throw new Error('No access');
+    if (c.outcome !== 'Academy booked' || !c.academy_date) throw new Error('They aren\'t booked onto the Academy.');
+    if (!c.academy_confirmed_at) { c.academy_confirmed_at = nowStr(); writeRow('Candidates', c); log(u, 'day1_confirmed', c.id, 'replied Yes'); }
     return shape(c, u);
   });
 }

@@ -154,11 +154,13 @@ A tab in the bottom bar for admins (bookers: **Chase / Mine → 🎓 My Day 1 st
 
 **Monday morning (Jess / Rubal):**
 1. **10:00:** Jess gets *"🎓 Day 1 today: 4 starters to remind"* (her LINK starters), Rubal gets the JUSS ones. Tap it.
-2. The **Send reminders** list opens: one row per starter, theirs first. Tap **💬 Send** → WhatsApp opens with the message ready, signed by you → send → come back → next. Not on WhatsApp = **📱 Text**. It counts "3 of 6 sent", and either of you can send any of them.
+2. The **Send reminders** list opens: one row per starter, theirs first. Tap **💬 Send** → WhatsApp opens with the reminder ready, signed by you → send → come back → next. When the replies come in, tap **👍 They replied Yes** for each. Not on WhatsApp = **📱 Text**. It counts "3 of 6 sent", and either of you can send any of them.
 3. **📄 Print list (PDF)**: the A4 sign-in sheet (name, mobile, company, booker, confirmed, an Arrived box to tick, notes). On a phone it opens the share sheet: **Print**, Save to Files or AirDrop. Shred it after Day 1 (it has phone numbers on it).
 4. **On the day:** tap **Arrived** or **No-show** for each person (tap again to undo). That's your real show-up rate (`day1_status`, `day1_by`, `day1_at` on their row). A no-show goes straight onto their booker's Chase list to rebook.
 
-**The reminder message** is in `msgDay1Reminder` in `src/JS.html`. It fills in their first name, TODAY / TOMORROW, the time, the office address, the CONFIRM link (only if they haven't confirmed) and the sender's name + company. Who was reminded and by whom: `day1_reminded_at`, `day1_reminded_by`.
+**The reminder message** is Jess / Rubal's own wording, in `msgDay1Reminder` in `src/JS.html`. It fills in their first name, "today / tomorrow, Monday 5th October", their company's Google Maps pin (LINK or JUSS listing) and the sender's full name. Who was reminded and by whom: `day1_reminded_at`, `day1_reminded_by`.
+
+**They reply "Yes" on WhatsApp** → tap **👍 They replied Yes** on their row (Day 1 tab, or **Said Yes 👍** on the booker's Chase tab). They then count as confirmed everywhere: the counts, the evening briefing, the PDF. Tapping the CONFIRM link on their welcome page does the same thing by itself.
 
 Someone the admins haven't approved yet (🔴, pending) isn't on the list.
 

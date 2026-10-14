@@ -806,9 +806,10 @@ async function fillEval(p) {
   const d1Txt = await ap.innerText('#page');
   ok(await ap.textContent('#abTitle') === 'Day 1' && await ap.$('.tabbar button.on[data-tab=academy]') && /Monday 19 October · TOMORROW/i.test(d1Txt) && new RegExp(monStarters.length + ' expected · ' + nConf + ' confirmed').test(d1Txt),
     'tapping it opens the Day 1 tab: "Monday 19 October · TOMORROW · ' + monStarters.length + ' expected · ' + nConf + ' confirmed"');
-  const remind = decodeURIComponent(await ap.$eval('.trow[data-cand="' + jasId + '"] a.btn', a => a.href));
-  ok(/Your \*BA Academy Day 1\* is \*TOMORROW\* 🎉\n⏰ \*1:30pm\*/.test(remind) && /Bring photo ID/.test(remind) && /– Angad, LINK Marketing$/.test(remind),
-    '💬 Remind: a short ready-made WhatsApp ("Your BA Academy Day 1 is TOMORROW 🎉 ⏰ 1:30pm …")');
+  const remind = decodeURIComponent((await ap.$eval('.trow[data-cand="' + jasId + '"] a.btn', a => a.href)).split('?text=')[1]);
+  ok(/^Hi Jasraj,\n\nHope you are well\.\n\nJust a quick reminder that you’re due to start your training tomorrow, Monday 19th October at 1:30 PM 🕜/.test(remind) &&
+    /https:\/\/maps\.app\.goo\.gl\/f4pkh222EHHTyQSM9/.test(remind) && /Kind Regards\nAngad Oshan\nIn Association with Juss Marketing and Link Marketing$/.test(remind),
+    '💬 Remind: Jess / Rubal\'s wording, "…due to start your training tomorrow, Monday 19th October at 1:30 PM", LINK Maps pin, signed by the sender');
   ok(!(await ap.$('[data-d1]')), 'no Arrived / No-show buttons before Day 1');
   await shot(ap, '27-day1-list', true);
   let early = null; try { await api(admin, 'markDay1', { id: jasId, status: 'arrived' }); } catch (e) { early = e.message; }
@@ -840,11 +841,14 @@ async function fillEval(p) {
   const remSheet = await jrp.innerText('.sheet');
   ok(/0 of 2 sent/.test(remSheet) && remSheet.indexOf('Jasraj') < remSheet.indexOf('Adham') && /TODAY · Monday 19 October/i.test(remSheet), 'send list: "0 of 2 sent", her LINK starters first');
   const remMsg = decodeURIComponent((await jrp.getAttribute('.sheet a.btn[data-r1="' + jasId + '"]', 'href')).split('?text=')[1]);
-  ok(remMsg === 'Hey Jasraj! 👋\n\nYour *BA Academy Day 1* is *TODAY* 🎉\n⏰ *1:30pm*\n📍 2nd Floor East, Automotive House, Grays Place, Slough SL2 5AF\n🪪 Bring photo ID + your share code\n\nSee you there 🔥\n\n– Jess, LINK Marketing',
-    'the reminder, short and snappy: "' + remMsg.replace(/\n+/g, ' | ') + '"');
+  ok(remMsg === 'Hi Jasraj,\n\nHope you are well.\n\nJust a quick reminder that you’re due to start your training today, Monday 19th October at 1:30 PM 🕜, with Juss Marketing & Link Marketing\n\n' +
+    '📍 Address:\n2nd Floor East, Automotive House,\nGrays Place, Slough, SL2 5AF.\nhttps://maps.app.goo.gl/f4pkh222EHHTyQSM9\n\n' +
+    'Please aim to arrive 10 minutes early ⏰ and let us know if you have any questions 😊\n\nKindly reply ‘Yes’ to confirm your attendance ✅\nWe look forward to seeing you! 👋\n\n' +
+    'Thanks\nKind Regards\nJess Grace\nIn Association with Juss Marketing and Link Marketing',
+    'the reminder in Jess / Rubal\'s words: "' + remMsg.replace(/\n+/g, ' | ') + '"');
   const adhamSend = await jrp.getAttribute('.sheet a.btn[data-r1="' + adham.id + '"]', 'href');
-  ok(/^sms:/.test(adhamSend) && /CONFIRM/.test(decodeURIComponent(adhamSend)) && (await jrp.textContent('.sheet a.btn[data-r1="' + adham.id + '"]')).trim() === '📱 Text',
-    'Adham isn\'t on WhatsApp → 📱 Text, with the CONFIRM link (he hasn\'t confirmed)');
+  ok(/^sms:/.test(adhamSend) && /maps\.app\.goo\.gl\/zeP4MjS2hMJzB9V9A/.test(decodeURIComponent(adhamSend)) && /Kindly reply ‘Yes’/.test(decodeURIComponent(adhamSend)) &&
+    (await jrp.textContent('.sheet a.btn[data-r1="' + adham.id + '"]')).trim() === '📱 Text', 'Adham isn\'t on WhatsApp → 📱 Text, with the JUSS Maps pin');
   await shot(jrp, '29-day1-reminders');
   for (const id of [jasId, adham.id]) await jrp.$eval('.sheet a.btn[data-r1="' + id + '"]', a => { a.addEventListener('click', e => e.preventDefault()); a.click(); });
   await jrp.waitForFunction(() => /2 of 2 sent/.test(document.getElementById('d1prog').textContent));
@@ -853,6 +857,14 @@ async function fillEval(p) {
   await jrp.click('#d1done');
   await jrp.waitForSelector('[data-remall="2026-10-19"]');
   ok(/Send reminders · 2\/2/.test(await jrp.textContent('[data-remall="2026-10-19"]')) && /Reminded/.test(await jrp.innerText('#page')), 'the Day 1 tab shows 2/2 reminded');
+  ok(!(await jrp.$('[data-yes="' + jasId + '"]')) && await jrp.$('[data-yes="' + adham.id + '"]'), '"👍 They replied Yes" on anyone not confirmed yet (Adham), not on Jasraj (already confirmed)');
+  await jrp.click('[data-yes="' + adham.id + '"]');
+  await jrp.waitForFunction(() => /2 expected · 2 confirmed/.test(document.getElementById('page').innerText));
+  const adYes = await api(admin, 'getCandidate', { id: adham.id });
+  ok(!!adYes.academy_confirmed_at && !(await jrp.$('[data-yes="' + adham.id + '"]')) && await jrp.textContent('#abTitle') === 'Day 1',
+    'Adham replies "Yes" on WhatsApp → one tap → confirmed in the app too ("2 expected · 2 confirmed"), no page change');
+  let noYes = null; try { await api(nathan, 'markConfirmed', { id: adham.id }); } catch (e) { noYes = e.message; }
+  ok(/No access/.test(noYes), 'only admins or their booker can mark someone confirmed');
   const [pdl] = await Promise.all([jrp.waitForEvent('download'), jrp.click('[data-pdf="2026-10-19"]')]);
   const pdfPath = `${SHOTS}/30-day1-signin.pdf`; await pdl.saveAs(pdfPath);
   const pdfRaw = fs.readFileSync(pdfPath, 'latin1');
@@ -860,7 +872,7 @@ async function fillEval(p) {
   let pdfTxt = '';
   try { pdfTxt = require('child_process').execFileSync('pdftotext', ['-layout', pdfPath, '-'], { encoding: 'utf8' }); } catch (e) { pdfTxt = pdfRaw; }
   ok(/BA Academy · Day 1 sign-in/.test(pdfTxt) && /Monday 19 October 2026 · 1:30pm/.test(pdfTxt) && /Adham Soliman/.test(pdfTxt) && /Jasraj Bhuller/.test(pdfTxt) &&
-    /2 expected · 1 confirmed/.test(pdfTxt) && /Arrived: ______ of 2/.test(pdfTxt) && /shred it after Day 1/.test(pdfTxt) && /Page 1 of 1/.test(pdfTxt),
+    /2 expected · 2 confirmed/.test(pdfTxt) && /Arrived: ______ of 2/.test(pdfTxt) && /shred it after Day 1/.test(pdfTxt) && /Page 1 of 1/.test(pdfTxt),
     'the PDF is a real sign-in sheet: names, mobiles, booker, confirmed, an Arrived box to tick, totals, "shred after Day 1"');
   try { require('child_process').execFileSync('pdftoppm', ['-png', '-r', '70', '-singlefile', pdfPath, `${SHOTS}/30-day1-signin`]); } catch (e) { /* no renderer here */ }
   await jr.close();
