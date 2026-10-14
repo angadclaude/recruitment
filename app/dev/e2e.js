@@ -867,8 +867,16 @@ async function fillEval(p) {
   await ap.waitForFunction(() => document.querySelector('#obgo') && !document.querySelector('#obgo').disabled);
   const prevHtml = await ap.$eval('.obframe', f => f.srcdoc);
   ok(await ap.textContent('#obsubj') === 'JUSS Marketing - Your Brand Ambassador Journey Begins!' && /Hi Adham,/.test(prevHtml) && /Monday 19th October @ 1:30 PM/.test(prevHtml) &&
-    /fieldiqdownload/.test(prevHtml) && /Hello Fresh/.test(prevHtml) && /077823 77774/.test(prevHtml) && /Monday at 1:30 PM/.test(prevHtml) && /Tuesday at 1:00 PM/.test(prevHtml) && /<b>Angad Oshan<\/b>/.test(prevHtml),
-    'preview: Rubal\'s JUSS email filled in for Adham (date, Day 1 / Day 2, FieldIQ, Hello Fresh, JUSS number, signed by the sender)');
+    /fieldiqdownload/.test(prevHtml) && /Hello Fresh/.test(prevHtml) && /077823 77774/.test(prevHtml) && /You're in, Adham 🎉/.test(prevHtml) && /Tuesday 20th October/.test(prevHtml) &&
+    /1:30pm – 6:00pm/.test(prevHtml) && /1:00pm – 6:00pm/.test(prevHtml) && /img\/logo-juss\.png/.test(prevHtml) && /See my Week 1 plan \+ CONFIRM/.test(prevHtml) && /<b>Angad Oshan<\/b>/.test(prevHtml),
+    'preview: Rubal\'s JUSS email in the congratulations-page look ("You\'re in, Adham 🎉", JUSS logo, Day 1 / Day 2 cards, FieldIQ, Week 1 plan + CONFIRM, Hello Fresh, JUSS number, signed by the sender)');
+  // The whole email as the candidate sees it (images from this dev server instead of GitHub Pages)
+  fs.writeFileSync(`${SHOTS}/welcome-email-juss.html`, prevHtml);
+  const ep = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
+  await ep.setContent(prevHtml.split(PUBLIC).join(APP), { waitUntil: 'load' });
+  ok(await ep.evaluate(() => [...document.images].every(i => i.complete && i.naturalWidth > 0) && document.documentElement.scrollWidth <= innerWidth),
+    'the email renders on a phone: logo + Week 1 poster load, nothing wider than the screen');
+  await ep.screenshot({ path: SHOTS + '/35-welcome-email-full.png', fullPage: true }); await ep.close();
   await ap.locator('.sheet').screenshot({ path: SHOTS + '/34-welcome-email.png' });
   const mbOnb = (await getJson('/dev/mail')).length;
   await ap.click('#obgo'); await ap.waitForSelector('#onb .pill.green:has-text("Onboarded")');
@@ -877,7 +885,7 @@ async function fillEval(p) {
     'sent from the app as "Angad Oshan | JUSS Marketing": replies go to the sender, who gets a copy');
   ok((await api(admin, 'getCandidate', { id: adham.id })).onboard_email_by === 'Angad Oshan', 'saved: welcome email sent (who, when)');
   const lp = await api(admin, 'onboardPreview', { id: jasId });
-  ok(lp.subject === 'Link Marketing - Your Brand Ambassador Journey Begins!' && /NDCS/.test(lp.html) && /Pre Coaching Module/.test(lp.html) && /073110 27272/.test(lp.html) && /Day 3 Onwards/.test(lp.html) && /Link Magazine/.test(lp.html),
+  ok(lp.subject === 'Link Marketing - Your Brand Ambassador Journey Begins!' && /NDCS/.test(lp.html) && /Pre-Coaching Module/.test(lp.html) && /073110 27272/.test(lp.html) && /Day 3 onwards/.test(lp.html) && /img\/logo-link\.png/.test(lp.html) && /Link Magazine/.test(lp.html),
     'LINK version: NDCS, the pre-coaching module, Day 3 timings, Link Magazine, LINK numbers');
   await ap.goto(APP + 'index.html?c=academy'); await ap.waitForSelector('.onbq');
   const onbq = await ap.innerText('.onbq');

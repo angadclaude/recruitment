@@ -1539,38 +1539,85 @@ function onboardStep(req, u) {
     return shape(c, u);
   });
 }
-/** Step 2: "Your Brand Ambassador Journey Begins!" in Rubal's wording, LINK or JUSS, filled in for this person. */
+/** Step 2: "Your Brand Ambassador Journey Begins!": Rubal's content, in the congratulations page's look (brand hero, white cards,
+ *  chunky buttons). Table layout + inline styles so it holds up in Gmail, Outlook and Apple Mail (Outlook desktop: solid colours). */
 function onboardEmail(c, u) {
   const co = c.company === 'JUSS' ? 'JUSS' : 'LINK', o = ONBOARD[co], first = c.full_name.split(' ')[0];
-  const day1 = DAYS_LONG[weekday(c.academy_date)], day2 = DAYS_LONG[(weekday(c.academy_date) + 1) % 7];
-  const a = (label, url) => '<a href="' + esc(url) + '" style="color:#0563C1;font-weight:bold">' + esc(label) + '</a>';
-  const p = (html, more) => '<p style="margin:0 0 ' + (more ? 14 : 6) + 'px">' + html + '</p>';
-  const head = t => '<p style="margin:16px 0 4px;color:' + o.colour + ';font-weight:bold">' + esc(t) + '</p>';
-  const html = '<div style="font-family:Aptos,Calibri,Arial,sans-serif;font-size:11pt;color:#000;line-height:1.45">' +
-    p('Hi ' + esc(first) + ',', true) +
-    p('Welcome to the <b style="color:' + o.colour + '">' + esc(o.brand) + '</b> team, and <b style="color:#33088D;background:#DBCFF4">Congratulations</b> on being selected to join us!') +
-    p('You’re coming on board at an exciting time as we continue to expand our business and head into a highly productive season. We’re confident that with your enthusiasm and dedication, you’ll thrive in your new role as a Brand Ambassador.', true) +
-    p('<b>Important Information – Product Coaching</b>') +
-    p('<b>Product Training and Sales Coaching Begins: <span style="color:' + o.colour + '">' + esc(longDate(c.academy_date)) + ' @ 1:30 PM</span></b>') +
-    (co === 'JUSS' && c.welcome_token ? p('Your first week guide: ' + a('your Week 1 plan', welcomeUrl(c))) : '') +
-    head('Day 1: Induction Session') + p('🕜 <b>' + day1 + ' at 1:30 PM</b><br>📍 Expected finish: Between 5:30 – 6:00 PM<br>📝 Please bring a notepad and pen to take notes.') +
-    head('Day 2: Sales Coaching') + p('🕜 <b>' + day2 + ' at 1:00 PM</b><br>📍 Expected finish: Between 5:30 – 6:00 PM') +
-    (o.day3 ? p('<b>Day 3 Onwards will be the same timings as previously discussed: 10:00am-8:30pm.</b>') : '') +
-    head('Pre-Start Requirements') +
-    '<ol style="margin:0 0 10px;padding-left:22px"><li>Please download the app by clicking on ' + a('FieldIQ', ONBOARD.FIELDIQ_URL) + ' to complete the vetting form before your first day.</li>' +
-    (o.preCoaching ? '<li>You’ll need to complete a short online pre-coaching module.</li>' : '') + '</ol>' +
-    (o.preCoaching ? p('This takes around <b>15-20 minutes</b> and includes a few short videos followed by some quick questions. It’s important that this is completed before coming in on <b>' + day1 + '</b>, so you’re fully prepared for the coaching sessions.', true) +
-      p('<b>Click here to complete your pre-coaching:</b>') + p(a(o.preCoaching[0], o.preCoaching[1]), true) : '') +
-    (co === 'JUSS' ? head('Prepare for Success') + p('We highly recommend that you read up on our client, ' + esc(o.client[0]) + ', ahead of your training: 🌐 ' + a(o.client[0], o.client[1])) +
-        p('Also, feel free to browse our website channels to get a feel for our team culture and the work we do! ' + a(o.website[0], o.website[1]))
-      : p('We also suggest reading up &amp; doing some research on our Client in preparation for your product coaching: ' + a(o.client[0], o.client[1]))) +
-    p('Feel free to check out some of our social media content as well to familiarise yourself with the team via our online magazine! ' + a(o.magazine[0], o.magazine[1]), true) +
-    p('Click here to locate us: ' + a('2nd Floor East, Automotive House, Grays Place, Slough SL2 5AF', o.maps), true) +
-    p('If you have any questions' + (co === 'JUSS' ? ' regarding anything,' : '') + ' feel free to reply to this <b><i>EMAIL</i></b> or call on <b><i>' + esc(o.phone) + '</i></b>.') +
-    p('I’ll be in the office to meet you when you arrive - Excited to work with you!', true) +
-    p('Thanks,<br>Kind Regards,') + p('<b>' + esc(u.name) + '</b><br>' + esc(o.brand)) + '</div>';
-  const text = html.replace(/<br>/g, '\n').replace(/<\/(p|li|ol)>/g, '\n').replace(/<a href="([^"]+)"[^>]*>([^<]+)<\/a>/g, '$2 ($1)').replace(/<[^>]+>/g, '')
-    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/\n{3,}/g, '\n\n').trim();
+  const T = co === 'JUSS'
+    ? { solid: '#E4613F', hero: 'linear-gradient(115deg,#D9534F 0%,#E4813F 28%,#EDA03A 44%,#34B1C0 62%,#2F86B5 100%)', btn: '#1FA3B1', tint: '#DCF2F4', ink: '#13808C' }
+    : { solid: '#EE5A24', hero: 'linear-gradient(115deg,#FF7A2F 0%,#EE5A24 54%,#26252D 54.3%,#34333D 100%)', btn: '#EE5A24', tint: '#FDE6DC', ink: '#C2410C' };
+  const F = "font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;";
+  const d1 = c.academy_date, d2 = addDays(d1, 1), img = CONFIG.PUBLIC_URL ? CONFIG.PUBLIC_URL + 'img/' : '';
+  const ymd = d1.replace(/-/g, ''), title = 'BA Academy Day 1 – ' + o.brand;
+  const gcal = 'https://calendar.google.com/calendar/render?action=TEMPLATE&text=' + encodeURIComponent(title) + '&dates=' + ymd + 'T133000/' + ymd + 'T180000&ctz=Europe/London' +
+    '&location=' + encodeURIComponent(CONFIG.OFFICE_ADDRESS) + '&details=' + encodeURIComponent('Induction 1:30pm. Bring a notepad and pen, photo ID and your right-to-work share code.');
+  const btn = (label, url, solid) => '<a href="' + esc(url) + '" style="display:inline-block;margin:6px 6px 0 0;padding:12px 18px;border-radius:14px;font-weight:800;font-size:15px;text-decoration:none;' +
+    (solid ? 'background:' + T.btn + ';color:#ffffff;border:2px solid ' + T.btn + ';' : 'background:#ffffff;color:#22222B;border:2px solid #E7E3DE;') + '">' + label + '</a>';
+  const bigBtn = (label, url) => '<a href="' + esc(url) + '" style="display:block;margin:10px 0 0;padding:15px 18px;border-radius:16px;text-align:center;font-weight:800;font-size:16px;text-decoration:none;color:#ffffff;background:' + T.solid + ';background-image:' + T.hero + ';">' + label + '</a>';
+  const head = (emoji, label) => '<tr><td style="padding:22px 4px 8px;' + F + 'font-size:13px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#22222B">' +
+    '<span style="display:inline-block;width:34px;height:34px;line-height:34px;text-align:center;border-radius:11px;background:' + T.tint + ';margin-right:10px;font-size:17px;letter-spacing:0">' + emoji + '</span>' + label + '</td></tr>';
+  const card = inner => '<tr><td style="background:#ffffff;border-radius:22px;padding:20px 20px 22px;' + F + 'font-size:15px;line-height:1.5;color:#22222B;box-shadow:0 6px 24px -14px rgba(0,0,0,.25)">' + inner + '</td></tr>';
+  const pill = t => '<span style="display:inline-block;padding:7px 14px;border-radius:999px;background:' + T.tint + ';color:' + T.ink + ';font-weight:800;font-size:15px">' + t + '</span>';
+  const big = t => '<div style="font-size:24px;font-weight:900;letter-spacing:-.01em;margin:0 0 10px">' + t + '</div>';
+  const step = (n, t) => '<tr><td style="vertical-align:top;width:34px;padding:8px 0"><span style="display:inline-block;width:26px;height:26px;line-height:26px;border-radius:50%;text-align:center;background:' + T.solid + ';color:#fff;font-weight:800;font-size:13px">' + n + '</span></td><td style="padding:8px 0;' + F + 'font-size:15px;line-height:1.45">' + t + '</td></tr>';
+  const pre = '<div style="display:none;max-height:0;overflow:hidden;opacity:0">You\'re in, ' + esc(first) + ' 🎉 Day 1: ' + esc(longDate(d1)) + ' @ 1:30 PM. Download FieldIQ before you come in.</div>';
+
+  const html = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"></head>' +
+    '<body style="margin:0;padding:0;background:#F5F1EC">' + pre +
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F5F1EC"><tr><td align="center" style="padding:18px 12px 30px">' +
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px">' +
+    // Hero: same as the congratulations page
+    '<tr><td style="border-radius:26px;padding:26px 24px 26px;background:' + T.solid + ';background-image:' + T.hero + ';' + F + 'color:#ffffff">' +
+      (img ? '<div style="display:inline-block;background:#ffffff;border-radius:18px;padding:8px 12px;margin-bottom:14px"><img src="' + img + 'logo-' + co.toLowerCase() + '.png" alt="' + esc(o.brand) + '" height="56" style="display:block;height:56px;width:auto;border:0"></div>' : '') +
+      '<div style="font-size:34px;line-height:1.1;font-weight:900;letter-spacing:-.02em;margin:0 0 10px">You\'re in, ' + esc(first) + ' 🎉</div>' +
+      '<div style="font-size:17px;line-height:1.4;margin:0 0 16px">Welcome to the <b>' + esc(o.brand) + '</b> team, and <b>Congratulations</b> on being selected to join us!</div>' +
+      '<span style="display:inline-block;background:#ffffff;color:#22222B;border-radius:999px;padding:9px 16px;font-weight:800;font-size:15px">📅 ' + esc(longDate(d1)) + ' · 1:30 PM</span>' +
+    '</td></tr>' +
+    '<tr><td style="padding:20px 6px 0;' + F + 'font-size:15px;line-height:1.55;color:#3A3942">Hi ' + esc(first) + ', you’re coming on board at an exciting time as we continue to expand our business and head into a highly productive season. ' +
+      'We’re confident that with your enthusiasm and dedication, you’ll thrive in your new role as a <b>Brand Ambassador</b>. Product training and sales coaching begins <b>' + esc(longDate(d1)) + ' @ 1:30 PM</b>.</td></tr>' +
+    // Before Day 1
+    head('⚡', 'Before Day 1') +
+    card('<table role="presentation" width="100%" cellpadding="0" cellspacing="0">' +
+      step(1, '<b>Download FieldIQ</b> and complete your vetting form before your first day.') +
+      (o.preCoaching ? step(2, 'Complete the short online <b>Pre-Coaching Module</b>: around <b>15–20 minutes</b> of short videos and quick questions. It’s important it’s done before ' + DAYS_LONG[weekday(d1)] + ', so you’re fully prepared for coaching.') : '') +
+      '</table>' + bigBtn('📲 Download FieldIQ', ONBOARD.FIELDIQ_URL) + (o.preCoaching ? bigBtn('📝 Open the Pre-Coaching Module', o.preCoaching[1]) : '')) +
+    // Day 1
+    head('📅', 'Day 1 · Induction') +
+    card(big(esc(longDate(d1))) + pill('⏰ 1:30pm – 6:00pm') +
+      '<p style="margin:12px 0 0">📍 ' + esc(CONFIG.OFFICE_ADDRESS) + '<br><span style="color:#6E6C78;font-size:13px">2 mins from Slough station · expected finish between 5:30 and 6:00 PM</span></p>' +
+      '<div style="margin-top:8px">' + btn('🗺️ Google Maps', o.maps, true) + btn('📅 Add to calendar', gcal) + '</div>') +
+    // Day 2 (+ Day 3 onwards)
+    head('🎯', 'Day 2 · Sales Coaching') +
+    card(big(esc(longDate(d2))) + pill('⏰ 1:00pm – 6:00pm') +
+      '<p style="margin:12px 0 0;color:#6E6C78;font-size:13px">Expected finish between 5:30 and 6:00 PM</p>' +
+      (o.day3 ? '<p style="margin:12px 0 0"><b>Day 3 onwards:</b> the same timings as previously discussed, <b>10:00am – 8:30pm</b>.</p>' : '')) +
+    // Bring
+    head('🎒', 'Bring with you') +
+    card('<div style="font-size:16px;line-height:2">📝 Notepad and pen<br>🪪 Photo ID<br>🔑 Your right-to-work share code</div>') +
+    // Week 1
+    (c.welcome_token ? head('🗓️', 'Your Week 1 game plan') +
+      card('<p style="margin:0 0 4px">Your first week, day by day, plus the Sales Skill Ladder. Tap <b>CONFIRM</b> on it so we know you’re coming.</p>' +
+        (img ? '<a href="' + esc(welcomeUrl(c)) + '"><img src="' + img + 'poster-' + co.toLowerCase() + '.jpg" alt="' + esc(o.brand) + ' Week 1 plan" width="100%" style="display:block;width:100%;max-width:520px;height:auto;border:0;border-radius:16px;margin:12px 0 0"></a>' : '') +
+        bigBtn('👀 See my Week 1 plan + CONFIRM', welcomeUrl(c))) : '') +
+    // Get ready
+    head('📚', 'Get ready') +
+    card('<p style="margin:0">' + (co === 'JUSS' ? 'We highly recommend you read up on our client, <b>' + esc(o.client[0]) + '</b>, ahead of your training.' : 'Read up and do some research on our client, <b>' + esc(o.client[0]) + '</b>, before your product coaching.') +
+      ' And check out the team in our online magazine!</p><div style="margin-top:6px">' + btn('🌐 ' + esc(o.client[0]), o.client[1], true) + btn('📖 ' + esc(o.magazine[0]), o.magazine[1]) +
+      (o.website ? btn('✨ ' + esc(o.website[0]), o.website[1]) : '') + '</div>') +
+    // Sign-off
+    '<tr><td style="padding:24px 6px 0;' + F + 'font-size:15px;line-height:1.55;color:#22222B">Any questions' + (co === 'JUSS' ? ' regarding anything' : '') + ', just reply to this email or call <b>' + esc(o.phone) + '</b>.<br><br>' +
+      'I’ll be in the office to meet you when you arrive. Excited to work with you! 🔥<br><br>Thanks,<br>Kind Regards,<br><b>' + esc(u.name) + '</b><br><span style="color:' + T.ink + ';font-weight:700">' + esc(o.brand) + '</span></td></tr>' +
+    '</table></td></tr></table></body></html>';
+  const text = 'Hi ' + first + ',\n\nWelcome to the ' + o.brand + ' team, and Congratulations on being selected to join us!\n\n' +
+    'Product training and sales coaching begins ' + longDate(d1) + ' @ 1:30 PM.\n\n' +
+    'BEFORE DAY 1\n1. Download FieldIQ and complete your vetting form before your first day: ' + ONBOARD.FIELDIQ_URL + '\n' +
+    (o.preCoaching ? '2. Complete the Pre-Coaching Module (15-20 minutes): ' + o.preCoaching[1] + '\n' : '') +
+    '\nDAY 1 · INDUCTION: ' + longDate(d1) + ', 1:30pm (finish 5:30-6:00pm)\n' + CONFIG.OFFICE_ADDRESS + ' · ' + o.maps + '\n' +
+    'DAY 2 · SALES COACHING: ' + longDate(d2) + ', 1:00pm (finish 5:30-6:00pm)\n' + (o.day3 ? 'Day 3 onwards: 10:00am - 8:30pm\n' : '') +
+    '\nBRING: notepad and pen, photo ID, your right-to-work share code\n' +
+    (c.welcome_token ? '\nYour Week 1 plan + CONFIRM: ' + welcomeUrl(c) + '\n' : '') +
+    '\nGet ready: ' + o.client[0] + ' ' + o.client[1] + ' · ' + o.magazine[0] + ' ' + o.magazine[1] + (o.website ? ' · ' + o.website[1] : '') + '\n' +
+    '\nAny questions, just reply to this email or call ' + o.phone + '.\nI’ll be in the office to meet you when you arrive. Excited to work with you!\n\nThanks,\nKind Regards,\n' + u.name + '\n' + o.brand;
   return { to: c.email, subject: o.brand + ' - Your Brand Ambassador Journey Begins!', html: html, text: text };
 }
 function onboardPreview(req, u) {
