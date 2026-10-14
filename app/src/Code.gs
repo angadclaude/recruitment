@@ -1582,6 +1582,9 @@ function onboardEmail(c, u) {
     '</td></tr>' +
     '<tr><td style="padding:20px 6px 0;' + F + 'font-size:15px;line-height:1.55;color:#3A3942">Hi ' + esc(first) + ', you’re coming on board at an exciting time as we continue to expand our business and head into a highly productive season. ' +
       'We’re confident that with your enthusiasm and dedication, you’ll thrive in your new role as a <b>Brand Ambassador</b>. Product training and sales coaching begins <b>' + esc(longDate(d1)) + ' @ 1:30 PM</b>.</td></tr>' +
+    // A reply is the strongest "this isn't spam" signal there is, and tells Jess / Rubal it arrived
+    '<tr><td style="padding:16px 0 0"><div style="border:2px dashed ' + T.solid + ';border-radius:16px;padding:12px 16px;background:#ffffff;' + F + 'font-size:15px;line-height:1.45;color:#22222B">' +
+      '✅ <b>Quick one:</b> reply <b>GOT IT</b> to this email so we know it reached you.</div></td></tr>' +
     // Before Day 1
     head('⚡', 'Before Day 1') +
     card('<table role="presentation" width="100%" cellpadding="0" cellspacing="0">' +
@@ -1619,6 +1622,7 @@ function onboardEmail(c, u) {
     '</table></td></tr></table></body></html>';
   const text = 'Hi ' + first + ',\n\nWelcome to the ' + o.brand + ' team, and Congratulations on being selected to join us!\n\n' +
     'Product training and sales coaching begins ' + longDate(d1) + ' @ 1:30 PM.\n\n' +
+    'Quick one: reply GOT IT to this email so we know it reached you.\n\n' +
     'BEFORE DAY 1\n1. Download FieldIQ and complete your vetting form before your first day: ' + ONBOARD.FIELDIQ_URL + '\n' +
     (o.preCoaching ? '2. Complete the Pre-Coaching Module (15-20 minutes): ' + o.preCoaching[1] + '\n' : '') +
     (o.preCoaching ? '3' : '2') + '. Read your ' + o.playbook[0] + ': ' + o.playbook[1] + '\n' +

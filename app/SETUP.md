@@ -204,6 +204,15 @@ The app sends through the script owner's Gmail, so that Gmail has to be allowed 
 4. In Apps Script: pick **setupWelcomeEmail** in the function menu → **Run** → approve the Gmail permission. The log shows ✅ ready (or ❌ and what's missing) for each address.
 5. **Deploy → Manage deployments → ✏️ → New version** (as for any code change). The app picks it up within 10 minutes.
 
+### Keeping welcome emails out of spam
+- **In the app (already on):** the email asks them to reply **GOT IT** (a reply is the strongest "not spam" signal, and you know it arrived). Once it's sent, tap **💬 Heads-up** on the card: a WhatsApp (or text) saying *"just emailed your starter pack from rubal@…, check Spam / Promotions, tap Not spam, reply GOT IT"*.
+- **DKIM on both domains (free, about 15 minutes each, Google Admin + whoever runs your DNS).** Checked 14 Oct 2026 from real emails: SPF ✅ and DMARC ✅ (policy *quarantine*) on both, but:
+  - `jussmarketing.co.uk`: DKIM **fails** (Rubal's and Satpal's emails, from Outlook and iPhone). The key in DNS doesn't match Google's.
+  - `linkmarketing.org.uk`: DKIM is Google's default, **not your domain's**.
+  - So DMARC passes on SPF alone. Any forwarded email (old Hotmail / uni address forwarding to Gmail) fails it and gets quarantined: **spam**.
+  - Fix, per domain: admin.google.com → Apps → Google Workspace → Gmail → **Authenticate email** → pick the domain → **Generate new record** (2048-bit) → add it at your DNS host as a TXT record named `google._domainkey` → wait an hour → **Start authentication**. Check: send an email to a Gmail address → ⋮ → **Show original** → DKIM: `PASS` with your domain.
+- **Before the first real one:** send a welcome email to the address mail-tester.com gives you (free). It scores it out of 10 and names anything wrong.
+
 **Day 1 tab:** **🚀 To onboard · N** lists everyone still to do. Each starter shows *Not on Databyte / Welcome email to send / Onboarded*.
 
 **Who sees it:** admins only. Bookers never see the card, and the Google side refuses them too.
