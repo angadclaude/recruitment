@@ -78,7 +78,7 @@ const ONBOARD = {
     preCoaching: ['Link Marketing BA Academy - Pre Coaching Module - Fill in form', 'https://forms.office.com/pages/responsepage.aspx?id=QT4blMNFxEuaVSUMKK6uNT5ZuU1A_UdDsSk-r6KY6olUQ0JEWFU0NDU1MEI5REZZRzY3WEc1SEVaTC4u&route=shorturl'],
     client: ['NDCS', 'https://www.ndcs.org.uk/'], magazine: ['Link Magazine', 'https://linkmagflip-74ibv4pf.manus.space/'],
     playbook: ['Link FR Playbook', 'https://link-marketing-playbook.replit.app/'],
-    from: 'juss@linkmarketing.org.uk',  // welcome emails only ever go from Jess's or Rubal's inbox (either can send either brand)
+    from: 'jess@linkmarketing.org.uk',  // welcome emails only ever go from Jess's or Rubal's inbox (either can send either brand)
   },
   JUSS: {
     brand: 'JUSS Marketing', colour: '#E4613F', phone: '077823 77774', maps: 'https://maps.app.goo.gl/n2wTFyzScHLr1Voy9', day3: false,

@@ -873,7 +873,7 @@ async function fillEval(p) {
     'until the app\'s Gmail can send as Rubal: the preview says so and Send stays off (never falls back to another address)');
   let notReady = null; try { await api(admin, 'onboardSend', { id: adham.id }); } catch (e) { notReady = e.message; }
   ok(/Can't send as rubal@jussmarketing\.co\.uk yet/.test(notReady), 'the server refuses too');
-  await post('/dev/eval', { js: "globalThis.__sendAs = ['rubal@jussmarketing.co.uk', 'juss@linkmarketing.org.uk']; CacheService.getScriptCache().remove('send_as'); 1" });
+  await post('/dev/eval', { js: "globalThis.__sendAs = ['rubal@jussmarketing.co.uk', 'jess@linkmarketing.org.uk']; CacheService.getScriptCache().remove('send_as'); 1" });
   await ap.click('#obcancel'); await ap.waitForSelector('.sheet-back', { state: 'detached' });
   await ap.click('#obsend'); await ap.waitForSelector('.obframe');
   await ap.waitForFunction(() => document.querySelector('#obgo') && !document.querySelector('#obgo').disabled);
@@ -906,11 +906,11 @@ async function fillEval(p) {
   ok(!/not set up yet/i.test(await ap.innerText('#onb')), 'after a send the card no longer says "not set up yet"');
   await ap.locator('#onb').screenshot({ path: SHOTS + '/36-onboarded.png' });
   const lp = await api(admin, 'onboardPreview', { id: jasId });
-  ok(lp.from === 'Jess Grace <juss@linkmarketing.org.uk>' && !lp.notReady && /<b>Jess Grace<\/b>/.test(lp.html) && /Read your <b>Link FR Playbook<\/b>/.test(lp.html) &&
+  ok(lp.from === 'Jess Grace <jess@linkmarketing.org.uk>' && !lp.notReady && /<b>Jess Grace<\/b>/.test(lp.html) && /Read your <b>Link FR Playbook<\/b>/.test(lp.html) &&
     /href="https:\/\/link-marketing-playbook\.replit\.app\/"[^>]*>📘 Open my Link FR Playbook/.test(lp.html) && /3\. Read your Link FR Playbook: https:\/\/link-marketing-playbook\.replit\.app\//.test(lp.text),
-    'LINK starter → from Jess (juss@linkmarketing.org.uk), signed Jess, with the Link FR Playbook as step 3 (after FieldIQ and the Pre-Coaching Module)');
+    'LINK starter → from Jess (jess@linkmarketing.org.uk), signed Jess, with the Link FR Playbook as step 3 (after FieldIQ and the Pre-Coaching Module)');
   const jessPrev = await api(await loginApi('jess@linkmarketing.org.uk'), 'onboardPreview', { id: adham.id });
-  ok(jessPrev.from === 'Jess Grace <juss@linkmarketing.org.uk>' && /<b>Jess Grace<\/b>/.test(jessPrev.html) && /^JUSS Marketing - /.test(jessPrev.subject),
+  ok(jessPrev.from === 'Jess Grace <jess@linkmarketing.org.uk>' && /<b>Jess Grace<\/b>/.test(jessPrev.html) && /^JUSS Marketing - /.test(jessPrev.subject),
     'Jess or Rubal can send either brand: Jess sending a JUSS starter\'s email → from her address, signed by her');
   ok(lp.subject === 'Link Marketing - Your Brand Ambassador Journey Begins!' && /NDCS/.test(lp.html) && /Pre-Coaching Module/.test(lp.html) && /073110 27272/.test(lp.html) && /Day 3 onwards/.test(lp.html) && /img\/logo-link\.png/.test(lp.html) && /Link Magazine/.test(lp.html),
     'LINK version: NDCS, the pre-coaching module, Day 3 timings, Link Magazine, LINK numbers');

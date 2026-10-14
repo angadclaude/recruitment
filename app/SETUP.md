@@ -193,13 +193,13 @@ When a booker books someone onto the Academy (or an admin approves a 🔴 bookin
    - Tap **✅ Added to Databyte**. (There's no Databyte API, so this step stays copy-and-paste.)
 2. **Welcome email:** **📧 Preview & send** shows the exact email ("LINK / JUSS Marketing - Your Brand Ambassador Journey Begins!"): their name, Day 1 date, Day 1 / Day 2 times, FieldIQ, pre-coaching (LINK), their Playbook (Link FR Playbook / JUSS HF Playbook), client, magazine, map and contact number. Tap **Send**.
    - It's locked until step 1, because FieldIQ only works once they're on Databyte.
-   - **It only ever goes from Jess's or Rubal's address**, signed by them: Jess sends from `juss@linkmarketing.org.uk`, Rubal from `rubal@jussmarketing.co.uk` (either can send either brand). Anyone else pressing Send (Angad, Satpal) sends from the brand's person: LINK → Jess, JUSS → Rubal. Replies go to that address, and it gets a copy.
+   - **It only ever goes from Jess's or Rubal's address**, signed by them: Jess sends from `jess@linkmarketing.org.uk`, Rubal from `rubal@jussmarketing.co.uk` (either can send either brand). Anyone else pressing Send (Angad, Satpal) sends from the brand's person: LINK → Jess, JUSS → Rubal. Replies go to that address, and it gets a copy.
    - The card and preview say who it's from. If the app can't send as that address yet, Send stays off: it never falls back to another address.
 
 ### Welcome emails: one-time setup (whoever owns the Apps Script, usually Angad, on a computer)
 The app sends through the script owner's Gmail, so that Gmail has to be allowed to send as both addresses:
 1. In that Gmail: ⚙️ → **See all settings** → **Accounts** → **Send mail as** → **Add another email address**.
-2. Name `Jess Grace`, email `juss@linkmarketing.org.uk`, untick **Treat as an alias** → **Next**. Google emails a code to that inbox: Jess reads it to you → **Verify**.
+2. Name `Jess Grace`, email `jess@linkmarketing.org.uk`, untick **Treat as an alias** → **Next**. Google emails a code to that inbox: Jess reads it to you → **Verify**.
 3. Do the same for `Rubal Oshan`, `rubal@jussmarketing.co.uk`. If Gmail asks for an SMTP server (a different Google account): server `smtp.gmail.com`, port `587`, username `rubal@jussmarketing.co.uk`, password = an **app password** Rubal makes at myaccount.google.com → Security → App passwords (needs 2-Step Verification on). Then the code goes to Rubal's inbox.
 4. In Apps Script: pick **setupWelcomeEmail** in the function menu → **Run** → approve the Gmail permission. The log shows ✅ ready (or ❌ and what's missing) for each address.
 5. **Deploy → Manage deployments → ✏️ → New version** (as for any code change). The app picks it up within 10 minutes.
