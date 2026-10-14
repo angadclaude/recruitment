@@ -34,6 +34,12 @@ NODE_PATH=$(npm root -g) node app/dev/e2e.js ./shots
 ```
 Runs the real `Code.gs` on an in-memory fake of Sheets, Gmail, UrlFetch and so on, then walks the whole journey in a phone-sized browser: 160+ checks covering QR flows, push alerts, WhatsApp messages, the welcome page and confirm, the recruitment incentive, non-qualifiers, repeats, late outcomes, access removal, GDPR deletion, the LINK / JUSS looks and the one-tap actions on the lists.
 
+How fast it moves between pages, with Google's real ~1.5 s delay switched on (fails if a page that should be instant isn't):
+```
+NODE_PATH=$(npm root -g) node app/dev/speed.js
+```
+Every tab, opening a candidate, ← back and reopening the app show content in under 150 ms. The data is already on the phone and refreshes quietly behind the page, and you land back where you were.
+
 To see every screen as a LINK user and as a JUSS user (about 40 seconds):
 ```
 NODE_PATH=$(npm root -g) node app/dev/shots.js ./shots-ui

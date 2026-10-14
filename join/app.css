@@ -710,7 +710,8 @@ table.t td { padding: 9px 4px; border-bottom: 1px solid var(--line); vertical-al
 
 /* ══════════ Motion ══════════ */
 .enter { animation: pageIn .22s ease-out; }
-.enter-sub { animation: subIn .26s cubic-bezier(.2,.8,.2,1); }
+.enter-sub { animation: subIn .2s cubic-bezier(.2,.8,.2,1); }
+.enter-fade { animation: fadeQuick .12s ease-out; }  /* moving between tabs: instant, just softened */
 /* Cards rise in one after another on a fresh screen (never on the quiet background refresh) */
 #page.cascade .list > *, #page.cascade > .card, #page.cascade > .hero, #page.cascade > .kpis, #page.cascade > .tiles, #page.cascade > .profile, #page.cascade > section > .card, #page.cascade .payrow {
   animation: rise .42s cubic-bezier(.2,.8,.2,1) both; animation-delay: calc(var(--i, 0) * 35ms); }
@@ -726,6 +727,7 @@ table.t td { padding: 9px 4px; border-bottom: 1px solid var(--line); vertical-al
 @keyframes toastIn { from { opacity: 0; transform: translate(-50%, 12px) scale(.96); } to { opacity: 1; transform: translate(-50%, 0); } }
 @keyframes menuIn { from { opacity: 0; transform: scale(.94) translateY(-6px); } to { opacity: 1; transform: none; } }
 @keyframes fadeIn { from { opacity: 0; } }
+@keyframes fadeQuick { from { opacity: .35; } }
 @keyframes sheetUp { from { transform: translateY(100%); } }
 @keyframes sheetDown { to { transform: translateY(100%); } }
 @keyframes draw { to { stroke-dashoffset: 0; } }
