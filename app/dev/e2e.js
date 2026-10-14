@@ -1106,6 +1106,11 @@ async function fillEval(p) {
   ok(await bOf(al7) === mo.id, 'admin adds "Zuzanna Sroda" to Mo in the app → the check-in that typed it earlier is credited to Mo there and then');
   await ap.waitForSelector('.item[data-u="' + mo.id + '"]');
   ok(/also: Ramis - Ali Abbas · Zuzanna Sroda/.test(await ap.innerText('.item[data-u="' + mo.id + '"]')), 'the Team list shows everyone\'s other names');
+  await saveAl(await userOf(abd.id), ['Ali Milad', 'John - Mayba', 'Sally - MSA', 'William - Zohra Marketing', 'Rajan - RS Global', 'Stones Recruitment Limited']);
+  await ap.reload(); await ap.waitForSelector('.tabbar button[data-tab=team]'); await ap.click('.tabbar button[data-tab=team]'); await ap.waitForSelector('.item[data-u="' + abd.id + '"]');
+  await ap.waitForFunction(id => /William - Zohra/.test((document.querySelector('.item[data-u="' + id + '"]') || {}).innerText || ''), abd.id);
+  const widths = await ap.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
+  ok(widths[0] <= widths[1], 'a long "also: …" line wraps: the Team page stays phone-width (' + widths[0] + 'px of ' + widths[1] + 'px; live it had doubled)');
   await ap.goto(APP + 'index.html?c=' + al1.id); await ap.waitForSelector('.profile h1');
   ok(/booked by Fiza Iqbal.*\(they said "Daniel Thompson"\)/.test(await ap.innerText('#page')), 'candidate page: "booked by Fiza Iqbal (they said "Daniel Thompson")" so admins can see why');
   let simA = null; try { await api(admin, 'saveUser', { user: { name: 'Daniel Thompson', email: '', company: 'LINK', roles: ['booker'], active: true } }); } catch (e) { simA = e.message; }
