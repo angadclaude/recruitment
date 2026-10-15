@@ -110,7 +110,8 @@ const SHEETS = {
     'brand',  // LINK / JUSS: the company their messages and welcome email come from (chosen by the recruitment team), when it isn't their booker's
     'presented_by_id', 'presented_by',  // who ran the presentation, from their evaluation (a presenter on the team, a typed name, or "Not sure")
     'offer_by', 'offer_via', 'offer_co', 'thanks_via', 'thanks_co',  // the BA Academy Day 1 details / thank-you: who sent it, how (whatsapp / sms / email), as which company
-    'outcome_log',  // every call outcome logged, oldest first: [{at, by, o: outcome, d: Day 1 date, late: 1, n: notes}]
+    'outcome_log',  // every call outcome logged, oldest first: [{at, by, o: outcome, d: Day 1 date, cb: call back at, late: 1, n: notes}]
+    'callback_at', 'callback_by_id', 'callback_nudged',  // "Thinking it over": when they asked to be called back, who logged it (gets the reminder), reminder sent for
   ],
   History: ['attended_date', 'full_name', 'mobile', 'email', 'booker_raw', 'presenter_raw'],
   Codes: ['email', 'code_hash', 'expires', 'attempts'],
@@ -858,13 +859,18 @@ function saveOutcome(req, u) {
     c.outcome_notes = String(req.outcome_notes || '').slice(0, 2000);
     c.outcome_by = u.name; c.outcome_at = nowStr();
     c.outcome_late = c.outcome_at > outcomeDeadline(c.attended_date) ? 'TRUE' : '';
+    // "Thinking it over": when they asked to be called back. Whoever logged it gets "🔁 Call them back now" at that time.
+    if (req.outcome === 'Thinking it over' && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(req.callback_at || '')) {
+      if (req.callback_at !== c.callback_at) c.callback_nudged = '';
+      c.callback_at = req.callback_at; c.callback_by_id = u.id;
+    } else if (req.outcome !== 'Thinking it over') { c.callback_at = ''; c.callback_by_id = ''; c.callback_nudged = ''; }
     // RED from presenter (or a repeat block) → admin has the final say on an Academy booking.
     if (req.outcome === 'Academy booked' && (c.rag === 'R' || truthy(c.repeat_block))) {
       if (isAdmin(u)) { c.admin_status = 'approved'; c.admin_by = u.name; c.admin_at = nowStr(); }
       else if (c.admin_status !== 'approved') c.admin_status = 'pending';
     } else if (c.admin_status === 'pending') c.admin_status = '';
     const wasPending = c._wasPending, wasBooked = c._wasBooked;
-    addOutcomeLog(c, { at: c.outcome_at, by: u.name, o: c.outcome, d: c.academy_date, late: c.outcome_late ? 1 : 0, n: c.outcome_notes });
+    addOutcomeLog(c, { at: c.outcome_at, by: u.name, o: c.outcome, d: c.academy_date, cb: c.callback_at, late: c.outcome_late ? 1 : 0, n: c.outcome_notes });
     writeRow('Candidates', c);
     return { c: c, alert: c.admin_status === 'pending' && !wasPending, starter: c.outcome === 'Academy booked' && c.admin_status !== 'pending' && !wasBooked };
   });
@@ -989,7 +995,7 @@ function setBrand(req, u) {
  *  Sending by text or email means they're not on WhatsApp: remembered, so the next message goes by text too. */
 function markSent(req, u) {
   const via = ['sms', 'email'].indexOf(req.via) >= 0 ? req.via : 'whatsapp';
-  if (['thanks', 'offer', 'noanswer', 'day1'].indexOf(req.kind) < 0) throw new Error('Unknown message');
+  if (['thanks', 'offer', 'noanswer', 'thinking', 'day1'].indexOf(req.kind) < 0) throw new Error('Unknown message');
   return withLock(() => {
     const c = getC(req.id);
     if (!fullAccess(u, c)) throw new Error('No access');
@@ -1424,6 +1430,7 @@ function keepWarm() {
   try { backfillOutcomes(); } catch (e) { console.error(e); }
   maybeDailyDigest();
   maybeThanksReminder();
+  try { maybeCallbackReminders(); } catch (e) { console.error(e); }
   maybeAcademyBriefing();
   maybeDay1Reminder();
 }
@@ -1450,6 +1457,19 @@ function maybeThanksReminder() {
   });
 }
 
+/** "Thinking it over" → when the call-back time they asked for comes, whoever logged it gets "🔁 Call Pooja back now" (once per time;
+ *  not for times more than 12 hours gone, e.g. after the app was down). Runs from keepWarm, every 5 minutes. */
+function maybeCallbackReminders() {
+  const now = nowStr(), from = Utilities.formatDate(new Date(Date.now() - 12 * 3600000), CONFIG.TZ, 'yyyy-MM-dd HH:mm');
+  const due = c => c.outcome === 'Thinking it over' && c.callback_at && c.callback_at <= now && c.callback_at >= from && c.callback_nudged !== c.callback_at;
+  const ids = readTable('Candidates').filter(due).map(c => c.id);
+  if (!ids.length) return;
+  const send = withLock(() => ids.map(id => getC(id)).filter(due).map(c => { c.callback_nudged = c.callback_at; writeRow('Candidates', c); return c; }));
+  send.forEach(c => {
+    const u = userById(c.callback_by_id) || userById(c.booker_id);
+    notify([u], '🔁 Call ' + c.full_name.split(' ')[0] + ' back now', 'They asked for a call back at ' + c.callback_at.slice(11, 16) + ' (Thinking it over). Tap to call.', c.id);  // notify logs it
+  });
+}
 /** Runs from keepWarm (every 5 min), so no extra trigger to install: one message a day, Mon–Thu at DIGEST_TIME, Friday at ROUNDUP_TIME. */
 function maybeDailyDigest() {
   const now = nowStr(), today = now.slice(0, 10), wd = weekday(today), hm = now.slice(11, 16), fri = wd === 5;
@@ -1943,11 +1963,17 @@ const TRIM_FIELDS = ['resume_token', 'booker_typed', 'visa_expiry', 'rag', 'star
 function trimOldDetails(before) {
   let n = 0;
   readTable('Candidates').forEach(r => {
-    if (!r.attended_date || r.attended_date >= before || !TRIM_FIELDS.some(k => r[k])) return;
+    const log = withoutNotes(r.outcome_log);  // the call log keeps who / when / outcome; its notes go with outcome_notes
+    if (!r.attended_date || r.attended_date >= before || (!TRIM_FIELDS.some(k => r[k]) && log === r.outcome_log)) return;
     TRIM_FIELDS.forEach(k => { r[k] = ''; });
+    r.outcome_log = log;
     writeRow('Candidates', r); n++;
   });
   return n;
+}
+function withoutNotes(json) {
+  if (!json) return '';
+  try { return JSON.stringify(JSON.parse(json).map(e => { const o = Object.assign({}, e); delete o.n; return o; })); } catch (e) { return ''; }
 }
 function deleteWhere(name, pred) {
   const rows = readTable(name).filter(pred).map(r => r._row).sort((a, b) => b - a);

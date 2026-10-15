@@ -496,7 +496,7 @@ async function fillEval(p) {
   ok(/💡 Plays semi-pro football/.test(snap) && /Wants to earn on results, saving for a house/.test(snap), 'booker sees the room answers: 💡 ice-breaker + why sales');
   ok(/🎤 Presentation by Nathan Smith/.test(snap) && !/rated by/.test(snap), 'their page says who ran the presentation: "🎤 Presentation by Nathan Smith" (he rated the room too)');
   const hdr = (await getJson('/dev/sheet?name=Candidates'))[0];
-  ok(hdr.slice(-14).join() === 'recruit_source,databyte_at,databyte_by,onboard_email_at,onboard_email_by,brand,presented_by_id,presented_by,offer_by,offer_via,offer_co,thanks_via,thanks_co,outcome_log' && new Set(hdr).size === hdr.length,
+  ok(hdr.slice(-17).join() === 'recruit_source,databyte_at,databyte_by,onboard_email_at,onboard_email_by,brand,presented_by_id,presented_by,offer_by,offer_via,offer_co,thanks_via,thanks_co,outcome_log,callback_at,callback_by_id,callback_nudged' && new Set(hdr).size === hdr.length,
     'live Sheet with the presenter headers written twice: the empty copies cleared, the new columns added in the right place (no data moved)');
   ok(!/Unspent convictions/.test(snap), 'conviction answer hidden from bookers');
   await bp.click('.chips[data-name=outcome] .chip:has-text("Academy booked")');
@@ -524,7 +524,7 @@ async function fillEval(p) {
   await bp.waitForSelector('.quick[data-for="' + kid.id + '"] [data-na]');
   const na = decodeURIComponent((await bp.getAttribute('.quick[data-for="' + kid.id + '"] [data-na]', 'href')).split('?text=')[1]);
   fs.writeFileSync(`${SHOTS}/msg-no-answer.txt`, na);
-  ok(/📵 No answer · 1/i.test(await bp.innerText('body')) && /^Hey Young! 👋/.test(na) && /in association with \*LINK Marketing\*/.test(na) && /We tried calling you/.test(na) && /\*call or text back\*/.test(na) && /\*Fiza Iqbal\*, on behalf of LINK Marketing recruitment team 🧡$/.test(na),
+  ok(/📵 No answer · 1/i.test(await bp.innerText('body')) && /^Hey Young! 👋/.test(na) && /in association with \*LINK Marketing\*/.test(na) && /We tried calling you/.test(na) && /\*call or text me back on this number\*/.test(na) && /\*Fiza Iqbal\*, on behalf of LINK Marketing recruitment team 🧡$/.test(na),
     'no answer → "📵 No answer" on the list with a ready WhatsApp: "we tried calling you, call or text back", signed Fiza Iqbal for the LINK recruitment team');
   await bp.click('.item:has-text("Jasraj Bhuller")'); await bp.waitForSelector('a.wa[data-kind=offer]');
   const msg = decodeURIComponent((await bp.getAttribute('a.wa[data-kind=offer]', 'href')).split('?text=')[1]);
@@ -1495,6 +1495,49 @@ async function fillEval(p) {
   ok(Date.now() - tNsAgain < 1500 && (await nsWP.$$('link[rel=preconnect]')).length >= 3, 'opens again later already locked in, instantly; Maps / Calendar / Pre-Coaching links warmed up before the tap');
   await nsW.close();
 
+  // ── "Thinking it over": when to call back → a reminder at that time + the "speak soon" message. "No answer": LINK / JUSS for the team ──
+  const tia = await ci({ full_name: 'Tia Overton', mobile: '07700900611', email: 'tia@example.com', booker_id: abd.id });
+  const meId = (await api(admin, 'me', {})).user.id;
+  await ap.goto(APP + 'index.html?c=' + tia.id); await ap.waitForSelector('#saveout');
+  await ap.click('#out .chips[data-name=outcome] .chip:has-text("Thinking it over")');
+  ok(!(await ap.$eval('#cbk', e => e.hidden)) && (await ap.$$eval('#cbk .chip', b => b.map(x => x.textContent))).some(t => /Tomorrow 6pm/.test(t)),
+    '"Thinking it over" → "When did they ask us to call back?": In 1 hour / Today 6pm / Tomorrow 12pm / Tomorrow 6pm / Another day');
+  await ap.click('#saveout'); await ap.waitForSelector('#oerr .err, #oerr:not(:empty)');
+  ok(/When did they ask us to call back/.test(await ap.innerText('#oerr')), 'can\'t save "Thinking it over" without a call-back time');
+  await ap.click('#cbk .chip[data-v=pick]'); await ap.fill('#cbk .cbd', '2026-10-20'); await ap.fill('#cbk .cbt', '18:00');
+  await ap.click('#saveout');
+  const tiaNow = await pollFor(async () => { const x = await api(admin, 'getCandidate', { id: tia.id }); return x.callback_at === '2026-10-20 18:00' && x; });
+  ok(tiaNow && tiaNow.outcome === 'Thinking it over' && tiaNow.callback_by_id === meId && JSON.parse(tiaNow.outcome_log).pop().cb === '2026-10-20 18:00',
+    'saved: call back Tue 20 Oct 18:00, reminder goes to whoever logged it (Angad), and it\'s in the call log');
+  await ap.waitForSelector('#wacard a[data-kind=thinking]');
+  const spk = decodeURIComponent((await ap.getAttribute('#wacard a[data-kind=thinking]', 'href')).split(/\?text=|[?&]body=/)[1] || '');
+  ok(/🔁 Call back Tue 20 Oct 18:00/.test(await ap.innerText('.profile')) && /^Hey Tia! 👋/.test(spk) && /I'll call you back (on \*Tuesday 20th October|\*today|\*tomorrow) at 6:00 PM\*/.test(spk) && /call or text me on this number/.test(spk) && /\*Angad Oshan\*, on behalf of JUSS Marketing recruitment team/.test(spk),
+    'their pill says "🔁 Call back Tue 20 Oct 18:00"; one tap sends "speak soon, I\'ll call you back on Tuesday 20th October at 6:00 PM", signed by the sender, in their company\'s branding');
+  fs.writeFileSync(`${SHOTS}/msg-speak-soon.txt`, spk);
+  await ap.locator('#out').screenshot({ path: SHOTS + '/40-thinking-it-over.png' });
+  const cbHead = p => p.body.headings.en === '🔁 Call Tia back now';
+  await setTime('2026-10-20T17:55:00+01:00'); await post('/dev/run', { fn: 'keepWarm' });
+  ok(!(await getJson('/dev/pushes')).some(cbHead), 'no reminder before the time');
+  await setTime('2026-10-20T18:02:00+01:00'); await post('/dev/run', { fn: 'keepWarm' });
+  const cbPush = (await getJson('/dev/pushes')).filter(cbHead);
+  ok(cbPush.length === 1 && cbPush[0].body.include_aliases.external_id.includes(meId) && /asked for a call back at 18:00/.test(cbPush[0].body.contents.en),
+    'at 18:00 → whoever logged it: "🔁 Call Tia back now · They asked for a call back at 18:00"');
+  await post('/dev/run', { fn: 'keepWarm' });
+  ok((await getJson('/dev/pushes')).filter(cbHead).length === 1, 'the reminder goes once');
+  // The recruitment team: LINK / JUSS for both follow-up messages, signed by them
+  const rt2 = await browser.newContext(PHONE), rt2p = await rt2.newPage();
+  await loginUi(rt2p, 'recruitment@jussmarketing.co.uk', APP + 'index.html?c=' + tia.id); await rt2p.waitForSelector('#wacard .cobig[data-kind=thinking][data-co=LINK]');
+  const rtMsg = async (k, co) => decodeURIComponent((await rt2p.getAttribute('#wacard .cobig[data-kind=' + k + '][data-co=' + co + ']', 'href')).split(/\?text=|[?&]body=/)[1] || '');
+  ok(/opportunity with \*LINK Marketing\*/.test(await rtMsg('thinking', 'LINK')) && /opportunity with \*JUSS Marketing\*/.test(await rtMsg('thinking', 'JUSS')) && /\*Zara Iqbal\*, on behalf of JUSS/.test(await rtMsg('thinking', 'JUSS')),
+    'Fiza: "speak soon" as LINK or JUSS buttons, signed by her');
+  await api(admin, 'saveOutcome', { id: tia.id, outcome: 'No answer', outcome_notes: '' });
+  ok((await api(admin, 'getCandidate', { id: tia.id })).callback_at === '', 'a different outcome clears the call-back time');
+  await rt2p.reload(); await rt2p.waitForSelector('#wacard .cobig[data-kind=noanswer][data-co=JUSS]');
+  const naL = await rtMsg('noanswer', 'LINK');
+  ok(/in association with \*LINK Marketing\*/.test(naL) && /call or text me back on this number/.test(naL) && /\*Zara Iqbal\*, on behalf of LINK Marketing/.test(naL) && /in association with \*JUSS Marketing\*/.test(await rtMsg('noanswer', 'JUSS')),
+    '"No answer": "we tried calling you, call or text me back on this number" as LINK or JUSS, signed by her');
+  await rt2.close();
+
   // ── 10. Access removed / Apps Script fallback / GDPR ──
   await api(admin, 'saveUser', { user: Object.assign({}, fiza, { active: false }) });
   const fz = await loginApi('mo@example.com');
@@ -1515,6 +1558,8 @@ async function fillEval(p) {
   const trimmed = trow && Object.fromEntries(th.map((k, i) => [k, trow[i] === undefined ? '' : trow[i]]));
   ok(trimmed && trimmed.full_name === 'Jasraj Bhuller' && trimmed.mobile === '07700900123' && trimmed.outcome && !trimmed.q1_excitement && !trimmed.notes && !trimmed.q13_unspent && !trimmed.p_interesting,
     'after 12 weeks: name, mobile and outcome kept; evaluation answers, convictions answer and presenter notes wiped');
+  const adRow = tsheet.find(r => r[th.indexOf('full_name')] === 'Adham Soliman'), adOl = JSON.parse(adRow[th.indexOf('outcome_log')] || '[]');
+  ok(adOl.length === 3 && adOl.every(e => e.at && e.by && e.o && !e.n) && !/missed the train/.test(adRow.join('|')), 'call log after 12 weeks: who, when and outcome kept; the call notes wiped with the rest');
   await setTime('2027-10-25T03:00:00+01:00');
   await post('/dev/run', { fn: 'dailyMaintenance' });
   ok((await getJson('/dev/sheet?name=Candidates')).length === 1, 'records older than 6 months deleted automatically');
