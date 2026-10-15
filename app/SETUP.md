@@ -193,14 +193,24 @@ When a booker books someone onto the Academy (or an admin approves a 🔴 bookin
    - Tap **✅ Added to Databyte**. (There's no Databyte API, so this step stays copy-and-paste.)
 2. **Welcome email:** **📧 Preview & send** shows the exact email ("LINK / JUSS Marketing - Your Brand Ambassador Journey Begins!"): their name, Day 1 date, Day 1 / Day 2 times, FieldIQ, pre-coaching (LINK), their Playbook (Link FR Playbook / JUSS HF Playbook), client, magazine, map and contact number. Tap **Send**.
    - It's locked until step 1, because FieldIQ only works once they're on Databyte.
-   - **It only ever goes from Jess's or Rubal's address**, signed by them: Jess sends from `jess@linkmarketing.org.uk`, Rubal from `rubal@jussmarketing.co.uk` (either can send either brand). Anyone else pressing Send (Angad, Satpal) sends from the brand's person: LINK → Jess, JUSS → Rubal. Replies go to that address, and it gets a copy.
+   - **It only ever goes from the recruitment team's own addresses**, signed by whoever sends it: Jess from `jess@linkmarketing.org.uk`, Rubal from `rubal@jussmarketing.co.uk`, Fiza from `recruitment@jussmarketing.co.uk` (any of them can send either company's). Anyone else pressing Send (Angad, Satpal) sends from the company's person: LINK → Jess, JUSS → Rubal. Replies go to that address, and it gets a copy.
    - The card and preview say who it's from. If the app can't send as that address yet, Send stays off: it never falls back to another address.
+
+### Send as LINK or JUSS (Jess, Rubal, Fiza)
+The recruitment team work for both companies. **Jess, Rubal** (`THANKS_TEAM` in Code.gs) **and everyone in `RECRUIT_TEAM`** (Fiza: `recruitment@jussmarketing.co.uk`) see a **Send as  LINK | JUSS** switch:
+- on a candidate's page, at the top of the messages (thank-you, congratulations / Day 1 details, "we tried calling you");
+- on each row of **Thank everyone 💬** (Fiza's list is every appointment, LINK and JUSS).
+
+It starts on their booker's company. Tap the other one and the message changes straight away: wording, magazine, hearts, welcome page, pre-coaching (LINK), Google Maps pin, and the welcome email. Messages are signed with the sender's own name. The choice is saved on the candidate, so everything after it follows (the welcome page they open, the welcome email, the Day 1 reminder), even when someone else sends it. **Pay, lists and reminders still follow the booker's company.**
+
+To add someone to the recruitment team: add their email to `RECRUIT_TEAM` in Code.gs, and add them as a "Send mail as" address (below) so they can send welcome emails.
 
 ### Welcome emails: one-time setup (whoever owns the Apps Script, usually Angad, on a computer)
 The app sends through the script owner's Gmail, so that Gmail has to be allowed to send as both addresses:
 1. In that Gmail: ⚙️ → **See all settings** → **Accounts** → **Send mail as** → **Add another email address**.
 2. Name `Jess Grace`, email `jess@linkmarketing.org.uk`, untick **Treat as an alias** → **Next**. Google emails a code to that inbox: Jess reads it to you → **Verify**.
 3. Do the same for `Rubal Oshan`, `rubal@jussmarketing.co.uk`. If Gmail asks for an SMTP server (a different Google account): server `smtp.gmail.com`, port `587`, username `rubal@jussmarketing.co.uk`, password = an **app password** Rubal makes at myaccount.google.com → Security → App passwords (needs 2-Step Verification on). Then the code goes to Rubal's inbox.
+   And again for `Fiza Iqbal`, `recruitment@jussmarketing.co.uk` (same SMTP steps, with an app password made on that account).
 4. In Apps Script: pick **setupWelcomeEmail** in the function menu → **Run** → approve the Gmail permission. The log shows ✅ ready (or ❌ and what's missing) for each address.
 5. **Deploy → Manage deployments → ✏️ → New version** (as for any code change). The app picks it up within 10 minutes.
 

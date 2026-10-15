@@ -497,6 +497,16 @@ textarea.short { min-height: 64px; }
 .rag button.A.on { background: linear-gradient(135deg, #F7B733, #DB8A00); border-color: transparent; color: #fff; animation: pop .22s; }
 .rag button.R.on { background: linear-gradient(135deg, #F06262, #C12B2B); border-color: transparent; color: #fff; animation: pop .22s; }
 .wa-grid { display: grid; gap: 8px; }
+/* "Send as LINK | JUSS": the recruitment team choose which company a message comes from before sending */
+.brandpick { display: flex; align-items: center; gap: 4px; padding: 4px; border-radius: 16px; background: var(--soft); border: 1px solid var(--line); }
+.brandpick > span { flex: none; padding: 0 6px 0 8px; font: 700 10.5px/1 var(--label); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.brandpick button { flex: 1; min-height: 42px; padding: 0 10px; border: 0; border-radius: 12px; background: transparent; color: var(--muted); font: 700 16px/1 var(--label); letter-spacing: .14em; white-space: nowrap; cursor: pointer; transition: background .15s, color .15s, box-shadow .15s; }
+.brandpick button.on { color: #fff; box-shadow: 0 8px 16px -10px rgba(0,0,0,.55); }
+.brandpick button.LINK.on { background: linear-gradient(120deg, #FF8A3D, #F15A24 55%, #CF3A10); }
+.brandpick button.JUSS.on { background: linear-gradient(120deg, #E4613F, #EDA03A 45%, #34B1C0); }
+.brandpick.sm { display: inline-flex; vertical-align: 1px; padding: 2px; gap: 2px; border-radius: 9px; }
+.brandpick.sm > span { display: none; }
+.brandpick.sm button { flex: none; min-height: 28px; padding: 0 9px; border-radius: 7px; font: 700 10.5px/1 var(--label); letter-spacing: .12em; }
 
 /* Team / misc */
 table.t { width: 100%; border-collapse: collapse; font-size: 14px; }
