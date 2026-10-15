@@ -704,29 +704,23 @@ function brandCo(c) { return c.brand === 'JUSS' || c.brand === 'LINK' ? c.brand 
 function canPickBrand() { return !!recruitTeam() && canThank(); }
 /** Their welcome page, in the colours of the company the messages come from. */
 function welcomeLink(c) { return c.welcome_url ? String(c.welcome_url).replace(/welcome-(link|juss)\.html/, 'welcome-' + brandCo(c).toLowerCase() + '.html') : ''; }
-/** Jess / Rubal / Fiza work for both companies: tapping Send asks "Which company?", then opens WhatsApp (or their texts / email)
- *  with that company's message. done(co) runs once they've picked (the message is on its way). */
-function brandChooser(c, kind, via, done) {
-  const old = document.querySelector('.sheet-back.cochooser'); if (old) old.remove();
-  const back = document.createElement('div');
-  back.className = 'sheet-back cochooser';
-  const as = co => Object.assign({}, c, { brand: co });
-  const text = co => kind === 'thanks' ? msgThanks(as(co)) : msgAcademy(as(co));
-  const url = co => via === 'sms' ? smsUrl(c.mobile, text(co)) : via === 'email' ? mailUrl(c.email, MSG_SUBJECT[kind](as(co)), text(co)) : waUrl(c.mobile, text(co));
-  const booker = c.company === 'JUSS' ? 'JUSS' : 'LINK';
-  const sub = co => co === booker && c.booker_name ? 'Booked by ' + h(c.booker_name.split(' ')[0]) : c.brand === co ? 'Chosen last time' : '&nbsp;';
-  back.innerHTML = '<div class="sheet" role="dialog" aria-label="Which company?"><div class="grab"></div>' +
-    '<div class="sheet-h"><div><div class="label muted">' + (kind === 'thanks' ? '💬 Thank-you' : '🎉 Day 1 details') + ' to ' + h(c.first_name) + '</div><div class="display">Which company?</div></div></div>' +
-    '<div class="cochoose">' + ['LINK', 'JUSS'].map(co => '<a class="cobtn ' + co + (co === brandCo(c) ? ' cur' : '') + '" data-co="' + co + '" target="_blank" rel="noopener" href="' + h(url(co)) + '">' +
-      '<b>' + co + ' Marketing</b><span>' + sub(co) + '</span></a>').join('') + '</div>' +
-    '<p class="hint center" style="margin:12px 0 0">Opens ' + (via === 'sms' ? 'your Messages app' : via === 'email' ? 'your email' : 'WhatsApp') + ' with that company\'s message ready, signed by you.</p>' +
-    '<button class="btn ghost block" id="cocancel" style="margin-top:10px">Cancel</button></div>';
-  document.body.appendChild(back);
-  document.body.style.overflow = 'hidden';
-  const close = () => { back.remove(); if (!document.querySelector('.sheet-back')) document.body.style.overflow = ''; };
-  back.onclick = ev => { if (ev.target === back) close(); };
-  back.querySelector('#cocancel').onclick = close;
-  back.querySelectorAll('[data-co]').forEach(a => a.addEventListener('click', () => { setTimeout(close, 250); done(a.dataset.co); }));
+/** One company's version of the thank-you / Day 1 details (the recruitment team's LINK and JUSS buttons). */
+function brandUrl(c, kind, via, co) {
+  const x = Object.assign({}, c, { brand: co }), text = kind === 'thanks' ? msgThanks(x) : msgAcademy(x);
+  return via === 'sms' ? smsUrl(c.mobile, text) : via === 'email' ? mailUrl(c.email, MSG_SUBJECT[kind](x), text) : waUrl(c.mobile, text);
+}
+/** How the team's buttons send to this person: WhatsApp, or text once they're known not to be on it. "📱 Text" / "✉️ Email" switch it. */
+function chanOf(c) { return (S.chan || {})[c.id] || (c.no_whatsapp ? 'sms' : 'whatsapp'); }
+const CHAN_LABEL = { whatsapp: '💬 WhatsApp', sms: '📱 Text', email: '✉️ Email' };
+/** Jess / Rubal / Fiza work for both companies: two buttons in the companies' colours, LINK and JUSS. One tap opens that company's message. */
+function brandSend(c, kind) {
+  const via = chanOf(c), what = kind === 'thanks' ? 'Thank-you' + (c.non_qual ? ' (non-qualifier)' : '') : 'Day 1 details';
+  const lead = via === 'sms' ? '📱 ' : via === 'email' ? '✉️ ' : kind === 'thanks' ? '💬 ' : '🎉 ';
+  const other = ['whatsapp', 'sms', 'email'].filter(v => v !== via && (v !== 'email' || c.email));
+  return '<div class="cosend">' + ['LINK', 'JUSS'].map(co => '<a class="cobig ' + co + '" target="_blank" rel="noopener" data-kind="' + kind + '" data-via="' + via + '" data-co="' + co + '" href="' + h(brandUrl(c, kind, via, co)) + '">' +
+      '<small>' + lead + what + (via === 'sms' ? ' by text' : via === 'email' ? ' by email' : '') + '</small><b>' + co + '</b></a>').join('') + '</div>' +
+    '<div class="altsend"><span>' + (via === 'whatsapp' ? 'Not on WhatsApp?' : via === 'sms' ? '📵 Not on WhatsApp' : 'Or') + '</span>' +
+      other.map(v => '<button type="button" data-chan="' + v + '">' + CHAN_LABEL[v] + '</button>').join('') + '</div>';
 }
 /** Switch the company: instant on screen, saved in the background (like every other save). */
 function pickBrand(c, co) {
@@ -1363,6 +1357,10 @@ function quickRow(c, kind) {
     '<a class="q-wa" href="' + h(msgUrl(c, msgDay1Reminder(c))) + '" target="_blank" rel="noopener">' + icon('chat', 16) + 'Remind</a><button type="button" class="q-go" data-yes="1">Said Yes 👍</button></div>';
   if (kind === 'rebook') return '<div class="quick" data-for="' + h(c.id) + '"><a href="tel:' + h(c.mobile) + '">' + icon('phone', 16) + 'Call</a>' +
     '<a class="q-wa" href="' + h(msgUrl(c, msgRebook(c))) + '" target="_blank" rel="noopener">' + icon('chat', 16) + chanName(c) + '</a><button type="button" class="q-go" data-out="1">Rebook</button></div>';
+  if (kind === 'offer' && canPickBrand()) {
+    const via = c.no_whatsapp ? 'sms' : 'whatsapp';
+    return '<div class="quick" data-for="' + h(c.id) + '"><span class="q-lbl">🎉 Day 1' + (via === 'sms' ? '<br>by text' : '') + '</span>' + ['LINK', 'JUSS'].map(co => '<a class="q-co ' + co + '" data-send="offer" data-co="' + co + '" data-via="' + via + '" href="' + h(brandUrl(c, 'offer', via, co)) + '" target="_blank" rel="noopener">' + co + '</a>').join('') + '</div>';
+  }
   if (kind === 'offer') return '<div class="quick" data-for="' + h(c.id) + '"><a class="q-go" data-send="offer" data-via="' + (c.no_whatsapp ? 'sms' : 'whatsapp') + '" href="' + h(msgUrl(c, msgAcademy(c))) + '" target="_blank" rel="noopener">🎉 Send Day 1 details ' + (c.no_whatsapp ? 'by text' : 'on WhatsApp') + '</a></div>';
   return '';
 }
@@ -1395,16 +1393,12 @@ function bindItems(root) {
     q.querySelectorAll('[data-rate]').forEach(b => { b.onclick = () => quickRate(id, b.dataset.rate); });
     q.querySelectorAll('[data-out]').forEach(b => { b.onclick = () => outcomeSheet(id); });
     q.querySelectorAll('[data-send]').forEach(a => {
-      a.addEventListener('click', ev => {
-        const send = co => {
-          let c = findCand(id);
-          if (c && co && brandCo(c) !== co) c = pickBrand(c, co);
-          if (c) { c.offer_sent_at = londonNow(); saveCache(); }
-          call('markSent', Object.assign({ id: id, kind: 'offer', via: a.dataset.via }, co ? { co: co } : {})).catch(() => {});
-        };
-        // The recruitment team choose the company first (stops the Chase tab ticking it off until they have)
-        if (canPickBrand() && findCand(id)) { ev.preventDefault(); ev.stopImmediatePropagation(); brandChooser(findCand(id), 'offer', a.dataset.via, send); return; }
-        send('');
+      a.addEventListener('click', () => {
+        const co = a.dataset.co || '';  // the recruitment team's LINK / JUSS buttons
+        let c = findCand(id);
+        if (c && co && brandCo(c) !== co) c = pickBrand(c, co);
+        if (c && co) { c.offer_sent_at = londonNow(); saveCache(); }
+        call('markSent', Object.assign({ id: id, kind: 'offer', via: a.dataset.via }, co ? { co: co } : {})).catch(() => {});
       });
     });
   });
@@ -2487,6 +2481,7 @@ const MSG_SUBJECT = {
 };
 /** The big send button (WhatsApp; text once they're known not to be on it) + "Not on WhatsApp? 📱 Text · ✉️ Email" under it. */
 function sendButtons(c, kind, label, text) {
+  if (canPickBrand() && (kind === 'thanks' || kind === 'offer')) return brandSend(c, kind);
   const sms = !!c.no_whatsapp;
   const link = (via, href, inner, cls) => '<a' + (cls ? ' class="' + cls + '"' : '') + ' target="_blank" rel="noopener" data-kind="' + kind + '" data-via="' + via + '" href="' + h(href) + '">' + inner + '</a>';
   const main = sms ? link('sms', smsUrl(c.mobile, text), '📱 ' + label.replace(/^\S+\s/, '') + ' by text', 'btn sms block')
@@ -2635,6 +2630,12 @@ function thanksSheet() {
   const who = co => '<b>' + h(thanksName(co)) + '</b> (' + co + ')';
   // 💬 Send (WhatsApp) with "📱 Text instead" under it; the other way round once they're known not to be on WhatsApp
   const tsend = c => {
+    // The recruitment team: LINK and JUSS buttons, one tap each
+    if (canPickBrand()) {
+      const via = chanOf(c);
+      return '<span class="tsend"><span class="copair">' + ['LINK', 'JUSS'].map(co => '<a class="cosm ' + co + '" data-thanks="' + h(c.id) + '" data-co="' + co + '" data-via="' + via + '" href="' + h(brandUrl(c, 'thanks', via, co)) + '" target="_blank" rel="noopener">' + (via === 'sms' ? '📱 ' : '') + co + '</a>').join('') + '</span>' +
+        '<button type="button" class="tx" data-chan="' + (via === 'sms' ? 'whatsapp' : 'sms') + '" data-for="' + h(c.id) + '">' + (via === 'sms' ? '💬 WhatsApp instead' : '📱 Text instead') + '</button></span>';
+    }
     const msg = msgThanks(c), sms = !!c.no_whatsapp;
     return '<span class="tsend"><a class="btn ' + (sms ? 'sms' : 'wa') + ' sm" data-thanks="' + h(c.id) + '" data-via="' + (sms ? 'sms' : 'whatsapp') + '" href="' + h(sms ? smsUrl(c.mobile, msg) : waUrl(c.mobile, msg)) + '" target="_blank" rel="noopener">' + (sms ? '📱 Text' : '💬 Send') + '</a>' +
       '<a class="tx" data-thanks="' + h(c.id) + '" data-via="' + (sms ? 'whatsapp' : 'sms') + '" href="' + h(sms ? waUrl(c.mobile, msg) : smsUrl(c.mobile, msg)) + '" target="_blank" rel="noopener">' + (sms ? '💬 WhatsApp' : '📱 Text instead') + '</a></span>';
@@ -2647,7 +2648,7 @@ function thanksSheet() {
         ? 'Your ' + myThanks().join(' + ') + ' appointments first, whoever booked them' + (otherCo && other.length ? ', then ' + otherCo + ' (' + h(thanksName(otherCo).split(' ')[0]) + '\'s): you can send those too' : '')
         : 'Every appointment today, LINK and JUSS, whoever booked them') +
         '. Each one opens WhatsApp with the message ready, signed by you. Tap send, come back, next one.' +
-        (canPickBrand() ? ' After you tap Send, choose <b>LINK</b> or <b>JUSS</b>.' : '')
+        (canPickBrand() ? ' Tap <b>LINK</b> or <b>JUSS</b> on each one for that company\'s message.' : '')
       : 'Sent by ' + who('LINK') + ' and ' + who('JUSS') + ' for every appointment. They get a reminder at 12:00.') + '</p>' +
     '<div class="list">' + items.map(c => (sender && own.length && other.length && c === other[0] ? '<div class="datehead">' + otherCo + ' · ' + h(thanksName(otherCo).split(' ')[0]) + ' usually sends these</div>' : '') + '<div class="trow" data-tr="' + h(c.id) + '">' + avatar(c) + '<div class="main"><div class="name">' + h(c.full_name) + '</div><div class="sub">' + coTag(c) + ' ' +
       (c.booker_name ? 'booked by ' + h(c.booker_name) : 'booker not confirmed') + '</div>' + (c.non_qual ? '<div class="sub nqsub">⛔ Non-qualifier message</div>' : '') + '</div>' +
@@ -2659,6 +2660,12 @@ function thanksSheet() {
   back.querySelector('#tdone').onclick = () => { closeSheet(); render(true); };
   // One listener for the whole list
   back.addEventListener('click', e => {
+    const ch = e.target.closest('[data-chan][data-for]');
+    if (ch) {  // "📱 Text instead": this row's LINK / JUSS buttons send by text
+      (S.chan = S.chan || {})[ch.dataset.for] = ch.dataset.chan;
+      const c1 = findCand(ch.dataset.for), ts = ch.closest('.tsend'); if (c1 && ts) ts.outerHTML = tsend(c1);
+      return;
+    }
     const a = e.target.closest('[data-thanks]'); if (!a) return;
     const c0 = findCand(a.dataset.thanks); if (!c0) return;
     const via = a.dataset.via || 'whatsapp', row = a.closest('.trow');
@@ -2673,9 +2680,7 @@ function thanksSheet() {
         const ts = row.querySelector('.tsend'); if (ts) ts.outerHTML = sent(c);
       }, 300);  // after WhatsApp / Messages has opened
     };
-    // The recruitment team: tap Send → "Which company?" → WhatsApp opens with that company's message
-    if (canPickBrand()) { e.preventDefault(); brandChooser(c0, 'thanks', via, done); return; }
-    done('');
+    done(a.dataset.co || '');  // LINK / JUSS: the company they tapped
   });
 }
 
@@ -2820,12 +2825,13 @@ function renderCandidate(c, quiet) {
     ? '<div class="flag green">💬 Thank-you sent ' + fmtTs(c.thanks_sent_at) + (c.thanks_by ? ' by ' + h(c.thanks_by) : '') + '</div>'
     : '<div class="flag amber">💬 Thank-you not sent yet · ' + h(thanksName(thanksCo(c))) + ' sends it</div>';
   if (canOutcome && offerReady && !c.welcome_url && c._pending) wa.push('<div class="flag amber"><span class="spinner sm inline"></span> Saving to Google… the 🎉 congratulations button appears here in a few seconds.</div>');
-  if (canOutcome && offerReady && (c.welcome_url || !c._pending)) wa.push(sendButtons(c, 'offer', '🎉 Send BA Academy Day 1 details' + (canPickBrand() ? '' : ' (' + brandCo(c) + ')'), msgAcademy(c)) +
+  if (canOutcome && offerReady && (c.welcome_url || !c._pending)) wa.push(sendButtons(c, 'offer', '🎉 Send BA Academy Day 1 details (' + brandCo(c) + ')', msgAcademy(c)) +
     (c.offer_sent_at ? '<p class="small muted center">Opened ' + fmtTs(c.offer_sent_at) + '</p>' : '') +
     (c.welcome_url ? '<a class="btn ghost sm" target="_blank" rel="noopener" href="' + h(welcomeLink(c)) + '">👀 Preview their welcome page</a>' : ''));
   if (canOutcome && c.outcome === 'No answer') wa.push(sendButtons(c, 'noanswer', '📞 Send "we tried calling you" message', msgNoAnswer(c)));
   const noWa = c.no_whatsapp ? '<div class="flag amber">📵 Not on WhatsApp: message them by text (or email)</div>' : '';
-  const waCard = '<div class="card wa-grid" id="wacard">' + noWa + thanksFlag + wa.join('') + (wa.length ? '<p class="small muted center" style="margin:0">Opens ' + (c.no_whatsapp ? 'your Messages app' : 'WhatsApp') + ' with the message ready, then just tap send.</p>' : '') + '</div>';
+  const waCard = '<div class="card wa-grid" id="wacard">' + noWa + thanksFlag + wa.join('') + (wa.length ? '<p class="small muted center" style="margin:0">' + (canPickBrand() ? 'Tap <b>LINK</b> or <b>JUSS</b>: opens ' : 'Opens ') + ({ sms: 'your Messages app', email: 'your email' }[canPickBrand() ? chanOf(c) : c.no_whatsapp ? 'sms' : ''] || 'WhatsApp') +
+    (canPickBrand() ? ' with that company\'s message ready, signed by you.' : ' with the message ready, then just tap send.') + '</p>' : '') + '</div>';
 
   // Admin
   let adm = '';
@@ -2888,7 +2894,7 @@ function renderCandidate(c, quiet) {
     };
   }
   document.querySelectorAll('a[data-kind]').forEach(a => {
-    a.addEventListener('click', ev => {
+    a.addEventListener('click', () => {
       const via = a.dataset.via || 'whatsapp', kind = a.dataset.kind;
       const sent = co => {
         let lc = findCand(c.id) || c;
@@ -2899,11 +2905,11 @@ function renderCandidate(c, quiet) {
           setTimeout(() => { if (S.view === 'cand' && S.params.id === c.id) renderCandidate(findCand(c.id) || lc, true); }, 800);
         }
       };
-      // The recruitment team choose the company after tapping Send (thank-you, Day 1 details)
-      if (canPickBrand() && (kind === 'thanks' || kind === 'offer')) { ev.preventDefault(); brandChooser(c, kind, via, sent); return; }
-      sent('');
+      sent(a.dataset.co || '');  // the recruitment team's LINK / JUSS buttons carry the company they tapped
     });
   });
+  // "📱 Text" / "✉️ Email" under the LINK / JUSS buttons: send this way instead
+  document.querySelectorAll('#wacard [data-chan]').forEach(b => { b.onclick = () => { (S.chan = S.chan || {})[c.id] = b.dataset.chan; renderCandidate(findCand(c.id) || c, true); }; });
   if (isAdmin()) {
     const dec = d => () => call('adminDecision', { id: c.id, decision: d, note: (document.getElementById('anote') || {}).value || '' }).then(nc => saved(nc, 'Decision saved ✓')).catch(x => toast(x.message));
     const ap = document.getElementById('approve'); if (ap) { ap.onclick = dec('approved'); document.getElementById('reject').onclick = dec('rejected'); }

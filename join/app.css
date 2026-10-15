@@ -497,15 +497,20 @@ textarea.short { min-height: 64px; }
 .rag button.A.on { background: linear-gradient(135deg, #F7B733, #DB8A00); border-color: transparent; color: #fff; animation: pop .22s; }
 .rag button.R.on { background: linear-gradient(135deg, #F06262, #C12B2B); border-color: transparent; color: #fff; animation: pop .22s; }
 .wa-grid { display: grid; gap: 8px; }
-/* "Which company?": after the recruitment team tap Send (thank-you, Day 1 details) */
-.cochoose { display: grid; gap: 10px; }
-.cobtn { display: block; padding: 18px 20px; border-radius: 20px; color: #fff; text-decoration: none; box-shadow: 0 12px 24px -14px rgba(0,0,0,.55); transition: transform .12s; }
-.cobtn:active { transform: scale(.98); }
-.cobtn.LINK { background: linear-gradient(120deg, #FF8A3D, #F15A24 55%, #CF3A10); }
-.cobtn.JUSS { background: linear-gradient(120deg, #E4613F, #EDA03A 45%, #34B1C0); }
-.cobtn b { display: block; font: 700 22px/1.1 var(--label); letter-spacing: .1em; text-transform: uppercase; }
-.cobtn span { display: block; margin-top: 6px; font-size: 13.5px; font-weight: 700; opacity: .92; }
-.cobtn.cur { box-shadow: 0 0 0 3px #fff, 0 0 0 5px var(--ink2), 0 12px 24px -14px rgba(0,0,0,.55); }
+/* The recruitment team's send buttons: LINK and JUSS in the companies' colours, one tap each */
+.cosend { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.cobig { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; min-height: 66px; padding: 10px 8px; border-radius: 18px; color: #fff; text-decoration: none; text-align: center; box-shadow: 0 12px 24px -14px rgba(0,0,0,.55); transition: transform .12s; }
+.cobig small { font-size: 12.5px; font-weight: 800; opacity: .95; }
+.cobig b { font: 700 24px/1 var(--label); letter-spacing: .14em; }
+.cobig:active, .cosm:active { transform: scale(.96); }
+.cobig.LINK, .cosm.LINK, .quick .q-co.LINK { background: linear-gradient(120deg, #FF8A3D, #F15A24 55%, #CF3A10); }
+.cobig.JUSS, .cosm.JUSS, .quick .q-co.JUSS { background: linear-gradient(120deg, #E4613F, #EDA03A 45%, #34B1C0); }
+.copair { display: flex; gap: 6px; }
+.cosm { display: inline-flex; align-items: center; justify-content: center; min-width: 60px; min-height: 38px; padding: 0 10px; border-radius: 12px; color: #fff; text-decoration: none; font: 700 14px/1 var(--label); letter-spacing: .12em; box-shadow: 0 8px 16px -10px rgba(0,0,0,.5); }
+.tsend button.tx { background: none; border: 0; padding: 0; cursor: pointer; font-family: inherit; }
+.altsend button { font: inherit; font-weight: 800; color: var(--ink); background: #fff; border: 1.5px solid var(--line); border-radius: 999px; padding: 5px 11px; cursor: pointer; }
+.quick .q-lbl { flex: none; align-self: center; padding: 0 2px; font: 600 10.5px/1.2 var(--label); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); text-align: center; }
+.quick .q-co { color: #fff; border-color: transparent; font: 700 15px/1 var(--label); letter-spacing: .14em; }
 .pres-row .pills { margin-top: 6px; }
 .pres-row .net b { font-size: 26px; }
 .pres-row .net span { display: block; font-size: 11px; margin-top: 2px; }
