@@ -197,12 +197,13 @@ When a booker books someone onto the Academy (or an admin approves a 🔴 bookin
    - **It only ever goes from the recruitment team's own addresses**, signed by whoever sends it: Jess from `jess@linkmarketing.org.uk`, Rubal from `rubal@jussmarketing.co.uk`, Fiza from `recruitment@jussmarketing.co.uk` (any of them can send either company's). Anyone else pressing Send (Angad, Satpal) sends from the company's person: LINK → Jess, JUSS → Rubal. Replies go to that address, and it gets a copy.
    - The card and preview say who it's from. If the app can't send as that address yet, Send stays off: it never falls back to another address.
 
-### Which company? (Jess, Rubal, Fiza)
-The recruitment team work for both companies. **Jess, Rubal** (`THANKS_TEAM` in Code.gs) **and everyone in `RECRUIT_TEAM`** (Fiza: `recruitment@jussmarketing.co.uk`) tap **💬 Send thank-you** or **🎉 Send BA Academy Day 1 details** as usual (candidate page, **Thank everyone 💬**, or the Day 1 button on a list card / Chase), then the app asks **"Which company?"**:
-- **LINK Marketing** or **JUSS Marketing**, each saying whose it is ("Booked by Abdullahi" = their booker's company, "Chosen last time").
-- Tap one and WhatsApp (or their texts / email) opens with **that company's** message: wording, magazine, hearts, welcome page, pre-coaching (LINK), Google Maps pin. Signed with the sender's own name.
+### LINK or JUSS: one tap (Jess, Rubal, Fiza)
+The recruitment team work for both companies, so for **Jess, Rubal** (`THANKS_TEAM` in Code.gs) **and everyone in `RECRUIT_TEAM`** (Fiza: `recruitment@jussmarketing.co.uk`) every thank-you and Day 1 details button comes as a pair, **LINK** and **JUSS**, in the companies' colours:
+- **Candidate page:** 💬 Thank-you **LINK | JUSS** and 🎉 Day 1 details **LINK | JUSS**. Under them, "📱 Text" / "✉️ Email" switch both buttons to that way of sending.
+- **Thank everyone 💬:** **LINK | JUSS** on every row (Fiza's list is every appointment, LINK and JUSS). Tap, send, come back, next one. "📱 Text instead" switches that row.
+- **Lists and Chase:** 🎉 Day 1 **LINK | JUSS**.
 
-The choice is saved on the candidate, so everything after it follows (the welcome page they open, the welcome email, the Day 1 reminder), even when someone else sends it. Anyone else (Angad, Satpal, bookers) isn't asked: their messages follow the last choice, else the booker's company. **Pay, lists and reminders always follow the booker's company.** Fiza's thank-you list is every appointment, LINK and JUSS.
+One tap opens WhatsApp (or their texts / email) with **that company's** message: wording, magazine, hearts, welcome page, pre-coaching (LINK), Google Maps pin, signed with the sender's own name. The company they tap is saved on the candidate, so everything after it follows (the welcome page they open, the welcome email, the Day 1 reminder), even when someone else sends it. Anyone else (Angad, Satpal, bookers) keeps one Send button, which follows the last choice, else the booker's company. **Pay, lists and reminders always follow the booker's company.**
 
 To add someone to the recruitment team: add their email to `RECRUIT_TEAM` in Code.gs, and add them as a "Send mail as" address (below) so they can send welcome emails.
 
