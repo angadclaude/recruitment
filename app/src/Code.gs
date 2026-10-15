@@ -183,7 +183,7 @@ function ss() {
 function sheet(name) { return ss().getSheetByName(name); }
 
 let MEMO = {};  // sheet reads cached for the length of one request
-function readTable(name) {
+function readTable(name, retried) {
   if (MEMO[name]) return MEMO[name];
   const sh = sheet(name);
   const values = sh.getDataRange().getValues();
@@ -200,6 +200,8 @@ function readTable(name) {
   }
   // Rows are written by column position, so a column inserted or moved by hand would scramble data. Stop instead.
   if (want && !want.every((h, i) => headers[i] === h)) {
+    // Someone else's request may be adding a new version's columns this very second: look again once before giving up
+    if (!retried) { Utilities.sleep(1500); SpreadsheetApp.flush(); return readTable(name, true); }
     throw new Error('The "' + name + '" tab\'s columns were changed in the Google Sheet. Undo that change (File → Version history) and try again.');
   }
   const rows = values.map((r, i) => {
@@ -215,7 +217,12 @@ function readTable(name) {
  *  Clear a repeated header whose column is empty, and empty headers off the end, so new columns go in the right place. */
 function tidyHeaders(sh, name, headers, values) {
   const empty = j => values.every(r => r[j] === '' || r[j] === null || r[j] === undefined);
-  const dup = headers.map((h, j) => j).filter(j => headers[j] && headers.indexOf(headers[j]) < j && empty(j));
+  const dups = hs => hs.map((h, j) => j).filter(j => hs[j] && hs.indexOf(hs[j]) < j && empty(j));
+  let dup = dups(headers);
+  if (dup.length) {  // look at the header row as it is now: another request may have just written new columns there
+    const now = sh.getRange(1, 1, 1, Math.max(headers.length, 1)).getValues()[0].map(String);
+    dup = dups(now).filter(j => headers[j] === now[j]);
+  }
   dup.forEach(j => { sh.getRange(1, j + 1).clearContent(); headers[j] = ''; });
   if (dup.length) console.warn(name + ': cleared ' + dup.length + ' repeated empty column header(s)');
   while (headers.length && !headers[headers.length - 1] && empty(headers.length - 1)) headers.pop();
@@ -887,6 +894,7 @@ function saveOutcome(req, u) {
 /** Every response logged on the call (No answer, Thinking it over, Academy booked…), who and when: outcome / outcome_at only keep the latest. */
 function addOutcomeLog(c, e) {
   let l = []; try { l = JSON.parse(c.outcome_log || '[]'); } catch (x) { l = []; }
+  if (!Array.isArray(l)) l = [];
   const o = {}; Object.keys(e).forEach(k => { if (e[k]) o[k] = k === 'n' ? String(e[k]).slice(0, 300) : e[k]; });
   l.push(o); c.outcome_log = JSON.stringify(l.slice(-30));
 }
@@ -1564,17 +1572,26 @@ function backfillSends() {
     p.setProperty('SENDS_BACKFILLED', nowStr());
   });
 }
+/** A Log time as 'yyyy-MM-dd HH:mm'. The Log tab's time column turned its text into real dates (Sheets did it),
+ *  so it reads back as "Thu Oct 15 2026 16:35:00 GMT+0100…": handle both. '' if it isn't a time. */
+function tsText(v) {
+  const s = String(v == null ? '' : v);
+  if (/^\d{4}-\d\d-\d\d \d\d:\d\d/.test(s)) return s.slice(0, 16);
+  const d = s ? new Date(s) : null;
+  return d && !isNaN(d.getTime()) ? Utilities.formatDate(d, CONFIG.TZ, 'yyyy-MM-dd HH:mm') : '';
+}
 /** Once: the call log for outcomes logged before it existed, from the Log ("outcome · No answer LATE" by Fiza at 11:59).
  *  The latest one gets its Day 1 date and notes from the candidate. One write for the whole column (runs from keepWarm). */
 function backfillOutcomes() {
+  // _2: the first run (15 Oct) read the Log's times as blank; it fills them in for those call logs
   const p = PropertiesService.getScriptProperties();
-  if (p.getProperty('OUTCOMES_BACKFILLED')) return;
+  if (p.getProperty('OUTCOMES_BACKFILLED_2')) return;
   withLock(() => {
-    if (p.getProperty('OUTCOMES_BACKFILLED')) return;
+    if (p.getProperty('OUTCOMES_BACKFILLED_2')) return;
     const by = {};
     readTable('Log').forEach(l => {
       if (!l.candidate_id || (l.action !== 'outcome' && l.action !== 'admin_rejected')) return;
-      const at = /^\d{4}-\d\d-\d\d \d\d:\d\d/.test(l.at) ? l.at.slice(0, 16) : '';
+      const at = tsText(l.at);
       const e = l.action === 'outcome' ? { at: at, by: l.user, o: String(l.detail).replace(/ LATE$/, '') }
         : { at: at, by: l.user, o: 'Not suitable', n: 'Academy booking rejected' + (l.detail ? ': ' + l.detail : '') };
       if (/ LATE$/.test(l.detail) && l.action === 'outcome') e.late = 1;
@@ -1583,14 +1600,20 @@ function backfillOutcomes() {
     const rows = readTable('Candidates');
     const vals = rows.map(c => {
       const l = by[c.id];
-      if (c.outcome_log || !l) return [c.outcome_log];
-      const last = l[l.length - 1];
-      if (last.o === c.outcome) { if (c.academy_date) last.d = c.academy_date; if (c.outcome_notes) last.n = c.outcome_notes.slice(0, 300); }
-      return [JSON.stringify(l.slice(-30))];
+      let had = []; try { had = c.outcome_log ? JSON.parse(c.outcome_log) : []; } catch (e) { had = []; }
+      if (!Array.isArray(had)) had = [];
+      if (!l || (had.length && had.every(e => e.at))) return [c.outcome_log];  // nothing in the Log, or already complete
+      // Keep entries saved since (they have their own time and notes); the rest come from the Log
+      const keep = had.filter(e => e.at), add = l.slice();
+      keep.forEach(k => { const i = add.findIndex(e => e.at === k.at && e.o === k.o); if (i >= 0) add.splice(i, 1); });  // one each: two saves can share a minute
+      const all = add.concat(keep).sort((a, b) => String(a.at).localeCompare(String(b.at)) || (keep.indexOf(a) >= 0) - (keep.indexOf(b) >= 0));
+      const last = all[all.length - 1];
+      if (add.indexOf(last) >= 0 && last.o === c.outcome) { if (c.academy_date) last.d = c.academy_date; if (c.outcome_notes) last.n = c.outcome_notes.slice(0, 300); }
+      return [JSON.stringify(all.slice(-30))];
     });
     if (rows.length) sheet('Candidates').getRange(2, SHEETS.Candidates.indexOf('outcome_log') + 1, rows.length, 1).setValues(vals);
     delete MEMO.Candidates;
-    p.setProperty('OUTCOMES_BACKFILLED', nowStr());
+    p.setProperty('OUTCOMES_BACKFILLED_2', nowStr());
   });
 }
 /** On Day 1: arrived / no-show (or clear it). Admins, or the person who booked them. Gives the real show-up rate. */
@@ -1950,7 +1973,7 @@ function dailyMaintenance() {
     deleteWhere('History', r => r.attended_date && r.attended_date < cutoff);
     deleteWhere('Sessions', r => r.expires < nowStr());
     deleteWhere('Codes', r => r.expires < nowStr());
-    deleteWhere('Log', r => r.at.slice(0, 10) < cutoff);
+    deleteWhere('Log', r => { const t = tsText(r.at); return !!t && t.slice(0, 10) < cutoff; });  // times can be real dates in this tab
     trimOldDetails(trim);
   });
 }
