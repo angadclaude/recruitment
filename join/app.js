@@ -1,4 +1,4 @@
-window.APP_VERSION = 'a4080e8f';
+window.APP_VERSION = 'ccf0cef5';
 
 (function () {
 'use strict';
@@ -1995,7 +1995,8 @@ function drawChase(quiet) {
     busy(btn, true, 'Sending…');
     call('chaseOutcomes', { ids: ids }).then(x => {
       busy(btn, false);
-      res.innerHTML = (x.nudged.length ? '<div class="flag green">🔔 Nudged: ' + h(x.nudged.map(first).join(', ')) + '</div>' : '') +
+      // The list may have refreshed in the background while Google was sending: show it on the one on screen
+      (document.getElementById('cres') || res).innerHTML = (x.nudged.length ? '<div class="flag green">🔔 Nudged: ' + h(x.nudged.map(first).join(', ')) + '</div>' : '') +
         (x.recently.length ? '<div class="flag amber">Already nudged in the last 30 min: ' + h(x.recently.map(first).join(', ')) + '</div>' : '') +
         (x.noApp.length ? '<div class="flag amber">Not in the app (use WhatsApp): ' + h(x.noApp.map(first).join(', ')) + '</div>' : '') +
         (!x.nudged.length && !x.recently.length && !x.noApp.length ? '<div class="flag green">Nothing left to chase 🎉</div>' : '');
