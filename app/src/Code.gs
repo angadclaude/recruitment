@@ -26,6 +26,9 @@ const CONFIG = {
   // Who sends the thank-you WhatsApp to every appointment (their company's candidates), and gets the reminder.
   // The same email for both = one person sends them all.
   THANKS_TEAM: { LINK: 'jess@linkmarketing.org.uk', JUSS: 'rubal@jussmarketing.co.uk' },  // recruitment team: thank-yous (either can send LINK or JUSS) + non-qualifier alerts
+  // Also on the recruitment team (they work for both companies): send thank-yous, congratulations and welcome emails for either one,
+  // choosing LINK or JUSS before they send. Jess and Rubal (above) are always on it and keep their reminders.
+  RECRUIT_TEAM: ['recruitment@jussmarketing.co.uk'],  // Fiza
   THANKS_TIME: '12:00',           // every day: "N thank-you messages to send" to Jess / Rubal (only if there are any)
   DAY1_REMIND_TIME: '10:00',      // on a BA Academy Day 1: Jess / Rubal get "N starters to remind" (Day 1 tab → Send reminders)
   DIGEST_TIME: '18:00',           // Mon–Thu: each booker's round-up of their day
@@ -104,6 +107,7 @@ const SHEETS = {
     'pay_excluded', 'pay_excluded_reason', 'thanks_sent_at', 'offer_sent_at',
     'welcome_token', 'academy_confirmed_at',
     'p_why_sales', 'p_why_sales_note', 'p_interesting', 'eval_edited_at', 'thanks_by', 'no_whatsapp', 'day1_status', 'day1_by', 'day1_at', 'day1_reminded_at', 'day1_reminded_by', 'recruit_source', 'databyte_at', 'databyte_by', 'onboard_email_at', 'onboard_email_by',
+    'brand',  // LINK / JUSS: the company their messages and welcome email come from (chosen by the recruitment team), when it isn't their booker's
   ],
   History: ['attended_date', 'full_name', 'mobile', 'email', 'booker_raw', 'presenter_raw'],
   Codes: ['email', 'code_hash', 'expires', 'attempts'],
@@ -552,7 +556,7 @@ function checkin(req) {
       (res.c.booker_typed ? 'They typed "' + res.c.booker_typed + '" (not on the team list).' : 'They didn\'t say who booked them.') +
       ' Tap to set the booker, so someone gets their evaluation and calls them.', res.c.id);
   }
-  return { id: res.c.id, resume: res.c.resume_token, first_name: res.c.full_name.split(' ')[0], company: res.c.company || '', evalDone: !!res.c.eval_at, nonQual: !!nq };
+  return { id: res.c.id, resume: res.c.resume_token, first_name: res.c.full_name.split(' ')[0], company: res.c.brand || res.c.company || '', evalDone: !!res.c.eval_at, nonQual: !!nq };
 }
 
 /** Today's check-in for a mobile, read fresh: only the first columns (id … mobile), then that one row. */
@@ -590,7 +594,7 @@ function candidateByResume(req) {
 
 function candidateStatus(req) {
   const c = candidateByResume(req);
-  return { first_name: c.full_name.split(' ')[0], company: c.company || '', attended_date: c.attended_date, today: todayStr(), evalDone: !!c.eval_at, canEdit: canEditEval(c), nonQual: !!nonQualifier(c) };
+  return { first_name: c.full_name.split(' ')[0], company: c.brand || c.company || '', attended_date: c.attended_date, today: todayStr(), evalDone: !!c.eval_at, canEdit: canEditEval(c), nonQual: !!nonQualifier(c) };
 }
 /** A candidate can change their answers the same day, until their booker has logged the call outcome. */
 function canEditEval(c) { return !!c.eval_at && c.attended_date === todayStr() && !c.outcome; }
@@ -608,7 +612,7 @@ function resumeByMobile(req) {
   if (!m) throw new Error('Please enter a valid UK mobile number (07…).');
   const c = readTable('Candidates').filter(x => x.mobile === m && x.attended_date === todayStr())[0];
   if (!c) return { found: false };
-  return { found: true, id: c.id, resume: c.resume_token, first_name: c.full_name.split(' ')[0], company: c.company || '', evalDone: !!c.eval_at, canEdit: canEditEval(c), nonQual: !!nonQualifier(c) };
+  return { found: true, id: c.id, resume: c.resume_token, first_name: c.full_name.split(' ')[0], company: c.brand || c.company || '', evalDone: !!c.eval_at, canEdit: canEditEval(c), nonQual: !!nonQualifier(c) };
 }
 
 const EVAL_FIELDS = ['q1_excitement', 'q2_stood_out', 'q3_reason', 'q4_situation', 'q4_looking_for', 'q5_start_date',
@@ -656,7 +660,7 @@ function welcomeByToken(t) {
 function welcomeInfo(req) {
   const c = welcomeByToken(req.t);
   return {
-    first_name: c.full_name.split(' ')[0], company: c.company || 'LINK', academy_date: c.academy_date,
+    first_name: c.full_name.split(' ')[0], company: brandCo(c), academy_date: c.academy_date,
     booker_first: c.booker_name ? c.booker_name.split(' ')[0] : '', confirmed_at: c.academy_confirmed_at,
     address: CONFIG.OFFICE_ADDRESS, today: todayStr(),
   };
@@ -724,7 +728,8 @@ function me(req, u) {
     links: { checkin: publicLink('checkin'), eval: publicLink('eval'), staff: staffUrl('') },
     signoff: CONFIG.ACADEMY_SIGNOFF,
     thanksTeam: thanksTeam(),
-    welcomeFrom: isAdmin(u) ? welcomeFromInfo() : null,
+    recruitTeam: recruitTeam(),
+    welcomeFrom: isAdmin(u) ? welcomeFromInfo(u) : null,
   };
 }
 
@@ -911,6 +916,32 @@ function thanksTeam() {
 }
 /** A candidate's company for the thank-you (no confirmed booker yet = LINK, like the message). */
 function thanksCo(c) { return c.company === 'JUSS' ? 'JUSS' : 'LINK'; }
+/** The recruitment team: Jess, Rubal (THANKS_TEAM) + RECRUIT_TEAM (Fiza). Any of them thanks / congratulates anyone, as LINK or JUSS. */
+function recruitTeam() {
+  const emails = Object.keys(CONFIG.THANKS_TEAM).map(k => CONFIG.THANKS_TEAM[k]).concat(CONFIG.RECRUIT_TEAM || []).map(e => String(e).toLowerCase());
+  return usersAll().filter(x => truthy(x.active) && emails.indexOf(String(x.email).toLowerCase()) >= 0)
+    .map(x => ({ id: x.id, name: x.name, email: String(x.email).toLowerCase() }));
+}
+function onRecruitTeam(u) { return !!u && recruitTeam().some(t => t.id === u.id); }
+/** The company their messages, welcome page and welcome email come from: the one the recruitment team chose, else their booker's.
+ *  (Pay, lists and reminders always follow the booker's company.) pick: a choice made just now, not saved yet. */
+function brandCo(c, pick) {
+  const b = pick === 'LINK' || pick === 'JUSS' ? pick : c.brand;
+  return b === 'LINK' || b === 'JUSS' ? b : (c.company === 'JUSS' ? 'JUSS' : 'LINK');
+}
+/** "Jess Grace, Rubal Oshan or Fiza Iqbal" */
+function orList(a) { return a.length > 1 ? a.slice(0, -1).join(', ') + ' or ' + a[a.length - 1] : (a[0] || ''); }
+/** Jess / Rubal / Fiza: send this person's messages as LINK or JUSS. Saved, so everything after follows it. */
+function setBrand(req, u) {
+  if (!onRecruitTeam(u)) throw new Error('Only the recruitment team choose the company.');
+  if (req.co !== 'LINK' && req.co !== 'JUSS') throw new Error('Choose LINK or JUSS.');
+  return withLock(() => {
+    const c = getC(req.id);
+    if (!fullAccess(u, c)) throw new Error('No access');
+    if (c.brand !== req.co) { c.brand = req.co; writeRow('Candidates', c); log(u, 'brand', c.id, req.co); }
+    return shape(c, u);
+  });
+}
 
 /** A WhatsApp / text / email message was opened. kind: thanks · offer · noanswer. via: whatsapp (default) · sms · email.
  *  Sending by text or email means they're not on WhatsApp: remembered, so the next message goes by text too. */
@@ -921,13 +952,12 @@ function markSent(req, u) {
     const c = getC(req.id);
     if (!fullAccess(u, c)) throw new Error('No access');
     if (req.kind === 'thanks') {
-      // Jess and Rubal can each send any thank-you, LINK or JUSS (signed with their own name)
-      const team = thanksTeam(), cos = Object.keys(team);
-      if (!cos.some(co => team[co].id && team[co].id === u.id)) {
-        throw new Error('Thank-you messages are sent by ' + (cos.map(co => team[co].name).filter(Boolean).join(' or ') || 'the recruitment team') + '.');
-      }
+      // The recruitment team (Jess, Rubal, Fiza) can each send any thank-you, LINK or JUSS (signed with their own name)
+      if (!onRecruitTeam(u)) throw new Error('Thank-you messages are sent by ' + (orList(recruitTeam().map(t => t.name)) || 'the recruitment team') + '.');
       c.thanks_sent_at = nowStr(); c.thanks_by = u.name;
     }
+    // The company they chose before sending (thank-you or congratulations): everything after follows it
+    if ((req.co === 'LINK' || req.co === 'JUSS') && onRecruitTeam(u)) c.brand = req.co;
     if (req.kind === 'offer') c.offer_sent_at = nowStr();
     if (req.kind === 'day1') { c.day1_reminded_at = nowStr(); c.day1_reminded_by = u.name; }
     if (via !== 'whatsapp') c.no_whatsapp = 'TRUE';
@@ -1148,7 +1178,7 @@ const STAFF_ACTIONS = {
   markSent: markSent, payReport: payReport, listUsers: listUsers, saveUser: saveUser, deleteUser: deleteUser,
   alertsCheck: alertsCheck, testAlert: testAlert, sendSetupEmails: sendSetupEmails, adminCode: adminCode,
   chaseOutcomes: chaseOutcomes, chaseList: chaseList, academyList: academyList, markDay1: markDay1, markConfirmed: markConfirmed,
-  onboardStep: onboardStep, onboardPreview: onboardPreview, onboardSend: onboardSend,
+  onboardStep: onboardStep, onboardPreview: onboardPreview, onboardSend: onboardSend, setBrand: setBrand,
 };
 
 // ───────────────────────── LINKS ─────────────────────────
@@ -1165,7 +1195,7 @@ function staffUrl(cid) {
 function welcomeUrl(c) {
   // n + d: the page shows their name and Day 1 straight away, without waiting on Google
   const quick = c.academy_date ? '&n=' + encodeURIComponent(c.full_name.split(' ')[0]) + '&d=' + c.academy_date : '';
-  if (CONFIG.PUBLIC_URL) return CONFIG.PUBLIC_URL + 'welcome-' + (c.company === 'JUSS' ? 'juss' : 'link') + '.html?t=' + c.welcome_token + quick;
+  if (CONFIG.PUBLIC_URL) return CONFIG.PUBLIC_URL + 'welcome-' + brandCo(c).toLowerCase() + '.html?t=' + c.welcome_token + quick;
   return scriptUrl() + '?go=welcome&t=' + c.welcome_token;
 }
 
@@ -1550,8 +1580,8 @@ function onboardStep(req, u) {
 }
 /** Step 2: "Your Brand Ambassador Journey Begins!": Rubal's content, in the congratulations page's look (brand hero, white cards,
  *  chunky buttons). Table layout + inline styles so it holds up in Gmail, Outlook and Apple Mail (Outlook desktop: solid colours). */
-function onboardEmail(c, u) {
-  const co = c.company === 'JUSS' ? 'JUSS' : 'LINK', o = ONBOARD[co], first = c.full_name.split(' ')[0];
+function onboardEmail(c, u, pick) {
+  const co = brandCo(c, pick), o = ONBOARD[co], first = c.full_name.split(' ')[0];
   const T = co === 'JUSS'
     ? { solid: '#E4613F', hero: 'linear-gradient(115deg,#D9534F 0%,#E4813F 28%,#EDA03A 44%,#34B1C0 62%,#2F86B5 100%)', btn: '#1FA3B1', tint: '#DCF2F4', ink: '#13808C' }
     : { solid: '#EE5A24', hero: 'linear-gradient(115deg,#FF7A2F 0%,#EE5A24 54%,#26252D 54.3%,#34333D 100%)', btn: '#EE5A24', tint: '#FDE6DC', ink: '#C2410C' };
@@ -1640,10 +1670,13 @@ function onboardPreview(req, u) {
   if (!isAdmin(u)) throw new Error('Admin only');
   const c = getC(req.id);
   if (!onboardable(c)) throw new Error('Only people booked onto the Academy are onboarded.');
-  const s = welcomeSender(c, u);
-  return Object.assign(onboardEmail(c, s), { from: s.name + ' <' + s.email + '>', notReady: welcomeNotReady(s) });
+  const pick = brandPick(req, u), s = welcomeSender(c, u, pick);
+  return Object.assign(onboardEmail(c, s, pick), { from: s.name + ' <' + s.email + '>', notReady: welcomeNotReady(s), co: brandCo(c, pick) });
 }
-/** Goes from Jess's or Rubal's address (ONBOARD.*.from), signed by them: replies go straight to them and they get a copy.
+/** The company the recruitment team has on screen as they send (LINK / JUSS), so it goes exactly as previewed. Anyone else: ''. */
+function brandPick(req, u) { return (req.co === 'LINK' || req.co === 'JUSS') && onRecruitTeam(u) ? req.co : ''; }
+/** Goes from the sender's own address if they're on the recruitment team (Jess / Rubal / Fiza), else the company's (ONBOARD.*.from),
+ *  signed by them: replies go straight to them and they get a copy.
  *  Databyte first: FieldIQ only works once they're on it. */
 function onboardSend(req, u) {
   if (!isAdmin(u)) throw new Error('Admin only');
@@ -1651,27 +1684,31 @@ function onboardSend(req, u) {
   if (!onboardable(c)) throw new Error('Only people booked onto the Academy are onboarded.');
   if (!c.databyte_at) throw new Error('Add them to Databyte first: FieldIQ only works once they\'re on Databyte.');
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(c.email || '')) throw new Error('No valid email for ' + c.full_name + '.');
-  const s = welcomeSender(c, u), bad = welcomeNotReady(s);
+  const pick = brandPick(req, u), s = welcomeSender(c, u, pick), bad = welcomeNotReady(s);
   if (bad) throw new Error(bad);
-  const m = onboardEmail(c, s), brand = ONBOARD[c.company === 'JUSS' ? 'JUSS' : 'LINK'].brand;
+  const m = onboardEmail(c, s, pick), brand = ONBOARD[brandCo(c, pick)].brand;
   const opts = { htmlBody: m.html, name: s.name + ' | ' + brand, bcc: s.email };
   if (s.email !== scriptEmail()) opts.from = s.email;
   GmailApp.sendEmail(m.to, m.subject, m.text, opts);
   return withLock(() => {
     const x = getC(req.id);
     x.onboard_email_at = nowStr(); x.onboard_email_by = u.name;
+    if (pick) x.brand = pick;
     writeRow('Candidates', x);
     log(u, 'welcome_email', x.id, m.to + ' from ' + s.email);
     return shape(x, u);
   });
 }
 
-// ───── Welcome emails only ever go from Jess's or Rubal's address (ONBOARD.*.from), never this script's own ─────
-// One-time, by whoever owns this script: Gmail → Settings → Accounts → "Send mail as" → add both, then run setupWelcomeEmail.
-/** You, if you're on the recruitment team (Jess / Rubal: either can send either brand), else the brand's (LINK: Jess, JUSS: Rubal). */
-function welcomeSender(c, u) {
-  const team = thanksTeam(), mine = Object.keys(team).filter(k => team[k].id === u.id)[0], k = mine || (c.company === 'JUSS' ? 'JUSS' : 'LINK');
-  return { co: k, name: team[k].name || (k === 'JUSS' ? 'Rubal Oshan' : 'Jess Grace'), email: ONBOARD[k].from };
+// ───── Welcome emails only ever go from the recruitment team's own addresses (Jess, Rubal, Fiza), never this script's own ─────
+// One-time, by whoever owns this script: Gmail → Settings → Accounts → "Send mail as" → add each one, then run setupWelcomeEmail.
+/** You (your own address), if you're on the recruitment team: any of you can send either company's.
+ *  Anyone else (Angad, Satpal): the company's (LINK: Jess, JUSS: Rubal). */
+function welcomeSender(c, u, pick) {
+  const me = recruitTeam().filter(t => t.id === u.id)[0];
+  if (me) return { name: me.name, email: me.email };
+  const team = thanksTeam(), k = brandCo(c, pick);
+  return { name: team[k].name || (k === 'JUSS' ? 'Rubal Oshan' : 'Jess Grace'), email: ONBOARD[k].from };
 }
 function scriptEmail() { try { return String(Session.getEffectiveUser().getEmail()).toLowerCase(); } catch (e) { return ''; } }
 /** Addresses this script's Gmail can send as: its own + its "Send mail as" addresses (checked every 10 minutes). */
@@ -1686,10 +1723,13 @@ function sendableFrom() {
 function welcomeNotReady(s) {
   return sendableFrom().indexOf(s.email) >= 0 ? '' : 'Can\'t send as ' + s.email + ' yet. Angad: add it in Gmail → Settings → Accounts → "Send mail as" (SETUP.md, "Welcome emails"), then try again in 10 minutes.';
 }
-/** For the admin cards: who each brand's welcome email comes from, and whether it's ready. */
-function welcomeFromInfo() {
+/** For the admin cards: who each brand's welcome email comes from, and whether it's ready.
+ *  mine: your own address, if you're on the recruitment team (then it always comes from you). */
+function welcomeFromInfo(u) {
   const team = thanksTeam(), can = sendableFrom(), out = {};
   ['LINK', 'JUSS'].forEach(k => { out[k] = { name: team[k] ? team[k].name : '', email: ONBOARD[k].from, ready: can.indexOf(ONBOARD[k].from) >= 0 }; });
+  const me = u ? recruitTeam().filter(t => t.id === u.id)[0] : null;
+  out.mine = me ? { name: me.name, email: me.email, ready: can.indexOf(me.email) >= 0 } : null;
   return out;
 }
 /** Run once from the Apps Script editor (after adding the "Send mail as" addresses): approves Gmail and says what's ready. */
@@ -1697,7 +1737,8 @@ function setupWelcomeEmail() {
   CacheService.getScriptCache().remove('send_as');
   const can = sendableFrom();
   console.log('This script sends as: ' + can.join(', '));
-  [ONBOARD.LINK.from, ONBOARD.JUSS.from].forEach(a => console.log(can.indexOf(a) >= 0 ? '✅ ' + a + ' ready' : '❌ ' + a + ': add it in Gmail → Settings → Accounts → "Send mail as", then run this again'));
+  const all = [ONBOARD.LINK.from, ONBOARD.JUSS.from].concat(recruitTeam().map(t => t.email), (CONFIG.RECRUIT_TEAM || []).map(e => String(e).toLowerCase()));
+  all.filter((a, i) => all.indexOf(a) === i).forEach(a => console.log(can.indexOf(a) >= 0 ? '✅ ' + a + ' ready' : '❌ ' + a + ': add it in Gmail → Settings → Accounts → "Send mail as", then run this again'));
 }
 
 function firstNames(list, max) {

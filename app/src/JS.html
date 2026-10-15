@@ -673,8 +673,35 @@ function myThanks() {
 }
 /** Their own company's appointment (Jess: LINK, Rubal: JUSS). */
 function signsThanks(c) { return myThanks().indexOf(thanksCo(c)) >= 0; }
-/** Jess or Rubal: can send any thank-you, for LINK or JUSS. */
-function canThank() { return myThanks().length > 0; }
+/** The recruitment team (Jess, Rubal, Fiza): RECRUIT_TEAM in Code.gs. Older Google code doesn't send it: then Jess + Rubal. */
+function recruitTeam() { return (S.me && S.me.recruitTeam) || null; }
+/** On the recruitment team: can send any thank-you, for LINK or JUSS. */
+function canThank() {
+  const t = recruitTeam(), me = S.me && S.me.user;
+  return t ? !!me && t.some(x => x.id === me.id) : myThanks().length > 0;
+}
+/** The appointments in "your" list: Jess LINK, Rubal JUSS; Fiza (both companies) all of them. */
+function mineToThank(c) { return myThanks().length ? signsThanks(c) : canThank(); }
+/** The company their messages, welcome page and welcome email come from: chosen by the recruitment team, else their booker's. */
+function brandCo(c) { return c.brand === 'JUSS' || c.brand === 'LINK' ? c.brand : (c.company === 'JUSS' ? 'JUSS' : 'LINK'); }
+/** The recruitment team choose LINK or JUSS before sending (needs the new Google code, which knows who's on the team). */
+function canPickBrand() { return !!recruitTeam() && canThank(); }
+/** Their welcome page, in the colours of the company the messages come from. */
+function welcomeLink(c) { return c.welcome_url ? String(c.welcome_url).replace(/welcome-(link|juss)\.html/, 'welcome-' + brandCo(c).toLowerCase() + '.html') : ''; }
+/** "Send as  LINK Marketing | JUSS Marketing": tapped before sending; saved, so every message after it (and the welcome email) follows. */
+function brandPicker(c, small) {
+  if (!canPickBrand()) return '';
+  const co = brandCo(c);
+  return '<div class="brandpick' + (small ? ' sm' : '') + '" role="group" aria-label="Send as"><span>' + (small ? 'As' : 'Send as') + '</span>' +
+    ['LINK', 'JUSS'].map(k => '<button type="button" class="' + k + (k === co ? ' on' : '') + '" data-brand="' + k + '" aria-pressed="' + (k === co) + '" aria-label="' + k + ' Marketing">' + k + '</button>').join('') + '</div>';
+}
+/** Switch the company: instant on screen, saved in the background (like every other save). */
+function pickBrand(c, co) {
+  if (brandCo(c) === co) return c;
+  const local = Object.assign({}, c, { brand: co });
+  queueSave('setBrand', { id: c.id, co: co }, local, (co === 'JUSS' ? '🧡💙 Sending as JUSS Marketing' : '🧡 Sending as LINK Marketing'));
+  return local;
+}
 /** The name at the bottom: whichever of Jess / Rubal is sending it (everyone else only sees who will). */
 function thanksSigner(c) { return canThank() ? S.me.user.name : thanksName(thanksCo(c)); }
 // Each company's digital magazine: in the thank-you WhatsApp and on the thank-you screen after the evaluation.
@@ -1922,7 +1949,7 @@ function msgDay1Reminder(c) {
   return 'Hi ' + c.first_name + ',\n\n' +
     'Hope you are well.\n\n' +
     'Just a quick reminder that you’re due to start your training ' + when + ' at 1:30 PM 🕜, with Juss Marketing & Link Marketing\n\n' +
-    '📍 Address:\n2nd Floor East, Automotive House,\nGrays Place, Slough, SL2 5AF.\n' + OFFICES[c.company === 'JUSS' ? 'JUSS' : 'LINK'].maps + '\n\n' +
+    '📍 Address:\n2nd Floor East, Automotive House,\nGrays Place, Slough, SL2 5AF.\n' + OFFICES[brandCo(c)].maps + '\n\n' +
     'Please aim to arrive 10 minutes early ⏰ and let us know if you have any questions 😊\n\n' +
     'Kindly reply ‘Yes’ to confirm your attendance ✅\n' +
     'We look forward to seeing you! 👋\n\n' +
@@ -2054,7 +2081,7 @@ const DATABYTE_URL = 'https://uk.databyte.live/onboarding/dashboard/list';
 function recruitSource(c) { return c.recruit_source || 'Office Recruitment'; }
 /** After the email: a WhatsApp nudge so they find it (spam / Promotions) and reply GOT IT. */
 function msgWelcomeHeadsUp(c, fr) {
-  const co = c.company === 'JUSS' ? 'JUSS' : 'LINK';
+  const co = brandCo(c);
   return 'Hi ' + c.first_name + ' 👋 It\'s ' + S.me.user.name.split(' ')[0] + ' from ' + brandOf(c) + '.\n\n' +
     'I\'ve just emailed your starter pack to ' + c.email + ' 📧\n' +
     '📲 FieldIQ (download before Day 1)\n' + (co === 'LINK' ? '📝 Your Pre-Coaching Module\n' : '') +
@@ -2062,10 +2089,11 @@ function msgWelcomeHeadsUp(c, fr) {
     'It\'s from ' + (fr ? fr.email : 'us') + '. Can\'t see it? Check *Spam* or *Promotions* and tap *Not spam*, so nothing else goes missing.\n\n' +
     'Please reply *GOT IT* once you have it ✅';
 }
-/** Who the welcome email comes from (same rule as the server): you if you're Jess / Rubal, else the brand's. */
+/** Who the welcome email comes from (same rule as the server): you if you're on the recruitment team, else the company's. */
 function welcomeFrom(c) {
   const W = S.me.welcomeFrom || {}, T = S.me.thanksTeam || {}, mine = Object.keys(T).filter(k => T[k].id === S.me.user.id)[0];
-  return W[mine || (c.company === 'JUSS' ? 'JUSS' : 'LINK')] || null;
+  if (W.mine) return W.mine;
+  return W[mine || brandCo(c)] || null;
 }
 function fmtPhone(m) { const d = String(m || '').replace(/\D/g, ''); return /^07\d{9}$/.test(d) ? d.slice(0, 5) + ' ' + d.slice(5) : String(m || ''); }
 function copyText(v, label) {
@@ -2081,7 +2109,7 @@ function copyText(v, label) {
 function onboardCard(c) {
   const parts = String(c.full_name).trim().split(/\s+/), first = parts[0], last = parts.slice(1).join(' ');
   const row = (k, v) => '<div class="cprow"><span>' + h(k) + '</span><b>' + h(v || '—') + '</b>' + (v ? '<button type="button" class="btn ghost sm" data-copy="' + h(v) + '" data-label="' + h(k.toLowerCase()) + '">Copy</button>' : '') + '</div>';
-  const onDb = !!c.databyte_at, sent = !!c.onboard_email_at, brand = c.company === 'JUSS' ? 'JUSS Marketing' : 'Link Marketing';
+  const onDb = !!c.databyte_at, sent = !!c.onboard_email_at, brand = brandCo(c) === 'JUSS' ? 'JUSS Marketing' : 'Link Marketing';
   const src = recruitSource(c), fr = welcomeFrom(c);
   const by = (who, at) => h(String(who || '').split(' ')[0]) + ' ' + h(fmtTs(at));
   return '<div class="card onb" id="onb"><div class="onb-h"><b>🚀 Onboard ' + h(first) + '</b>' +
@@ -2126,7 +2154,7 @@ function onboardSheet(c) {
   document.body.style.overflow = 'hidden';
   back.onclick = e => { if (e.target === back) closeSheet(); };
   back.querySelector('#obcancel').onclick = () => closeSheet();
-  call('onboardPreview', { id: c.id }).then(m => {
+  call('onboardPreview', { id: c.id, co: brandCo(c) }).then(m => {
     back.querySelector('#obbody').innerHTML = '<div class="small muted" id="obfrom">From ' + h(m.from) + '</div><div class="small" style="margin-bottom:6px"><b id="obsubj">' + h(m.subject) + '</b></div><iframe class="obframe" sandbox="" title="Email preview"></iframe>';
     back.querySelector('.obframe').srcdoc = m.html;
     const fr = welcomeFrom(c); if (fr) fr.ready = !m.notReady;  // keep the card's "not set up yet" in step with the server
@@ -2134,7 +2162,7 @@ function onboardSheet(c) {
   }).catch(e => showErr(back.querySelector('#oberr'), /Unknown action/.test(e.message) ? 'Paste the new Google code (Code.gs) first.' : e.message));
   back.querySelector('#obgo').onclick = ev => {
     const b = ev.currentTarget; busy(b, true, 'Sending…');
-    call('onboardSend', { id: c.id }).then(nc => { Object.assign(c, nc); upsert(nc); closeSheet(); renderCandidate(c, true); toast('📧 Sent. Now tap the heads-up so ' + c.first_name + ' finds it'); })
+    call('onboardSend', { id: c.id, co: brandCo(c) }).then(nc => { Object.assign(c, nc); upsert(nc); closeSheet(); renderCandidate(c, true); toast('📧 Sent. Now tap the heads-up so ' + c.first_name + ' finds it'); })
       .catch(e => { busy(b, false); showErr(back.querySelector('#oberr'), e.message); });
   };
 }
@@ -2367,7 +2395,7 @@ function flush() {
 }
 window.addEventListener('online', () => flush());
 
-function brandOf(c) { return c.company === 'JUSS' ? 'JUSS Marketing' : 'LINK Marketing'; }
+function brandOf(c) { return brandCo(c) === 'JUSS' ? 'JUSS Marketing' : 'LINK Marketing'; }
 function waUrl(mobile, text) { return 'https://wa.me/44' + String(mobile).slice(1) + '?text=' + encodeURIComponent(text); }
 // ───── Not on WhatsApp: the same message by text (from the sender's own phone) or email ─────
 /** WhatsApp's *bold* stars would show as stars in a text or email. */
@@ -2394,9 +2422,9 @@ function sendButtons(c, kind, label, text) {
 }
 
 const HEART = { LINK: '🧡', JUSS: '🧡💙' };
-function heartOf(c) { return HEART[c.company === 'JUSS' ? 'JUSS' : 'LINK']; }
+function heartOf(c) { return HEART[brandCo(c)]; }
 function msgThanks(c) {
-  const co = c.company === 'JUSS' ? 'JUSS' : 'LINK', mag = MAGAZINES[co];
+  const co = brandCo(c), mag = MAGAZINES[co];
   if (c.non_qual) return msgThanksNonQual(c);
   return 'Hey ' + c.first_name + '! 👋' + heartOf(c) + '\n\n' +
     'Thanks for coming through for your *Appointment Presentation* today in association with *' + brandOf(c) + '* 🙌\n' +
@@ -2410,7 +2438,7 @@ function msgThanks(c) {
 }
 /** Non-qualifier's thank-you: honest about why we can't take them on (no "next steps by Friday"), and an open door to come back. */
 function msgThanksNonQual(c) {
-  const co = c.company === 'JUSS' ? 'JUSS' : 'LINK', mag = MAGAZINES[co];
+  const co = brandCo(c), mag = MAGAZINES[co];
   const why = /^Under 18/.test(c.non_qual)
     ? ['To join us as a Brand Ambassador you need to be *18 or over*, so we can\'t take you on just yet.', 'When you turn 18']
     : /^Visa expired/.test(c.non_qual)
@@ -2426,7 +2454,7 @@ function msgThanksNonQual(c) {
     '*' + thanksSigner(c) + '*, on behalf of ' + co + ' Marketing recruitment team ' + heartOf(c);
 }
 function msgNoAnswer(c) {
-  const co = c.company === 'JUSS' ? 'JUSS' : 'LINK';
+  const co = brandCo(c);
   return 'Hey ' + c.first_name + '! 👋' + heartOf(c) + '\n\n' +
     'We\'re contacting you with regards to the *Appointment Presentation* you came to in association with *' + brandOf(c) + '*.\n\n' +
     '📞 *We tried calling you*\n' +
@@ -2436,7 +2464,7 @@ function msgNoAnswer(c) {
 }
 /** Short, scannable, one link. The link opens their personal page (schedule, poster, map, calendar, CONFIRM). */
 function msgAcademy(c) {
-  const juss = c.company === 'JUSS';
+  const juss = brandCo(c) === 'JUSS';
   const lines = [
     c.first_name.toUpperCase() + '!! 🎉 You\'re IN.',
     '',
@@ -2448,10 +2476,11 @@ function msgAcademy(c) {
   ];
   const co = juss ? 'JUSS' : 'LINK';
   // Welcome link first: WhatsApp previews the first link, which is the poster card.
-  if (c.welcome_url) lines.push('👇 Your Week 1 game plan + Sales Skill Ladder 📈 + tap *CONFIRM* to lock in your spot:', c.welcome_url, '');
+  if (c.welcome_url) lines.push('👇 Your Week 1 game plan + Sales Skill Ladder 📈 + tap *CONFIRM* to lock in your spot:', welcomeLink(c), '');
   if (PRE_COACHING[co]) lines.push('⚡ *Before Day 1:* complete your *Pre-Coaching Module* 👇', PRE_COACHING[co], '');
   lines.push('🗺️ Find us on Google Maps:', OFFICES[co].maps, '');
-  const sign = (S.me.signoff || {})[co] || S.me.user.name.split(' ')[0];
+  // The recruitment team sign with their own name, whichever company; anyone else: Jess (LINK) / Rubal (JUSS)
+  const sign = (canPickBrand() ? '' : (S.me.signoff || {})[co]) || S.me.user.name.split(' ')[0];
   lines.push('🪪 Bring photo ID + your right-to-work share code', '', 'Let\'s get it 🔥', '– ' + sign + ', ' + brandOf(c));
   return lines.join('\n');
 }
@@ -2511,7 +2540,7 @@ function outcomeSheet(id) {
 /** Today's button: "send yours" for Jess / Rubal, "sent or not" for everyone else on Today. */
 function thanksButton(items) {
   if (!items.length) return '';
-  const mine = items.filter(signsThanks), sentN = l => l.filter(c => c.thanks_sent_at).length;
+  const mine = items.filter(mineToThank), sentN = l => l.filter(c => c.thanks_sent_at).length;
   if (mine.length) return sentN(mine) < mine.length
     ? '<button class="btn wa block" id="thanksAll" style="margin-bottom:10px">💬 Your thank-you messages · ' + sentN(mine) + ' of ' + mine.length + ' sent</button>'
     : '<button class="btn ghost block" id="thanksAll" style="margin-bottom:10px">✅ Your thank-you messages · all ' + mine.length + ' sent</button>';
@@ -2521,7 +2550,7 @@ function thanksButton(items) {
 function thanksSheet() {
   const d = S.data[weekEndingOf(S.day)];
   const all = d ? d.items.filter(c => c.attended_date === S.day).sort((a, b) => a.created_at.localeCompare(b.created_at)) : [];
-  const sender = canThank(), own = all.filter(signsThanks), other = all.filter(c => !signsThanks(c));
+  const sender = canThank(), own = all.filter(mineToThank), other = all.filter(c => !mineToThank(c));
   const items = sender ? own.concat(other) : all;
   const otherCo = ['LINK', 'JUSS'].filter(co => myThanks().indexOf(co) < 0)[0];
   closeSheet(true);
@@ -2535,13 +2564,18 @@ function thanksSheet() {
     return '<span class="tsend"><a class="btn ' + (sms ? 'sms' : 'wa') + ' sm" data-thanks="' + h(c.id) + '" data-via="' + (sms ? 'sms' : 'whatsapp') + '" href="' + h(sms ? smsUrl(c.mobile, msg) : waUrl(c.mobile, msg)) + '" target="_blank" rel="noopener">' + (sms ? '📱 Text' : '💬 Send') + '</a>' +
       '<a class="tx" data-thanks="' + h(c.id) + '" data-via="' + (sms ? 'whatsapp' : 'sms') + '" href="' + h(sms ? waUrl(c.mobile, msg) : smsUrl(c.mobile, msg)) + '" target="_blank" rel="noopener">' + (sms ? '💬 WhatsApp' : '📱 Text instead') + '</a></span>';
   };
+  // The company tag: a LINK | JUSS switch for the recruitment team until it's sent, then the company it went as
+  const coTag = c => sender && canPickBrand() && !c.thanks_sent_at ? brandPicker(c, true) : '<span class="co ' + brandCo(c) + '">' + brandCo(c) + '</span>';
   back.innerHTML = '<div class="sheet" role="dialog" aria-label="Thank-you messages"><div class="grab"></div>' +
     '<div class="sheet-h"><div><div class="label muted">After the presentation</div><div class="display">' + (sender ? 'Thank everyone 💬' : 'Thank-yous 💬') + '</div></div></div>' +
     '<p class="hint" style="margin-top:-6px">' + (sender
-      ? 'Your ' + myThanks().join(' + ') + ' appointments first, whoever booked them' + (otherCo && other.length ? ', then ' + otherCo + ' (' + h(thanksName(otherCo).split(' ')[0]) + '\'s): you can send those too' : '') +
-        '. Each one opens WhatsApp with the message ready, signed by you. Tap send, come back, next one.'
+      ? (myThanks().length
+        ? 'Your ' + myThanks().join(' + ') + ' appointments first, whoever booked them' + (otherCo && other.length ? ', then ' + otherCo + ' (' + h(thanksName(otherCo).split(' ')[0]) + '\'s): you can send those too' : '')
+        : 'Every appointment today, LINK and JUSS, whoever booked them') +
+        '. Each one opens WhatsApp with the message ready, signed by you. Tap send, come back, next one.' +
+        (canPickBrand() ? ' Tap <b>LINK</b> or <b>JUSS</b> on a row first to choose which company it comes from.' : '')
       : 'Sent by ' + who('LINK') + ' and ' + who('JUSS') + ' for every appointment. They get a reminder at 12:00.') + '</p>' +
-    '<div class="list">' + items.map(c => (sender && own.length && other.length && c === other[0] ? '<div class="datehead">' + otherCo + ' · ' + h(thanksName(otherCo).split(' ')[0]) + ' usually sends these</div>' : '') + '<div class="trow">' + avatar(c) + '<div class="main"><div class="name">' + h(c.full_name) + '</div><div class="sub"><span class="co ' + thanksCo(c) + '">' + thanksCo(c) + '</span> ' +
+    '<div class="list">' + items.map(c => (sender && own.length && other.length && c === other[0] ? '<div class="datehead">' + otherCo + ' · ' + h(thanksName(otherCo).split(' ')[0]) + ' usually sends these</div>' : '') + '<div class="trow" data-tr="' + h(c.id) + '">' + avatar(c) + '<div class="main"><div class="name">' + h(c.full_name) + '</div><div class="sub">' + coTag(c) + ' ' +
       (c.booker_name ? 'booked by ' + h(c.booker_name) : 'booker not confirmed') + '</div>' + (c.non_qual ? '<div class="sub nqsub">⛔ Non-qualifier message</div>' : '') + '</div>' +
       (c.thanks_sent_at ? sent(c) : sender ? tsend(c) : '<span class="pill amber">Not sent</span>') + '</div>').join('') + '</div>' +
     '<button class="btn ghost block" id="tdone" style="margin-top:14px">Done</button></div>';
@@ -2549,13 +2583,27 @@ function thanksSheet() {
   document.body.style.overflow = 'hidden';
   back.onclick = e => { if (e.target === back) { closeSheet(); render(true); } };
   back.querySelector('#tdone').onclick = () => { closeSheet(); render(true); };
-  back.querySelectorAll('[data-thanks]').forEach(a => a.addEventListener('click', () => {
+  // One listener for the whole list: rows are redrawn when the company is switched
+  back.addEventListener('click', e => {
+    const pickB = e.target.closest('.trow [data-brand]');
+    if (pickB) {
+      const row = pickB.closest('.trow'), c0 = findCand(row.dataset.tr); if (!c0) return;
+      const nc = pickBrand(c0, pickB.dataset.brand);
+      row.querySelector('.brandpick').outerHTML = coTag(nc);
+      const ts = row.querySelector('.tsend'); if (ts) ts.outerHTML = tsend(nc);
+      return;
+    }
+    const a = e.target.closest('[data-thanks]'); if (!a) return;
     const c = findCand(a.dataset.thanks); if (!c) return;
-    const via = a.dataset.via || 'whatsapp';
+    const via = a.dataset.via || 'whatsapp', co = brandCo(c);
     c.thanks_sent_at = londonNow(); c.thanks_by = S.me.user.name; if (via !== 'whatsapp') c.no_whatsapp = 'TRUE'; saveCache();
-    call('markSent', { id: c.id, kind: 'thanks', via: via }).catch(e => toast(e.message));
-    setTimeout(() => { (a.closest('.tsend') || a).outerHTML = sent(c); }, 300);  // after WhatsApp / Messages has opened
-  }));
+    call('markSent', Object.assign({ id: c.id, kind: 'thanks', via: via }, canPickBrand() ? { co: co } : {})).catch(e2 => toast(e2.message));
+    setTimeout(() => {
+      const row = a.closest('.trow'); if (!row) return;
+      const p = row.querySelector('.brandpick'); if (p) p.outerHTML = coTag(c);
+      (a.closest('.tsend') || a).outerHTML = sent(c);
+    }, 300);  // after WhatsApp / Messages has opened
+  });
 }
 
 // ───── Candidate page: summary on top, section tabs that stay pinned, the part you act on first ─────
@@ -2698,12 +2746,14 @@ function renderCandidate(c, quiet) {
     ? '<div class="flag green">💬 Thank-you sent ' + fmtTs(c.thanks_sent_at) + (c.thanks_by ? ' by ' + h(c.thanks_by) : '') + '</div>'
     : '<div class="flag amber">💬 Thank-you not sent yet · ' + h(thanksName(thanksCo(c))) + ' sends it</div>';
   if (canOutcome && offerReady && !c.welcome_url && c._pending) wa.push('<div class="flag amber"><span class="spinner sm inline"></span> Saving to Google… the 🎉 congratulations button appears here in a few seconds.</div>');
-  if (canOutcome && offerReady && (c.welcome_url || !c._pending)) wa.push(sendButtons(c, 'offer', '🎉 Send BA Academy Day 1 details (' + h(c.company || 'LINK') + ')', msgAcademy(c)) +
+  if (canOutcome && offerReady && (c.welcome_url || !c._pending)) wa.push(sendButtons(c, 'offer', '🎉 Send BA Academy Day 1 details (' + brandCo(c) + ')', msgAcademy(c)) +
     (c.offer_sent_at ? '<p class="small muted center">Opened ' + fmtTs(c.offer_sent_at) + '</p>' : '') +
-    (c.welcome_url ? '<a class="btn ghost sm" target="_blank" rel="noopener" href="' + h(c.welcome_url) + '">👀 Preview their welcome page</a>' : ''));
+    (c.welcome_url ? '<a class="btn ghost sm" target="_blank" rel="noopener" href="' + h(welcomeLink(c)) + '">👀 Preview their welcome page</a>' : ''));
   if (canOutcome && c.outcome === 'No answer') wa.push(sendButtons(c, 'noanswer', '📞 Send "we tried calling you" message', msgNoAnswer(c)));
   const noWa = c.no_whatsapp ? '<div class="flag amber">📵 Not on WhatsApp: message them by text (or email)</div>' : '';
-  const waCard = '<div class="card wa-grid">' + noWa + thanksFlag + wa.join('') + (wa.length ? '<p class="small muted center" style="margin:0">Opens ' + (c.no_whatsapp ? 'your Messages app' : 'WhatsApp') + ' with the message ready, then just tap send.</p>' : '') + '</div>';
+  // Jess / Rubal / Fiza work for both companies: choose which one this person's messages come from, then send
+  const pick = wa.length ? brandPicker(c) : '';
+  const waCard = '<div class="card wa-grid" id="wacard">' + pick + noWa + thanksFlag + wa.join('') + (wa.length ? '<p class="small muted center" style="margin:0">Opens ' + (c.no_whatsapp ? 'your Messages app' : 'WhatsApp') + ' with the message ready, then just tap send.</p>' : '') + '</div>';
 
   // Admin
   let adm = '';
@@ -2768,13 +2818,14 @@ function renderCandidate(c, quiet) {
   document.querySelectorAll('a[data-kind]').forEach(a => {
     a.addEventListener('click', () => {
       const via = a.dataset.via || 'whatsapp';
-      if (a.dataset.kind !== 'noanswer' || via !== 'whatsapp') call('markSent', { id: c.id, kind: a.dataset.kind, via: via }).catch(() => {});
+      if (a.dataset.kind !== 'noanswer' || via !== 'whatsapp') call('markSent', Object.assign({ id: c.id, kind: a.dataset.kind, via: via }, canPickBrand() ? { co: brandCo(c) } : {})).catch(() => {});
       if (via !== 'whatsapp' && !c.no_whatsapp) {
         const lc = findCand(c.id); if (lc) { lc.no_whatsapp = 'TRUE'; saveCache(); }
         c.no_whatsapp = 'TRUE'; setTimeout(() => { if (S.view === 'cand' && S.params.id === c.id) renderCandidate(lc || c, true); }, 800);
       }
     });
   });
+  document.querySelectorAll('#wacard [data-brand]').forEach(b => { b.onclick = () => pickBrand(c, b.dataset.brand); });
   if (isAdmin()) {
     const dec = d => () => call('adminDecision', { id: c.id, decision: d, note: (document.getElementById('anote') || {}).value || '' }).then(nc => saved(nc, 'Decision saved ✓')).catch(x => toast(x.message));
     const ap = document.getElementById('approve'); if (ap) { ap.onclick = dec('approved'); document.getElementById('reject').onclick = dec('rejected'); }
