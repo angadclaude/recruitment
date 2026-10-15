@@ -134,6 +134,7 @@ A tab in the bottom bar for admins and bookers. The red number on it shows how m
 |---|---|---|
 | 📞 Log the call | rated in the room, no outcome yet (LATE after Fri 18:00) | an outcome is logged |
 | 🔁 Call back | outcome is *No answer* or *Thinking it over* | updated to Booked / Declined / Not suitable |
+| 🔴 Stale: close it out | *No answer* / *Thinking it over* and **over 2 weeks old**: these never just drop off (a call-back time still to come keeps them a 🔁 Call back) | updated to Booked / Declined / Not suitable |
 | 📲 Send Day 1 text | booked onto the Academy, Day 1 WhatsApp not sent | it's sent (or they confirm) |
 | ⏳ Day 1 not confirmed | text sent, they haven't tapped CONFIRM | they confirm |
 | ❌ No-show: rebook | marked no-show on the Day 1 list | rebooked with a new date |

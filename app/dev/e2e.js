@@ -775,7 +775,7 @@ async function fillEval(p) {
   ok(rFiza && /\?c=chase$/.test(rFiza.body.web_url), "each booker's roundup opens their own Chase tab");
 
   // ── Chase tab: everyone who could drop out of the pipeline, one tap nudges every booker (no copy-pasting from the sheet) ──
-  const BL = ['log', 'callback', 'text', 'confirm', 'noshow'];
+  const BL = ['stale', 'log', 'callback', 'text', 'confirm', 'noshow'];
   const pipe = (await api(admin, 'chaseList', {})).items;
   const toChase = [...new Set(pipe.filter(c => c.booker_id && BL.includes(c.leak)).map(c => c.booker_id))];
   const fizaLog = pipe.filter(c => c.booker_id === fiza.id && c.leak === 'log').map(c => c.first_name);
@@ -1542,6 +1542,20 @@ async function fillEval(p) {
   ok(/in association with \*LINK Marketing\*/.test(naL) && /call or text me back on this number/.test(naL) && /\*Zara Iqbal\*, on behalf of LINK Marketing/.test(naL) && /in association with \*JUSS Marketing\*/.test(await rtMsg('noanswer', 'JUSS')),
     '"No answer": "we tried calling you, call or text me back on this number" as LINK or JUSS, signed by her');
   await rt2.close();
+
+  // ── Stale: "No answer" / "Thinking it over" never just drop off Chase after 2 weeks ──
+  await setTime('2026-10-27T10:00:00+00:00');  // Ali (in on Mon 12 Oct, "No answer") is now over 2 weeks old
+  await api(admin, 'saveOutcome', { id: kid.id, outcome: 'Thinking it over', callback_at: '2026-10-29 18:00', outcome_notes: 'call me Thursday' });
+  const st = (await api(admin, 'chaseList', {})).items, stOf = id => (st.find(c => c.id === id) || {}).leak;
+  ok(stOf(ali.id) === 'stale' && stOf(kid.id) === 'callback',
+    'over 2 weeks on "No answer": still on Chase as "🔴 Stale: close it out" (Ali); a call-back time still to come keeps them a call back (Young, Thu 18:00)');
+  await ap.goto(APP + 'index.html?c=chase'); await ap.waitForSelector('[data-nudge]');
+  ok(/🔴 Stale: close it out: Ali/.test(await ap.innerText('#page')), 'admin Chase tab: "🔴 Stale: close it out: Ali" on Fiza\'s card');
+  const stP0 = (await pushesTo(fiza.id)).length;
+  await api(admin, 'chaseOutcomes', { ids: [fiza.id] });
+  ok((await pushesTo(fiza.id)).slice(stP0).some(p => /🔴 Stale: close it out: Ali/.test(p.body.contents.en)), 'her nudge lists it too: "🔴 Stale: close it out: Ali"');
+  await api(admin, 'saveOutcome', { id: ali.id, outcome: 'Declined', outcome_notes: 'not for him' });
+  ok(!(await api(admin, 'chaseList', {})).items.some(c => c.id === ali.id), 'log a final answer (Declined) → off Chase');
 
   // ── 10. Access removed / Apps Script fallback / GDPR ──
   await api(admin, 'saveUser', { user: Object.assign({}, fiza, { active: false }) });

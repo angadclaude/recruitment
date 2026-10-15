@@ -1491,7 +1491,7 @@ function maybeDailyDigest() {
 /** Why this candidate needs chasing ('' = they don't). One rule for the Chase tab, the nudges and the badge.
  *  Booker's job: log (rated in the room, no outcome yet) · callback (No answer / Thinking it over) · text (Day 1 details not sent)
  *  · confirm (sent, not confirmed) · noshow (rebook them). Admins': pending (your decision) · unticked (Day 1 gone, nobody marked arrived / no-show). */
-const BOOKER_LEAKS = ['log', 'callback', 'text', 'confirm', 'noshow'];
+const BOOKER_LEAKS = ['stale', 'log', 'callback', 'text', 'confirm', 'noshow'];
 function leakOf(c, today) {
   const from = addDays(today, -(CONFIG.CHASE_DAYS - 1));
   if (c.outcome === 'Academy booked') {
@@ -1501,9 +1501,12 @@ function leakOf(c, today) {
     if (c.academy_date >= today) return c.academy_confirmed_at ? '' : c.offer_sent_at ? 'confirm' : 'text';
     return 'unticked';
   }
-  if (c.attended_date < from || !truthy(c.in_room) || nonQualifier(c)) return '';
-  if (!c.outcome) return 'log';
-  return c.outcome === 'No answer' || c.outcome === 'Thinking it over' ? 'callback' : '';
+  if (!truthy(c.in_room) || nonQualifier(c)) return '';
+  // No answer / Thinking it over never just drop off: after 2 weeks they're "stale" until someone logs a final answer
+  // (Declined, Not suitable, Academy booked). A call-back time they asked for that's still to come keeps them as a call back.
+  if (c.outcome === 'No answer' || c.outcome === 'Thinking it over') return c.attended_date < from && !(c.callback_at > nowStr()) ? 'stale' : 'callback';
+  if (c.attended_date < from) return '';
+  return c.outcome ? '' : 'log';
 }
 /** Rows that need chasing that this person can act on: admins see everyone, a booker their own (booker jobs only). */
 function chaseRows(u) {
@@ -1518,7 +1521,7 @@ function chaseRows(u) {
 function chaseList(req, u) {
   return { today: todayStr(), days: CONFIG.CHASE_DAYS, items: chaseRows(u).map(x => Object.assign(shape(x.c, u), { leak: x.k })) };
 }
-const LEAK_LINES = [['log', '📞 Log the call'], ['callback', '🔁 Call back'], ['text', '📲 Send Day 1 text'], ['confirm', '⏳ Day 1 not confirmed'], ['noshow', '❌ No-show, rebook']];
+const LEAK_LINES = [['stale', '🔴 Stale: close it out'], ['log', '📞 Log the call'], ['callback', '🔁 Call back'], ['text', '📲 Send Day 1 text'], ['confirm', '⏳ Day 1 not confirmed'], ['noshow', '❌ No-show, rebook']];
 /** Admin, one tap (Chase tab): every booker with someone to chase gets an alert listing exactly who (email if they're not set up).
  *  The same booker isn't nudged twice in 30 minutes. */
 function chaseOutcomes(req, u) {
