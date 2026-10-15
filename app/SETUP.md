@@ -215,6 +215,11 @@ Every send is recorded: **who** tapped it, **when**, **as LINK or JUSS**, and **
 - Sends from before this went live are filled in once from the Log (who and how). Their company shows as the one on file.
 - It records the **tap** that opens WhatsApp with the message ready. WhatsApp doesn't tell the app whether they then hit send.
 
+### Thinking it over / No answer: follow-ups
+- **Thinking it over:** pick **when they asked to be called back** (In 1 hour · Today 6pm · Tomorrow 12pm · Tomorrow 6pm · another day and time). It can't be saved without one. At that time, whoever logged it gets **"🔁 Call Pooja back now"** on their phone (once). Their pill shows **🔁 Call back Fri 16 Oct 18:00** (red once it's overdue), and their page has **🔁 Send "speak soon" + call-back time**: *"Take your time to think it over. As agreed, I'll call you back on Friday 16th October at 6:00 PM… call or text me on this number."*
+- **No answer:** **📞 Send "we tried calling you"**: *"…call or text me back on this number"*. On their page and on the list card.
+- Both are signed by **whoever sends them** (it's their number the candidate calls back), in the candidate's company (LINK / JUSS). Jess, Rubal and Fiza get **LINK | JUSS** buttons for both, like the thank-you and Day 1 details.
+
 ### Call log: every response, who and when
 The Outcome section shows the **📞 Call log**: every response logged on the call (No answer, Thinking it over, Academy booked…), newest first, each with **who**, **day and time**, **LATE** if after Friday 18:00, the Day 1 date and the notes. One response = the usual "Logged Thu 15 Oct 16:35 by Fiza Iqbal" line. An admin rejecting an Academy booking shows as "Not suitable · Academy booking rejected". Responses logged before this went live are rebuilt once from the Log (saved in the `outcome_log` column).
 

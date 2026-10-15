@@ -1,4 +1,4 @@
-window.APP_VERSION = 'f282ac19';
+window.APP_VERSION = '674d09c2';
 
 (function () {
 'use strict';
@@ -707,16 +707,17 @@ function canPickBrand() { return !!recruitTeam() && canThank(); }
 function welcomeLink(c) { return c.welcome_url ? String(c.welcome_url).replace(/welcome-(link|juss)\.html/, 'welcome-' + brandCo(c).toLowerCase() + '.html') : ''; }
 /** One company's version of the thank-you / Day 1 details (the recruitment team's LINK and JUSS buttons). */
 function brandUrl(c, kind, via, co) {
-  const x = Object.assign({}, c, { brand: co }), text = kind === 'thanks' ? msgThanks(x) : msgAcademy(x);
+  const x = Object.assign({}, c, { brand: co }), text = { thanks: msgThanks, offer: msgAcademy, noanswer: msgNoAnswer, thinking: msgThinking }[kind](x);
   return via === 'sms' ? smsUrl(c.mobile, text) : via === 'email' ? mailUrl(c.email, MSG_SUBJECT[kind](x), text) : waUrl(c.mobile, text);
 }
 /** How the team's buttons send to this person: WhatsApp, or text once they're known not to be on it. "📱 Text" / "✉️ Email" switch it. */
 function chanOf(c) { return (S.chan || {})[c.id] || (c.no_whatsapp ? 'sms' : 'whatsapp'); }
 const CHAN_LABEL = { whatsapp: '💬 WhatsApp', sms: '📱 Text', email: '✉️ Email' };
 /** Jess / Rubal / Fiza work for both companies: two buttons in the companies' colours, LINK and JUSS. One tap opens that company's message. */
+const BRAND_KINDS = ['thanks', 'offer', 'noanswer', 'thinking'];
 function brandSend(c, kind) {
-  const via = chanOf(c), what = kind === 'thanks' ? 'Thank-you' + (c.non_qual ? ' (non-qualifier)' : '') : 'Day 1 details';
-  const lead = via === 'sms' ? '📱 ' : via === 'email' ? '✉️ ' : kind === 'thanks' ? '💬 ' : '🎉 ';
+  const via = chanOf(c), what = { thanks: 'Thank-you' + (c.non_qual ? ' (non-qualifier)' : ''), offer: 'Day 1 details', noanswer: '"We tried calling you"', thinking: '"Speak soon" + call-back time' }[kind];
+  const lead = via === 'sms' ? '📱 ' : via === 'email' ? '✉️ ' : { thanks: '💬 ', offer: '🎉 ', noanswer: '📞 ', thinking: '🔁 ' }[kind];
   const other = ['whatsapp', 'sms', 'email'].filter(v => v !== via && (v !== 'email' || c.email));
   return '<div class="cosend">' + ['LINK', 'JUSS'].map(co => '<a class="cobig ' + co + '" target="_blank" rel="noopener" data-kind="' + kind + '" data-via="' + via + '" data-co="' + co + '" href="' + h(brandUrl(c, kind, via, co)) + '">' +
       '<small>' + lead + what + (via === 'sms' ? ' by text' : via === 'email' ? ' by email' : '') + '</small><b>' + co + '</b></a>').join('') + '</div>' +
@@ -916,7 +917,7 @@ function findCand(id) {
   return ch || (S.academy ? S.academy.items.filter(x => x.id === id)[0] || null : null);
 }
 function chaseKeep(c) { if (S.chase) { const i = S.chase.items.findIndex(x => x.id === c.id); if (i >= 0) S.chase.items[i] = Object.assign({ leak: S.chase.items[i].leak }, c); } }
-const SENDING = {};  // who sent what, still on its way to Google: see noteSent
+const SENDING = {}, SENT_DONE = {};  // who sent what, still on its way to Google: see noteSent
 function upsert(c) {
   sendingOver(c);
   chaseKeep(c);
@@ -1335,6 +1336,7 @@ function statusPill(c) {
   if (c.outcome === 'Academy booked' && c.welcome_url && !c.offer_sent_at && !c.academy_confirmed_at && c.admin_status !== 'pending' && c.admin_status !== 'rejected' && S.me && (isAdmin() || c.booker_id === S.me.user.id))
     return '<span class="pill orange">🎉 Send congratulations</span>';
   if (c.outcome === 'Academy booked') return '<span class="pill green">' + (c.academy_confirmed_at ? '✅ Day 1 confirmed' : 'Academy ' + fmt(c.academy_date)) + (c.outcome_late ? ' · late' : '') + '</span>';
+  if (c.outcome === 'Thinking it over' && c.callback_at) return '<span class="pill ' + (c.callback_at < londonNow() ? 'red' : 'blue') + '">🔁 Call back ' + h(fmtTs(c.callback_at)) + '</span>';
   if (c.outcome) return '<span class="pill blue">' + h(c.outcome) + (c.outcome_late ? ' · late' : '') + '</span>';
   if (c.non_qual) return '';  // nqPill says it: no evaluation, no call needed
   if (c.eval_at) return '<span class="pill orange">📞 Call needed</span>';
@@ -1354,6 +1356,11 @@ function quickRow(c, kind) {
   if (kind === 'rate') return '<div class="quick" data-for="' + h(c.id) + '"><button type="button" class="q-G" data-rate="G">Green</button><button type="button" class="q-A" data-rate="A">Amber</button><button type="button" class="q-R" data-rate="R">Red</button></div>';
   if (kind === 'call') return '<div class="quick" data-for="' + h(c.id) + '"><a href="tel:' + h(c.mobile) + '">' + icon('phone', 16) + 'Call</a>' +
     '<a class="q-wa" href="' + h(waFor(c)) + '" target="_blank" rel="noopener">' + icon('chat', 16) + chanName(c) + '</a><button type="button" class="q-go" data-out="1">Log outcome</button></div>';
+  if (kind === 'noanswer' && canPickBrand()) {
+    const via = c.no_whatsapp ? 'sms' : 'whatsapp';
+    return '<div class="quick" data-for="' + h(c.id) + '"><a href="tel:' + h(c.mobile) + '">' + icon('phone', 16) + 'Call again</a><span class="q-lbl">📞 Missed you' + (via === 'sms' ? '<br>by text' : '') + '</span>' +
+      ['LINK', 'JUSS'].map(co => '<a class="q-co ' + co + '" data-send="noanswer" data-co="' + co + '" data-via="' + via + '" href="' + h(brandUrl(c, 'noanswer', via, co)) + '" target="_blank" rel="noopener">' + co + '</a>').join('') + '</div>';
+  }
   if (kind === 'noanswer') return '<div class="quick" data-for="' + h(c.id) + '"><a href="tel:' + h(c.mobile) + '">' + icon('phone', 16) + 'Call again</a>' +
     '<a class="q-wa" data-na="1" href="' + h(msgUrl(c, msgNoAnswer(c))) + '" target="_blank" rel="noopener">' + icon('chat', 16) + chanName(c) + '</a><button type="button" class="q-go" data-out="1">Update</button></div>';
   if (kind === 'remind') return '<div class="quick" data-for="' + h(c.id) + '"><a href="tel:' + h(c.mobile) + '">' + icon('phone', 16) + 'Call</a>' +
@@ -1397,11 +1404,11 @@ function bindItems(root) {
     q.querySelectorAll('[data-out]').forEach(b => { b.onclick = () => outcomeSheet(id); });
     q.querySelectorAll('[data-send]').forEach(a => {
       a.addEventListener('click', () => {
-        const co = a.dataset.co || '';  // the recruitment team's LINK / JUSS buttons
+        const co = a.dataset.co || '', kind = a.dataset.send || 'offer';  // the recruitment team's LINK / JUSS buttons
         let c = findCand(id);
         if (c && co && brandCo(c) !== co) c = pickBrand(c, co);
-        if (c) noteSent(id, 'offer', a.dataset.via || 'whatsapp', co);
-        call('markSent', Object.assign({ id: id, kind: 'offer', via: a.dataset.via }, co ? { co: co } : {})).then(() => sentDone(id, 'offer'), () => sentDone(id, 'offer'));
+        if (c) noteSent(id, kind, a.dataset.via || 'whatsapp', co);
+        call('markSent', Object.assign({ id: id, kind: kind, via: a.dataset.via }, co ? { co: co } : {})).then(() => sentDone(id, kind), () => sentDone(id, kind));
       });
     });
   });
@@ -1627,8 +1634,18 @@ function sentList(c) {
     (notYet ? '<div class="sl-r no"><span>🎉 BA Academy Day 1 details</span><div>Not sent yet</div></div>' : '') + '</div>';
 }
 /** Sends on their way to Google (SENDING, next to upsert): kept on top of anything Google answers before it has them (the LINK / JUSS switch can answer first). */
-function sendingOver(c) { const p = SENDING[c.id]; if (p) Object.keys(p).forEach(k => Object.assign(c, p[k])); return c; }
-function sentDone(id, kind) { if (SENDING[id]) delete SENDING[id][kind]; }
+function sendingOver(c) {
+  const p = SENDING[c.id]; if (!p) return c;
+  Object.keys(p).forEach(k => Object.assign(c, p[k]));
+  sentClear(c.id);
+  return c;
+}
+/** Google has the send. Let go once nothing else for them is still on its way either (the LINK / JUSS save can answer after it). */
+function sentDone(id, kind) { SENT_DONE[id + '|' + kind] = true; sentClear(id); }
+function sentClear(id) {
+  const p = SENDING[id]; if (!p || pendingIds().indexOf(id) >= 0) return;
+  Object.keys(p).forEach(k => { if (SENT_DONE[id + '|' + k]) { delete p[k]; delete SENT_DONE[id + '|' + k]; } });
+}
 // ───── Call log: every response logged on the call, not just the latest ─────
 /** [{at, by, o, d, late, n}], newest first. Saved by the Google code; before that version, just the latest outcome. */
 function callLog(c) {
@@ -1636,13 +1653,13 @@ function callLog(c) {
   if (!Array.isArray(l)) l = [];
   const min = t => String(t || '').slice(0, 16);  // a save still on its way to Google isn't in the log yet
   if (c.outcome && c.outcome_at && !l.some(e => min(e.at) === min(c.outcome_at))) {
-    l = l.concat([{ at: min(c.outcome_at), by: c.outcome_by, o: c.outcome, d: c.academy_date, late: c.outcome_late ? 1 : 0, n: c.outcome_notes }]);
+    l = l.concat([{ at: min(c.outcome_at), by: c.outcome_by, o: c.outcome, d: c.academy_date, cb: c.outcome === 'Thinking it over' ? c.callback_at : '', late: c.outcome_late ? 1 : 0, n: c.outcome_notes }]);
   }
   return l.reverse();
 }
 function callLogHtml(c) {
   return '<div class="sentlist calllog"><div class="sl-h">📞 Call log</div>' + callLog(c).map((e, i) =>
-    '<div class="sl-r' + (i ? ' old' : '') + '"><span>' + (i ? '' : '<b>') + h(e.o) + (e.o === 'Academy booked' && e.d ? ' · Day 1 ' + fmt(e.d) : '') + (i ? '' : '</b>') + '</span>' +
+    '<div class="sl-r' + (i ? ' old' : '') + '"><span>' + (i ? '' : '<b>') + h(e.o) + (e.o === 'Academy booked' && e.d ? ' · Day 1 ' + fmt(e.d) : '') + (e.cb ? ' · call back ' + fmtTs(e.cb) : '') + (i ? '' : '</b>') + '</span>' +
     '<div>' + sentInfo(e.by, e.at, '', '') + (e.late ? ' · <b style="color:var(--amber)">LATE</b>' : '') + '</div>' +
     (e.n ? '<p class="sl-n">' + h(e.n) + '</p>' : '') + '</div>').join('') + '</div>';
 }
@@ -1653,7 +1670,7 @@ function noteSent(id, kind, via, co) {
   if (kind === 'offer') Object.assign(f, { offer_sent_at: at, offer_by: by, offer_via: via, offer_co: as });
   if (kind === 'thanks') Object.assign(f, { thanks_sent_at: at, thanks_by: by, thanks_via: via, thanks_co: as });
   if (via !== 'whatsapp') f.no_whatsapp = 'TRUE';
-  (SENDING[id] = SENDING[id] || {})[kind] = f;
+  (SENDING[id] = SENDING[id] || {})[kind] = f; delete SENT_DONE[id + '|' + kind];
   Object.keys(S.data).map(k => S.data[k].items).concat(S.chase ? [S.chase.items] : [], S.academy ? [S.academy.items] : [])
     .forEach(l => l.forEach(x => { if (x.id === id) Object.assign(x, f); }));
   saveCache();
@@ -2544,10 +2561,11 @@ const MSG_SUBJECT = {
   thanks: c => 'Thanks for coming in today – ' + brandOf(c),
   offer: c => 'You\'re in! BA Academy Day 1 – ' + brandOf(c),
   noanswer: c => 'We tried calling you – ' + brandOf(c),
+  thinking: c => 'Speak soon – ' + brandOf(c),
 };
 /** The big send button (WhatsApp; text once they're known not to be on it) + "Not on WhatsApp? 📱 Text · ✉️ Email" under it. */
 function sendButtons(c, kind, label, text) {
-  if (canPickBrand() && (kind === 'thanks' || kind === 'offer')) return brandSend(c, kind);
+  if (canPickBrand() && BRAND_KINDS.indexOf(kind) >= 0) return brandSend(c, kind);
   const sms = !!c.no_whatsapp;
   const link = (via, href, inner, cls) => '<a' + (cls ? ' class="' + cls + '"' : '') + ' target="_blank" rel="noopener" data-kind="' + kind + '" data-via="' + via + '" href="' + h(href) + '">' + inner + '</a>';
   const main = sms ? link('sms', smsUrl(c.mobile, text), '📱 ' + label.replace(/^\S+\s/, '') + ' by text', 'btn sms block')
@@ -2594,9 +2612,26 @@ function msgNoAnswer(c) {
   return 'Hey ' + c.first_name + '! 👋' + heartOf(c) + '\n\n' +
     'We\'re contacting you with regards to the *Appointment Presentation* you came to in association with *' + brandOf(c) + '*.\n\n' +
     '📞 *We tried calling you*\n' +
-    'Could you please *call or text back* so we can have a chat over the phone as soon as possible?\n\n' +
+    'Could you please *call or text me back on this number* so we can have a chat over the phone as soon as possible?\n\n' +
     'Speak soon! 🙌\n\n' +
     '*' + S.me.user.name + '*, on behalf of ' + co + ' Marketing recruitment team ' + heartOf(c);
+}
+/** "Thinking it over": thanks for the chat + the call-back time they asked for. Signed by the sender: it's their number they call back. */
+function msgThinking(c) {
+  return 'Hey ' + c.first_name + '! 👋' + heartOf(c) + '\n\n' +
+    'Great speaking with you about the opportunity with *' + brandOf(c) + '* 🙌\n\n' +
+    'Take your time to think it over. As agreed, I\'ll call you back ' + cbWhen(c.callback_at) + ' 📞\n\n' +
+    'Any questions before then, or made your mind up? Just *call or text me on this number*.\n\n' +
+    'Speak soon!\n\n' +
+    '*' + S.me.user.name + '*, on behalf of ' + brandCo(c) + ' Marketing recruitment team ' + heartOf(c);
+}
+/** "18:00" → "6:00 PM" */
+function fmt12(hm) { const H = +hm.slice(0, 2), M = hm.slice(3, 5); return ((H + 11) % 12 + 1) + ':' + M + ' ' + (H < 12 ? 'AM' : 'PM'); }
+/** "*today at 6:00 PM*" / "*tomorrow at 12:00 PM*" / "on *Monday 19th October at 6:00 PM*" */
+function cbWhen(ts) {
+  if (!/^\d{4}-\d\d-\d\d \d\d:\d\d/.test(ts || '')) return '*very soon*';
+  const today = londonNow().slice(0, 10), d = ts.slice(0, 10), at = ' at ' + fmt12(ts.slice(11, 16));
+  return d === today ? '*today' + at + '*' : d === addDays(today, 1) ? '*tomorrow' + at + '*' : 'on *' + fmtOrd(d) + at + '*';
 }
 /** Short, scannable, one link. The link opens their personal page (schedule, poster, map, calendar, CONFIRM). */
 function msgAcademy(c) {
@@ -2623,13 +2658,36 @@ function msgAcademy(c) {
 
 
 /** Outcome rules shared by the candidate page and the "Log outcome" sheet on the list. False (with the reason shown) if not ready. */
+// ───── "Thinking it over": when they asked to be called back (a reminder comes at that time) ─────
+function cbPicks() {
+  const now = londonNow(), today = now.slice(0, 10), mins = +now.slice(11, 13) * 60 + +now.slice(14, 16), t = addDays(today, 1);
+  const hm = m => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+  const in1 = Math.ceil((mins + 60) / 15) * 15, out = [];
+  if (in1 <= 21 * 60) out.push([today + ' ' + hm(in1), 'In 1 hour · ' + fmt12(hm(in1))]);
+  if (mins < 17 * 60) out.push([today + ' 18:00', 'Today 6pm']);
+  return out.concat([[t + ' 12:00', 'Tomorrow 12pm'], [t + ' 18:00', 'Tomorrow 6pm'], ['pick', 'Another day / time…']]);
+}
+function cbPicker(c) {
+  const picks = cbPicks(), cur = c.outcome === 'Thinking it over' ? c.callback_at || '' : '';
+  const sel = !cur ? '' : picks.some(p => p[0] === cur) ? cur : 'pick', tmr = addDays(londonNow().slice(0, 10), 1);
+  return '<label class="q">When did they ask us to call back?</label>' + chips('cb', picks, sel) +
+    '<div class="cbpick"' + (sel === 'pick' ? '' : ' hidden') + '><input type="date" class="cbd" value="' + h(cur ? cur.slice(0, 10) : tmr) + '"><input type="time" class="cbt" value="' + h(cur ? cur.slice(11, 16) : '18:00') + '"></div>' +
+    '<div class="help">🔔 You get a reminder on your phone at that time. Then send them the "speak soon" message with it.</div>';
+}
+function cbVal(root) {
+  const v = chipVal(root, 'cb'); if (v !== 'pick') return v || '';
+  const d = root.querySelector('.cbd').value, t = root.querySelector('.cbt').value;
+  return d && t ? d + ' ' + t.slice(0, 5) : '';
+}
 function submitOutcome(c, payload, errEl) {
   if (!payload.outcome) { showErr(errEl, 'Choose an outcome.'); return false; }
+  if (payload.outcome === 'Thinking it over' && !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(payload.callback_at || '')) { showErr(errEl, 'When did they ask us to call back? Pick a time.'); return false; }
   if (payload.outcome === 'Academy booked' && !/^\d{4}-\d{2}-\d{2}$/.test(payload.academy_date)) { showErr(errEl, 'Pick the BA Academy Day 1 date.'); return false; }
   const acad = payload.outcome === 'Academy booked' ? payload.academy_date : '';
   const now = londonNow();
   const local = Object.assign({}, c, {
     outcome: payload.outcome, academy_date: acad, outcome_notes: payload.outcome_notes, outcome_by: S.me.user.name, outcome_at: now,
+    callback_at: payload.outcome === 'Thinking it over' ? payload.callback_at : '',
     outcome_late: now > c.deadline ? 'TRUE' : '', academy_confirmed_at: acad === c.academy_date ? c.academy_confirmed_at : '',
     day1_status: acad === c.academy_date ? c.day1_status : '',
     admin_status: acad && (c.rag === 'R' || c.repeat_block) && !isAdmin() && c.admin_status !== 'approved' ? 'pending' : (acad ? c.admin_status : (c.admin_status === 'pending' ? '' : c.admin_status)),
@@ -2655,6 +2713,7 @@ function outcomeSheet(id) {
     '<div class="sheet-h">' + avatar(c) + '<div style="min-width:0"><div class="label muted">Log the call · ' + h(c.full_name) + '</div><div class="display">How did it go?</div></div></div>' +
     '<div id="sh">' + chips('outcome', S.me.outcomes, c.outcome, true) +
     '<div id="sacad"' + (c.outcome === 'Academy booked' ? '' : ' hidden') + '><label class="q">BA Academy Day 1 date</label><input type="date" id="sadate" value="' + h(c.academy_date || nextMonday(S.me.today)) + '"></div>' +
+    '<div id="scbk"' + (c.outcome === 'Thinking it over' ? '' : ' hidden') + '>' + cbPicker(c) + '</div>' +
     '<label class="q">Notes from the call</label><textarea id="sonotes" class="short" placeholder="Anything the team should know">' + h(c.outcome_notes) + '</textarea>' +
     '<div id="soerr"></div><button class="btn block" id="sosave" style="margin-top:14px">Save outcome</button>' +
     '<button class="btn ghost block" id="socancel" style="margin-top:8px">Cancel</button>' +
@@ -2662,12 +2721,15 @@ function outcomeSheet(id) {
   document.body.appendChild(back);
   document.body.style.overflow = 'hidden';
   const sh = back.querySelector('#sh');
-  bindChips(sh, (n, v) => { if (n === 'outcome') back.querySelector('#sacad').hidden = v !== 'Academy booked'; });
+  bindChips(sh, (n, v) => {
+    if (n === 'outcome') { back.querySelector('#sacad').hidden = v !== 'Academy booked'; back.querySelector('#scbk').hidden = v !== 'Thinking it over'; }
+    if (n === 'cb') sh.querySelector('.cbpick').hidden = v !== 'pick';
+  });
   back.onclick = e => { if (e.target === back) closeSheet(); };
   back.querySelector('#socancel').onclick = () => closeSheet();
   back.querySelector('#sosave').onclick = () => {
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
-    const ok = submitOutcome(findCand(id) || c, { id: id, outcome: chipVal(sh, 'outcome'), academy_date: back.querySelector('#sadate').value, outcome_notes: back.querySelector('#sonotes').value }, back.querySelector('#soerr'));
+    const ok = submitOutcome(findCand(id) || c, { id: id, outcome: chipVal(sh, 'outcome'), academy_date: back.querySelector('#sadate').value, callback_at: cbVal(sh), outcome_notes: back.querySelector('#sonotes').value }, back.querySelector('#soerr'));
     if (ok) { closeSheet(); render(true); }
   };
 }
@@ -2878,6 +2940,7 @@ function renderCandidate(c, quiet) {
   if (canOutcome) {
     out += '<label class="q" style="margin-top:0">' + (c.outcome ? 'Update outcome' : 'How did the call go?') + '</label>' + chips('outcome', S.me.outcomes, c.outcome, true) +
       '<div id="acad"' + (c.outcome === 'Academy booked' ? '' : ' hidden') + '><label class="q">BA Academy Day 1 date</label><input type="date" id="adate" value="' + h(academyDefault) + '"></div>' +
+      '<div id="cbk"' + (c.outcome === 'Thinking it over' ? '' : ' hidden') + '>' + cbPicker(c) + '</div>' +
       '<label class="q">Notes from the call</label><textarea id="onotes" placeholder="Anything the team should know">' + h(c.outcome_notes) + '</textarea>' +
       '<div id="oerr"></div><div class="dock"><button class="btn block" id="saveout">Save outcome</button></div>' +
       '<p class="small muted center">Logging after the deadline is allowed but shows as late.</p>';
@@ -2896,6 +2959,7 @@ function renderCandidate(c, quiet) {
     (c.offer_sent_at ? '<p class="small muted center sentby" data-sent="offer">✓ ' + cap1(offerBy(c)) + '</p>' : '') +
     (c.welcome_url ? '<a class="btn ghost sm" target="_blank" rel="noopener" href="' + h(welcomeLink(c)) + '">👀 Preview their welcome page</a>' : ''));
   if (canOutcome && c.outcome === 'No answer') wa.push(sendButtons(c, 'noanswer', '📞 Send "we tried calling you" message', msgNoAnswer(c)));
+  if (canOutcome && c.outcome === 'Thinking it over') wa.push(sendButtons(c, 'thinking', '🔁 Send "speak soon" + call-back time', msgThinking(c)));
   const noWa = c.no_whatsapp ? '<div class="flag amber">📵 Not on WhatsApp: message them by text (or email)</div>' : '';
   const waCard = '<div class="card wa-grid" id="wacard">' + noWa + thanksFlag + wa.join('') + (wa.length ? '<p class="small muted center" style="margin:0">' + (canPickBrand() ? 'Tap <b>LINK</b> or <b>JUSS</b>: opens ' : 'Opens ') + ({ sms: 'your Messages app', email: 'your email' }[canPickBrand() ? chanOf(c) : c.no_whatsapp ? 'sms' : ''] || 'WhatsApp') +
     (canPickBrand() ? ' with that company\'s message ready, signed by you.' : ' with the message ready, then just tap send.') + '</p>' : '') + '</div>';
@@ -2954,10 +3018,13 @@ function renderCandidate(c, quiet) {
   if (canNotes) bindPres(c);
   if (canOutcome) {
     const outEl = document.getElementById('out');
-    bindChips(outEl, (n, v) => { if (n === 'outcome') document.getElementById('acad').hidden = v !== 'Academy booked'; });
+    bindChips(outEl, (n, v) => {
+      if (n === 'outcome') { document.getElementById('acad').hidden = v !== 'Academy booked'; document.getElementById('cbk').hidden = v !== 'Thinking it over'; }
+      if (n === 'cb') outEl.querySelector('.cbpick').hidden = v !== 'pick';
+    });
     document.getElementById('saveout').onclick = () => {
       if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
-      submitOutcome(c, { id: c.id, outcome: chipVal(outEl, 'outcome'), academy_date: document.getElementById('adate').value, outcome_notes: document.getElementById('onotes').value }, document.getElementById('oerr'));
+      submitOutcome(c, { id: c.id, outcome: chipVal(outEl, 'outcome'), academy_date: document.getElementById('adate').value, callback_at: cbVal(outEl), outcome_notes: document.getElementById('onotes').value }, document.getElementById('oerr'));
     };
   }
   document.querySelectorAll('a[data-kind]').forEach(a => {
@@ -2966,7 +3033,7 @@ function renderCandidate(c, quiet) {
       const sent = co => {
         let lc = findCand(c.id) || c;
         if (co && brandCo(lc) !== co) lc = pickBrand(lc, co);  // saved: their welcome page, welcome email and every message after follow it
-        if (kind !== 'noanswer' || via !== 'whatsapp') call('markSent', Object.assign({ id: c.id, kind: kind, via: via }, co ? { co: co } : {})).then(() => sentDone(c.id, kind), () => sentDone(c.id, kind));
+        call('markSent', Object.assign({ id: c.id, kind: kind, via: via }, co ? { co: co } : {})).then(() => sentDone(c.id, kind), () => sentDone(c.id, kind));  // in the Log: who sent it, when
         if (kind === 'thanks' || kind === 'offer' || (via !== 'whatsapp' && !lc.no_whatsapp)) {
           lc = noteSent(c.id, kind, via, co) || lc;  // "✓ Sent by you · 16:03" shows when they come back from WhatsApp
           setTimeout(() => { if (S.view === 'cand' && S.params.id === c.id) renderCandidate(findCand(c.id) || lc, true); }, 800);
