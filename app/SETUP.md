@@ -207,6 +207,14 @@ One tap opens WhatsApp (or their texts / email) with **that company's** message:
 
 To add someone to the recruitment team: add their email to `RECRUIT_TEAM` in Code.gs, and add them as a "Send mail as" address (below) so they can send welcome emails.
 
+### Who sent it, and when
+Every send is recorded: **who** tapped it, **when**, **as LINK or JUSS**, and **how** (WhatsApp / text / email).
+- **Day 1 tab:** each starter shows "🎉 Day 1 details sent by Fiza Iqbal · Thu 15 Oct 16:03 · LINK · WhatsApp". Not sent yet = the red "Day 1 text not sent" pill.
+- **Their page (tap them):** the same line at the top under "booked by", and **📨 Messages sent** in the Outcome section: thank-you, Day 1 details, welcome email, Day 1 reminder, each with who and when.
+- If it's sent twice, the **latest** send shows (every send is still in the **Log** tab).
+- Sends from before this went live are filled in once from the Log (who and how). Their company shows as the one on file.
+- It records the **tap** that opens WhatsApp with the message ready. WhatsApp doesn't tell the app whether they then hit send.
+
 ### Welcome emails: one-time setup (whoever owns the Apps Script, usually Angad, on a computer)
 The app sends through the script owner's Gmail, so that Gmail has to be allowed to send as both addresses:
 1. In that Gmail: ⚙️ → **See all settings** → **Accounts** → **Send mail as** → **Add another email address**.

@@ -1,4 +1,4 @@
-window.APP_VERSION = 'b57bbb53';
+window.APP_VERSION = 'a4080e8f';
 
 (function () {
 'use strict';
@@ -916,7 +916,9 @@ function findCand(id) {
   return ch || (S.academy ? S.academy.items.filter(x => x.id === id)[0] || null : null);
 }
 function chaseKeep(c) { if (S.chase) { const i = S.chase.items.findIndex(x => x.id === c.id); if (i >= 0) S.chase.items[i] = Object.assign({ leak: S.chase.items[i].leak }, c); } }
+const SENDING = {};  // who sent what, still on its way to Google: see noteSent
 function upsert(c) {
+  sendingOver(c);
   chaseKeep(c);
   if (S.academy) { const i = S.academy.items.findIndex(x => x.id === c.id); if (i >= 0) S.academy.items[i] = c; }
   const d = S.data[c.week_ending];
@@ -1398,8 +1400,8 @@ function bindItems(root) {
         const co = a.dataset.co || '';  // the recruitment team's LINK / JUSS buttons
         let c = findCand(id);
         if (c && co && brandCo(c) !== co) c = pickBrand(c, co);
-        if (c && co) { c.offer_sent_at = londonNow(); saveCache(); }
-        call('markSent', Object.assign({ id: id, kind: 'offer', via: a.dataset.via }, co ? { co: co } : {})).catch(() => {});
+        if (c) noteSent(id, 'offer', a.dataset.via || 'whatsapp', co);
+        call('markSent', Object.assign({ id: id, kind: 'offer', via: a.dataset.via }, co ? { co: co } : {})).then(() => sentDone(id, 'offer'), () => sentDone(id, 'offer'));
       });
     });
   });
@@ -1595,6 +1597,46 @@ function presentedLine(c) {
   const said = c.presented_by && c.presented_by !== 'Not sure' ? c.presented_by : '', rater = c.presenter_name || '';
   if (!said && !rater) return c.presented_by === 'Not sure' ? '<div class="muted small">🎤 Presentation: they weren\'t sure who ran it</div>' : '';
   return '<div class="muted small">🎤 Presentation by <b>' + h(said || rater) + '</b>' + (said && rater && normName(said) !== normName(rater) ? ' · rated by ' + h(rater) : '') + '</div>';
+}
+// ───── Who sent what and when: the Day 1 details, thank-you, welcome email and reminder ─────
+const VIA_LABEL = { whatsapp: 'WhatsApp', sms: 'Text', email: 'Email' };
+/** "<b>Fiza Iqbal</b> · Thu 15 Oct 16:03 · LINK · WhatsApp" (whatever's known: sends from before this was recorded have no company or channel). */
+function sentInfo(by, at, via, co) { return [by ? '<b>' + h(by) + '</b>' : '', fmtTs(at), co ? h(co) : '', VIA_LABEL[via] || ''].filter(Boolean).join(' · '); }
+function offerInfo(c) { return sentInfo(c.offer_by, c.offer_sent_at, c.offer_via, c.offer_co || brandCo(c)); }
+/** Under "booked by" on their page: who sent the BA Academy Day 1 details and when, or that nobody has yet. */
+function day1SentLine(c) {
+  if (c.outcome !== 'Academy booked' || c.admin_status === 'pending' || c.admin_status === 'rejected') return '';
+  return c.offer_sent_at ? '<div class="muted small" id="d1sent">🎉 Day 1 details sent by ' + offerInfo(c) + '</div>'
+    : '<div class="small" id="d1sent" style="color:var(--red)">🎉 Day 1 details not sent yet</div>';
+}
+/** Every message they've been sent, who by and when (in the Outcome section). */
+function sentList(c) {
+  const rows = [
+    ['💬 Thank-you' + (c.non_qual ? ' (non-qualifier)' : ''), c.thanks_sent_at, sentInfo(c.thanks_by, c.thanks_sent_at, c.thanks_via, c.thanks_co)],
+    ['🎉 BA Academy Day 1 details', c.offer_sent_at, offerInfo(c)],
+    ['🚀 Welcome email', c.onboard_email_at, sentInfo(c.onboard_email_by, c.onboard_email_at, 'email', '')],
+    ['📲 Day 1 reminder', c.day1_reminded_at, sentInfo(c.day1_reminded_by, c.day1_reminded_at, '', '')],
+  ].filter(r => r[1]);
+  const notYet = c.outcome === 'Academy booked' && !c.offer_sent_at && !c.academy_confirmed_at && c.admin_status !== 'pending' && c.admin_status !== 'rejected';
+  if (!rows.length && !notYet) return '';
+  return '<div class="sentlist"><div class="sl-h">📨 Messages sent</div>' + rows.map(r => '<div class="sl-r"><span>' + r[0] + '</span><div>' + r[2] + '</div></div>').join('') +
+    (notYet ? '<div class="sl-r no"><span>🎉 BA Academy Day 1 details</span><div>Not sent yet</div></div>' : '') + '</div>';
+}
+/** Sends on their way to Google (SENDING, next to upsert): kept on top of anything Google answers before it has them (the LINK / JUSS switch can answer first). */
+function sendingOver(c) { const p = SENDING[c.id]; if (p) Object.keys(p).forEach(k => Object.assign(c, p[k])); return c; }
+function sentDone(id, kind) { if (SENDING[id]) delete SENDING[id][kind]; }
+/** Straight away on this phone, on every copy of them (lists, Chase, Day 1): who sent it, when, how, as which company. The Google code saves the same. */
+function noteSent(id, kind, via, co) {
+  const c0 = findCand(id); if (!c0) return null;
+  const at = londonNow(), by = S.me.user.name, as = co || brandCo(c0), f = co ? { brand: co } : {};
+  if (kind === 'offer') Object.assign(f, { offer_sent_at: at, offer_by: by, offer_via: via, offer_co: as });
+  if (kind === 'thanks') Object.assign(f, { thanks_sent_at: at, thanks_by: by, thanks_via: via, thanks_co: as });
+  if (via !== 'whatsapp') f.no_whatsapp = 'TRUE';
+  (SENDING[id] = SENDING[id] || {})[kind] = f;
+  Object.keys(S.data).map(k => S.data[k].items).concat(S.chase ? [S.chase.items] : [], S.academy ? [S.academy.items] : [])
+    .forEach(l => l.forEach(x => { if (x.id === id) Object.assign(x, f); }));
+  saveCache();
+  return findCand(id);
 }
 /** Pay tab (admins): each presenter's week, start to finish: in the room → evaluated → Academy booked → started (arrived on Day 1). */
 function presenterFunnel(items) {
@@ -2055,7 +2097,8 @@ function drawAcademy(r, quiet) {
         '<button class="btn sm ' + (c.day1_status === 'no_show' ? 'red' : 'ghost') + '" data-d1="no_show" data-id="' + h(c.id) + '">No-show</button></div>'
       : '<a class="btn ' + (c.no_whatsapp ? 'sms' : 'wa') + ' sm" data-rem1="' + h(c.id) + '" data-via="' + (c.no_whatsapp ? 'sms' : 'whatsapp') + '" target="_blank" rel="noopener" href="' + h(msgUrl(c, msgDay1Reminder(c))) + '">💬 Remind</a>';
     return '<div class="trow" data-cand="' + h(c.id) + '">' + avatar(c) + '<div class="main"><div class="name">' + h(c.full_name) + ' <span class="co ' + h(c.company) + '">' + h(c.company) + '</span></div>' +
-      '<div class="sub">' + (c.booker_name ? 'booked by ' + h(c.booker_name) : 'no booker') + '</div><div class="pills">' + pills + '</div></div>' + act + '</div>';
+      '<div class="sub">' + (c.booker_name ? 'booked by ' + h(c.booker_name) : 'no booker') + '</div>' +
+      (c.offer_sent_at ? '<div class="sub d1by">🎉 Day 1 details sent by ' + offerInfo(c) + '</div>' : '') + '<div class="pills">' + pills + '</div></div>' + act + '</div>';
   };
   const block = x => {
     const l = r.items.filter(c => c.academy_date === x), conf = l.filter(c => c.academy_confirmed_at).length;
@@ -2673,8 +2716,8 @@ function thanksSheet() {
     const done = co => {
       let c = findCand(c0.id) || c0;
       if (co && brandCo(c) !== co) c = pickBrand(c, co);
-      c.thanks_sent_at = londonNow(); c.thanks_by = S.me.user.name; if (via !== 'whatsapp') c.no_whatsapp = 'TRUE'; saveCache();
-      call('markSent', Object.assign({ id: c.id, kind: 'thanks', via: via }, co ? { co: co } : {})).catch(e2 => toast(e2.message));
+      c = noteSent(c.id, 'thanks', via, co) || c;
+      call('markSent', Object.assign({ id: c.id, kind: 'thanks', via: via }, co ? { co: co } : {})).then(() => sentDone(c.id, 'thanks'), e2 => { sentDone(c.id, 'thanks'); toast(e2.message); });
       setTimeout(() => {
         if (!row) return;
         const tag = row.querySelector('.co'); if (tag) tag.outerHTML = coTag(c);
@@ -2783,7 +2826,7 @@ function renderCandidate(c, quiet) {
   const summary = '<div class="profile">' + avatar(c, 'xl') + '<h1>' + h(c.full_name) + '</h1>' +
     '<div class="muted small">Attended ' + fmt(c.attended_date) + ' · ' + (c.booker_name ? 'booked by <b>' + h(c.booker_name) + '</b> <span class="co ' + h(c.company) + '">' + h(c.company) + '</span>' +
       (c.booker_typed && normName(c.booker_typed) !== normName(c.booker_name) ? ' <span class="small">(they said "' + h(c.booker_typed) + '")</span>' : '') : '<b>booker not confirmed</b>' + (c.booker_typed ? ' ("' + h(c.booker_typed) + '")' : '')) + '</div>' +
-    presentedLine(c) +
+    presentedLine(c) + day1SentLine(c) +
     (c.stars ? '<div class="stars-lg">' + '★'.repeat(Number(c.stars)) + '<span>' + '★'.repeat(5 - Number(c.stars)) + '</span></div>' : '') +
     (c.p_interesting ? '<div class="icebreak">💡 ' + h(c.p_interesting) + '</div>' : '') +
     '<div class="pills center-pills">' + nqPill(c) + statusPill(c) + (c._pending ? '<span class="pill">⏳ Syncing…</span>' : '') + '</div>' +
@@ -2806,7 +2849,8 @@ function renderCandidate(c, quiet) {
         : '<div class="flag amber">⏳ Not confirmed yet. They confirm by tapping the link in your WhatsApp.</div>') : '') +
       (c.admin_status === 'pending' ? '<div class="flag red">Waiting for admin to approve this Academy booking (presenter marked RED or previously not suitable).</div>' : '') +
       (c.admin_status === 'approved' ? '<div class="flag green">Approved by ' + h(c.admin_by) + (c.admin_note ? ': ' + h(c.admin_note) : '') + '</div>' : '') +
-      (c.admin_status === 'rejected' ? '<div class="flag red">Rejected by ' + h(c.admin_by) + (c.admin_note ? ': ' + h(c.admin_note) : '') + '</div>' : '');
+      (c.admin_status === 'rejected' ? '<div class="flag red">Rejected by ' + h(c.admin_by) + (c.admin_note ? ': ' + h(c.admin_note) : '') + '</div>' : '') +
+      sentList(c);
     if (canOutcome) out += '<hr>';
   } else if (!canOutcome) out += '<p class="muted">Not logged yet.</p>';
   if (canOutcome) {
@@ -2821,13 +2865,13 @@ function renderCandidate(c, quiet) {
   // WhatsApp, ready to send
   const wa = [];
   if (canThank()) wa.push(sendButtons(c, 'thanks', '💬 Send thank-you message' + (c.non_qual ? ' (non-qualifier)' : ''), msgThanks(c)) +
-    (c.thanks_sent_at ? '<p class="small muted center">Opened ' + fmtTs(c.thanks_sent_at) + (c.thanks_by && c.thanks_by !== S.me.user.name ? ' by ' + h(c.thanks_by) : '') + '</p>' : ''));
+    (c.thanks_sent_at ? '<p class="small muted center sentby" data-sent="thanks">✓ Sent by ' + sentInfo(c.thanks_by, c.thanks_sent_at, c.thanks_via, c.thanks_co) + '</p>' : ''));
   const thanksFlag = canThank() ? '' : c.thanks_sent_at
-    ? '<div class="flag green">💬 Thank-you sent ' + fmtTs(c.thanks_sent_at) + (c.thanks_by ? ' by ' + h(c.thanks_by) : '') + '</div>'
+    ? '<div class="flag green">💬 Thank-you sent by ' + sentInfo(c.thanks_by, c.thanks_sent_at, c.thanks_via, c.thanks_co) + '</div>'
     : '<div class="flag amber">💬 Thank-you not sent yet · ' + h(thanksName(thanksCo(c))) + ' sends it</div>';
   if (canOutcome && offerReady && !c.welcome_url && c._pending) wa.push('<div class="flag amber"><span class="spinner sm inline"></span> Saving to Google… the 🎉 congratulations button appears here in a few seconds.</div>');
   if (canOutcome && offerReady && (c.welcome_url || !c._pending)) wa.push(sendButtons(c, 'offer', '🎉 Send BA Academy Day 1 details (' + brandCo(c) + ')', msgAcademy(c)) +
-    (c.offer_sent_at ? '<p class="small muted center">Opened ' + fmtTs(c.offer_sent_at) + '</p>' : '') +
+    (c.offer_sent_at ? '<p class="small muted center sentby" data-sent="offer">✓ Sent by ' + offerInfo(c) + '</p>' : '') +
     (c.welcome_url ? '<a class="btn ghost sm" target="_blank" rel="noopener" href="' + h(welcomeLink(c)) + '">👀 Preview their welcome page</a>' : ''));
   if (canOutcome && c.outcome === 'No answer') wa.push(sendButtons(c, 'noanswer', '📞 Send "we tried calling you" message', msgNoAnswer(c)));
   const noWa = c.no_whatsapp ? '<div class="flag amber">📵 Not on WhatsApp: message them by text (or email)</div>' : '';
@@ -2900,9 +2944,9 @@ function renderCandidate(c, quiet) {
       const sent = co => {
         let lc = findCand(c.id) || c;
         if (co && brandCo(lc) !== co) lc = pickBrand(lc, co);  // saved: their welcome page, welcome email and every message after follow it
-        if (kind !== 'noanswer' || via !== 'whatsapp') call('markSent', Object.assign({ id: c.id, kind: kind, via: via }, co ? { co: co } : {})).catch(() => {});
-        if (via !== 'whatsapp' && !lc.no_whatsapp) {
-          lc.no_whatsapp = 'TRUE'; saveCache();
+        if (kind !== 'noanswer' || via !== 'whatsapp') call('markSent', Object.assign({ id: c.id, kind: kind, via: via }, co ? { co: co } : {})).then(() => sentDone(c.id, kind), () => sentDone(c.id, kind));
+        if (kind === 'thanks' || kind === 'offer' || (via !== 'whatsapp' && !lc.no_whatsapp)) {
+          lc = noteSent(c.id, kind, via, co) || lc;  // "✓ Sent by you · 16:03" shows when they come back from WhatsApp
           setTimeout(() => { if (S.view === 'cand' && S.params.id === c.id) renderCandidate(findCand(c.id) || lc, true); }, 800);
         }
       };

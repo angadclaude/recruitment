@@ -109,6 +109,7 @@ const SHEETS = {
     'p_why_sales', 'p_why_sales_note', 'p_interesting', 'eval_edited_at', 'thanks_by', 'no_whatsapp', 'day1_status', 'day1_by', 'day1_at', 'day1_reminded_at', 'day1_reminded_by', 'recruit_source', 'databyte_at', 'databyte_by', 'onboard_email_at', 'onboard_email_by',
     'brand',  // LINK / JUSS: the company their messages and welcome email come from (chosen by the recruitment team), when it isn't their booker's
     'presented_by_id', 'presented_by',  // who ran the presentation, from their evaluation (a presenter on the team, a typed name, or "Not sure")
+    'offer_by', 'offer_via', 'offer_co', 'thanks_via', 'thanks_co',  // the BA Academy Day 1 details / thank-you: who sent it, how (whatsapp / sms / email), as which company
   ],
   History: ['attended_date', 'full_name', 'mobile', 'email', 'booker_raw', 'presenter_raw'],
   Codes: ['email', 'code_hash', 'expires', 'attempts'],
@@ -969,14 +970,15 @@ function markSent(req, u) {
   return withLock(() => {
     const c = getC(req.id);
     if (!fullAccess(u, c)) throw new Error('No access');
+    // The company they chose as they sent it (thank-you or congratulations): everything after follows it
+    if ((req.co === 'LINK' || req.co === 'JUSS') && onRecruitTeam(u)) c.brand = req.co;
     if (req.kind === 'thanks') {
       // The recruitment team (Jess, Rubal, Fiza) can each send any thank-you, LINK or JUSS (signed with their own name)
       if (!onRecruitTeam(u)) throw new Error('Thank-you messages are sent by ' + (orList(recruitTeam().map(t => t.name)) || 'the recruitment team') + '.');
-      c.thanks_sent_at = nowStr(); c.thanks_by = u.name;
+      c.thanks_sent_at = nowStr(); c.thanks_by = u.name; c.thanks_via = via; c.thanks_co = brandCo(c);
     }
-    // The company they chose before sending (thank-you or congratulations): everything after follows it
-    if ((req.co === 'LINK' || req.co === 'JUSS') && onRecruitTeam(u)) c.brand = req.co;
-    if (req.kind === 'offer') c.offer_sent_at = nowStr();
+    // Who sent the BA Academy Day 1 details, when, how and as which company (the latest send)
+    if (req.kind === 'offer') { c.offer_sent_at = nowStr(); c.offer_by = u.name; c.offer_via = via; c.offer_co = brandCo(c); }
     if (req.kind === 'day1') { c.day1_reminded_at = nowStr(); c.day1_reminded_by = u.name; }
     if (via !== 'whatsapp') c.no_whatsapp = 'TRUE';
     writeRow('Candidates', c);
@@ -1395,6 +1397,7 @@ function mondayPayReportEmail() {
 function keepWarm() {
   const t = nowStr().slice(11, 13);
   if (t >= '07' && t <= '20') usersAll();
+  try { backfillSends(); } catch (e) { console.error(e); }  // once, after this version goes live
   maybeDailyDigest();
   maybeThanksReminder();
   maybeAcademyBriefing();
@@ -1489,10 +1492,33 @@ function chaseOutcomes(req, u) {
 
 /** Everyone booked onto the BA Academy with Day 1 from a week ago onwards: admins see everyone, bookers their own. */
 function academyList(req, u) {
+  try { backfillSends(); } catch (e) { console.error(e); }
   const from = addDays(todayStr(), -7);
   const rows = readTable('Candidates').filter(c => c.outcome === 'Academy booked' && c.admin_status !== 'rejected' && c.admin_status !== 'pending' &&
     c.academy_date && c.academy_date >= from && fullAccess(u, c));
   return { today: todayStr(), items: rows.sort((a, b) => a.academy_date.localeCompare(b.academy_date) || a.full_name.localeCompare(b.full_name)).map(c => shape(c, u)) };
+}
+/** Once: who sent the Day 1 details (and how each thank-you went) before those columns existed, from the Log
+ *  ("whatsapp_offer" by Fiza Iqbal at 16:03…). The latest send wins, as it does from now on. */
+function backfillSends() {
+  const p = PropertiesService.getScriptProperties();
+  if (p.getProperty('SENDS_BACKFILLED')) return;
+  withLock(() => {
+    if (p.getProperty('SENDS_BACKFILLED')) return;
+    const last = {};
+    readTable('Log').forEach(l => {
+      const m = /^(whatsapp|sms|email)_(offer|thanks)$/.exec(l.action);
+      if (m && l.candidate_id) last[l.candidate_id + '|' + m[2]] = { by: l.user, via: m[1] };
+    });
+    readTable('Candidates').forEach(c => {
+      const o = last[c.id + '|offer'], t = last[c.id + '|thanks'];
+      let changed = false;
+      if (o && c.offer_sent_at && !c.offer_by) { c.offer_by = o.by; c.offer_via = o.via; changed = true; }
+      if (t && c.thanks_sent_at && !c.thanks_via) { c.thanks_via = t.via; changed = true; }
+      if (changed) writeRow('Candidates', c);
+    });
+    p.setProperty('SENDS_BACKFILLED', nowStr());
+  });
 }
 /** On Day 1: arrived / no-show (or clear it). Admins, or the person who booked them. Gives the real show-up rate. */
 function markDay1(req, u) {

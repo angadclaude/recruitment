@@ -514,6 +514,14 @@ textarea.short { min-height: 64px; }
 .pres-row .pills { margin-top: 6px; }
 .pres-row .net b { font-size: 26px; }
 .pres-row .net span { display: block; font-size: 11px; margin-top: 2px; }
+/* Who sent what, when (candidate page) */
+.sentlist { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.sentlist .sl-h { font-size: 11.5px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+.sentlist .sl-r { padding: 6px 0; font-size: 14px; }
+.sentlist .sl-r + .sl-r { border-top: 1px dashed var(--line); }
+.sentlist .sl-r div { font-size: 13px; color: var(--muted); margin-top: 1px; overflow-wrap: anywhere; }
+.sentlist .sl-r div b { color: var(--ink); }
+.sentlist .sl-r.no div { color: var(--red); font-weight: 700; }
 
 /* Team / misc */
 table.t { width: 100%; border-collapse: collapse; font-size: 14px; }

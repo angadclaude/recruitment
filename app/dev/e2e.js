@@ -102,8 +102,8 @@ async function fillEval(p) {
   console.log('setup');
   await post('/dev/run', { fn: 'setup' });
   await post('/dev/props', { ONESIGNAL_APP_ID: 'test-app', ONESIGNAL_API_KEY: 'test-key' });
-  // Simulate Angad's live Sheet, created before the presenter-question columns existed
-  await post('/dev/eval', { js: "SpreadsheetApp.getActive().getSheetByName('Candidates').data[0].splice(-3)" });
+  // Simulate Angad's live Sheet, created before the company / presenter-question / who-sent-it columns existed
+  await post('/dev/eval', { js: "SpreadsheetApp.getActive().getSheetByName('Candidates').data[0].splice(-8)" });
   await setTime('2026-10-12T09:30:00+01:00'); // Monday morning
   const admin = await loginApi('angad@linkmarketing.org.uk');
   const users = (await api(admin, 'listUsers')).users;
@@ -495,7 +495,7 @@ async function fillEval(p) {
   ok(/💡 Plays semi-pro football/.test(snap) && /Wants to earn on results, saving for a house/.test(snap), 'booker sees the room answers: 💡 ice-breaker + why sales');
   ok(/🎤 Presentation by Nathan Smith/.test(snap) && !/rated by/.test(snap), 'their page says who ran the presentation: "🎤 Presentation by Nathan Smith" (he rated the room too)');
   const hdr = (await getJson('/dev/sheet?name=Candidates'))[0];
-  ok(hdr.slice(-8).join() === 'recruit_source,databyte_at,databyte_by,onboard_email_at,onboard_email_by,brand,presented_by_id,presented_by', 'existing Sheet got the new columns automatically (no data moved)');
+  ok(hdr.slice(-13).join() === 'recruit_source,databyte_at,databyte_by,onboard_email_at,onboard_email_by,brand,presented_by_id,presented_by,offer_by,offer_via,offer_co,thanks_via,thanks_co', 'existing Sheet got the new columns automatically (no data moved)');
   ok(!/Unspent convictions/.test(snap), 'conviction answer hidden from bookers');
   await bp.click('.chips[data-name=outcome] .chip:has-text("Academy booked")');
   await bp.fill('#adate', '2026-10-19');
@@ -718,8 +718,19 @@ async function fillEval(p) {
   ok(/^https:\/\/wa\.me\//.test(await rtp.getAttribute('#wacard .cobig[data-kind=offer][data-co=JUSS]', 'href')), '"💬 WhatsApp" under them → the LINK / JUSS buttons switch to WhatsApp');
   await rtp.locator('#wacard').screenshot({ path: SHOTS + '/37-link-juss-buttons.png' });
   await rtp.$eval('#wacard .cobig[data-kind=offer][data-co=JUSS]', a => { a.addEventListener('click', e => e.preventDefault()); a.click(); });
-  for (let i = 0; i < 25 && zA.brand !== 'JUSS'; i++) { zA = await api(admin, 'getCandidate', { id: adham.id }); if (zA.brand !== 'JUSS') await new Promise(r => setTimeout(r, 200)); }
+  for (let i = 0; i < 25 && (zA.brand !== 'JUSS' || zA.offer_by !== 'Zara Iqbal'); i++) { zA = await api(admin, 'getCandidate', { id: adham.id }); if (zA.brand !== 'JUSS' || zA.offer_by !== 'Zara Iqbal') await new Promise(r => setTimeout(r, 200)); }
   ok(zA.brand === 'JUSS' && /welcome-juss\.html/.test(zA.welcome_url), 'one tap on JUSS → sent as JUSS, saved, JUSS welcome page again');
+  // Who sent the Day 1 details, when, how, as which company
+  ok(zA.offer_by === 'Zara Iqbal' && zA.offer_via === 'whatsapp' && zA.offer_co === 'JUSS' && /^2026-10-\d\d \d\d:\d\d/.test(zA.offer_sent_at) && zA.thanks_co === 'LINK' && /^(whatsapp|sms)$/.test(zA.thanks_via),
+    'saved: Day 1 details sent by Fiza at ' + zA.offer_sent_at.slice(11, 16) + ', by WhatsApp, as JUSS (and her thank-you: as LINK, by ' + zA.thanks_via + ')');
+  await rtp.waitForFunction(() => /Zara Iqbal/.test((document.querySelector('#wacard [data-sent=offer]') || {}).textContent || ''));
+  const sentRe = /Zara Iqbal · \w{3} \d+ \w{3} \d\d:\d\d · JUSS · WhatsApp/;
+  ok(sentRe.test(await rtp.innerText('#wacard [data-sent=offer]')) && /Day 1 details sent by Zara Iqbal/.test(await rtp.innerText('#d1sent')) && sentRe.test(await rtp.innerText('#d1sent')),
+    'straight away on her phone: "✓ Sent by Zara Iqbal · ' + (await rtp.innerText('#wacard [data-sent=offer]')).split(' · ').slice(1).join(' · ') + '" under the buttons, and at the top of their page');
+  const zList = await rtp.innerText('#out .sentlist');
+  ok(/Messages sent/i.test(zList) && /Thank-you\s+Zara Iqbal · .* · LINK/.test(zList) && /BA Academy Day 1 details\s+Zara Iqbal · .* · JUSS · WhatsApp/.test(zList),
+    'Outcome section: "📨 Messages sent": thank-you and Day 1 details, each with who, when, company, how');
+  await rtp.locator('#out .sentlist').screenshot({ path: SHOTS + '/38-messages-sent.png' });
   const zBk = await loginApi('fiza@example.com');
   const bkTry = await post('/api', { action: 'setBrand', token: zBk, id: jasId, co: 'JUSS' }), bkThanks = await post('/api', { action: 'markSent', token: zBk, id: jasId, kind: 'thanks' });
   ok(!bkTry.ok && /recruitment team/.test(bkTry.error) && !bkThanks.ok && /Jess Grace, Rubal Oshan or Zara Iqbal/.test(bkThanks.error),
@@ -911,6 +922,21 @@ async function fillEval(p) {
   await ap.goto(APP + 'index.html?c=academy');
   await ap.waitForSelector('.trow[data-cand="' + jasId + '"]');
   const d1Txt = await ap.innerText('#page');
+  const adD1 = await ap.innerText('.trow[data-cand="' + adham.id + '"] .d1by');
+  ok(/🎉 Day 1 details sent by Zara Iqbal · \w{3} \d+ \w{3} \d\d:\d\d · JUSS · WhatsApp/.test(adD1), 'Day 1 tab: each starter shows who sent their Day 1 details and when: "' + adD1 + '"');
+  await ap.click('.trow[data-cand="' + adham.id + '"] .name'); await ap.waitForSelector('#d1sent');
+  ok(/Day 1 details sent by Zara Iqbal · .* · JUSS · WhatsApp/.test(await ap.innerText('#d1sent')) && /BA Academy Day 1 details\s+Zara Iqbal/.test(await ap.innerText('#out .sentlist')),
+    'tap them on the Day 1 tab → top of their page: "🎉 Day 1 details sent by Zara Iqbal · <time> · JUSS · WhatsApp" (and in Messages sent)');
+  await ap.goto(APP + 'index.html?c=academy'); await ap.waitForSelector('.trow[data-cand="' + jasId + '"]');
+  // Sends from before this version: filled in once from the Log (who, and how), the latest send winning
+  const adB4 = await api(admin, 'getCandidate', { id: adham.id });
+  const adFill = JSON.parse((await post('/dev/eval', { js: `(() => { MEMO = {}; const c = getC('${adham.id}'); c.offer_by = ''; c.offer_via = ''; c.offer_co = ''; c.thanks_via = ''; writeRow('Candidates', c);
+    PropertiesService.getScriptProperties().setProperty('SENDS_BACKFILLED', ''); backfillSends(); MEMO = {};
+    const sends = readTable('Log').filter(l => l.candidate_id === '${adham.id}' && /_offer$/.test(l.action)).map(l => l.user);
+    return JSON.stringify([getC('${adham.id}'), PropertiesService.getScriptProperties().getProperty('SENDS_BACKFILLED'), sends]); })()` })).out);
+  ok(adB4.offer_by === 'Zara Iqbal' && adFill[2].length >= 2 && adFill[2][0] !== 'Zara Iqbal' && adFill[2][adFill[2].length - 1] === 'Zara Iqbal' &&
+    adFill[0].offer_by === 'Zara Iqbal' && adFill[0].offer_via === adB4.offer_via && adFill[0].thanks_via === adB4.thanks_via && !!adFill[1],
+    'older sends filled in once from the Log: Adham\'s Day 1 details went ' + adFill[2].length + ' times (' + adFill[2].join(', ') + ') → "' + adFill[0].offer_by + ' · ' + adFill[0].offer_via + '" (the latest), then never again');
   ok(await ap.textContent('#abTitle') === 'Day 1' && await ap.$('.tabbar button.on[data-tab=academy]') && /Monday 19 October · TOMORROW/i.test(d1Txt) && new RegExp(monStarters.length + ' expected · ' + nConf + ' confirmed').test(d1Txt),
     'tapping it opens the Day 1 tab: "Monday 19 October · TOMORROW · ' + monStarters.length + ' expected · ' + nConf + ' confirmed"');
   const remind = decodeURIComponent((await ap.$eval('.trow[data-cand="' + jasId + '"] a.btn', a => a.href)).split('?text=')[1]);
