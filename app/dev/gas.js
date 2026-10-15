@@ -84,6 +84,7 @@ function load(opts) {
     }) },
     Utilities: {
       formatDate: fmtDate,
+      sleep: () => {},
       getUuid: () => crypto.randomUUID(),
       DigestAlgorithm: { SHA_256: 'sha256' },
       computeDigest: (alg, s) => Array.from(crypto.createHash(alg).update(String(s), 'utf8').digest()).map(b => (b > 127 ? b - 256 : b)),

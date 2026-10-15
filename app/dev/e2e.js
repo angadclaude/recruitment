@@ -1155,13 +1155,18 @@ async function fillEval(p) {
   ok(clRows.length === 3 && /^Academy booked · Day 1 Mon 19 Oct \| Abdullahi Ahmed · \w{3} \d+ Oct \d\d:\d\d/.test(clRows[0]) && /Day 1 Mon 26 Oct \| Abdullahi Ahmed · \w{3} \d+ Oct \d\d:\d\d · LATE \| missed the train$/.test(clRows[1]) && !(await ap.$('#out #logged')),
     'their page, Outcome: "📞 Call log", newest first, each with who, day and time: ' + clRows.join(' / '));
   await ap.locator('#out .calllog').screenshot({ path: SHOTS + '/39-call-log.png' });
-  // Outcomes logged before the call log existed: rebuilt once from the Log
-  const olFill = JSON.parse((await post('/dev/eval', { js: `(() => { MEMO = {}; const c = getC('${adham.id}'); c.outcome_log = ''; writeRow('Candidates', c);
-    PropertiesService.getScriptProperties().setProperty('OUTCOMES_BACKFILLED', ''); backfillOutcomes(); MEMO = {};
-    return JSON.stringify([getC('${adham.id}').outcome_log, PropertiesService.getScriptProperties().getProperty('OUTCOMES_BACKFILLED')]); })()` })).out);
-  const olB = JSON.parse(olFill[0] || '[]');
-  ok(olB.length === 3 && olB.map(e => e.at + '|' + e.by + '|' + e.o).join() === adLog.map(e => e.at + '|' + e.by + '|' + e.o).join() && olB[2].d === '2026-10-19' && !!olFill[1],
-    'older outcomes rebuilt once from the Log: same 3 entries, who and when (the latest with its Day 1 date)');
+  // Outcomes logged before the call log existed: rebuilt from the Log. Like the live Log tab, its times read back as dates.
+  await post('/dev/eval', { js: `(() => { SpreadsheetApp.getActive().getSheetByName('Log').data.forEach((r, i) => { if (i && r[3] === '${adham.id}' && /^\\d{4}-/.test(r[0])) r[0] = String(new Date(r[0].replace(' ', 'T') + ':00+01:00')); }); MEMO = {}; return 1; })()` });
+  const olRun = async log => JSON.parse((await post('/dev/eval', { js: `(() => { MEMO = {}; const c = getC('${adham.id}'); c.outcome_log = ${JSON.stringify(typeof log === 'string' ? log : JSON.stringify(log))}; writeRow('Candidates', c);
+    PropertiesService.getScriptProperties().setProperty('OUTCOMES_BACKFILLED_2', ''); backfillOutcomes(); MEMO = {};
+    return JSON.stringify([getC('${adham.id}').outcome_log, PropertiesService.getScriptProperties().getProperty('OUTCOMES_BACKFILLED_2')]); })()` })).out);
+  const same = l => l.length === 3 && l.map(e => e.at + '|' + e.by + '|' + e.o).join() === adLog.map(e => e.at + '|' + e.by + '|' + e.o).join();
+  const olFill = await olRun(''), olB = JSON.parse(olFill[0] || '[]');
+  ok(same(olB) && olB[2].d === '2026-10-19' && !!olFill[1], 'older outcomes rebuilt from the Log (its times stored as dates): same 3 entries, who and when (the latest with its Day 1 date)');
+  // 15 Oct: the first fill read those times as blank. This one fills them in, keeping anything saved since
+  const blank = adLog.slice(0, 2).map(e => ({ at: '', by: e.by, o: e.o })).concat([adLog[2]]);
+  const olFix = JSON.parse((await olRun(blank))[0] || '[]');
+  ok(same(olFix) && olFix.every(e => /^2026-10-\d\d \d\d:\d\d$/.test(e.at)) && olFix[2].n === adLog[2].n, 'call logs filled with blank times on 15 Oct: times filled in from the Log, newer entries kept as they were');
 
   // ── 9. Rejected person returns next week → red; scheduled pushes ──
   await setTime('2026-10-20T10:00:00+01:00');
@@ -1563,6 +1568,7 @@ async function fillEval(p) {
   await setTime('2027-10-25T03:00:00+01:00');
   await post('/dev/run', { fn: 'dailyMaintenance' });
   ok((await getJson('/dev/sheet?name=Candidates')).length === 1, 'records older than 6 months deleted automatically');
+  ok(!(await getJson('/dev/sheet?name=Log')).slice(1).some(r => /2026/.test(String(r[0]))), 'Log entries older than 6 months deleted too, including ones whose times the Sheet turned into dates');
 
   await browser.close();
   console.log('\nALL CHECKS PASSED');
