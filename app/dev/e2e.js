@@ -77,6 +77,9 @@ async function fillCheckin(p, f) {
   await p.check('[name=privacy_ok]');
 }
 async function fillEval(p) {
+  // Who ran the presentation (the names come from Google: on a phone that didn't check in, a moment after the form)
+  await p.waitForSelector('.chips[data-name=q0_presenter]', { timeout: 5000 }).catch(() => {});
+  if (await p.$('.chips[data-name=q0_presenter]')) await p.click('.chips[data-name=q0_presenter] .chip:has-text("Nathan")');
   await p.click('.chips[data-name=q1_excitement] .chip[data-v="9"]');
   await p.fill('[name=q2_stood_out]', 'The Business Development Programme and the ladder to ownership');
   await p.click('.chips[data-name=q3_reason] .chip:has-text("Uncapped earnings")');
@@ -291,17 +294,32 @@ async function fillEval(p) {
   await cp.waitForSelector('.qcard[data-k=q9_results_paid] .qsub [name=q9_results_detail]');
   ok(/What was it\? One line is fine/.test(await cp.innerText('.qcard[data-k=q9_results_paid]')), 'Yes → "What was it? One line is fine" appears inside question 9 (one question, not a separate one)');
   await cp.locator('.qcard[data-k=q9_results_paid]').screenshot({ path: SHOTS + '/05b-q9-one-question.png' });
+  const presChips = await cp.$$eval('.chips[data-name=q0_presenter] .chip', e => e.map(x => x.textContent));
+  ok(await cp.textContent('.qcard[data-k=q0_presenter] .qn') === '01' && /Who ran today's presentation\?/.test(await cp.innerText('.qcard[data-k=q0_presenter]')) &&
+    presChips.includes('Nathan') && presChips.slice(-2).join() === 'Someone else,Not sure' && !presChips.some(n => /Angad|Fiza|Mo\b/.test(n)),
+    'question 1: "Who ran today\'s presentation?": one tap on a presenter\'s first name (' + presChips.join(', ') + ')');
+  await cp.click('.chips[data-name=q0_presenter] .chip:has-text("Someone else")');
+  await cp.waitForSelector('.qcard[data-k=q0_presenter] .qsub [name=q0_presenter_other]');
+  ok(/Their name/.test(await cp.innerText('.qcard[data-k=q0_presenter]')), '"Someone else" → a "Their name" box inside question 1');
+  await cp.locator('.qcard[data-k=q0_presenter]').screenshot({ path: SHOTS + '/05c-who-ran-it.png' });
   const nums = await cp.$$eval('.qcard .qn', e => e.map(x => x.textContent));
-  ok(nums.join() === '01,02,03,04,05,06,07,08,09,10,11,12,13,14' && await cp.textContent('.qcard[data-k=q10_door] .qn') === '10',
-    'questions are numbered 1–14 with no extra numbers for follow-ups ("A door gets shut…" is 10)');
+  ok(nums.join() === '01,02,03,04,05,06,07,08,09,10,11,12,13,14,15' && await cp.textContent('.qcard[data-k=q10_door] .qn') === '11',
+    'questions are numbered 1–15 with no extra numbers for follow-ups ("A door gets shut…" is 11)');
   await fillEval(cp);
   ok(await cp.$('.qcard[data-k=q4_situation] .qsub .chips[data-name=q4_looking_for]') && await cp.$('.qcard[data-k=q12_bdp_stage] .qsub [name=q12_bdp_why]'),
     '"How long looking for work?" sits inside Q4 and "What would your own business mean?" inside Q12');
   ok(/All done/.test(await cp.innerText('#evcount')), 'progress bar fills as they answer → "All done. Hit submit 🚀"');
   await shot(cp, '05-evaluation', true);
+  ok(!(await cp.$('[name=q0_presenter_other]')), 'picking Nathan instead → the name box goes');
   await cp.click('#go');
   await cp.waitForSelector('text=Thank you, Jasraj!');
   ok(/by close of business on Friday 6PM/.test(await cp.innerText('body')), 'after the evaluation: "Thank you, Jasraj!" + contact by Friday 6PM');
+  const nathanId = (await api(admin, 'listUsers')).users.find(u => /^nathan@/.test(u.email)).id;
+  let jEv = null; for (let i = 0; i < 25 && !(jEv && jEv.eval_at); i++) { jEv = await api(admin, 'getCandidate', { id: jasId }); if (!jEv.eval_at) await new Promise(r => setTimeout(r, 200)); }
+  ok(jEv.presented_by === 'Nathan Smith' && jEv.presented_by_id === nathanId, 'saved on Jasraj\'s row: presentation run by Nathan Smith (presented_by + presented_by_id columns in the Sheet)');
+  const presAns = (await post('/dev/eval', { js: "JSON.stringify([presenterAnswer({ q0_presenter: 'Someone else', q0_presenter_other: 'angad oshan' }), presenterAnswer({ q0_presenter: 'Not sure' }), presenterAnswer({ q0_presenter: 'gone' }), presenterAnswer({})])" })).out;
+  ok(presAns === JSON.stringify([{ id: '', name: 'Angad Oshan' }, { id: '', name: 'Not sure' }, { id: '', name: 'Not sure' }, null]),
+    '"Someone else" keeps the name they typed; "Not sure" (or a name no longer on the team) saved as "Not sure"; a form without the question changes nothing');
   ok((await cp.$$('.mag')).length === 1 && (await cp.getAttribute('.mag[data-mag=LINK]', 'href')) === 'https://linkmagflip-74ibv4pf.manus.space' && /LINK Organisation Magazine 2026/.test(await cp.innerText('.mag')),
     'thank-you screen: the LINK Organisation Magazine 2026 to flick through (LINK candidate)');
   await shot(cp, '06-eval-done');
@@ -321,6 +339,8 @@ async function fillEval(p) {
   await p2.click('#yes');
   await p2.waitForSelector('text=Your evaluation, Adham');
   ok(true, 'different phone: evaluation QR finds Adham by mobile number');
+  await p2.waitForSelector('.chips[data-name=q0_presenter] .chip:has-text("Nathan")');
+  ok(true, 'different phone: the presenters\' names arrive a moment after the form opens');
   ok(await coOf(p2) === 'JUSS', 'JUSS candidate (booked by Abdullahi) gets the JUSS colours, even on a different phone');
   await shot(p2, '07b-eval-juss', true);
   await p2c.close();
@@ -332,7 +352,8 @@ async function fillEval(p) {
   ok(/already sent your evaluation today/.test(await p2e.innerText('body')), 'evaluation sent already → "Already done, Jasraj. You\'ve already sent your evaluation today."');
   await p2e.click('#edit');
   await p2e.waitForSelector('text=Change your answers, Jasraj');
-  ok((await p2e.$$('.chips[data-name=q3_reason] .chip.on')).length === 1, 'made a mistake → "Change my answers" opens the form with their answers filled in');
+  ok((await p2e.$$('.chips[data-name=q3_reason] .chip.on')).length === 1 && await p2e.$eval('.chips[data-name=q0_presenter] .chip.on', b => b.textContent) === 'Nathan',
+    'made a mistake → "Change my answers" opens the form with their answers filled in (Nathan still picked)');
   await p2e.fill('textarea[name=q14_questions]', 'Changed my mind: when is Day 1?');
   await post('/dev/eval', { js: 'globalThis.__lockBusy = 2' });  // Google busy: 2 people ahead in the queue
   const tEdit = Date.now();
@@ -466,8 +487,9 @@ async function fillEval(p) {
   const snap = await bp.innerText('body');
   ok(/Southall/.test(snap) && /Commission selling phones/.test(snap), 'one-page snapshot: presenter notes + evaluation together');
   ok(/💡 Plays semi-pro football/.test(snap) && /Wants to earn on results, saving for a house/.test(snap), 'booker sees the room answers: 💡 ice-breaker + why sales');
+  ok(/🎤 Presentation by Nathan Smith/.test(snap) && !/rated by/.test(snap), 'their page says who ran the presentation: "🎤 Presentation by Nathan Smith" (he rated the room too)');
   const hdr = (await getJson('/dev/sheet?name=Candidates'))[0];
-  ok(hdr.slice(-6).join() === 'recruit_source,databyte_at,databyte_by,onboard_email_at,onboard_email_by,brand', 'existing Sheet got the new columns automatically (no data moved)');
+  ok(hdr.slice(-8).join() === 'recruit_source,databyte_at,databyte_by,onboard_email_at,onboard_email_by,brand,presented_by_id,presented_by', 'existing Sheet got the new columns automatically (no data moved)');
   ok(!/Unspent convictions/.test(snap), 'conviction answer hidden from bookers');
   await bp.click('.chips[data-name=outcome] .chip:has-text("Academy booked")');
   await bp.fill('#adate', '2026-10-19');
@@ -827,6 +849,11 @@ async function fillEval(p) {
     !/\bpay\b/i.test(await ap.$eval('#page', e => e.innerText)), 'says "Recruitment incentive" (tab: Incentive), never "Pay"');
   ok(!pay.rows.some(r => /Angad|Jess|Satpal|Rubal/.test(r.name)) && !(await ap.$$eval('.payrow .name', e => e.map(x => x.textContent))).some(n => /Angad|Jess|Satpal|Rubal/.test(n)),
     'incentive board: bookers only, no admins on it');
+  const presTxt = await ap.innerText('#page');
+  const nathanRow = await ap.innerText('.pres-row:has-text("Nathan Smith")');
+  ok(/🎤 Presenters this week/i.test(presTxt) && /\d+ in the room/.test(nathanRow) && /\d+ evaluated/.test(nathanRow) && /\d+ booked/.test(nathanRow) && /\d+ started/.test(nathanRow),
+    'admins: "🎤 Presenters this week": each presenter\'s room → evaluated → booked → started (Nathan: ' + nathanRow.replace(/\n/g, ' · ') + ')');
+  await ap.locator('.pres-row').first().scrollIntoViewIfNeeded(); await shot(ap, '14b-presenters');
 
   // ── Bulletins: one tap for admins, same numbers as Pay ──
   await ap.click('.tabbar button[data-tab=today]'); await ap.waitForSelector('#bullDaily');

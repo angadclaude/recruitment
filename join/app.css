@@ -506,6 +506,9 @@ textarea.short { min-height: 64px; }
 .brandpick button.JUSS.on { background: linear-gradient(120deg, #E4613F, #EDA03A 45%, #34B1C0); }
 .brandpick.sm { display: inline-flex; vertical-align: 1px; padding: 2px; gap: 2px; border-radius: 9px; }
 .brandpick.sm > span { display: none; }
+.pres-row .pills { margin-top: 6px; }
+.pres-row .net b { font-size: 26px; }
+.pres-row .net span { display: block; font-size: 11px; margin-top: 2px; }
 .brandpick.sm button { flex: none; min-height: 28px; padding: 0 9px; border-radius: 7px; font: 700 10.5px/1 var(--label); letter-spacing: .12em; }
 
 /* Team / misc */

@@ -158,9 +158,10 @@ function fmtTs(ts) { return ts ? fmt(ts.slice(0, 10)) + ' ' + ts.slice(11, 16) :
 function nextMonday(ymd) { const w = D(ymd).getUTCDay(); return addDays(ymd, w === 1 ? 7 : (8 - w) % 7 || 7); }
 
 // ───────────── shared form bits ─────────────
+/** opts: values, or [value, label] pairs. */
 function chips(name, opts, val, stack) {
   return '<div class="chips' + (stack ? ' stack' : '') + '" data-name="' + name + '">' +
-    opts.map(o => '<button type="button" class="chip' + (o === val ? ' on' : '') + '" data-v="' + h(o) + '">' + h(o) + '</button>').join('') + '</div>';
+    opts.map(o => { const v = Array.isArray(o) ? o[0] : o, l = Array.isArray(o) ? o[1] : o; return '<button type="button" class="chip' + (v === val ? ' on' : '') + '" data-v="' + h(v) + '">' + h(l) + '</button>'; }).join('') + '</div>';
 }
 function bindChips(root, onChange) {
   root.querySelectorAll('.chips[data-name]').forEach(g => {
@@ -461,7 +462,11 @@ function renderNoEval() {
   warm(Object.keys(MAGAZINES).map(k => MAGAZINES[k].url));
 }
 
+/** Everyone with the Presenter role (from Google, saved on the phone at check-in), for "Who ran today's presentation?". */
+function presenterOpts() { const p = (C.cfg && C.cfg.presenters) || (store.get('cfg') || {}).presenters; return p || []; }
 const EVAL = [
+  { k: 'q0_presenter', t: 'Who ran today\'s presentation?', type: 'presenter', showIf: () => presenterOpts().length > 0 },
+  { k: 'q0_presenter_other', t: 'Their name', type: 'text', optional: true, placeholder: 'First name is fine', under: 'q0_presenter', showIf: a => a.q0_presenter === 'Someone else' },
   { k: 'q1_excitement', t: 'On a scale of 1–10, how excited are you about this opportunity right now?', type: 'scale' },
   { k: 'q2_stood_out', t: 'What stood out to you most from today?', type: 'text' },
   { k: 'q3_reason', t: 'Pick your #1 reason for joining (choose one)', opts: ['Uncapped earnings', 'Career progression', 'Learn new skills', 'Leadership', 'Sales skills', 'Personal development', 'Travel', 'Team environment'] },
@@ -491,11 +496,11 @@ const LADDER = [
 ];
 
 // The form's look (questions and answer options above are unchanged: flags and pay rely on them).
-const EVAL_EMOJI = { q1_excitement: '🔥', q2_stood_out: '👀', q3_reason: '🎯', q4_situation: '🧭', q4_looking_for: '🔎', q5_start_date: '📆',
+const EVAL_EMOJI = { q0_presenter: '🎤', q0_presenter_other: '✍️', q1_excitement: '🔥', q2_stood_out: '👀', q3_reason: '🎯', q4_situation: '🧭', q4_looking_for: '🔎', q5_start_date: '📆',
   q6_days: '🗓️', q7_commute: '🚆', q8_resilience: '💪', q9_results_paid: '💷', q9_results_detail: '✍️', q10_door: '🚪', q11_coach: '🎤',
   q12_bdp_stage: '🪜', q12_bdp_why: '👑', q13_unspent: '🔒', q14_questions: '💬' };
 const EVAL_SECTIONS = [
-  ['⚡', 'The vibe', ['q1_excitement', 'q2_stood_out', 'q3_reason']],
+  ['⚡', 'The vibe', ['q0_presenter', 'q1_excitement', 'q2_stood_out', 'q3_reason']],
   ['📅', 'The practical stuff', ['q4_situation', 'q5_start_date', 'q6_days', 'q7_commute']],
   ['🧠', 'Your mindset', ['q8_resilience', 'q9_results_paid', 'q10_door', 'q11_coach']],
   ['🚀', 'Your future', ['q12_bdp_stage'], 'ladders'],
@@ -540,6 +545,12 @@ function renderEval(edit) {
     if (q.type === 'text') return '<input type="text" name="' + q.k + '" maxlength="300" value="' + h(a[q.k] || '') + '" placeholder="' + h(q.placeholder || 'Type here…') + '">';
     if (q.type === 'area') return '<textarea name="' + q.k + '" maxlength="1000" placeholder="Type here…">' + h(a[q.k] || '') + '</textarea>';
     if (q.type === 'date') return '<input type="date" name="' + q.k + '" value="' + h(a[q.k] || '') + '">';
+    if (q.type === 'presenter') {
+      // First names (the full name if two share one), then "Someone else" / "Not sure"
+      const ps = presenterOpts(), firsts = {};
+      ps.forEach(p => { const f = p.name.split(' ')[0]; firsts[f] = (firsts[f] || 0) + 1; });
+      return chips(q.k, ps.map(p => [p.id, firsts[p.name.split(' ')[0]] > 1 ? p.name : p.name.split(' ')[0]]).concat(['Someone else', 'Not sure']), a[q.k]);
+    }
     return chips(q.k, q.opts, a[q.k], q.stack);
   };
   // A follow-up ("What was it?" after Yes) sits inside its question's card: one question, one number
@@ -609,6 +620,11 @@ function renderEval(edit) {
     });
   };
   draw();
+  // A phone that didn't check in here has no presenter names yet: fetch them, then add the question (answers and scroll kept)
+  if (!presenterOpts().length) callRetry('publicConfig', {}, null, 2).then(cfg => {
+    store.set('cfg', cfg); C.cfg = Object.assign(C.cfg || {}, cfg);
+    if (presenterOpts().length && $app.dataset.screen === 'eval' && document.getElementById('f')) { const y = window.scrollY; draw(); window.scrollTo(0, y); }
+  }).catch(() => {});
 }
 
 /** mode: 'new' (just sent) · 'already' (sent before: one evaluation per person per day) · 'updated' (answers changed).
@@ -1539,11 +1555,41 @@ function viewPay(quiet) {
         '<div class="net"><b>' + r.net + '</b><span>/' + p.target + '</span></div></div>').join('') : empty('💷', 'No appointments this week.')) + '</div>' +
       '<p class="hint">Net ' + p.target + ' attended, Mon–Fri, rated by the presenter. Doesn\'t count: under 18, not eligible to work self-employed, seen in the last 6 months, removed by admin. ' +
         (isAdmin() ? 'Admins don\'t earn the incentive, so people you book aren\'t on here. ' : '') + 'Tap a row for details. Outcomes due ' + fmtTs(p.deadline) + '.</p>' +
-      (p.unassigned.length ? '<div class="section-h">No confirmed booker <span>' + p.unassigned.length + '</span></div><div class="list">' + p.unassigned.map(x => '<button class="item" data-id="' + h(x.id) + '"><span class="av">?</span><div class="main"><div class="name">' + h(x.name) + '</div><div class="sub">Typed "' + h(x.typed || '—') + '" · tap to assign</div></div><span class="chev">›</span></button>').join('') + '</div>' : '');
+      (p.unassigned.length ? '<div class="section-h">No confirmed booker <span>' + p.unassigned.length + '</span></div><div class="list">' + p.unassigned.map(x => '<button class="item" data-id="' + h(x.id) + '"><span class="av">?</span><div class="main"><div class="name">' + h(x.name) + '</div><div class="sub">Typed "' + h(x.typed || '—') + '" · tap to assign</div></div><span class="chev">›</span></button>').join('') + '</div>' : '') +
+      (isAdmin() ? presenterFunnel(d.items || []) : '');
   }
   const page = paint('Recruitment incentive', weekNav() + body, quiet);
   bindItems(page); bindWeekNav();
   page.querySelectorAll('.payrow').forEach(r => { r.onclick = () => { const x = r.querySelector('.excl'); x.hidden = !x.hidden; }; });
+}
+
+// ───── Who ran the presentation: what they said on their evaluation, else whoever rated them in the room ─────
+/** The presenter we credit for this person: their evaluation answer (unless "Not sure"), else the presenter who rated them. */
+function presenterOf(c) { return c.presented_by && c.presented_by !== 'Not sure' ? c.presented_by : c.presenter_name || ''; }
+/** "🎤 Presentation by Nathan Mcgrath" under "booked by", with the room rater if that's someone else. */
+function presentedLine(c) {
+  const said = c.presented_by && c.presented_by !== 'Not sure' ? c.presented_by : '', rater = c.presenter_name || '';
+  if (!said && !rater) return c.presented_by === 'Not sure' ? '<div class="muted small">🎤 Presentation: they weren\'t sure who ran it</div>' : '';
+  return '<div class="muted small">🎤 Presentation by <b>' + h(said || rater) + '</b>' + (said && rater && normName(said) !== normName(rater) ? ' · rated by ' + h(rater) : '') + '</div>';
+}
+/** Pay tab (admins): each presenter's week, start to finish: in the room → evaluated → Academy booked → started (arrived on Day 1). */
+function presenterFunnel(items) {
+  const m = {}, unknown = { n: 0 };
+  items.filter(c => c.eval_at || inRoom(c)).forEach(c => {
+    const who = presenterOf(c);
+    const r = who ? (m[normName(who)] = m[normName(who)] || { name: who, n: 0, ev: 0, booked: 0, started: 0 }) : unknown;
+    r.n++;
+    if (who) { if (c.eval_at) r.ev++; if (c.outcome === 'Academy booked' && c.admin_status !== 'rejected') r.booked++; if (c.day1_status === 'arrived') r.started++; }
+  });
+  const rows = Object.keys(m).map(k => m[k]).sort((a, b) => b.booked - a.booked || b.n - a.n || a.name.localeCompare(b.name));
+  if (!rows.length) return '';
+  const pct = (a, b) => b ? Math.round(a / b * 100) + '%' : '–';
+  return '<div class="section-h">🎤 Presenters this week <span>' + rows.length + '</span></div><div class="list">' + rows.map(r =>
+    '<div class="trow pres-row"><div class="main"><div class="name">' + h(r.name) + '</div>' +
+      '<div class="pills"><span class="pill">' + r.n + ' in the room</span><span class="pill">' + r.ev + ' evaluated</span><span class="pill green">' + r.booked + ' booked</span><span class="pill' + (r.started ? ' green' : '') + '">' + r.started + ' started</span></div></div>' +
+      '<div class="net"><b>' + pct(r.booked, r.n) + '</b><span>booked</span></div></div>').join('') + '</div>' +
+    '<p class="hint">Who ran it: what each person picked on their evaluation, or whoever rated them in the room.' + (unknown.n ? ' ' + unknown.n + ' not known yet (not rated, no answer).' : '') +
+    ' Started = arrived on Day 1. Same week as the appointments above.</p>';
 }
 
 // ───── Bulletins (admins): the daily stats poster and the weekly top 5, shared to WhatsApp in one tap ─────
@@ -2704,6 +2750,7 @@ function renderCandidate(c, quiet) {
   const summary = '<div class="profile">' + avatar(c, 'xl') + '<h1>' + h(c.full_name) + '</h1>' +
     '<div class="muted small">Attended ' + fmt(c.attended_date) + ' · ' + (c.booker_name ? 'booked by <b>' + h(c.booker_name) + '</b> <span class="co ' + h(c.company) + '">' + h(c.company) + '</span>' +
       (c.booker_typed && normName(c.booker_typed) !== normName(c.booker_name) ? ' <span class="small">(they said "' + h(c.booker_typed) + '")</span>' : '') : '<b>booker not confirmed</b>' + (c.booker_typed ? ' ("' + h(c.booker_typed) + '")' : '')) + '</div>' +
+    presentedLine(c) +
     (c.stars ? '<div class="stars-lg">' + '★'.repeat(Number(c.stars)) + '<span>' + '★'.repeat(5 - Number(c.stars)) + '</span></div>' : '') +
     (c.p_interesting ? '<div class="icebreak">💡 ' + h(c.p_interesting) + '</div>' : '') +
     '<div class="pills center-pills">' + nqPill(c) + statusPill(c) + (c._pending ? '<span class="pill">⏳ Syncing…</span>' : '') + '</div>' +
