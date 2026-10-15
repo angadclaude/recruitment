@@ -102,8 +102,9 @@ async function fillEval(p) {
   console.log('setup');
   await post('/dev/run', { fn: 'setup' });
   await post('/dev/props', { ONESIGNAL_APP_ID: 'test-app', ONESIGNAL_API_KEY: 'test-key' });
-  // Simulate Angad's live Sheet, created before the company / presenter-question / who-sent-it columns existed
-  await post('/dev/eval', { js: "SpreadsheetApp.getActive().getSheetByName('Candidates').data[0].splice(-8)" });
+  // Simulate Angad's live Sheet (15 Oct): created before the who-sent-it columns existed, with the presenter-question
+  // headers written twice (two people opened the app the moment that version went live)
+  await post('/dev/eval', { js: "(() => { const h = SpreadsheetApp.getActive().getSheetByName('Candidates').data[0]; h.splice(-5); h.push('presented_by_id', 'presented_by'); return h.length; })()" });
   await setTime('2026-10-12T09:30:00+01:00'); // Monday morning
   const admin = await loginApi('angad@linkmarketing.org.uk');
   const users = (await api(admin, 'listUsers')).users;
@@ -495,7 +496,8 @@ async function fillEval(p) {
   ok(/💡 Plays semi-pro football/.test(snap) && /Wants to earn on results, saving for a house/.test(snap), 'booker sees the room answers: 💡 ice-breaker + why sales');
   ok(/🎤 Presentation by Nathan Smith/.test(snap) && !/rated by/.test(snap), 'their page says who ran the presentation: "🎤 Presentation by Nathan Smith" (he rated the room too)');
   const hdr = (await getJson('/dev/sheet?name=Candidates'))[0];
-  ok(hdr.slice(-13).join() === 'recruit_source,databyte_at,databyte_by,onboard_email_at,onboard_email_by,brand,presented_by_id,presented_by,offer_by,offer_via,offer_co,thanks_via,thanks_co', 'existing Sheet got the new columns automatically (no data moved)');
+  ok(hdr.slice(-13).join() === 'recruit_source,databyte_at,databyte_by,onboard_email_at,onboard_email_by,brand,presented_by_id,presented_by,offer_by,offer_via,offer_co,thanks_via,thanks_co' && new Set(hdr).size === hdr.length,
+    'live Sheet with the presenter headers written twice: the empty copies cleared, the new columns added in the right place (no data moved)');
   ok(!/Unspent convictions/.test(snap), 'conviction answer hidden from bookers');
   await bp.click('.chips[data-name=outcome] .chip:has-text("Academy booked")');
   await bp.fill('#adate', '2026-10-19');
@@ -930,7 +932,12 @@ async function fillEval(p) {
   await ap.goto(APP + 'index.html?c=academy'); await ap.waitForSelector('.trow[data-cand="' + jasId + '"]');
   // Sends from before this version: filled in once from the Log (who, and how), the latest send winning
   const adB4 = await api(admin, 'getCandidate', { id: adham.id });
-  const adFill = JSON.parse((await post('/dev/eval', { js: `(() => { MEMO = {}; const c = getC('${adham.id}'); c.offer_by = ''; c.offer_via = ''; c.offer_co = ''; c.thanks_via = ''; writeRow('Candidates', c);
+  await post('/dev/eval', { js: `(() => { MEMO = {}; const c = getC('${adham.id}'); c.offer_by = ''; c.offer_via = ''; c.offer_co = ''; c.thanks_via = ''; writeRow('Candidates', c); return 1; })()` });
+  await ap.goto(APP + 'index.html?c=' + adham.id); await ap.waitForSelector('#d1sent');
+  const noBy = await ap.innerText('#d1sent');
+  ok(/^🎉 Day 1 details sent \w{3} \d+ \w{3} \d\d:\d\d · JUSS$/.test(noBy) && !/sent by/.test(noBy), 'who sent it not known yet (Google code not updated): "' + noBy + '", never "sent by" with no name');
+  await ap.goto(APP + 'index.html?c=academy'); await ap.waitForSelector('.trow[data-cand="' + jasId + '"]');
+  const adFill = JSON.parse((await post('/dev/eval', { js: `(() => { MEMO = {};
     PropertiesService.getScriptProperties().setProperty('SENDS_BACKFILLED', ''); backfillSends(); MEMO = {};
     const sends = readTable('Log').filter(l => l.candidate_id === '${adham.id}' && /_offer$/.test(l.action)).map(l => l.user);
     return JSON.stringify([getC('${adham.id}'), PropertiesService.getScriptProperties().getProperty('SENDS_BACKFILLED'), sends]); })()` })).out);
