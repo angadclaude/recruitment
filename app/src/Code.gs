@@ -187,6 +187,7 @@ function readTable(name) {
   const values = sh.getDataRange().getValues();
   const headers = values.shift().map(String);
   const want = SHEETS[name];
+  if (want) tidyHeaders(sh, name, headers, values);
   if (want && headers.length < want.length && headers.every((h, i) => h === want[i])) {
     // New version added columns: append their headers so nothing needs re-running.
     const add = want.slice(headers.length);
@@ -206,6 +207,16 @@ function readTable(name) {
   });
   MEMO[name] = rows;
   return rows;
+}
+/** Two people opening the app the moment a new version went live could both add its new columns: the second insert
+ *  pushed the first copy along, so the same headers appeared twice (Candidates, 15 Oct: presented_by_id, presented_by).
+ *  Clear a repeated header whose column is empty, and empty headers off the end, so new columns go in the right place. */
+function tidyHeaders(sh, name, headers, values) {
+  const empty = j => values.every(r => r[j] === '' || r[j] === null || r[j] === undefined);
+  const dup = headers.map((h, j) => j).filter(j => headers[j] && headers.indexOf(headers[j]) < j && empty(j));
+  dup.forEach(j => { sh.getRange(1, j + 1).clearContent(); headers[j] = ''; });
+  if (dup.length) console.warn(name + ': cleared ' + dup.length + ' repeated empty column header(s)');
+  while (headers.length && !headers[headers.length - 1] && empty(headers.length - 1)) headers.pop();
 }
 function writeRow(name, obj) {
   const cols = SHEETS[name], sh = sheet(name);
@@ -254,7 +265,8 @@ function ensureRows(sh, lastNeeded, ncols) {
 function ensureCols(sh, n, name) {
   if (MEMO['_cols_' + name]) return;
   const max = sh.getMaxColumns();
-  if (max < n) sh.insertColumnsAfter(max, n - max);
+  // 20 spare: the next version's new columns then need no insert, so two people can't both insert them at once
+  if (max < n) sh.insertColumnsAfter(max, n - max + 20);
   MEMO['_cols_' + name] = true;
 }
 function withLock(fn) {

@@ -1,4 +1,4 @@
-window.APP_VERSION = 'ccf0cef5';
+window.APP_VERSION = '6815cf0a';
 
 (function () {
 'use strict';
@@ -1602,11 +1602,15 @@ function presentedLine(c) {
 const VIA_LABEL = { whatsapp: 'WhatsApp', sms: 'Text', email: 'Email' };
 /** "<b>Fiza Iqbal</b> · Thu 15 Oct 16:03 · LINK · WhatsApp" (whatever's known: sends from before this was recorded have no company or channel). */
 function sentInfo(by, at, via, co) { return [by ? '<b>' + h(by) + '</b>' : '', fmtTs(at), co ? h(co) : '', VIA_LABEL[via] || ''].filter(Boolean).join(' · '); }
+/** "sent by <b>Fiza Iqbal</b> · Thu 15 Oct 16:03 · LINK · WhatsApp" ("sent Thu 15 Oct 16:03 · LINK" until the new Google code has filled in who). */
+function sentBy(by, at, via, co) { return (by ? 'sent by ' : 'sent ') + sentInfo(by, at, via, co); }
+function offerBy(c) { return sentBy(c.offer_by, c.offer_sent_at, c.offer_via, c.offer_co || brandCo(c)); }
 function offerInfo(c) { return sentInfo(c.offer_by, c.offer_sent_at, c.offer_via, c.offer_co || brandCo(c)); }
+const cap1 = s => s.charAt(0).toUpperCase() + s.slice(1);
 /** Under "booked by" on their page: who sent the BA Academy Day 1 details and when, or that nobody has yet. */
 function day1SentLine(c) {
   if (c.outcome !== 'Academy booked' || c.admin_status === 'pending' || c.admin_status === 'rejected') return '';
-  return c.offer_sent_at ? '<div class="muted small" id="d1sent">🎉 Day 1 details sent by ' + offerInfo(c) + '</div>'
+  return c.offer_sent_at ? '<div class="muted small" id="d1sent">🎉 Day 1 details ' + offerBy(c) + '</div>'
     : '<div class="small" id="d1sent" style="color:var(--red)">🎉 Day 1 details not sent yet</div>';
 }
 /** Every message they've been sent, who by and when (in the Outcome section). */
@@ -2099,7 +2103,7 @@ function drawAcademy(r, quiet) {
       : '<a class="btn ' + (c.no_whatsapp ? 'sms' : 'wa') + ' sm" data-rem1="' + h(c.id) + '" data-via="' + (c.no_whatsapp ? 'sms' : 'whatsapp') + '" target="_blank" rel="noopener" href="' + h(msgUrl(c, msgDay1Reminder(c))) + '">💬 Remind</a>';
     return '<div class="trow" data-cand="' + h(c.id) + '">' + avatar(c) + '<div class="main"><div class="name">' + h(c.full_name) + ' <span class="co ' + h(c.company) + '">' + h(c.company) + '</span></div>' +
       '<div class="sub">' + (c.booker_name ? 'booked by ' + h(c.booker_name) : 'no booker') + '</div>' +
-      (c.offer_sent_at ? '<div class="sub d1by">🎉 Day 1 details sent by ' + offerInfo(c) + '</div>' : '') + '<div class="pills">' + pills + '</div></div>' + act + '</div>';
+      (c.offer_sent_at ? '<div class="sub d1by">🎉 Day 1 details ' + offerBy(c) + '</div>' : '') + '<div class="pills">' + pills + '</div></div>' + act + '</div>';
   };
   const block = x => {
     const l = r.items.filter(c => c.academy_date === x), conf = l.filter(c => c.academy_confirmed_at).length;
@@ -2866,13 +2870,13 @@ function renderCandidate(c, quiet) {
   // WhatsApp, ready to send
   const wa = [];
   if (canThank()) wa.push(sendButtons(c, 'thanks', '💬 Send thank-you message' + (c.non_qual ? ' (non-qualifier)' : ''), msgThanks(c)) +
-    (c.thanks_sent_at ? '<p class="small muted center sentby" data-sent="thanks">✓ Sent by ' + sentInfo(c.thanks_by, c.thanks_sent_at, c.thanks_via, c.thanks_co) + '</p>' : ''));
+    (c.thanks_sent_at ? '<p class="small muted center sentby" data-sent="thanks">✓ ' + cap1(sentBy(c.thanks_by, c.thanks_sent_at, c.thanks_via, c.thanks_co)) + '</p>' : ''));
   const thanksFlag = canThank() ? '' : c.thanks_sent_at
-    ? '<div class="flag green">💬 Thank-you sent by ' + sentInfo(c.thanks_by, c.thanks_sent_at, c.thanks_via, c.thanks_co) + '</div>'
+    ? '<div class="flag green">💬 Thank-you ' + sentBy(c.thanks_by, c.thanks_sent_at, c.thanks_via, c.thanks_co) + '</div>'
     : '<div class="flag amber">💬 Thank-you not sent yet · ' + h(thanksName(thanksCo(c))) + ' sends it</div>';
   if (canOutcome && offerReady && !c.welcome_url && c._pending) wa.push('<div class="flag amber"><span class="spinner sm inline"></span> Saving to Google… the 🎉 congratulations button appears here in a few seconds.</div>');
   if (canOutcome && offerReady && (c.welcome_url || !c._pending)) wa.push(sendButtons(c, 'offer', '🎉 Send BA Academy Day 1 details (' + brandCo(c) + ')', msgAcademy(c)) +
-    (c.offer_sent_at ? '<p class="small muted center sentby" data-sent="offer">✓ Sent by ' + offerInfo(c) + '</p>' : '') +
+    (c.offer_sent_at ? '<p class="small muted center sentby" data-sent="offer">✓ ' + cap1(offerBy(c)) + '</p>' : '') +
     (c.welcome_url ? '<a class="btn ghost sm" target="_blank" rel="noopener" href="' + h(welcomeLink(c)) + '">👀 Preview their welcome page</a>' : ''));
   if (canOutcome && c.outcome === 'No answer') wa.push(sendButtons(c, 'noanswer', '📞 Send "we tried calling you" message', msgNoAnswer(c)));
   const noWa = c.no_whatsapp ? '<div class="flag amber">📵 Not on WhatsApp: message them by text (or email)</div>' : '';
