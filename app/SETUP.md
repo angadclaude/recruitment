@@ -215,6 +215,9 @@ Every send is recorded: **who** tapped it, **when**, **as LINK or JUSS**, and **
 - Sends from before this went live are filled in once from the Log (who and how). Their company shows as the one on file.
 - It records the **tap** that opens WhatsApp with the message ready. WhatsApp doesn't tell the app whether they then hit send.
 
+### Call log: every response, who and when
+The Outcome section shows the **📞 Call log**: every response logged on the call (No answer, Thinking it over, Academy booked…), newest first, each with **who**, **day and time**, **LATE** if after Friday 18:00, the Day 1 date and the notes. One response = the usual "Logged Thu 15 Oct 16:35 by Fiza Iqbal" line. An admin rejecting an Academy booking shows as "Not suitable · Academy booking rejected". Responses logged before this went live are rebuilt once from the Log (saved in the `outcome_log` column).
+
 ### Welcome emails: one-time setup (whoever owns the Apps Script, usually Angad, on a computer)
 The app sends through the script owner's Gmail, so that Gmail has to be allowed to send as both addresses:
 1. In that Gmail: ⚙️ → **See all settings** → **Accounts** → **Send mail as** → **Add another email address**.

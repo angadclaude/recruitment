@@ -110,6 +110,7 @@ const SHEETS = {
     'brand',  // LINK / JUSS: the company their messages and welcome email come from (chosen by the recruitment team), when it isn't their booker's
     'presented_by_id', 'presented_by',  // who ran the presentation, from their evaluation (a presenter on the team, a typed name, or "Not sure")
     'offer_by', 'offer_via', 'offer_co', 'thanks_via', 'thanks_co',  // the BA Academy Day 1 details / thank-you: who sent it, how (whatsapp / sms / email), as which company
+    'outcome_log',  // every call outcome logged, oldest first: [{at, by, o: outcome, d: Day 1 date, late: 1, n: notes}]
   ],
   History: ['attended_date', 'full_name', 'mobile', 'email', 'booker_raw', 'presenter_raw'],
   Codes: ['email', 'code_hash', 'expires', 'attempts'],
@@ -863,6 +864,7 @@ function saveOutcome(req, u) {
       else if (c.admin_status !== 'approved') c.admin_status = 'pending';
     } else if (c.admin_status === 'pending') c.admin_status = '';
     const wasPending = c._wasPending, wasBooked = c._wasBooked;
+    addOutcomeLog(c, { at: c.outcome_at, by: u.name, o: c.outcome, d: c.academy_date, late: c.outcome_late ? 1 : 0, n: c.outcome_notes });
     writeRow('Candidates', c);
     return { c: c, alert: c.admin_status === 'pending' && !wasPending, starter: c.outcome === 'Academy booked' && c.admin_status !== 'pending' && !wasBooked };
   });
@@ -876,6 +878,12 @@ function saveOutcome(req, u) {
   return shape(c, u);
 }
 
+/** Every response logged on the call (No answer, Thinking it over, Academy booked…), who and when: outcome / outcome_at only keep the latest. */
+function addOutcomeLog(c, e) {
+  let l = []; try { l = JSON.parse(c.outcome_log || '[]'); } catch (x) { l = []; }
+  const o = {}; Object.keys(e).forEach(k => { if (e[k]) o[k] = k === 'n' ? String(e[k]).slice(0, 300) : e[k]; });
+  l.push(o); c.outcome_log = JSON.stringify(l.slice(-30));
+}
 function adminDecision(req, u) {
   if (!isAdmin(u)) throw new Error('Admin only');
   const c = withLock(() => {
@@ -883,7 +891,10 @@ function adminDecision(req, u) {
     if (['approved', 'rejected'].indexOf(req.decision) < 0) throw new Error('Bad decision');
     c.admin_status = req.decision; c.admin_note = String(req.note || '').slice(0, 500);
     c.admin_by = u.name; c.admin_at = nowStr();
-    if (req.decision === 'rejected') { c.outcome = 'Not suitable'; c.academy_date = ''; }
+    if (req.decision === 'rejected') {
+      c.outcome = 'Not suitable'; c.academy_date = '';
+      addOutcomeLog(c, { at: c.admin_at, by: u.name, o: 'Not suitable', n: 'Academy booking rejected' + (c.admin_note ? ': ' + c.admin_note : '') });
+    }
     writeRow('Candidates', c);
     log(u, 'admin_' + req.decision, c.id, c.admin_note);
     return c;
@@ -1409,7 +1420,8 @@ function mondayPayReportEmail() {
 function keepWarm() {
   const t = nowStr().slice(11, 13);
   if (t >= '07' && t <= '20') usersAll();
-  try { backfillSends(); } catch (e) { console.error(e); }  // once, after this version goes live
+  try { backfillSends(); } catch (e) { console.error(e); }  // once each, after this version goes live
+  try { backfillOutcomes(); } catch (e) { console.error(e); }
   maybeDailyDigest();
   maybeThanksReminder();
   maybeAcademyBriefing();
@@ -1530,6 +1542,35 @@ function backfillSends() {
       if (changed) writeRow('Candidates', c);
     });
     p.setProperty('SENDS_BACKFILLED', nowStr());
+  });
+}
+/** Once: the call log for outcomes logged before it existed, from the Log ("outcome · No answer LATE" by Fiza at 11:59).
+ *  The latest one gets its Day 1 date and notes from the candidate. One write for the whole column (runs from keepWarm). */
+function backfillOutcomes() {
+  const p = PropertiesService.getScriptProperties();
+  if (p.getProperty('OUTCOMES_BACKFILLED')) return;
+  withLock(() => {
+    if (p.getProperty('OUTCOMES_BACKFILLED')) return;
+    const by = {};
+    readTable('Log').forEach(l => {
+      if (!l.candidate_id || (l.action !== 'outcome' && l.action !== 'admin_rejected')) return;
+      const at = /^\d{4}-\d\d-\d\d \d\d:\d\d/.test(l.at) ? l.at.slice(0, 16) : '';
+      const e = l.action === 'outcome' ? { at: at, by: l.user, o: String(l.detail).replace(/ LATE$/, '') }
+        : { at: at, by: l.user, o: 'Not suitable', n: 'Academy booking rejected' + (l.detail ? ': ' + l.detail : '') };
+      if (/ LATE$/.test(l.detail) && l.action === 'outcome') e.late = 1;
+      (by[l.candidate_id] = by[l.candidate_id] || []).push(e);
+    });
+    const rows = readTable('Candidates');
+    const vals = rows.map(c => {
+      const l = by[c.id];
+      if (c.outcome_log || !l) return [c.outcome_log];
+      const last = l[l.length - 1];
+      if (last.o === c.outcome) { if (c.academy_date) last.d = c.academy_date; if (c.outcome_notes) last.n = c.outcome_notes.slice(0, 300); }
+      return [JSON.stringify(l.slice(-30))];
+    });
+    if (rows.length) sheet('Candidates').getRange(2, SHEETS.Candidates.indexOf('outcome_log') + 1, rows.length, 1).setValues(vals);
+    delete MEMO.Candidates;
+    p.setProperty('OUTCOMES_BACKFILLED', nowStr());
   });
 }
 /** On Day 1: arrived / no-show (or clear it). Admins, or the person who booked them. Gives the real show-up rate. */
