@@ -267,9 +267,17 @@ async function fillEval(p) {
   ok(thanks === "Hey Jasraj! 👋🧡\n\nThanks for coming through for your *Appointment Presentation* today in association with *LINK Marketing* 🙌\nWe loved meeting you in person.\n\n📲 *What happens next*\nOur Team will contact you at the latest by *close of business on Friday 6PM* about your next steps.\nKeep your phone close! 👀\n\n📖 *While you wait*, flick through the *LINK Organisation Magazine 2026* 👇\nhttps://linkmagflip-74ibv4pf.manus.space\n\n*Jess Grace*, on behalf of LINK Marketing recruitment team 🧡",
     'thank-you WhatsApp = Angad\'s wording, laid out to scan (LINK, contact by Friday 6PM) + the LINK magazine, signed Jess Grace for the LINK recruitment team');
   await jsp.$eval('[data-thanks="' + ishita.id + '"]', a => { a.addEventListener('click', e => e.preventDefault()); a.click(); });
+  await jsp.waitForSelector('.cochooser .cobtn[data-co=JUSS]');
+  const chMsg = async co => decodeURIComponent((await jsp.getAttribute('.cochooser .cobtn[data-co=' + co + ']', 'href')).split(/\?text=|[?&]body=/)[1] || '');
+  ok(/Which company\?/.test(await jsp.innerText('.cochooser')) && /in association with \*LINK Marketing\*/.test(await chMsg('LINK')) && /in association with \*JUSS Marketing\*/.test(await chMsg('JUSS')) &&
+    /\*Jess Grace\*, on behalf of JUSS Marketing/.test(await chMsg('JUSS')) && /Booked by Mo/.test(await jsp.innerText('.cochooser .cobtn[data-co=LINK]')),
+    'Jess taps 💬 Send → "Which company?": LINK Marketing (Mo\'s, the booker\'s) or JUSS Marketing, each opening that company\'s message, signed by her');
+  await jsp.locator('.cochooser .sheet').screenshot({ path: SHOTS + '/04c-which-company.png' });
+  await jsp.$eval('.cochooser .cobtn[data-co=LINK]', a => { a.addEventListener('click', e => e.preventDefault()); a.click(); });
   await jsp.waitForSelector('.sheet .trow:has-text("Ishita") .pill.green');
   let ishNow2 = null; for (let i = 0; i < 20 && !(ishNow2 && ishNow2.thanks_sent_at); i++) { ishNow2 = await api(admin, 'getCandidate', { id: ishita.id }); if (!ishNow2.thanks_sent_at) await new Promise(r => setTimeout(r, 200)); }
-  ok(!!ishNow2.thanks_sent_at && ishNow2.thanks_by === 'Jess Grace', 'Jess taps 💬 Send → WhatsApp opens, the row turns "✓ Sent" and it\'s saved as sent by Jess Grace');
+  ok(!!ishNow2.thanks_sent_at && ishNow2.thanks_by === 'Jess Grace' && ishNow2.brand === 'LINK' && !(await jsp.$('.cochooser')),
+    'she taps LINK → WhatsApp opens, the row turns "✓ Sent" and it\'s saved as sent by Jess Grace, as LINK');
   await shot(jsp, '04d-thank-everyone');
   await jessCtx.close();
   for (const [c, rag] of [[ishita, 'R'], [adham, 'G'], [ali, 'A'], [jag, 'A'], [kid, 'R']]) {
@@ -670,8 +678,8 @@ async function fillEval(p) {
   await j12.close();
 
   // ── The recruitment team: Jess, Rubal + Fiza (recruitment@jussmarketing.co.uk) work for both companies.
-  //    Before a thank-you or congratulations goes, they choose LINK or JUSS, and everything after it follows that choice ──
-  console.log('recruitment team: send as LINK or JUSS');
+  //    They tap Send (thank-you or Day 1 details), choose LINK or JUSS, and everything after follows that choice ──
+  console.log('recruitment team: which company?');
   await mk('Zara Iqbal', 'recruitment@jussmarketing.co.uk', 'JUSS', ['booker', 'admin']);
   const zaraT = await loginApi('recruitment@jussmarketing.co.uk');
   ok((await api(zaraT, 'me')).recruitTeam.map(x => x.name).sort().join() === 'Jess Grace,Rubal Oshan,Zara Iqbal', 'recruitment team = Jess, Rubal + recruitment@jussmarketing.co.uk (Fiza), from RECRUIT_TEAM');
@@ -679,59 +687,49 @@ async function fillEval(p) {
   await loginUi(rtp, 'recruitment@jussmarketing.co.uk', APP + 'index.html?c=thanks');
   await rtp.waitForSelector('.sheet .trow [data-thanks]');
   const zRows = await rtp.$$eval('.sheet .trow', r => r.map(x => x.dataset.tr));
-  ok(zRows.length === (await api(admin, 'listDay', {})).items.length && /Every appointment today, LINK and JUSS/.test(await rtp.innerText('.sheet .hint')) && !(await rtp.$('.sheet .datehead')),
-    'Fiza\'s thank-you list: every appointment today, LINK and JUSS (she works for both), each with a LINK | JUSS switch');
-  await rtp.locator('.sheet').screenshot({ path: SHOTS + '/39-thanks-send-as.png' });
-  const pr = await rtp.$eval('.sheet .trow:has(.brandpick)', r => ({ id: r.dataset.tr, co: r.querySelector('.brandpick .on').dataset.brand }));
-  const prOther = pr.co === 'LINK' ? 'JUSS' : 'LINK', prOrig = await api(admin, 'getCandidate', { id: pr.id });
-  const rowMsg = async id => decodeURIComponent((await rtp.getAttribute('.sheet .trow[data-tr="' + id + '"] a[data-thanks][data-via=whatsapp]', 'href')).split('?text=')[1]);
-  ok(new RegExp('in association with \\*' + pr.co + ' Marketing\\*').test(await rowMsg(pr.id)), 'the switch starts on their booker\'s company (' + pr.co + ')');
-  await rtp.click('.sheet .trow[data-tr="' + pr.id + '"] .brandpick button[data-brand="' + prOther + '"]');
-  const prMsg = await rowMsg(pr.id);
-  ok(new RegExp('in association with \\*' + prOther + ' Marketing\\*').test(prMsg) && new RegExp('\\*Zara Iqbal\\*, on behalf of ' + prOther + ' Marketing recruitment team').test(prMsg) &&
-    (prOther === 'JUSS' ? /jmomagazine/.test(prMsg) : /linkmagflip/.test(prMsg)),
-    'tap ' + prOther + ' on a row → that thank-you switches straight away: ' + prOther + ' wording, magazine and hearts, signed by Fiza');
-  let prNow = null; for (let i = 0; i < 25 && !(prNow && prNow.brand === prOther); i++) { prNow = await api(admin, 'getCandidate', { id: pr.id }); if (prNow.brand !== prOther) await new Promise(r => setTimeout(r, 200)); }
-  ok(prNow.brand === prOther && prNow.company === prOrig.company, 'the choice is saved on them; their company (pay, lists, reminders) still follows their booker');
-  await rtp.click('.sheet .trow[data-tr="' + pr.id + '"] .brandpick button[data-brand="' + pr.co + '"]');
-  for (let i = 0; i < 25 && prNow.brand !== pr.co; i++) { prNow = await api(admin, 'getCandidate', { id: pr.id }); if (prNow.brand !== pr.co) await new Promise(r => setTimeout(r, 200)); }
-  ok(prNow.brand === pr.co && new RegExp('in association with \\*' + pr.co + ' Marketing\\*').test(await rowMsg(pr.id)), 'and back again');
-
-  // Candidate page: one switch at the top of the messages, for the thank-you AND the congratulations
-  const zMsg = async kind => decodeURIComponent((await rtp.getAttribute('#wacard a.btn[data-kind=' + kind + ']', 'href')).split(/\?text=|[?&]body=/)[1] || '').replace(/\*/g, '');
-  await rtp.goto(APP + 'index.html?c=' + adham.id); await rtp.waitForSelector('#wacard .brandpick');
-  ok(await rtp.$eval('#wacard .brandpick .on', b => b.dataset.brand) === 'JUSS', 'Adham (booked by a JUSS booker): "Send as" starts on JUSS Marketing');
-  let zTy = await zMsg('thanks'), zDy = await zMsg('offer');
-  ok(/in association with JUSS Marketing/.test(zTy) && /Zara Iqbal, on behalf of JUSS Marketing recruitment team 🧡💙$/.test(zTy) && /JUSS Marketing BA Academy/.test(zDy) && /welcome-juss\.html/.test(zDy) && /– Zara, JUSS Marketing$/.test(zDy),
-    'as JUSS: the thank-you and the congratulations are both JUSS, signed by Fiza herself');
-  await rtp.locator('#wacard').screenshot({ path: SHOTS + '/37-send-as-juss.png' });
-  await rtp.click('#wacard .brandpick button[data-brand=LINK]'); await rtp.waitForSelector('#wacard .brandpick button.LINK.on');
-  zTy = await zMsg('thanks'); zDy = await zMsg('offer');
-  fs.writeFileSync(`${SHOTS}/msg-academy-fiza-link.txt`, zDy);
-  ok(/in association with LINK Marketing/.test(zTy) && /linkmagflip/.test(zTy) && /Zara Iqbal, on behalf of LINK Marketing recruitment team 🧡$/.test(zTy) &&
-    /LINK Marketing BA Academy/.test(zDy) && /welcome-link\.html/.test(zDy) && /forms\.office\.com/.test(zDy) && zDy.indexOf('f4pkh222') >= 0 && /– Zara, LINK Marketing$/.test(zDy) &&
-    /Day 1 details \(LINK\)/.test(await rtp.innerText('#wacard')),
-    'tap LINK → both switch to LINK: wording, magazine, LINK welcome page, pre-coaching, LINK\'s Google Maps pin, signed by Fiza');
-  await rtp.locator('#wacard').screenshot({ path: SHOTS + '/38-send-as-link.png' });
-  let zA = null; for (let i = 0; i < 25 && !(zA && zA.brand === 'LINK'); i++) { zA = await api(admin, 'getCandidate', { id: adham.id }); if (zA.brand !== 'LINK') await new Promise(r => setTimeout(r, 200)); }
-  ok(zA.brand === 'LINK' && zA.company === 'JUSS' && /welcome-link\.html/.test(zA.welcome_url), 'saved: Adham\'s messages now come from LINK, his welcome link is the LINK page (his booker and pay stay JUSS)');
-  const zW = await post('/api', { action: 'welcomeInfo', t: zA.welcome_url.match(/[?&]t=(\w+)/)[1] });
-  ok(zW.ok && zW.data.company === 'LINK', 'his welcome page shows LINK too, even from the JUSS link sent earlier');
-  await rtp.$eval('#wacard a.btn[data-kind=thanks]', a => { a.addEventListener('click', e => e.preventDefault()); a.click(); });
-  let zS = null; for (let i = 0; i < 25 && !(zS && zS.thanks_sent_at); i++) { zS = await api(admin, 'getCandidate', { id: adham.id }); if (!zS.thanks_sent_at) await new Promise(r => setTimeout(r, 200)); }
-  ok(zS.thanks_by === 'Zara Iqbal' && zS.brand === 'LINK', 'Fiza taps send → saved as sent by her, as LINK');
+  ok(zRows.length === (await api(admin, 'listDay', {})).items.length && /Every appointment today, LINK and JUSS/.test(await rtp.innerText('.sheet .hint')) && !(await rtp.$('.sheet .datehead')) && /choose LINK or JUSS/.test(await rtp.innerText('.sheet .hint')),
+    'Fiza\'s thank-you list: every appointment today, LINK and JUSS (she works for both); "After you tap Send, choose LINK or JUSS"');
+  const zch = async co => decodeURIComponent((await rtp.getAttribute('.cochooser .cobtn[data-co=' + co + ']', 'href')).split(/\?text=|[?&]body=/)[1] || '').replace(/\*/g, '');
+  await rtp.$eval('.sheet .trow[data-tr="' + adham.id + '"] a[data-thanks]', a => { a.addEventListener('click', e => e.preventDefault()); a.click(); });
+  await rtp.waitForSelector('.cochooser .cobtn[data-co=LINK]');
+  const zTy = await zch('LINK');
+  ok(/in association with LINK Marketing/.test(zTy) && /linkmagflip/.test(zTy) && /Zara Iqbal, on behalf of LINK Marketing recruitment team 🧡$/.test(zTy) && /in association with JUSS Marketing/.test(await zch('JUSS')),
+    'Adham (JUSS booker): tap Send → "Which company?" → LINK opens the LINK thank-you (wording, magazine, hearts), signed by Fiza');
+  await rtp.$eval('.cochooser .cobtn[data-co=LINK]', a => { a.addEventListener('click', e => e.preventDefault()); a.click(); });
+  await rtp.waitForSelector('.sheet .trow[data-tr="' + adham.id + '"] .pill.green');
+  let zA = null; for (let i = 0; i < 25 && !(zA && zA.thanks_sent_at && zA.brand === 'LINK'); i++) { zA = await api(admin, 'getCandidate', { id: adham.id }); if (!(zA.thanks_sent_at && zA.brand === 'LINK')) await new Promise(r => setTimeout(r, 200)); }
+  ok(zA.thanks_by === 'Zara Iqbal' && zA.brand === 'LINK' && zA.company === 'JUSS' && (await rtp.innerText('.sheet .trow[data-tr="' + adham.id + '"] .co')) === 'LINK',
+    'picked LINK → row "✓ Sent", tagged LINK; saved as sent by Fiza, as LINK (his booker, pay and lists stay JUSS)');
+  ok(/welcome-link\.html/.test(zA.welcome_url) && (await post('/api', { action: 'welcomeInfo', t: zA.welcome_url.match(/[?&]t=(\w+)/)[1] })).data.company === 'LINK',
+    'everything after follows it: his welcome page is now the LINK one, even from the JUSS link sent earlier');
+  // Everyone else (Angad, the booker): no question, the message just follows the team's choice
   await ap.goto(APP + 'index.html?c=' + adham.id); await ap.waitForSelector('#wacard a.btn[data-kind=offer]');
   const aDy = decodeURIComponent((await ap.getAttribute('#wacard a.btn[data-kind=offer]', 'href')).split(/\?text=|[?&]body=/)[1] || '');
-  ok(!(await ap.$('.brandpick')) && /LINK Marketing BA Academy/.test(aDy) && /– Jess, LINK Marketing$/.test(aDy),
-    'everyone else (Angad, the booker): no switch, but their messages follow the team\'s choice (LINK, signed Jess as before)');
+  await ap.$eval('#wacard a.btn[data-kind=offer]', a => { a.addEventListener('click', e => e.preventDefault()); a.click(); });
+  await new Promise(r => setTimeout(r, 300));
+  ok(!(await ap.$('.cochooser')) && /LINK Marketing BA Academy/.test(aDy) && /– Jess, LINK Marketing$/.test(aDy),
+    'everyone else (Angad, the booker): Send opens straight away, following the team\'s choice (LINK, signed Jess as before)');
+  // Candidate page: nothing to switch on screen; the Day 1 button asks once tapped
+  await rtp.goto(APP + 'index.html?c=' + adham.id); await rtp.waitForSelector('#wacard a.btn[data-kind=offer]');
+  ok(!/\((LINK|JUSS)\)/.test(await rtp.innerText('#wacard a.btn[data-kind=offer]')), 'Fiza\'s Day 1 button doesn\'t name a company: she picks it after tapping');
+  await rtp.$eval('#wacard a.btn[data-kind=offer]', a => { a.addEventListener('click', e => e.preventDefault()); a.click(); });
+  await rtp.waitForSelector('.cochooser .cobtn[data-co=JUSS]');
+  const dLink = await zch('LINK'), dJuss = await zch('JUSS');
+  fs.writeFileSync(`${SHOTS}/msg-academy-fiza-link.txt`, dLink);
+  ok(/LINK Marketing BA Academy/.test(dLink) && /welcome-link\.html/.test(dLink) && /forms\.office\.com/.test(dLink) && dLink.indexOf('f4pkh222') >= 0 && /– Zara, LINK Marketing$/.test(dLink) &&
+    /JUSS Marketing BA Academy/.test(dJuss) && /welcome-juss\.html/.test(dJuss) && !/forms\.office\.com/.test(dJuss) && dJuss.indexOf('zeP4MjS2hMJzB9V9A') >= 0 && /– Zara, JUSS Marketing$/.test(dJuss),
+    'tap 🎉 Day 1 details → "Which company?": LINK = LINK wording, welcome page, pre-coaching, Maps pin; JUSS = the JUSS versions; signed by Fiza either way');
+  ok(/Booked by Abdullahi/.test(await rtp.innerText('.cochooser .cobtn[data-co=JUSS]')) && /Chosen last time/.test(await rtp.innerText('.cochooser .cobtn[data-co=LINK]')),
+    'each choice says whose it is: JUSS "Booked by Abdullahi", LINK "Chosen last time"');
+  await rtp.locator('.cochooser .sheet').screenshot({ path: SHOTS + '/37-which-company.png' });
+  await rtp.$eval('.cochooser .cobtn[data-co=JUSS]', a => { a.addEventListener('click', e => e.preventDefault()); a.click(); });
+  await rtp.waitForSelector('.cochooser', { state: 'detached' });
+  for (let i = 0; i < 25 && zA.brand !== 'JUSS'; i++) { zA = await api(admin, 'getCandidate', { id: adham.id }); if (zA.brand !== 'JUSS') await new Promise(r => setTimeout(r, 200)); }
+  ok(zA.brand === 'JUSS' && /welcome-juss\.html/.test(zA.welcome_url), 'picked JUSS → the question closes, saved, JUSS welcome page again (brand ' + zA.brand + ')');
   const zBk = await loginApi('fiza@example.com');
   const bkTry = await post('/api', { action: 'setBrand', token: zBk, id: jasId, co: 'JUSS' }), bkThanks = await post('/api', { action: 'markSent', token: zBk, id: jasId, kind: 'thanks' });
   ok(!bkTry.ok && /recruitment team/.test(bkTry.error) && !bkThanks.ok && /Jess Grace, Rubal Oshan or Zara Iqbal/.test(bkThanks.error),
-    'bookers can\'t switch the company or send thank-yous (the server checks): "' + bkThanks.error + '"');
-  await rtp.goto(APP + 'index.html?c=' + adham.id); await rtp.waitForSelector('#wacard .brandpick');
-  await rtp.click('#wacard .brandpick button[data-brand=JUSS]'); await rtp.waitForSelector('#wacard .brandpick button.JUSS.on');
-  for (let i = 0; i < 25 && zA.brand !== 'JUSS'; i++) { zA = await api(admin, 'getCandidate', { id: adham.id }); if (zA.brand !== 'JUSS') await new Promise(r => setTimeout(r, 200)); }
-  ok(zA.brand === 'JUSS' && /welcome-juss\.html/.test(zA.welcome_url), 'switch back to JUSS → saved, JUSS welcome page again');
+    'bookers can\'t choose the company or send thank-yous (the server checks): "' + bkThanks.error + '"');
   await rtc.close();
 
   // ── Daily 18:00 round-up for every booker (runs from the 5-minute keep-warm, no extra trigger) ──

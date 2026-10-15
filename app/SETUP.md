@@ -197,12 +197,12 @@ When a booker books someone onto the Academy (or an admin approves a 🔴 bookin
    - **It only ever goes from the recruitment team's own addresses**, signed by whoever sends it: Jess from `jess@linkmarketing.org.uk`, Rubal from `rubal@jussmarketing.co.uk`, Fiza from `recruitment@jussmarketing.co.uk` (any of them can send either company's). Anyone else pressing Send (Angad, Satpal) sends from the company's person: LINK → Jess, JUSS → Rubal. Replies go to that address, and it gets a copy.
    - The card and preview say who it's from. If the app can't send as that address yet, Send stays off: it never falls back to another address.
 
-### Send as LINK or JUSS (Jess, Rubal, Fiza)
-The recruitment team work for both companies. **Jess, Rubal** (`THANKS_TEAM` in Code.gs) **and everyone in `RECRUIT_TEAM`** (Fiza: `recruitment@jussmarketing.co.uk`) see a **Send as  LINK | JUSS** switch:
-- on a candidate's page, at the top of the messages (thank-you, congratulations / Day 1 details, "we tried calling you");
-- on each row of **Thank everyone 💬** (Fiza's list is every appointment, LINK and JUSS).
+### Which company? (Jess, Rubal, Fiza)
+The recruitment team work for both companies. **Jess, Rubal** (`THANKS_TEAM` in Code.gs) **and everyone in `RECRUIT_TEAM`** (Fiza: `recruitment@jussmarketing.co.uk`) tap **💬 Send thank-you** or **🎉 Send BA Academy Day 1 details** as usual (candidate page, **Thank everyone 💬**, or the Day 1 button on a list card / Chase), then the app asks **"Which company?"**:
+- **LINK Marketing** or **JUSS Marketing**, each saying whose it is ("Booked by Abdullahi" = their booker's company, "Chosen last time").
+- Tap one and WhatsApp (or their texts / email) opens with **that company's** message: wording, magazine, hearts, welcome page, pre-coaching (LINK), Google Maps pin. Signed with the sender's own name.
 
-It starts on their booker's company. Tap the other one and the message changes straight away: wording, magazine, hearts, welcome page, pre-coaching (LINK), Google Maps pin, and the welcome email. Messages are signed with the sender's own name. The choice is saved on the candidate, so everything after it follows (the welcome page they open, the welcome email, the Day 1 reminder), even when someone else sends it. **Pay, lists and reminders still follow the booker's company.**
+The choice is saved on the candidate, so everything after it follows (the welcome page they open, the welcome email, the Day 1 reminder), even when someone else sends it. Anyone else (Angad, Satpal, bookers) isn't asked: their messages follow the last choice, else the booker's company. **Pay, lists and reminders always follow the booker's company.** Fiza's thank-you list is every appointment, LINK and JUSS.
 
 To add someone to the recruitment team: add their email to `RECRUIT_TEAM` in Code.gs, and add them as a "Send mail as" address (below) so they can send welcome emails.
 
