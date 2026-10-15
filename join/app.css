@@ -522,6 +522,9 @@ textarea.short { min-height: 64px; }
 .sentlist .sl-r div { font-size: 13px; color: var(--muted); margin-top: 1px; overflow-wrap: anywhere; }
 .sentlist .sl-r div b { color: var(--ink); }
 .sentlist .sl-r.no div { color: var(--red); font-weight: 700; }
+.calllog { margin-top: 4px; border-top: 0; padding-top: 0; }
+.calllog .sl-r.old span { color: var(--muted); }
+.sentlist .sl-n { margin: 4px 0 0; font-size: 13.5px; white-space: pre-wrap; color: var(--ink); }
 
 /* Team / misc */
 table.t { width: 100%; border-collapse: collapse; font-size: 14px; }

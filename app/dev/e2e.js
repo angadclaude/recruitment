@@ -496,7 +496,7 @@ async function fillEval(p) {
   ok(/💡 Plays semi-pro football/.test(snap) && /Wants to earn on results, saving for a house/.test(snap), 'booker sees the room answers: 💡 ice-breaker + why sales');
   ok(/🎤 Presentation by Nathan Smith/.test(snap) && !/rated by/.test(snap), 'their page says who ran the presentation: "🎤 Presentation by Nathan Smith" (he rated the room too)');
   const hdr = (await getJson('/dev/sheet?name=Candidates'))[0];
-  ok(hdr.slice(-13).join() === 'recruit_source,databyte_at,databyte_by,onboard_email_at,onboard_email_by,brand,presented_by_id,presented_by,offer_by,offer_via,offer_co,thanks_via,thanks_co' && new Set(hdr).size === hdr.length,
+  ok(hdr.slice(-14).join() === 'recruit_source,databyte_at,databyte_by,onboard_email_at,onboard_email_by,brand,presented_by_id,presented_by,offer_by,offer_via,offer_co,thanks_via,thanks_co,outcome_log' && new Set(hdr).size === hdr.length,
     'live Sheet with the presenter headers written twice: the empty copies cleared, the new columns added in the right place (no data moved)');
   ok(!/Unspent convictions/.test(snap), 'conviction answer hidden from bookers');
   await bp.click('.chips[data-name=outcome] .chip:has-text("Academy booked")');
@@ -631,6 +631,9 @@ async function fillEval(p) {
   ok(!(await ap.$('a.wa[data-kind=offer]')), 'no Academy WhatsApp until admin approves');
   await ap.click('#reject');
   await ap.waitForSelector('text=Rejected by');
+  const ishLog = JSON.parse((await api(admin, 'getCandidate', { id: ishita.id })).outcome_log || '[]');
+  ok(ishLog.length === 2 && ishLog[0].o === 'Academy booked' && ishLog[0].by === 'Mo Aden' && ishLog[1].o === 'Not suitable' && ishLog[1].by === 'Angad Oshan' && /^Academy booking rejected/.test(ishLog[1].n),
+    'call log keeps both: Mo\'s "Academy booked", then Angad\'s rejection ("Not suitable · Academy booking rejected")');
 
   await ap.click('.tabbar button[data-tab=team]');
   await ap.waitForSelector('#slideqr');
@@ -1143,6 +1146,22 @@ async function fillEval(p) {
     'rebooking (new Day 1 date) clears the no-show; they need confirming again');
   await api(abdT, 'saveOutcome', { id: adham.id, outcome: 'Academy booked', academy_date: '2026-10-19', outcome_notes: '' });
   await api(admin, 'markDay1', { id: adham.id, status: 'arrived' });
+  // Call log: every response logged, who and when (not just the latest)
+  const adLog = JSON.parse((await api(admin, 'getCandidate', { id: adham.id })).outcome_log || '[]');
+  ok(adLog.length === 3 && adLog.every(e => e.o === 'Academy booked' && e.by === 'Abdullahi Ahmed' && /^2026-10-\d\d \d\d:\d\d$/.test(e.at)) && adLog[1].d === '2026-10-26' && adLog[1].n === 'missed the train' && adLog[2].d === '2026-10-19',
+    'call log saved: all 3 of Abdullahi\'s responses on Adham, each with day + time, Day 1 date and notes');
+  await ap.goto(APP + 'index.html?c=' + adham.id); await ap.waitForSelector('#out .calllog');
+  const clRows = await ap.$$eval('#out .calllog .sl-r', r => r.map(x => x.innerText.replace(/\n+/g, ' | ')));
+  ok(clRows.length === 3 && /^Academy booked · Day 1 Mon 19 Oct \| Abdullahi Ahmed · \w{3} \d+ Oct \d\d:\d\d/.test(clRows[0]) && /Day 1 Mon 26 Oct \| Abdullahi Ahmed · \w{3} \d+ Oct \d\d:\d\d · LATE \| missed the train$/.test(clRows[1]) && !(await ap.$('#out #logged')),
+    'their page, Outcome: "📞 Call log", newest first, each with who, day and time: ' + clRows.join(' / '));
+  await ap.locator('#out .calllog').screenshot({ path: SHOTS + '/39-call-log.png' });
+  // Outcomes logged before the call log existed: rebuilt once from the Log
+  const olFill = JSON.parse((await post('/dev/eval', { js: `(() => { MEMO = {}; const c = getC('${adham.id}'); c.outcome_log = ''; writeRow('Candidates', c);
+    PropertiesService.getScriptProperties().setProperty('OUTCOMES_BACKFILLED', ''); backfillOutcomes(); MEMO = {};
+    return JSON.stringify([getC('${adham.id}').outcome_log, PropertiesService.getScriptProperties().getProperty('OUTCOMES_BACKFILLED')]); })()` })).out);
+  const olB = JSON.parse(olFill[0] || '[]');
+  ok(olB.length === 3 && olB.map(e => e.at + '|' + e.by + '|' + e.o).join() === adLog.map(e => e.at + '|' + e.by + '|' + e.o).join() && olB[2].d === '2026-10-19' && !!olFill[1],
+    'older outcomes rebuilt once from the Log: same 3 entries, who and when (the latest with its Day 1 date)');
 
   // ── 9. Rejected person returns next week → red; scheduled pushes ──
   await setTime('2026-10-20T10:00:00+01:00');

@@ -1,4 +1,4 @@
-window.APP_VERSION = '6815cf0a';
+window.APP_VERSION = 'f282ac19';
 
 (function () {
 'use strict';
@@ -1629,6 +1629,23 @@ function sentList(c) {
 /** Sends on their way to Google (SENDING, next to upsert): kept on top of anything Google answers before it has them (the LINK / JUSS switch can answer first). */
 function sendingOver(c) { const p = SENDING[c.id]; if (p) Object.keys(p).forEach(k => Object.assign(c, p[k])); return c; }
 function sentDone(id, kind) { if (SENDING[id]) delete SENDING[id][kind]; }
+// ───── Call log: every response logged on the call, not just the latest ─────
+/** [{at, by, o, d, late, n}], newest first. Saved by the Google code; before that version, just the latest outcome. */
+function callLog(c) {
+  let l = []; try { l = JSON.parse(c.outcome_log || '[]'); } catch (e) { l = []; }
+  if (!Array.isArray(l)) l = [];
+  const min = t => String(t || '').slice(0, 16);  // a save still on its way to Google isn't in the log yet
+  if (c.outcome && c.outcome_at && !l.some(e => min(e.at) === min(c.outcome_at))) {
+    l = l.concat([{ at: min(c.outcome_at), by: c.outcome_by, o: c.outcome, d: c.academy_date, late: c.outcome_late ? 1 : 0, n: c.outcome_notes }]);
+  }
+  return l.reverse();
+}
+function callLogHtml(c) {
+  return '<div class="sentlist calllog"><div class="sl-h">📞 Call log</div>' + callLog(c).map((e, i) =>
+    '<div class="sl-r' + (i ? ' old' : '') + '"><span>' + (i ? '' : '<b>') + h(e.o) + (e.o === 'Academy booked' && e.d ? ' · Day 1 ' + fmt(e.d) : '') + (i ? '' : '</b>') + '</span>' +
+    '<div>' + sentInfo(e.by, e.at, '', '') + (e.late ? ' · <b style="color:var(--amber)">LATE</b>' : '') + '</div>' +
+    (e.n ? '<p class="sl-n">' + h(e.n) + '</p>' : '') + '</div>').join('') + '</div>';
+}
 /** Straight away on this phone, on every copy of them (lists, Chase, Day 1): who sent it, when, how, as which company. The Google code saves the same. */
 function noteSent(id, kind, via, co) {
   const c0 = findCand(id); if (!c0) return null;
@@ -2847,8 +2864,8 @@ function renderCandidate(c, quiet) {
   let out = '<div class="card" id="out">';
   if (c.outcome) {
     out += '<p>' + statusPill(c) + (c.academy_date ? ' <b>Day 1: ' + fmtLong(c.academy_date) + '</b>' : '') + '</p>' +
-      '<p class="small muted">Logged ' + fmtTs(c.outcome_at) + ' by ' + h(c.outcome_by) + (c.outcome_late ? ' · <b style="color:var(--amber)">LATE</b>' : '') + '</p>' +
-      (c.outcome_notes ? '<p style="white-space:pre-wrap">' + h(c.outcome_notes) + '</p>' : '') +
+      (callLog(c).length > 1 ? callLogHtml(c) : '<p class="small muted" id="logged">Logged ' + fmtTs(c.outcome_at) + ' by ' + h(c.outcome_by) + (c.outcome_late ? ' · <b style="color:var(--amber)">LATE</b>' : '') + '</p>' +
+      (c.outcome_notes ? '<p style="white-space:pre-wrap">' + h(c.outcome_notes) + '</p>' : '')) +
       (c.outcome === 'Academy booked' && offerReady ? (c.academy_confirmed_at
         ? '<div class="flag green">✅ ' + h(c.first_name) + ' confirmed Day 1 on their welcome page · ' + fmtTs(c.academy_confirmed_at) + '</div>'
         : '<div class="flag amber">⏳ Not confirmed yet. They confirm by tapping the link in your WhatsApp.</div>') : '') +
