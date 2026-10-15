@@ -108,6 +108,7 @@ const SHEETS = {
     'welcome_token', 'academy_confirmed_at',
     'p_why_sales', 'p_why_sales_note', 'p_interesting', 'eval_edited_at', 'thanks_by', 'no_whatsapp', 'day1_status', 'day1_by', 'day1_at', 'day1_reminded_at', 'day1_reminded_by', 'recruit_source', 'databyte_at', 'databyte_by', 'onboard_email_at', 'onboard_email_by',
     'brand',  // LINK / JUSS: the company their messages and welcome email come from (chosen by the recruitment team), when it isn't their booker's
+    'presented_by_id', 'presented_by',  // who ran the presentation, from their evaluation (a presenter on the team, a typed name, or "Not sure")
   ],
   History: ['attended_date', 'full_name', 'mobile', 'email', 'booker_raw', 'presenter_raw'],
   Codes: ['email', 'code_hash', 'expires', 'attempts'],
@@ -497,7 +498,10 @@ function publicConfig(req) {
   const bookers = usersAll().filter(u => truthy(u.active) && has(u, 'booker'))
     .map(u => ({ id: u.id, name: u.name, company: u.company, aliases: aliasesOf(u) }))
     .sort((a, b) => a.name.localeCompare(b.name));
-  return { today: todayStr(), bookers: bookers, rtw: RTW.map(r => ({ label: r[0], level: r[1] })) };
+  // For "Who ran today's presentation?" on the evaluation: everyone with the Presenter role
+  const presenters = usersAll().filter(u => truthy(u.active) && rolesOf(u).indexOf('presenter') >= 0)  // not admins: tick Presenter on anyone who presents
+    .map(u => ({ id: u.id, name: u.name })).sort((a, b) => a.name.localeCompare(b.name));
+  return { today: todayStr(), bookers: bookers, presenters: presenters, rtw: RTW.map(r => ({ label: r[0], level: r[1] })) };
 }
 
 function checkin(req) {
@@ -603,7 +607,19 @@ function myEval(req) {
   const c = candidateByResume(req);
   if (!canEditEval(c)) throw new Error("Your answers can't be changed now. Speak to the person who booked you in.");
   const a = {}; EVAL_FIELDS.forEach(k => { a[k] = c[k]; });
+  // Who ran the presentation, as they answered it
+  a.q0_presenter = c.presented_by_id || (c.presented_by === 'Not sure' ? 'Not sure' : c.presented_by ? 'Someone else' : '');
+  a.q0_presenter_other = !c.presented_by_id && c.presented_by && c.presented_by !== 'Not sure' && c.presented_by !== 'Someone else' ? c.presented_by : '';
   return { answers: a };
+}
+/** "Who ran today's presentation?": a presenter on the team (their id), "Someone else" (+ the name they typed) or "Not sure". null = not asked. */
+function presenterAnswer(a) {
+  const v = String(a.q0_presenter || '').trim();
+  if (!v) return null;
+  if (v === 'Not sure') return { id: '', name: 'Not sure' };
+  if (v === 'Someone else') return { id: '', name: cleanName(String(a.q0_presenter_other || '').slice(0, 60)) || 'Someone else' };
+  const u = userById(v);
+  return u ? { id: u.id, name: u.name } : { id: '', name: 'Not sure' };
 }
 
 /** Evaluation QR on a different phone/page: find today's check-in by mobile number. */
@@ -637,6 +653,8 @@ function submitEval(req) {
       status = 'edited';
     }
     EVAL_FIELDS.forEach(k => { c[k] = String(a[k] || '').trim().slice(0, 1000); });
+    const pres = presenterAnswer(a);
+    if (pres) { c.presented_by_id = pres.id; c.presented_by = pres.name; }
     if (status === 'new') c.eval_at = nowStr(); else c.eval_edited_at = nowStr();
     writeRow('Candidates', c);
     return { c: c, status: status };
