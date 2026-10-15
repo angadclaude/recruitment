@@ -1,4 +1,4 @@
-window.APP_VERSION = '674d09c2';
+window.APP_VERSION = 'b8135cf9';
 
 (function () {
 'use strict';
@@ -1956,8 +1956,8 @@ function slideQR(url, title, caption, colour) {
 const QR_CAPTIONS = { checkin: 'Takes 1 minute 👋', eval: '4 minutes · your answers shape your next step' };
 // ───── Chase tab: nobody drops out of the pipeline. Admins: everyone, by booker (one tap nudges them). Bookers: their own. ─────
 // Same rule as leakOf() in Code.gs (the nudges and the badge use that one); re-run here so a change shows straight away.
-const LEAKS = { log: '📞 Log the call', callback: '🔁 Call back', text: '📲 Send Day 1 text', confirm: '⏳ Day 1 not confirmed', noshow: '❌ No-show: rebook', pending: '⚖️ Waiting on your decision', unticked: '🎓 Day 1 not ticked' };
-const BOOKER_LEAKS = ['log', 'callback', 'text', 'confirm', 'noshow'];
+const LEAKS = { stale: '🔴 Stale: close it out', log: '📞 Log the call', callback: '🔁 Call back', text: '📲 Send Day 1 text', confirm: '⏳ Day 1 not confirmed', noshow: '❌ No-show: rebook', pending: '⚖️ Waiting on your decision', unticked: '🎓 Day 1 not ticked' };
+const BOOKER_LEAKS = ['stale', 'log', 'callback', 'text', 'confirm', 'noshow'];
 function leakOf(c, today, days) {
   const from = addDays(today, -((days || 14) - 1));
   if (c.outcome === 'Academy booked') {
@@ -1967,9 +1967,10 @@ function leakOf(c, today, days) {
     if (c.academy_date >= today) return c.academy_confirmed_at ? '' : c.offer_sent_at ? 'confirm' : 'text';
     return 'unticked';
   }
-  if (c.attended_date < from || !(c.in_room === true || c.in_room === 'TRUE') || c.non_qual) return '';
-  if (!c.outcome) return 'log';
-  return c.outcome === 'No answer' || c.outcome === 'Thinking it over' ? 'callback' : '';
+  if (!(c.in_room === true || c.in_room === 'TRUE') || c.non_qual) return '';
+  if (c.outcome === 'No answer' || c.outcome === 'Thinking it over') return c.attended_date < from && !(c.callback_at > londonNow()) ? 'stale' : 'callback';
+  if (c.attended_date < from) return '';
+  return c.outcome ? '' : 'log';
 }
 function msgRebook(c) {
   return 'Hey ' + c.first_name + '! 👋' + heartOf(c) + '\n\n' +
@@ -2045,8 +2046,8 @@ function drawChase(quiet) {
 }
 /** Booker: their own people, grouped by what to do, with the call / WhatsApp / log buttons right there. */
 function chaseBooker(list, due, late) {
-  const kind = x => x.k === 'log' ? 'call' : x.k === 'callback' ? (x.c.outcome === 'No answer' ? 'noanswer' : 'call') : x.k === 'text' ? 'offer' : x.k === 'confirm' ? 'remind' : 'rebook';
-  const why = { log: 'by ' + due, callback: 'still warm: call them', text: 'they can\'t confirm without it', confirm: 'remind them', noshow: 'find out why, rebook' };
+  const kind = x => x.k === 'log' ? 'call' : x.k === 'callback' || x.k === 'stale' ? (x.c.outcome === 'No answer' ? 'noanswer' : 'call') : x.k === 'text' ? 'offer' : x.k === 'confirm' ? 'remind' : 'rebook';
+  const why = { stale: 'over 2 weeks: booked or declined?', log: 'by ' + due, callback: 'still warm: call them', text: 'they can\'t confirm without it', confirm: 'remind them', noshow: 'find out why, rebook' };
   const n = list.length, lt = late(list);
   return '<div class="card"><div class="display" style="font-size:24px">' + (n ? n + ' to chase' : 'Nobody to chase 🎉') + '</div>' +
     '<p class="hint" style="margin:6px 0 0">' + (n ? 'Everyone here could drop out of your pipeline. Sort them before ' + h(due) + '.' + (lt ? ' <b class="red">' + lt + ' outcome' + (lt === 1 ? '' : 's') + ' LATE.</b>' : '') : 'Your pipeline\'s clean. Keep it that way.') + '</p></div>' +
@@ -2068,7 +2069,7 @@ function chaseAdmin(list, today, due, late, count) {
   const nm = l => l.map(x => '<button class="nm" data-cand="' + h(x.c.id) + '">' + h(x.c.first_name) + '</button>').join('');
   const names = l => l.map(x => x.c.first_name).join(', ');
   const people = list.length, lt = late(list);
-  const tally = BOOKER_LEAKS.map(k => count(k) ? LEAKS[k].split(' ')[0] + ' ' + count(k) + ' ' + { log: 'to log' + (lt ? ' (' + lt + ' LATE)' : ''), callback: 'call back', text: 'Day 1 text', confirm: 'not confirmed', noshow: 'no-show' }[k] : '').filter(String).join(' · ');
+  const tally = BOOKER_LEAKS.map(k => count(k) ? LEAKS[k].split(' ')[0] + ' ' + count(k) + ' ' + { stale: 'stale', log: 'to log' + (lt ? ' (' + lt + ' LATE)' : ''), callback: 'call back', text: 'Day 1 text', confirm: 'not confirmed', noshow: 'no-show' }[k] : '').filter(String).join(' · ');
   const group = '⏰ *Pipeline check: don\'t lose anyone*\n_Outcomes due ' + due + '_\n' +
     rows.map(b => '\n*' + first(b.name) + '*\n' + BOOKER_LEAKS.filter(k => b.L[k]).map(k => LEAKS[k] + ': ' + names(b.L[k])).join('\n')).join('\n') +
     '\n\nSort them now 👉 ' + ((S.me.links && S.me.links.staff) || '');
