@@ -1,4 +1,4 @@
-window.APP_VERSION = 'b8135cf9';
+window.APP_VERSION = 'e3956ee9';
 
 (function () {
 'use strict';
@@ -704,7 +704,13 @@ function brandCo(c) { return c.brand === 'JUSS' || c.brand === 'LINK' ? c.brand 
 /** The recruitment team choose LINK or JUSS before sending (needs the new Google code, which knows who's on the team). */
 function canPickBrand() { return !!recruitTeam() && canThank(); }
 /** Their welcome page, in the colours of the company the messages come from. */
-function welcomeLink(c) { return c.welcome_url ? String(c.welcome_url).replace(/welcome-(link|juss)\.html/, 'welcome-' + brandCo(c).toLowerCase() + '.html') : ''; }
+/** The link carries the Day 1 date on screen now: change the date and send straight away, before Google has sent back
+ *  the new link, and it still says the new date (16 Oct: Keira's said Mon 19 Oct in a "Mon 2nd November" message). */
+function welcomeLink(c) {
+  if (!c.welcome_url) return '';
+  const u = String(c.welcome_url).replace(/welcome-(link|juss)\.html/, 'welcome-' + brandCo(c).toLowerCase() + '.html');
+  return /^\d{4}-\d{2}-\d{2}$/.test(c.academy_date || '') ? u.replace(/([?&]d=)\d{4}-\d{2}-\d{2}/, '$1' + c.academy_date) : u;
+}
 /** One company's version of the thank-you / Day 1 details (the recruitment team's LINK and JUSS buttons). */
 function brandUrl(c, kind, via, co) {
   const x = Object.assign({}, c, { brand: co }), text = { thanks: msgThanks, offer: msgAcademy, noanswer: msgNoAnswer, thinking: msgThinking }[kind](x);
