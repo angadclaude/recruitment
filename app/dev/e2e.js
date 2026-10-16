@@ -1542,6 +1542,18 @@ async function fillEval(p) {
   ok(/in association with \*LINK Marketing\*/.test(naL) && /call or text me back on this number/.test(naL) && /\*Zara Iqbal\*, on behalf of LINK Marketing/.test(naL) && /in association with \*JUSS Marketing\*/.test(await rtMsg('noanswer', 'JUSS')),
     '"No answer": "we tried calling you, call or text me back on this number" as LINK or JUSS, signed by her');
   await rt2.close();
+  // Day 1 date changed and the details sent straight away, before Google has answered: the link still carries the new date
+  await api(admin, 'saveOutcome', { id: tia.id, outcome: 'Academy booked', academy_date: '2026-11-02', outcome_notes: '' });
+  await ap.goto(APP + 'index.html?c=' + tia.id); await ap.waitForSelector('#wacard a[data-kind=offer]');
+  ok(/[?&]d=2026-11-02/.test(decodeURIComponent(await ap.getAttribute('#wacard a[data-kind=offer]', 'href'))), 'booked for Mon 2 Nov: the Day 1 link says 2 Nov');
+  await ap.route('**/api', route => new Promise(r => setTimeout(r, 6000)).then(() => route.continue()).catch(() => {}));  // Google slow
+  await ap.fill('#adate', '2026-11-09'); await ap.click('#saveout');
+  await ap.waitForFunction(() => /Day 1: Mon 9 Nov/.test(decodeURIComponent((document.querySelector('#wacard a[data-kind=offer]') || {}).href || '')));
+  const d1Now = decodeURIComponent(await ap.getAttribute('#wacard a[data-kind=offer]', 'href'));
+  ok(/[?&]d=2026-11-09/.test(d1Now) && !/d=2026-11-02/.test(d1Now) && /welcome-juss\.html/.test(d1Now),
+    'moved to 9 Nov and sent straight away, Google still saving: the message AND its link both say 9 Nov (not the old 2 Nov)');
+  await ap.unroute('**/api');
+  ok(await pollFor(async () => (await api(admin, 'getCandidate', { id: tia.id })).academy_date === '2026-11-09'), 'and the new date reaches Google');
 
   // ── Stale: "No answer" / "Thinking it over" never just drop off Chase after 2 weeks ──
   await setTime('2026-10-27T10:00:00+00:00');  // Ali (in on Mon 12 Oct, "No answer") is now over 2 weeks old
