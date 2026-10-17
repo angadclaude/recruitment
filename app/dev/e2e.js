@@ -59,7 +59,15 @@ async function tapToText(page, selector, text, keepFocus) {
   return Math.round(await page.evaluate(() => window.__seen - window.__tap));
 }
 const shot = async (page, name, full) => { await page.waitForTimeout(300); return page.screenshot({ path: `${SHOTS}/${name}.png`, fullPage: !!full }); };
-const setTime = iso => post('/dev/time', { iso });
+// The test server's clock and every test phone's clock move together, so the suite doesn't depend on today's real date
+// (17 Oct: phones on the real clock were past the test week's Friday 18:00 deadline, so every save came back "late")
+let CLOCK_OFF = 0;
+const CONTEXTS = [];
+const setTime = async iso => {
+  CLOCK_OFF = iso ? new Date(iso).getTime() - Date.now() : 0;
+  await Promise.all(CONTEXTS.map(c => c.clock.setSystemTime(new Date(Date.now() + CLOCK_OFF)).catch(() => {})));
+  return post('/dev/time', { iso });
+};
 const ok = (cond, msg) => { assert.ok(cond, msg); console.log('  ✓ ' + msg); };
 const pushesTo = async id => (await getJson('/dev/pushes')).filter(p => p.body.include_aliases.external_id.includes(id));
 
@@ -134,6 +142,8 @@ async function fillEval(p) {
   ok(hist.length === 2, 'history import keeps the last 6 months only');
 
   const browser = await chromium.launch();
+  const newContext = browser.newContext.bind(browser);
+  browser.newContext = async (...a) => { const ctx = await newContext(...a); CONTEXTS.push(ctx); await ctx.clock.setSystemTime(new Date(Date.now() + CLOCK_OFF)); return ctx; };
 
   // ── 1. QR #1 on the first slide → check-in ──
   console.log('candidate check-in (QR 1)');
@@ -222,13 +232,17 @@ async function fillEval(p) {
   await shot(pp, '04-presenter-notes', true);
   ok((await api(admin, 'getCandidate', { id: (await api(admin, 'search', { q: 'Jasraj' })).items[0].id })).in_room === 'TRUE', 'rating Jasraj automatically confirmed "in the room"');
   const jasId = (await api(admin, 'search', { q: 'Jasraj' })).items[0].id;
-  // Not their candidate (Fiza booked Jasraj): the presenter sees the room rating, nothing else
+  // Not their candidate (Fiza booked Jasraj): the presenter sees who booked them and the room rating, nothing else
   const lockedTxt = await pp.innerText('#page');
-  ok(/Not your candidate/.test(lockedTxt) && !/07700|jasraj@example|Fiza|Call outcome|Graduate visa/.test(lockedTxt) && !(await pp.$('a[href^="tel:"]')) && !(await pp.$('a[data-kind]')) && !(await pp.$('#jump')),
-    'presenter on someone else\'s candidate: rating + notes only (no phone, email, booker, right to work, evaluation, outcome or WhatsApp)');
+  ok(/Not your candidate/.test(lockedTxt) && /booked by Fiza Iqbal/.test(lockedTxt) && !/07700|jasraj@example|Call outcome|Graduate visa/.test(lockedTxt) && !(await pp.$('a[href^="tel:"]')) && !(await pp.$('a[data-kind]')) && !(await pp.$('#jump')),
+    'presenter on someone else\'s candidate: who booked them ("booked by Fiza Iqbal"), rating + notes; no phone, email, right to work, evaluation, outcome or WhatsApp');
+  await pp.goBack(); await pp.waitForSelector('.item[data-id="' + jasId + '"]');
+  const jasRow = await pp.innerText('.item[data-id="' + jasId + '"] .sub');
+  ok(/^Fiza Iqbal LINK · in \d\d:\d\d$/.test(jasRow), 'presenter\'s Today list: who booked each one: "' + jasRow + '"');
+  await pp.click('.item[data-id="' + jasId + '"]'); await pp.waitForSelector('text=Not your candidate');
   const nathView = await api(nathan, 'getCandidate', { id: jasId });
-  ok(nathView.limited && !nathView.mobile && !nathView.email && !nathView.booker_name && !nathView.rtw && !nathView.q2_stood_out && !nathView.outcome && nathView.notes && nathView.rag === 'G',
-    'server: a presenter gets only the room fields for someone else\'s candidate (the app can\'t show what it never receives)');
+  ok(nathView.limited && !nathView.mobile && !nathView.email && nathView.booker_name === 'Fiza Iqbal' && !nathView.booker_id && !nathView.rtw && !nathView.q2_stood_out && !nathView.outcome && nathView.notes && nathView.rag === 'G',
+    'server: a presenter gets the room fields + who booked them for someone else\'s candidate, nothing else (the app can\'t show what it never receives)');
   const nope = await post('/api', { action: 'markSent', token: nathan, id: jasId, kind: 'offer' });
   ok(!nope.ok && /No access/.test(nope.error), 'server: nobody can send or log messages for someone else\'s candidate');
   // One tap on the Today list: Green / Amber / Red = in the room, and notes another presenter just wrote are kept
@@ -240,8 +254,8 @@ async function fillEval(p) {
   ok(ishNow.rag === 'R' && ishNow.in_room === 'TRUE' && ishNow.notes === 'Sat at the back' && ishNow.tags === 'Quiet', 'presenter taps Red on the list → in the room; notes + tags already written are kept');
   ok(!(await pp.$('.quick[data-for="' + ishita.id + '"]')), 'rated card drops its Green / Amber / Red buttons');
   // After the presentation: only Jess / Rubal (and admins) see the thank-you list
-  ok(!(await pp.$('#thanksAll')) && /name and room rating only/.test(await pp.innerText('#page')) && !(await pp.$('.act.call')),
-    'presenter\'s Today: no thank-you list, no call / WhatsApp on anyone else\'s card, "🔒 name and room rating only"');
+  ok(!(await pp.$('#thanksAll')) && /name, who booked them and the room rating only/.test(await pp.innerText('#page')) && !(await pp.$('.act.call')),
+    'presenter\'s Today: no thank-you list, no call / WhatsApp on anyone else\'s card, "🔒 name, who booked them and the room rating only"');
   // Jess (LINK recruitment team): all her LINK appointments in one list, whoever booked them
   const jessCtx = await browser.newContext(PHONE);
   const jsp = await jessCtx.newPage();

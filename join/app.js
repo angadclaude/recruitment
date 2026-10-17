@@ -1,4 +1,4 @@
-window.APP_VERSION = 'e3956ee9';
+window.APP_VERSION = '0efab9cc';
 
 (function () {
 'use strict';
@@ -1387,10 +1387,16 @@ function item(c, showStatus, kind) {
   return '<div class="ccard' + (q ? ' has-quick' : '') + '"><div class="swipe"><div class="acts"><a class="act call" href="tel:' + h(c.mobile) + '">' + icon('phone', 20) + '<span>Call</span></a>' +
     '<a class="act wa" href="' + h(waFor(c)) + '" target="_blank" rel="noopener">' + icon('chat', 20) + '<span>' + chanName(c) + '</span></a></div>' + itemBtn(c, showStatus, kind === 'rate') + '</div>' + q + '</div>';
 }
+/** Presenters in the room: who booked someone else's appointment. '' from Google code that doesn't send it yet. */
+function bookedBy(c, long) {
+  if (c.booker_name === undefined && c.booker_typed === undefined) return '';
+  return c.booker_name ? (long ? 'booked by <b>' + h(c.booker_name) + '</b>' : h(c.booker_name))
+    : '<i>' + (long ? 'booker' : 'Booker') + ' not confirmed' + (c.booker_typed ? ': "' + h(c.booker_typed) + '"' : '') + '</i>';
+}
 function itemBtn(c, showStatus, rating) {
   return '<button class="item" data-id="' + h(c.id) + '">' + avatar(c) + '<div class="main">' +
     '<div class="name">' + h(c.full_name) + (c.stars ? ' <span class="stars-sm">' + '★'.repeat(Number(c.stars)) + '</span>' : '') + '</div>' +
-    '<div class="sub">' + (c.limited ? (c.company ? '<span class="co ' + h(c.company) + '">' + h(c.company) + '</span> ' : '') + 'Checked in ' + h(String(c.created_at).slice(11, 16))
+    '<div class="sub">' + (c.limited ? (bookedBy(c) ? bookedBy(c) + ' ' : '') + (c.company ? '<span class="co ' + h(c.company) + '">' + h(c.company) + '</span> ' : '') + '· in ' + h(String(c.created_at).slice(11, 16))
       : c.booker_name ? h(c.booker_name) + ' <span class="co ' + h(c.company) + '">' + h(c.company) + '</span>' : '<i>Booker not confirmed' + (c.booker_typed ? ': "' + h(c.booker_typed) + '"' : '') + '</i>') + '</div>' +
     '<div class="pills">' + nqPill(c) + (showStatus ? statusPill(c) : '') + (c.in_room || rating ? '' : '<span class="pill">Not rated yet</span>') + (c._pending ? '<span class="pill">⏳ Syncing</span>' : '') + flagCounts(c) + '</div>' +
     '</div><span class="chev">›</span></button>';
@@ -1496,7 +1502,7 @@ function viewToday(quiet) {
       (isAdmin() ? '<div class="bullbtns"><button class="btn" id="bullDaily">📣 ' + (isToday ? 'Today\'s' : DAYS[D(S.day).getUTCDay()]) + ' bulletin</button><button class="btn ghost" id="bullWeek">🏆 Week top 5</button></div>' : '') +
       (items.length ? '<div class="section-h"><b>In the room</b><span>' + rated + ' of ' + items.length + ' rated</span></div>' +
         (isPresenter() && rated < items.length ? '<p class="hint">Tap Green, Amber or Red to rate. Rating = they were in the room (that\'s what counts for the recruitment incentive). Tap a name for stars and notes.</p>' : '') +
-        (items.some(c => c.limited) ? '<p class="hint">🔒 You see your own candidates in full. Everyone else\'s: name and room rating only.</p>' : '') +
+        (items.some(c => c.limited) ? '<p class="hint">🔒 You see your own candidates in full. Everyone else\'s: name, who booked them and the room rating only.</p>' : '') +
         '<div class="list">' + items.map(c => item(c, false, isPresenter() && !c.in_room ? 'rate' : '')).join('') + '</div>'
         : empty('📷', 'No check-ins yet. They appear here live as people scan the check-in QR on your first slide.'));
   }
@@ -2884,7 +2890,8 @@ function renderCandidate(c, quiet) {
   // Someone else's candidate (a presenter rating the room): who + appointment feedback, nothing else
   if (c.limited) {
     const lim = '<div class="profile">' + avatar(c, 'xl') + '<h1>' + h(c.full_name) + '</h1>' +
-      '<div class="muted small">Checked in ' + fmtTs(c.created_at) + (c.company ? ' · <span class="co ' + h(c.company) + '">' + h(c.company) + '</span>' : '') + '</div>' +
+      '<div class="muted small">Checked in ' + fmtTs(c.created_at) + (bookedBy(c, true) ? ' · ' + bookedBy(c, true) : '') +
+        (c.company ? ' <span class="co ' + h(c.company) + '">' + h(c.company) + '</span>' : '') + '</div>' +
       '<div class="pills center-pills">' + statusPill(c) + (c._pending ? '<span class="pill">⏳ Syncing…</span>' : '') + '</div>' +
       '<p class="hint" style="margin:10px 0 0">🔒 Not your candidate: you can rate the room. Their answers and outcome stay with the person who booked them.</p></div>';
     paint(c.first_name, lim + '<section class="csec" id="sec-pres"><div class="section-h"><b>Appt feedback</b></div>' + presCard(c, canNotes) + '</section>', quiet, true);

@@ -272,6 +272,7 @@ Every WhatsApp button has **Not on WhatsApp? 📱 Text · ✉️ Email** under i
 - **Made a mistake in the evaluation?** The candidate scans the evaluation QR again → **✏️ Change my answers** (same day, until their booker logs the call). The booker gets a push.
 - **Busy moments, slow Google, no signal:** a candidate's screen never waits. "You're checked in", "Thank you" (evaluation) and "You're locked in" (Confirm) show the instant they tap. What they sent is kept on their phone and delivered in the background: it retries by itself, and again the next time they open any of our pages. If Google turns a check-in down, they're put back on the form with everything still filled in and the reason. The welcome link carries their first name and Day 1 date, so it opens straight away; Maps, Calendar and Pre-Coaching are warmed up before they tap.
 - **Presenter RED / previously rejected** → admin decides before the Academy message unlocks.
+- **Who sees what:** admins see everyone in full; a booker sees their own candidates in full. A presenter in the room sees everyone else's **name, who booked them and the room rating only**: no phone, email, right to work, evaluation answers or outcome.
 - **GDPR, as the check-in page promises:** full details for **12 weeks**, then trimmed to the basics (name, contact, result, what the incentive needs). Evaluation answers, the convictions answer and presenter notes are wiped. Everything is deleted after **6 months** (= the repeat-candidate window). The conviction answer is admin-only.
 
 ## Changing something later
