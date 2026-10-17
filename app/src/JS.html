@@ -863,8 +863,31 @@ function isBooker() { return roles().indexOf('booker') >= 0; }
 Object.assign(S, { data: {}, inflight: {}, view: '', params: {}, viewId: 0, booted: false, syncing: 0 });
 const STALE_MS = 20000, POLL_MS = 30000, LIST_STALE_MS = 300000;
 
+// ───── A busy room (20 people checking in): never rebuild a page under someone's finger, or over taps they haven't saved ─────
+const FINGER = { down: false, up: 0 };
+document.addEventListener('touchstart', () => { FINGER.down = true; }, { passive: true, capture: true });
+['touchend', 'touchcancel'].forEach(t => document.addEventListener(t, () => { FINGER.down = false; FINGER.up = Date.now(); }, { passive: true, capture: true }));
+function calm() { return !isTyping() && !FINGER.down && Date.now() - FINGER.up > 400; }
+/** A background redraw waits until the screen is calm (nobody typing, no finger on it). The latest one of each kind wins. */
+const CALM = {};
+function whenCalm(key, fn) {
+  const waiting = !!CALM[key]; CALM[key] = fn;
+  if (waiting) return;
+  const go = () => { if (!calm()) return setTimeout(go, 250); const f = CALM[key]; delete CALM[key]; f(); };
+  go();
+}
+// Taps on a candidate's page that aren't saved yet (Green, stars, tags, notes, an outcome): background refreshes leave the page alone
+document.addEventListener('input', e => { if (S.view === 'cand' && e.target.closest('#page')) S.candDirty = S.params.id; }, true);
+document.addEventListener('click', e => { if (S.view === 'cand' && e.target.closest('#page .chip, #page .rag button, #page .stars button')) S.candDirty = S.params.id; }, true);
+
 function weekEndingOf(ymd) { const w = D(ymd).getUTCDay(); return addDays(ymd, w === 0 ? 0 : 7 - w); }
-function saveCache() {
+/** The copy on the phone (opens the app instantly next time): written once things settle, not on every tap. */
+function saveCache() { clearTimeout(saveCache._t); saveCache._t = setTimeout(saveCacheNow, 800); }
+window.addEventListener('pagehide', () => saveCacheNow());
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && saveCache._t) saveCacheNow(); });
+function saveCacheNow() {
+  clearTimeout(saveCache._t); saveCache._t = 0;
+  if (!S.me) return;
   const keep = {};
   Object.keys(S.data).sort().slice(-3).forEach(k => { keep[k] = S.data[k]; });
   const base = { me: S.me, data: keep, users: S.users };
@@ -911,7 +934,7 @@ function fetchWeek(we, extra) {
 function want(we) {
   const d = S.data[we], id = S.viewId;
   if (!d || Date.now() - d.at > STALE_MS) {
-    fetchWeek(we).then(() => { if (S.viewId === id) render(true); })
+    fetchWeek(we).then(() => whenCalm('list', () => { if (S.viewId === id) render(true); }))
       .catch(e => { if (!S.data[we] && S.viewId === id) paint(titleOf(S.view), '<div class="err">' + h(e.message) + '</div>'); else if (!/connection/i.test(e.message)) toast(e.message); });
   }
   return d || null;
@@ -1092,10 +1115,7 @@ function refreshQuiet() {
   if (!S.me) return;
   const we = S.view === 'today' ? weekEndingOf(S.day) : S.week;
   prefetchLists();
-  fetchWeek(we).then(() => {
-    const typing = document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
-    if (['today', 'mine', 'all', 'pay'].indexOf(S.view) >= 0 && !typing) render(true);
-  }).catch(() => {});
+  fetchWeek(we).then(() => whenCalm('list', () => { if (['today', 'mine', 'all', 'pay'].indexOf(S.view) >= 0) render(true); })).catch(() => {});
 }
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && S.booted) refreshQuiet(); });
 window.addEventListener('popstate', e => {
@@ -1192,7 +1212,14 @@ function paint(title, html, quiet, sub) {
   document.getElementById('sync').classList.toggle('on', S.syncing > 0);
   refreshBars();
   const page = document.getElementById('page');
+  // A background refresh of a list: change only the rows that changed. The rest stay exactly as they are,
+  // so a finger aiming at someone still lands on them (rebuilding the whole list swallowed taps on slower phones).
+  const key = S.view + '|' + JSON.stringify(S.params || {});
+  const patch = quiet && ['today', 'mine', 'all', 'pay'].indexOf(S.view) >= 0 && paint._key === key;
+  paint._key = key;
   clearTimeout(paint._t);
+  if (patch) { if (paint._html !== html) { const t = document.createElement('div'); t.innerHTML = html; morph(page, t, true); } paint._html = html; return page; }
+  paint._html = html;
   page.innerHTML = html;
   if (quiet) {
     page.classList.remove('cascade'); window.scrollTo(0, y); countUp(page, true);
@@ -1414,6 +1441,7 @@ function bindItems(root) {
     q.querySelectorAll('[data-rate]').forEach(b => { b.onclick = () => quickRate(id, b.dataset.rate); });
     q.querySelectorAll('[data-out]').forEach(b => { b.onclick = () => outcomeSheet(id); });
     q.querySelectorAll('[data-send]').forEach(a => {
+      if (a._wired) return; a._wired = 1;  // kept by a background refresh: already wired
       a.addEventListener('click', () => {
         const co = a.dataset.co || '', kind = a.dataset.send || 'offer';  // the recruitment team's LINK / JUSS buttons
         let c = findCand(id);
@@ -1437,6 +1465,7 @@ function quickRate(id, rag) {
 // Swipe a candidate left to reveal Call / WhatsApp
 function closeSwipes(except) { document.querySelectorAll('.swipe.open').forEach(x => { if (x !== except) { x.classList.remove('open'); x.querySelector('.item').style.transform = ''; } }); }
 function bindSwipe(sw) {
+  if (sw._wired) return; sw._wired = 1;
   const it = sw.querySelector('.item'); const W = 152;
   let x0 = 0, y0 = 0, dx = 0, mode = '';
   sw.addEventListener('touchstart', e => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; dx = 0; mode = ''; it.style.transition = 'none'; }, { passive: true });
@@ -1500,7 +1529,7 @@ function viewToday(quiet) {
       (isAdmin() || canThank() ? thanksButton(items) : '') +
       (isAdmin() ? '<div class="bullbtns"><button class="btn" id="bullDaily">📣 ' + (isToday ? 'Today\'s' : DAYS[D(S.day).getUTCDay()]) + ' bulletin</button><button class="btn ghost" id="bullWeek">🏆 Week top 5</button></div>' : '') +
       (items.length ? '<div class="section-h"><b>In the room</b><span>' + rated + ' of ' + items.length + ' rated</span></div>' +
-        (isPresenter() && rated < items.length ? '<p class="hint">Tap Green, Amber or Red to rate. Rating = they were in the room (that\'s what counts for the recruitment incentive). Tap a name for stars and notes.</p>' : '') +
+        (isPresenter() ? '<p class="hint">Tap Green, Amber or Red to rate. Rating = they were in the room (that\'s what counts for the recruitment incentive). Tap a name for stars and notes.</p>' : '') +
         (items.some(c => c.limited) ? '<p class="hint">🔒 You see your own candidates in full. Everyone else\'s: name, who booked them and the room rating only.</p>' : '') +
         '<div class="list">' + items.map(c => item(c, false, isPresenter() && !c.in_room ? 'rate' : '')).join('') + '</div>'
         : empty('📷', 'No check-ins yet. They appear here live as people scan the check-in QR on your first slide.'));
@@ -1989,7 +2018,28 @@ function msgRebook(c) {
     'Your place is still there: let\'s get you *rebooked*. Which day works for you? 📅\n\n' +
     '– ' + S.me.user.name.split(' ')[0] + ', ' + brandOf(c);
 }
-function paintTabs() { const tb = document.getElementById('tabbar'); if (tb && S.me) tb.innerHTML = tabs().map(t => '<button data-tab="' + t[0] + '" class="' + (S.tab === t[0] ? 'on' : '') + '">' + icon(t[0]) + (t[0] === 'chase' && S.chaseN ? '<i class="tbadge">' + (S.chaseN > 99 ? '99+' : S.chaseN) + '</i>' : '') + '<span>' + t[1] + '</span></button>').join(''); }
+function paintTabs() { const tb = document.getElementById('tabbar'); if (tb && S.me) setHtml(tb, tabs().map(t => '<button data-tab="' + t[0] + '" class="' + (S.tab === t[0] ? 'on' : '') + '">' + icon(t[0]) + (t[0] === 'chase' && S.chaseN ? '<i class="tbadge">' + (S.chaseN > 99 ? '99+' : S.chaseN) + '</i>' : '') + '<span>' + t[1] + '</span></button>').join('')); }
+/** Make `from` look like `to`, keeping every node that's already right (and its taps / listeners). Rows match by data-id. */
+function morph(from, to, inner) {
+  if (!inner) {  // the page itself keeps its own id / classes; only what's inside it changes
+    const at = from.attributes, bt = to.attributes;
+    for (let i = at.length - 1; i >= 0; i--) if (!to.hasAttribute(at[i].name)) from.removeAttribute(at[i].name);
+    for (let i = 0; i < bt.length; i++) if (from.getAttribute(bt[i].name) !== bt[i].value) from.setAttribute(bt[i].name, bt[i].value);
+  }
+  const a = Array.from(from.childNodes), b = Array.from(to.childNodes);
+  b.forEach((n, i) => {
+    const o = a[i];
+    if (!o) return from.appendChild(n);
+    if (o.isEqualNode(n)) return;
+    const idOf = x => x.nodeType === 1 ? x.getAttribute('data-id') || x.getAttribute('data-for') || '' : '';
+    if (o.nodeType !== n.nodeType || o.nodeName !== n.nodeName || idOf(o) !== idOf(n)) return from.replaceChild(n, o);
+    if (o.nodeType !== 1) { o.nodeValue = n.nodeValue; return; }
+    morph(o, n);
+  });
+  for (let i = b.length; i < a.length; i++) from.removeChild(a[i]);
+}
+/** Only touch the page when the markup really changed (a tap on a button that's being replaced gets lost). */
+function setHtml(el, html) { if (el._html !== html) { el.innerHTML = html; el._html = html; } }
 function loadChase() {
   if (S.chaseP) return S.chaseP;
   S.chaseP = call('chaseList').then(r => {
@@ -2483,8 +2533,9 @@ function viewCandidate(id) {
       if (pendingIds().indexOf(id) >= 0 || JSON.stringify(x) === JSON.stringify(c)) return;
       const d = S.data[x.week_ending]; if (d) { const i = d.items.findIndex(y => y.id === x.id); if (i >= 0) d.items[i] = x; }
       saveCache();
-      const typing = document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName);
-      if (S.viewId === vid && !typing) renderCandidate(x, true);
+      // Something changed on Google's side: show it once the screen is calm, unless they've started changing the page
+      if (isTyping() || S.candDirty === id) return;
+      whenCalm('cand', () => { if (S.viewId === vid && S.candDirty !== id && !isTyping()) renderCandidate(findCand(id) || x, true); });
     }).catch(() => {});
     return;
   }
@@ -2542,10 +2593,10 @@ function flush() {
     if (pendingIds().indexOf(nc.id) < 0) {
       upsert(nc);
       const show = () => {
-        if (S.view === 'cand' && S.params.id === nc.id) renderCandidate(findCand(nc.id) || nc, true);
+        if (S.view === 'cand' && S.params.id === nc.id) { if (S.candDirty !== nc.id) renderCandidate(findCand(nc.id) || nc, true); }
         else if (['today', 'mine', 'all'].indexOf(S.view) >= 0) render(true);  // the "⏳ Syncing" tag on the card goes away
       };
-      if (!isTyping()) show(); else whenNotTyping(show);
+      whenCalm('saved:' + nc.id, show);
     }
     flush();
   }, err => {
@@ -2884,6 +2935,7 @@ function bindPres(c) {
   };
 }
 function renderCandidate(c, quiet) {
+  S.candDirty = '';
   const canNotes = isPresenter();
   const canOutcome = isAdmin() || c.booker_id === S.me.user.id;
   // Someone else's candidate (a presenter rating the room): who + appointment feedback, nothing else
