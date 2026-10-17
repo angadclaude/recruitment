@@ -724,9 +724,9 @@ function canSee(u, c) {
 }
 /** Everything about a candidate: admins, and the person who booked them. Nobody else. */
 function fullAccess(u, c) { return isAdmin(u) || c.booker_id === u.id; }
-/** A presenter's view of someone else's candidate: only what's needed to rate the room.
- *  No evaluation answers, outcome, contact details, eligibility or who booked them. */
-const ROOM_FIELDS = ['id', 'created_at', 'attended_date', 'week_ending', 'full_name', 'company', 'in_room', 'rag', 'stars', 'tags', 'notes',
+/** A presenter's view of someone else's candidate: only what's needed to rate the room, and who booked them (Angad, 17 Oct).
+ *  No evaluation answers, outcome, contact details or eligibility. */
+const ROOM_FIELDS = ['id', 'created_at', 'attended_date', 'week_ending', 'full_name', 'company', 'booker_name', 'booker_typed', 'in_room', 'rag', 'stars', 'tags', 'notes',
   'presenter_id', 'presenter_name', 'notes_at', 'p_why_sales', 'p_why_sales_note', 'p_interesting'];
 function roomShape(c) {
   const o = { limited: true, flags: [], first_name: c.full_name.split(' ')[0], eval_at: c.eval_at ? 'yes' : '' };  // eval_at: for the day's count only
