@@ -1,5 +1,7 @@
 // Local dev server: serves the Apps Script HTML and routes google.script.run to the fake GAS.
 // Usage: node dev/server.js [port]
+// JL_BACKEND=pg: run Code.gs on the Supabase back end instead (server/runtime.js on PGlite, an in-memory Postgres),
+// so every harness (e2e.js, speed.js, room.js…) proves the live back end behaves exactly like Google's.
 'use strict';
 const http = require('http');
 const fs = require('fs');
@@ -9,8 +11,37 @@ const { load } = require('./gas');
 const PORT = Number(process.argv[2] || 8787);
 const SRC = path.join(__dirname, '..', 'src');
 const JOIN = path.join(__dirname, '..', '..', 'join');
-const gas = load({ url: `http://localhost:${PORT}/exec` });
 let DELAY = 0;
+
+/** The same calls on either back end (all async). */
+function inMemory() {
+  const g = load({ url: `http://localhost:${PORT}/exec` });
+  return {
+    api: async b => g.api(b), run: async (fn, args) => g.run(fn, ...args), eval: async js => g.eval(js),
+    setOffsetMs: async ms => g.setOffsetMs(ms), pushes: async () => g.state.pushes, mail: async () => g.state.outbox,
+    setProps: async o => { Object.assign(g.state.props, o); }, sheet: async n => { const sh = g.state.sheets[n]; return sh ? sh.data : null; },
+  };
+}
+async function onPostgres() {
+  const { Runtime } = require('../../server/runtime');
+  const { pgliteAdapter } = require('../../server/db');
+  const db = await pgliteAdapter();
+  await db.migrate();
+  const rt = new Runtime({ db, testMode: true, env: { PUBLIC_URL: `http://localhost:${PORT}/exec` } });
+  await rt.start();
+  const plain = v => JSON.parse(JSON.stringify(v === undefined ? null : v));
+  return {
+    api: b => rt.call('api', b), run: (fn, args) => rt.call(fn, ...args), eval: js => rt.run({ type: 'eval', js }),
+    setOffsetMs: ms => rt.run({ type: 'eval', js: '__offset = ' + Number(ms) }), pushes: () => rt.run({ type: 'pushes' }), mail: async () => plain(rt.testMail),
+    setProps: o => rt.withDb(async q => { for (const k of Object.keys(o)) await q('insert into jl.props (key, val) values ($1, $2) on conflict (key) do update set val = excluded.val', [k, String(o[k])]); }),
+    sheet: n => rt.withDb(async q => {
+      const t = (await q('select headers from jl.tabs where name = $1', [n]))[0];
+      if (!t) return null;
+      return [t.headers].concat((await q('select vals from jl.rows where tab = $1 order by pos', [n])).map(r => r.vals));
+    }),
+  };
+}
+const ready = process.env.JL_BACKEND === 'pg' ? onPostgres() : Promise.resolve(inMemory());
 
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const SHIM = `<script>
@@ -34,7 +65,7 @@ function body(req) {
   return new Promise(r => { let b = ''; req.on('data', c => (b += c)); req.on('end', () => r(b ? JSON.parse(b) : {})); });
 }
 
-http.createServer(async (req, res) => {
+ready.then(gas => http.createServer(async (req, res) => {
   const u = new URL(req.url, `http://localhost:${PORT}`);
   try {
     if (u.pathname === '/exec' || u.pathname === '/') {
@@ -45,7 +76,7 @@ http.createServer(async (req, res) => {
     if (u.pathname === '/api' && req.method === 'POST') {
       const b = await body(req);
       if (DELAY) await new Promise(r => setTimeout(r, DELAY));  // simulate Google's real response time
-      const r = gas.api(b);
+      const r = await gas.api(b);
       res.writeHead(200, { 'content-type': 'application/json' });
       return res.end(JSON.stringify(r));
     }
@@ -58,30 +89,31 @@ http.createServer(async (req, res) => {
       const type = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.jpg': 'image/jpeg', '.webmanifest': 'application/manifest+json' }[path.extname(f)] || 'application/octet-stream';
       res.writeHead(200, { 'content-type': type }); return res.end(fs.readFileSync(f));
     }
-    if (u.pathname === '/dev/pushes') { res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify(gas.state.pushes)); }
-    if (u.pathname === '/dev/props' && req.method === 'POST') { Object.assign(gas.state.props, await body(req)); res.writeHead(200, { 'content-type': 'application/json' }); return res.end('{}'); }
-    if (u.pathname === '/dev/mail') { res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify(gas.state.outbox)); }
+    if (u.pathname === '/dev/pushes') { res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify(await gas.pushes())); }
+    if (u.pathname === '/dev/props' && req.method === 'POST') { await gas.setProps(await body(req)); res.writeHead(200, { 'content-type': 'application/json' }); return res.end('{}'); }
+    if (u.pathname === '/dev/mail') { res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify(await gas.mail())); }
     if (u.pathname === '/dev/run' && req.method === 'POST') {
       const b = await body(req);
-      const out = gas.run(b.fn, ...(b.args || []));
+      const out = await gas.run(b.fn, b.args || []);
       res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ out: out === undefined ? null : out }));
     }
     if (u.pathname === '/dev/eval' && req.method === 'POST') {
       const b = await body(req);
-      res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ out: gas.eval(b.js) }));
+      const out = await gas.eval(b.js);
+      res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ out }));
     }
     if (u.pathname === '/dev/time' && req.method === 'POST') {
       const b = await body(req);
-      gas.setOffsetMs(b.iso ? new Date(b.iso).getTime() - Date.now() : 0);
+      await gas.setOffsetMs(b.iso ? new Date(b.iso).getTime() - Date.now() : 0);
       res.writeHead(200, { 'content-type': 'application/json' }); return res.end('{"ok":true}');
     }
     if (u.pathname === '/dev/sheet') {
-      const sh = gas.state.sheets[u.searchParams.get('name')];
-      res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify(sh ? sh.data : null));
+      const data = await gas.sheet(u.searchParams.get('name'));
+      res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify(data));
     }
     res.writeHead(404); res.end('not found');
   } catch (e) {
     console.error(e);
     res.writeHead(500); res.end(String(e.stack || e));
   }
-}).listen(PORT, () => console.log('dev server on http://localhost:' + PORT));
+}).listen(PORT, () => console.log('dev server on http://localhost:' + PORT + (process.env.JL_BACKEND === 'pg' ? ' (Postgres back end)' : ''))));
