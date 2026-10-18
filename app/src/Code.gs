@@ -80,13 +80,13 @@ const ONBOARD = {
     brand: 'Link Marketing', colour: '#F3901D', phone: '073110 27272 / 074789 60080', maps: 'https://maps.app.goo.gl/2wmckhXokt3KhCyE9', day3: true,
     preCoaching: ['Link Marketing BA Academy - Pre Coaching Module - Fill in form', 'https://forms.office.com/pages/responsepage.aspx?id=QT4blMNFxEuaVSUMKK6uNT5ZuU1A_UdDsSk-r6KY6olUQ0JEWFU0NDU1MEI5REZZRzY3WEc1SEVaTC4u&route=shorturl'],
     client: ['NDCS', 'https://www.ndcs.org.uk/'], magazine: ['Link Magazine', 'https://linkmagflip-74ibv4pf.manus.space/'],
-    playbook: ['Link FR Playbook', 'https://link-marketing-playbook.replit.app/'],
+    playbook: ['Link FR Playbook', 'https://link-fr-playbook.vercel.app/'],
     from: 'jess@linkmarketing.org.uk',  // welcome emails only ever go from Jess's or Rubal's inbox (either can send either brand)
   },
   JUSS: {
     brand: 'JUSS Marketing', colour: '#E4613F', phone: '077823 77774', maps: 'https://maps.app.goo.gl/n2wTFyzScHLr1Voy9', day3: false,
     client: ['Hello Fresh', 'http://www.hellofresh.co.uk/'], website: ['JUSS Marketing', 'https://jussmarketing.co.uk/'], magazine: ['JUSS Magazine', 'https://jmomagazine-gjfukcw6.manus.space/'],
-    playbook: ['JUSS HF Playbook', 'https://hf-playbook.replit.app/'],
+    playbook: ['JUSS HF Playbook', 'https://juss-hf-playbook.vercel.app/'],
     from: 'rubal@jussmarketing.co.uk',
   },
 };

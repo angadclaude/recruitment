@@ -1017,10 +1017,10 @@ async function fillEval(p) {
   ok(await ap.textContent('#obsubj') === 'JUSS Marketing - Your Brand Ambassador Journey Begins!' && /Hi Adham,/.test(prevHtml) && /Monday 19th October @ 1:30 PM/.test(prevHtml) &&
     /fieldiqdownload/.test(prevHtml) && /Hello Fresh/.test(prevHtml) && /077823 77774/.test(prevHtml) && /You're in, Adham 🎉/.test(prevHtml) && /Tuesday 20th October/.test(prevHtml) &&
     /1:30pm – 6:00pm/.test(prevHtml) && /1:00pm – 6:00pm/.test(prevHtml) && /img\/logo-juss\.png/.test(prevHtml) && /See my Week 1 plan \+ CONFIRM/.test(prevHtml) && /<b>Rubal Oshan<\/b>/.test(prevHtml) &&
-    /Read your <b>JUSS HF Playbook<\/b>/.test(prevHtml) && /href="https:\/\/hf-playbook\.replit\.app\/"[^>]*>📘 Open my JUSS HF Playbook/.test(prevHtml),
+    /Read your <b>JUSS HF Playbook<\/b>/.test(prevHtml) && /href="https:\/\/juss-hf-playbook\.vercel\.app\/"[^>]*>📘 Open my JUSS HF Playbook/.test(prevHtml),
     'preview: Rubal\'s JUSS email in the congratulations-page look ("You\'re in, Adham 🎉", JUSS logo, Day 1 / Day 2 cards, FieldIQ, JUSS HF Playbook, Week 1 plan + CONFIRM, Hello Fresh, JUSS number, signed Rubal: it\'s from her address)');
   ok(/reply <b>GOT IT<\/b> to this email so we know it reached you/.test(prevHtml), 'the email asks them to reply GOT IT (the strongest "not spam" signal, and Rubal knows it arrived)');
-  // The whole email as the candidate sees it (images from this dev server instead of GitHub Pages)
+  // The whole email as the candidate sees it (images from this dev server instead of the live site)
   fs.writeFileSync(`${SHOTS}/welcome-email-juss.html`, prevHtml);
   const ep = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
   await ep.setContent(prevHtml.split(PUBLIC).join(APP), { waitUntil: 'load' });
@@ -1032,7 +1032,7 @@ async function fillEval(p) {
   await ap.click('#obgo'); await ap.waitForSelector('#onb .pill.green:has-text("Onboarded")');
   const wm = (await getJson('/dev/mail')).slice(mbOnb).find(m => m.to === 'adham@example.com');
   ok(wm && wm.via === 'gmail' && wm.subject === 'JUSS Marketing - Your Brand Ambassador Journey Begins!' && wm.from === 'rubal@jussmarketing.co.uk' && wm.name === 'Rubal Oshan | JUSS Marketing' &&
-    wm.bcc === 'rubal@jussmarketing.co.uk' && !wm.replyTo && /FieldIQ/.test(wm.body) && /hf-playbook\.replit\.app/.test(wm.body) && /reply GOT IT/.test(wm.body),
+    wm.bcc === 'rubal@jussmarketing.co.uk' && !wm.replyTo && /FieldIQ/.test(wm.body) && /juss-hf-playbook\.vercel\.app/.test(wm.body) && /reply GOT IT/.test(wm.body),
     'sent from rubal@jussmarketing.co.uk as "Rubal Oshan | JUSS Marketing" (replies go to Rubal, who gets a copy), even though Angad pressed Send');
   ok((await api(admin, 'getCandidate', { id: adham.id })).onboard_email_by === 'Angad Oshan', 'saved: welcome email sent (who, when)');
   const huHref = await ap.getAttribute('#obwa', 'href'), hu = decodeURIComponent(huHref.split(/\?text=|[?&]body=/)[1] || '');
@@ -1043,7 +1043,7 @@ async function fillEval(p) {
   await ap.locator('#onb').screenshot({ path: SHOTS + '/36-onboarded.png' });
   const lp = await api(admin, 'onboardPreview', { id: jasId });
   ok(lp.from === 'Jess Grace <jess@linkmarketing.org.uk>' && !lp.notReady && /<b>Jess Grace<\/b>/.test(lp.html) && /Read your <b>Link FR Playbook<\/b>/.test(lp.html) &&
-    /href="https:\/\/link-marketing-playbook\.replit\.app\/"[^>]*>📘 Open my Link FR Playbook/.test(lp.html) && /3\. Read your Link FR Playbook: https:\/\/link-marketing-playbook\.replit\.app\//.test(lp.text),
+    /href="https:\/\/link-fr-playbook\.vercel\.app\/"[^>]*>📘 Open my Link FR Playbook/.test(lp.html) && /3\. Read your Link FR Playbook: https:\/\/link-fr-playbook\.vercel\.app\//.test(lp.text),
     'LINK starter → from Jess (jess@linkmarketing.org.uk), signed Jess, with the Link FR Playbook as step 3 (after FieldIQ and the Pre-Coaching Module)');
   const jessPrev = await api(await loginApi('jess@linkmarketing.org.uk'), 'onboardPreview', { id: adham.id });
   ok(jessPrev.from === 'Jess Grace <jess@linkmarketing.org.uk>' && /<b>Jess Grace<\/b>/.test(jessPrev.html) && /^JUSS Marketing - /.test(jessPrev.subject),
