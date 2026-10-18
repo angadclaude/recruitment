@@ -1122,10 +1122,11 @@ async function fillEval(p) {
   const [pdl] = await Promise.all([jrp.waitForEvent('download'), jrp.click('[data-pdf="2026-10-19"]')]);
   const pdfPath = `${SHOTS}/30-day1-signin.pdf`; await pdl.saveAs(pdfPath);
   const pdfRaw = fs.readFileSync(pdfPath, 'latin1');
-  ok(pdl.suggestedFilename() === 'Day1-2026-10-19.pdf' && /^%PDF-1\.4/.test(pdfRaw) && /%%EOF\s*$/.test(pdfRaw), '📄 Print list → Day1-2026-10-19.pdf');
+  ok(pdl.suggestedFilename() === 'New Starts List 19.10.2026.pdf' && /^%PDF-1\.4/.test(pdfRaw) && /%%EOF\s*$/.test(pdfRaw) && /\/Title \(New Starts List 19\.10\.2026\)/.test(pdfRaw),
+    '📄 New Starts List → "New Starts List 19.10.2026.pdf" (the PDF\'s own title too)');
   let pdfTxt = '';
   try { pdfTxt = require('child_process').execFileSync('pdftotext', ['-layout', pdfPath, '-'], { encoding: 'utf8' }); } catch (e) { pdfTxt = pdfRaw; }
-  ok(/BA Academy · Day 1 sign-in/.test(pdfTxt) && /Monday 19 October 2026 · 1:30pm/.test(pdfTxt) && /Adham Soliman/.test(pdfTxt) && /Jasraj Bhuller/.test(pdfTxt) &&
+  ok(/New Starts List 19\.10\.2026/.test(pdfTxt) && /BA Academy Day 1 · Monday 19 October 2026 · 1:30pm/.test(pdfTxt) && /Adham Soliman/.test(pdfTxt) && /Jasraj Bhuller/.test(pdfTxt) &&
     /2 expected · 2 confirmed/.test(pdfTxt) && /Arrived: ______ of 2/.test(pdfTxt) && /shred it after Day 1/.test(pdfTxt) && /Page 1 of 1/.test(pdfTxt),
     'the PDF is a real sign-in sheet: names, mobiles, booker, confirmed, an Arrived box to tick, totals, "shred after Day 1"');
   try { require('child_process').execFileSync('pdftoppm', ['-png', '-r', '70', '-singlefile', pdfPath, `${SHOTS}/30-day1-signin`]); } catch (e) { /* no renderer here */ }
