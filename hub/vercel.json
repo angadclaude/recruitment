@@ -1,0 +1,8 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "buildCommand": "echo 'Nothing to build: public/ is served as-is'",
+  "outputDirectory": "public",
+  "regions": ["lhr1"],
+  "functions": { "api/[action].js": { "maxDuration": 60 } }
+}

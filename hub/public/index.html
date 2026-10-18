@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>LINK × JUSS</title>
+  <meta name="theme-color" content="#17171D">
+  <meta name="color-scheme" content="only light">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="LINK × JUSS">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="preload" href="fonts/anton-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="hub.css?v=1">
+</head>
+<body>
+  <header class="stage">
+    <div class="prism" aria-hidden="true"><i></i><i></i><i></i></div>
+    <div class="logos"><img src="img/logo-link.png" alt="LINK"><span class="x">×</span><img src="img/logo-juss.png" alt="JUSS"></div>
+    <div class="label" id="hello">One login for every app</div>
+    <h1 class="big"><span class="gradient-text" id="title">Welcome</span></h1>
+    <p class="sub" id="lead">Sign in once with your work email. Every app opens straight away.</p>
+    <div class="chips" id="chips"></div>
+  </header>
+
+  <main>
+    <!-- 1. Email -->
+    <form class="card rise" id="stepEmail" hidden>
+      <h2>Sign in</h2>
+      <p class="hint">We'll email you a 6-digit code. No password.</p>
+      <label class="field" for="email">Work email</label>
+      <input type="email" id="email" autocomplete="email" inputmode="email" placeholder="you@company.co.uk" required>
+      <button class="btn" type="submit" id="sendBtn">Email me a code</button>
+      <div class="msg err" id="emailMsg" hidden></div>
+    </form>
+
+    <!-- 2. Code -->
+    <form class="card rise" id="stepCode" hidden>
+      <h2>Check your email</h2>
+      <p class="hint" id="codeHint">We sent a code to your email. It works for 10 minutes.</p>
+      <label class="field" for="code">6-digit code</label>
+      <input class="code" id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="\d{6}" placeholder="••••••" required>
+      <button class="btn" type="submit" id="codeBtn">Sign in</button>
+      <div class="msg err" id="codeMsg" hidden></div>
+      <button class="link" type="button" id="again">Use a different email</button>
+    </form>
+
+    <!-- 3. Going straight to the app you came from -->
+    <div class="card rise" id="stepGo" hidden>
+      <h2 id="goTitle">Opening…</h2>
+      <p class="hint" id="goHint"></p>
+      <a class="btn" id="goBtn" href="#"><span class="spin"></span><span>Continue</span></a>
+      <button class="link" type="button" id="notMe">Not you? Use another email</button>
+    </div>
+
+    <!-- 4. Home: your apps -->
+    <section id="stepHome" hidden>
+      <div class="msg err" id="homeMsg" hidden></div>
+      <div class="tiles" id="tiles"></div>
+      <form class="card rise" id="connectHf" hidden>
+        <h2>Connect your HelloFresh Playbook</h2>
+        <p class="hint">Once only: type the username and password you use on the HelloFresh Playbook. After this, your email is all you need.</p>
+        <label class="field" for="hfUser">HelloFresh Playbook username</label>
+        <input type="text" id="hfUser" autocomplete="username" autocapitalize="none" required>
+        <label class="field" for="hfPass" style="margin-top:12px">Password</label>
+        <input type="password" id="hfPass" autocomplete="current-password" required>
+        <button class="btn" type="submit" id="hfBtn">Connect</button>
+        <div class="msg err" id="hfMsg" hidden></div>
+      </form>
+      <div class="foot"><button class="link" type="button" id="logout">Sign out</button></div>
+    </section>
+  </main>
+  <script src="hub.js?v=1"></script>
+</body>
+</html>
