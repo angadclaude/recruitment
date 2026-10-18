@@ -155,10 +155,93 @@ function include(name) {
   return HtmlService.createHtmlOutputFromFile(name).getContent();
 }
 
+// ───────────────────────── MOVE TO SUPABASE (the Vercel back end, server/) ─────────────────────────
+// This same file also runs on Vercel, where SUPABASE_BACKEND is defined and none of this applies. On Google it is:
+//  - the email relay: Vercel asks Google to send its emails, so they still go from Gmail ("send mail as" Jess / Rubal / Fiza);
+//  - the handover: the Sheet's tabs and settings, read once on switch day (relayExport);
+//  - the switch: FROZEN = saves wait ("Trying again…", phones retry by themselves) while the data is copied;
+//    MOVED_TO = every request from a phone that still has the old address open is passed on to Vercel. Undo = relaySwitch({ to: '' }).
+// Every relay call carries Vercel's RELAY_SECRET (a long random key in Vercel's settings). Only its SHA-256 fingerprint
+// is here (safe to publish: it can't be turned back into the key), so nobody has to copy the key into Google.
+const RELAY_SECRET_SHA256 = 'f648c4393028bfc5db8e40b94fd30bb09f068d190d024534f9c9e88e076a3163';
+const RELAY_ACTIONS = { relayInfo: relayInfo, relayMail: relayMail, relayExport: relayExport, relayFreeze: relayFreeze, relaySwitch: relaySwitch };
+function onSupabase() { return typeof SUPABASE_BACKEND !== 'undefined'; }
+function relayCheck(req) {
+  const want = onSupabase() ? '' : String(PropertiesService.getScriptProperties().getProperty('RELAY_SECRET_SHA256') || RELAY_SECRET_SHA256);
+  const given = String((req && req.secret) || ''), got = given.length >= 32 ? sha(given) : '';
+  let diff = want && got.length === want.length ? 0 : 1;
+  for (let i = 0; i < got.length && i < want.length; i++) diff |= got.charCodeAt(i) ^ want.charCodeAt(i);
+  if (!want || diff) throw new Error('Not allowed');
+}
+function relayInfo(req) {
+  relayCheck(req);
+  const p = PropertiesService.getScriptProperties();
+  let quota = -1; try { quota = MailApp.getRemainingDailyQuota(); } catch (e) { /* not available */ }
+  let aliases = []; try { aliases = GmailApp.getAliases(); } catch (e) { console.error(e); }
+  return { owner: scriptEmail(), quota: quota, aliases: aliases, frozen: !!p.getProperty('FROZEN'), movedTo: p.getProperty('MOVED_TO') || '',
+    timers: ScriptApp.getProjectTriggers().map(t => t.getHandlerFunction()),
+    // The phone-alert key stays in Google's Script Properties; Vercel asks for it here instead of anyone copying it
+    onesignalKey: req.withKeys ? p.getProperty('ONESIGNAL_API_KEY') || '' : undefined };
+}
+function relayMail(req) {
+  relayCheck(req);
+  const m = req.mail || {};
+  if (m.via === 'mail') MailApp.sendEmail(m.msg);
+  else GmailApp.sendEmail(m.to, m.subject, m.body, m.opts || {});
+  return { sent: true };
+}
+/** Every tab exactly as readTable sees it (text), plus the Script Properties (never the secret ones). */
+function relayExport(req) {
+  relayCheck(req);
+  const tabs = {};
+  ss().getSheets().forEach(sh => {
+    const values = sh.getDataRange().getValues().map(r => r.map(v => (v === null || v === undefined ? '' : String(v))));
+    tabs[sh.getName()] = { headers: values.length ? values[0] : [], rows: values.slice(1), max_rows: sh.getMaxRows(), max_cols: sh.getMaxColumns() };
+  });
+  const props = PropertiesService.getScriptProperties().getProperties(), secret = ['RELAY_SECRET_SHA256', 'ONESIGNAL_API_KEY', 'FROZEN', 'MOVED_TO', 'SS_ID'];
+  secret.forEach(k => { delete props[k]; });
+  return { at: nowStr(), tabs: tabs, props: props };
+}
+/** on: saves wait and Google's timers stop (nothing changes in the Sheet while it's copied). off: back to normal. */
+function relayFreeze(req) {
+  relayCheck(req);
+  const p = PropertiesService.getScriptProperties();
+  if (req.on) { p.setProperty('FROZEN', nowStr()); ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t)); }
+  else { p.deleteProperty('FROZEN'); if (!p.getProperty('MOVED_TO')) installTriggers(); }
+  return { frozen: !!req.on };
+}
+/** to = the Vercel API address: pass everything on and stop Google's timers (Vercel runs them). to = '' undoes it. */
+function relaySwitch(req) {
+  relayCheck(req);
+  const p = PropertiesService.getScriptProperties();
+  if (req.to) {
+    p.setProperty('MOVED_TO', String(req.to));
+    ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
+  } else {
+    p.deleteProperty('MOVED_TO');
+    installTriggers();
+  }
+  p.deleteProperty('FROZEN');
+  return { movedTo: p.getProperty('MOVED_TO') || '' };
+}
+function switchover(req) {
+  if (onSupabase()) return null;
+  const p = PropertiesService.getScriptProperties(), to = p.getProperty('MOVED_TO');
+  if (to) {
+    const r = UrlFetchApp.fetch(to, { method: 'post', contentType: 'text/plain', payload: JSON.stringify(req), muteHttpExceptions: true });
+    try { return JSON.parse(r.getContentText()); } catch (e) { return { ok: false, retry: true, error: 'Lots of people are sending at once. Trying again…' }; }
+  }
+  if (p.getProperty('FROZEN')) return { ok: false, retry: true, error: 'Lots of people are sending at once. Trying again…' };
+  return null;
+}
+
 /** Single entry point for the browser: google.script.run.api({action, token, ...}) */
 function api(req) {
   MEMO = {};
   try {
+    if (RELAY_ACTIONS[req.action]) return { ok: true, data: RELAY_ACTIONS[req.action](req) };
+    const moved = switchover(req);
+    if (moved) return moved;
     const fn = PUBLIC_ACTIONS[req.action];
     if (fn) return { ok: true, data: fn(req) };
     const sfn = STAFF_ACTIONS[req.action];
@@ -2040,7 +2123,11 @@ function setup() {
   });
   usersChanged();
   const email = ADMINS.map(a => a.email).join(', ');
-
+  installTriggers();
+  return 'Setup complete. Admin: ' + email;
+}
+/** The scheduled alerts (Google's timers). On Vercel, vercel.json's cron runs the same functions instead. */
+function installTriggers() {
   ScriptApp.getProjectTriggers().forEach(t => ScriptApp.deleteTrigger(t));
   ScriptApp.newTrigger('weeklyProgressEmails').timeBased().onWeekDay(ScriptApp.WeekDay.WEDNESDAY).atHour(10).inTimezone(CONFIG.TZ).create();
   ScriptApp.newTrigger('weeklyProgressEmails').timeBased().onWeekDay(ScriptApp.WeekDay.FRIDAY).atHour(10).inTimezone(CONFIG.TZ).create();
@@ -2048,7 +2135,6 @@ function setup() {
   ScriptApp.newTrigger('mondayPayReportEmail').timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(9).inTimezone(CONFIG.TZ).create();
   ScriptApp.newTrigger('dailyMaintenance').timeBased().everyDays(1).atHour(2).inTimezone(CONFIG.TZ).create();
   ScriptApp.newTrigger('keepWarm').timeBased().everyMinutes(5).create();
-  return 'Setup complete. Admin: ' + email;
 }
 
 /**

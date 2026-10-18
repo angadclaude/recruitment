@@ -1611,6 +1611,34 @@ async function fillEval(p) {
   ok((await getJson('/dev/sheet?name=Candidates')).length === 1, 'records older than 6 months deleted automatically');
   ok(!(await getJson('/dev/sheet?name=Log')).slice(1).some(r => /2026/.test(String(r[0]))), 'Log entries older than 6 months deleted too, including ones whose times the Sheet turned into dates');
 
+  // ── 11. Moving to Supabase: Google's email relay, handover and switch (Google only; switched off on Supabase) ──
+  const relay = (action, extra) => post('/api', Object.assign({ action }, extra || {}));
+  ok((await relay('relayInfo')).ok === false && (await relay('relayInfo', { secret: 'guess' })).error === 'Not allowed', 'relay: refused without the secret');
+  const RS = 'relay-test-secret-0123456789abcdefghij';  // the test key; Code.gs only ever holds its SHA-256
+  await post('/dev/props', { RELAY_SECRET_SHA256: require('crypto').createHash('sha256').update(RS).digest('hex') });
+  ok((await relay('relayInfo', { secret: RS.slice(0, -1) + 'X' })).error === 'Not allowed', 'relay: a wrong key is refused');
+  if (process.env.JL_BACKEND === 'pg') {
+    ok((await relay('relayInfo', { secret: RS })).error === 'Not allowed', 'relay: switched off on the Supabase back end, even with the key');
+  } else {
+    const ri = await relay('relayInfo', { secret: RS, withKeys: true });
+    ok(ri.ok && ri.data.owner === 'angad@linkmarketing.org.uk' && ri.data.timers.includes('keepWarm') && !ri.data.frozen && !ri.data.movedTo && ri.data.onesignalKey === 'test-key',
+      'relay: Google reports its owner, timers and switch state, and hands Vercel the phone-alert key (nobody copies it)');
+    const mb = (await getJson('/dev/mail')).length;
+    await relay('relayMail', { secret: RS, mail: { via: 'gmail', to: 'x@example.com', subject: 'Relayed', body: 'hi', opts: { from: 'jess@linkmarketing.org.uk', name: 'Jess Grace | Link Marketing' } } });
+    const rm = (await getJson('/dev/mail')).slice(mb)[0];
+    ok(rm && rm.to === 'x@example.com' && rm.via === 'gmail' && rm.from === 'jess@linkmarketing.org.uk', 'relay: Vercel\'s emails go out from Gmail, "send mail as" Jess / Rubal / Fiza as before');
+    const ex = (await relay('relayExport', { secret: RS })).data;
+    ok(ex.tabs.Candidates.headers.includes('full_name') && ex.tabs.Users.rows.length >= 4 && !('RELAY_SECRET_SHA256' in ex.props) && !('ONESIGNAL_API_KEY' in ex.props),
+      'handover: every tab as text plus the settings, never the secret ones');
+    await relay('relayFreeze', { secret: RS, on: true });
+    const fr = await post('/api', { action: 'publicConfig' });
+    ok(fr.ok === false && fr.retry === true, 'switch day: while the data is copied, saves wait ("Trying again…") and phones retry by themselves');
+    await relay('relayFreeze', { secret: RS, on: false });
+    ok((await post('/api', { action: 'publicConfig' })).ok === true, 'unfrozen: back to normal');
+    ok((await relay('relaySwitch', { secret: RS, to: '' })).data.movedTo === '' &&
+      JSON.parse((await post('/dev/eval', { js: 'JSON.stringify(ScriptApp.getProjectTriggers().map(t => t.fn))' })).out).includes('keepWarm'), 'undo the switch: Google\'s timers come back');
+  }
+
   await browser.close();
   console.log('\nALL CHECKS PASSED');
   process.exit(0);

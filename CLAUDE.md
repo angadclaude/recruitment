@@ -16,6 +16,15 @@ The recruitment app for **LINK Marketing** and **JUSS Marketing** (Angad runs bo
   - Where the app lives is set in `app/site.json` (`url` + `movedFrom`); `CONFIG.PUBLIC_URL` in `Code.gs` must match `url`.
 - **Alerts:** OneSignal web push. The REST API key is a Script Property in Apps Script; it must never go in chat or GitHub.
 - **Sheet columns:** new columns append themselves (`readTable` plus `tidyHeaders`). Never reorder or insert columns by hand.
+- **The Supabase back end (built 18 Oct 2026, not live until switch day):** the same `Code.gs` runs on Vercel, unchanged.
+  - `server/worker.js` runs `Code.gs` in a worker thread with the Google services rebuilt on Postgres: each Sheet tab = `jl.tabs` + `jl.rows` (ordered), CacheService = `jl.cache`, PropertiesService = `jl.props`, LockService = a Postgres advisory lock. Code.gs is synchronous, so every database call waits on the main thread (`server/runtime.js`, Atomics).
+  - `server/runtime.js`: one job = one transaction, one job at a time per instance. Emails go into `jl.outbox` and are sent after the commit.
+  - `server/live.js` wires it to Supabase (the shared project; schema `jl`, next to FR's `public`, `leaders` and `hf`), OneSignal, and Google's **email relay**.
+  - The relay is the Google-only part of `Code.gs` (`relayMail`, `relayInfo`, `relayExport`, `relayFreeze`, `relaySwitch`). Emails still go out from Gmail ("send mail as" Jess / Rubal / Fiza), and the OneSignal key stays in Google. Calls carry Vercel's `RELAY_SECRET`; `Code.gs` holds only its SHA-256 (`RELAY_SECRET_SHA256`).
+  - `api/rpc.js` is the app's API (same requests and answers as Google's `/exec`). `api/cron.js` is Vercel Cron every 5 minutes, replacing Google's timers in London time. It does nothing until `jl.props.VERCEL_LIVE` is set.
+  - `scripts/import-from-google.js` copies every tab and setting from Google, then compares them field by field (`--apply`, `--verify`).
+  - Local secrets in the repo root (gitignored): `.env.supabase`, `.env.relay`, `.env.cron`.
+  - **Test it the same way:** `$env:JL_BACKEND = "pg"` makes `app/dev/server.js` (and so e2e/speed/room) run on this back end with PGlite (in-memory Postgres). Both back ends must pass everything.
 
 ## Shipping a change
 1. Branch from `main` and edit `app/src/`. Then run `node app/build.js`.
@@ -43,6 +52,35 @@ The recruitment app for **LINK Marketing** and **JUSS Marketing** (Angad runs bo
 - **"Thinking it over"** needs a call-back time. **"No answer" / "Thinking it over"** older than 2 weeks shows as 🔴 Stale on Chase until a final answer is logged.
 - **GDPR:** full details for 12 weeks, then trimmed (notes and answers wiped, the call log's notes too). Everything is deleted after 6 months.
 - **Never:** paste passwords in chat; log into Cube; pull IQ Suite / Acwyre data without Angad's sign-off; recreate the old web-app mailer (welcome emails go through Gmail "send mail as" from Apps Script).
+
+## NEXT TASK: one ecosystem, released in one go (Angad, 18 Oct 2026)
+He asked for J&L to be "an entire ecosystem" with his playbooks (FR `link-fr-playbook.vercel.app`, Leaders `link-leaders-playbook.vercel.app`, JUSS HelloFresh `juss-hf-playbook.vercel.app`, all on the same Supabase) without losing anything. He chose:
+- **Everything in one go.** Build and rehearse it all behind the scenes, then switch on one quiet day.
+- **One login for all apps:** work email + 6-digit code.
+- **The immersive look** of the playbooks. A separate session may do this on its own branch and must not merge before switch day.
+
+Status:
+1. Welcome emails link to the Vercel playbooks: done (PR #77, Apps Script version 34).
+2. Supabase back end: built (above). e2e passes on both back ends.
+3. Still to do:
+   - set Vercel's environment variables (needs Angad's OK);
+   - deploy `Code.gs` with the relay to Apps Script;
+   - rehearsal import plus a preview test (`REHEARSAL=1`: emails only to Angad, no phone alerts);
+   - the one-login hub;
+   - the look;
+   - switch day.
+
+**Switch-day runbook** (Apps Script must already run the relay version of `Code.gs`):
+1. `relayFreeze { on: true }`: Google stops saving, its timers stop, and phones retry by themselves. Wait 60 s for any running timer to finish.
+2. `node scripts/import-from-google.js --apply`. It must report **0 mismatches**.
+3. Set `jl.props.VERCEL_LIVE` (Vercel's timers start).
+4. `relaySwitch { to: 'https://jl-recruitment.vercel.app/api/rpc' }`: Google passes every request on to Vercel (old open tabs keep working).
+5. Merge the PR that sets `join/config.js` `API_URL: '/api/rpc'`.
+6. Check: log in, Today / Chase / Day 1, a test check-in, an alert to Angad's phone, the Log tab in Supabase.
+
+**Undo:** `relaySwitch { to: '' }`, unset `VERCEL_LIVE`, revert `config.js`. Google's data is untouched from step 1 onwards, but anything saved on Vercel after the switch would need copying back.
+
+**One login, findings:** FR (73 users) and Leaders (93) all have emails. HelloFresh has 295 users and only 46 have email usernames, so the hub needs a one-time "connect your old account" step (old username + password once).
 
 ## Done: hosting moved to Vercel (18 Oct 2026)
 Angad wants all his apps on Vercel so they link into each other (the FR playbook is at `link-fr-playbook.vercel.app`). Vercel team "Link Marketing" is on **Pro**, so the Hobby plan's non-commercial rule doesn't apply.

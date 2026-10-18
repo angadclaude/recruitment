@@ -2,5 +2,11 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
   "buildCommand": "echo 'Nothing to build: the app in join/ is built and tested before it is pushed'",
-  "outputDirectory": "join"
+  "outputDirectory": "join",
+  "regions": ["lhr1"],
+  "functions": {
+    "api/rpc.js": { "maxDuration": 60, "includeFiles": "{app/src/Code.gs,server/**}" },
+    "api/cron.js": { "maxDuration": 300, "includeFiles": "{app/src/Code.gs,server/**}" }
+  },
+  "crons": [{ "path": "/api/cron", "schedule": "*/5 * * * *" }]
 }

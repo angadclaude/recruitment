@@ -74,7 +74,10 @@ function load(opts) {
   const ctx = {
     console,
     SpreadsheetApp: { getActive: () => book, openById: () => book, flush: () => {} },
-    PropertiesService: { getScriptProperties: () => ({ getProperty: k => (k in state.props ? state.props[k] : null), setProperty: (k, v) => { state.props[k] = String(v); } }) },
+    PropertiesService: { getScriptProperties: () => ({
+      getProperty: k => (k in state.props ? state.props[k] : null), setProperty: (k, v) => { state.props[k] = String(v); },
+      getProperties: () => Object.assign({}, state.props), deleteProperty: k => { delete state.props[k]; },
+    }) },
     CacheService: { getScriptCache: () => ({ get: k => state.cache[k] || null, put: (k, v) => { state.cache[k] = v; }, remove: k => { delete state.cache[k]; }, removeAll: () => {} }) },
     // ctx.__lockBusy = N → the next N lock attempts fail (simulates a queue of people sending at once)
     LockService: { getScriptLock: () => ({
