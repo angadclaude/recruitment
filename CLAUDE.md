@@ -70,15 +70,17 @@ Status:
    - the look;
    - switch day.
 
-**Switch-day runbook** (Apps Script must already run the relay version of `Code.gs`):
-1. `relayFreeze { on: true }`: Google stops saving, its timers stop, and phones retry by themselves. Wait 60 s for any running timer to finish.
-2. `node scripts/import-from-google.js --apply`. It must report **0 mismatches**.
-3. Set `jl.props.VERCEL_LIVE` (Vercel's timers start).
-4. `relaySwitch { to: 'https://jl-recruitment.vercel.app/api/rpc' }`: Google passes every request on to Vercel (old open tabs keep working).
-5. Merge the PR that sets `join/config.js` `API_URL: '/api/rpc'`.
-6. Check: log in, Today / Chase / Day 1, a test check-in, an alert to Angad's phone, the Log tab in Supabase.
+**Order (Angad, 18 Oct):** switch the invisible back end first, once he has tried the rehearsal (branch `switch-to-supabase`, preview `https://jl-recruitment-git-switch-to-supabase-angadclaude.vercel.app`, REHEARSAL=1). Then release the new look and the one login together.
 
-**Undo:** `relaySwitch { to: '' }`, unset `VERCEL_LIVE`, revert `config.js`. Google's data is untouched from step 1 onwards, but anything saved on Vercel after the switch would need copying back.
+**Switch-day runbook:** `scripts/switch.js` (needs Apps Script on the relay version of `Code.gs`, version 35+). `node scripts/switch.js status` shows where things stand at any time.
+1. `node scripts/switch.js freeze`: Google stops saving, its timers stop, and phones retry by themselves. Wait 60 s for any running timer to finish.
+2. `node scripts/import-from-google.js --apply`. It must report **0 mismatches**.
+3. `node scripts/switch.js live`: Vercel's API answers and its timers run.
+4. `node scripts/switch.js forward`: Google passes every request on to Vercel (old open tabs keep working).
+5. Merge the `switch-to-supabase` PR (`join/config.js` `API_URL: '/api/rpc'`). Every merge needs Angad's OK in chat.
+6. Check: log in, Today / Chase / Day 1, a test check-in, an alert to Angad's phone, the Log in Supabase.
+
+**Undo:** `unforward`, `notlive`, `unfreeze`, and revert `config.js`. Google's data is untouched from step 1 onwards, but anything saved on Vercel after the switch would need copying back.
 
 **One login, findings:** FR (73 users) and Leaders (93) all have emails. HelloFresh has 295 users and only 46 have email usernames, so the hub needs a one-time "connect your old account" step (old username + password once).
 
