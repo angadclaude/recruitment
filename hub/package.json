@@ -1,0 +1,14 @@
+{
+  "name": "link-juss-hub",
+  "private": true,
+  "description": "One email+code login and home page for every LINK x JUSS app (link-juss.vercel.app)",
+  "engines": { "node": ">=20" },
+  "scripts": { "test": "node dev/test.js" },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "postgres": "^3.4.5"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.2.12"
+  }
+}
