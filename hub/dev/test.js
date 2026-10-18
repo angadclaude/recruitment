@@ -19,11 +19,13 @@ const ok = (c, m) => { console.log((c ? '  ✓ ' : '  ✗ ') + m); if (!c) fails
     insert into jl.tabs values ('Users', '["id","name","email","company","roles","active","created_at","onesignal"]');
     insert into jl.rows (tab, vals) values ('Users', '["u1","Angad Oshan","angad@linkmarketing.org.uk","LINK","admin","TRUE","",""]'),
       ('Users', '["u2","Gone Person","gone@linkmarketing.org.uk","LINK","booker","FALSE","",""]');
-    create table public.users (id varchar primary key default gen_random_uuid(), username text, password text, display_name text, role text);
+    create table public.users (id varchar primary key default gen_random_uuid(), username text not null, password text not null, display_name text not null, role text not null default 'user',
+      start_date timestamp not null default now(), last_login timestamp not null default now());
     insert into public.users (username, password, display_name, role) values ('angad@linkmarketing.org.uk', 'x', 'Angad', 'manager'), ('ba@example.com', 'x', 'Bea Ambassador', 'user');
     create schema leaders; create table leaders.users (id varchar primary key default gen_random_uuid(), email text, password text, display_name text, role text);
     insert into leaders.users (email, password, display_name, role) values ('Angad@LinkMarketing.org.uk', 'x', 'Angad', 'manager');
-    create schema hf; create table hf.users (id serial primary key, username text, password_hash text, full_name text, role text);
+    create schema hf; create table hf.users (id serial primary key, username text not null, password_hash text not null, full_name text not null,
+      mentor_name text not null default '', start_date text not null default '', role text not null default 'rep', created_at timestamptz not null default now());
   `);
   await q('insert into hf.users (username, password_hash, full_name, role) values ($1, $2, $3, $4), ($5, $6, $7, $8)',
     ['jdoe', bcrypt.hashSync('old-pass', 4), 'Jo Doe', 'rep', 'sam@jussmarketing.co.uk', bcrypt.hashSync('x', 4), 'Sam Juss', 'rep']);
@@ -93,6 +95,27 @@ const ok = (c, m) => { console.log((c ? '  ✓ ' : '  ✗ ') + m); if (!c) fails
   const sam = await core.verifyCode(q, 'sam@jussmarketing.co.uk', mail[mail.length - 1].code);
   ok((await core.connectHf(q, sam.person, 'jdoe', 'old-pass', bcrypt)).error.includes('already connected'), 'someone else can\'t take an account that\'s already connected');
   ok((await core.home(q, sam.person)).tiles.map(t => t.id).join(',') === 'hf' && sam.person.company === 'JUSS', 'HelloFresh username that is an email: found straight away, company JUSS');
+
+  // Angad's rules (18 Oct): new starters get their own brand's playbook automatically, and never the recruitment app
+  const signIn = async e => { await q('delete from core.codes where email = $1', [e]); await core.requestCode(q, e, sendMail); return core.verifyCode(q, e, mail[mail.length - 1].code); };
+  const ul = await core.unlockPlaybook(q, { email: 'New.Link@Example.com', name: 'nina link', company: 'LINK' });
+  ok(ul.ok && ul.app === 'fr' && ul.created, 'LINK new starter onboarded → FR Playbook account opened automatically');
+  const uj = await core.unlockPlaybook(q, { email: 'new.juss@example.com', name: 'jay juss', company: 'JUSS', startDate: '2026-10-19' });
+  ok(uj.ok && uj.app === 'hf' && uj.created, 'JUSS new starter onboarded → HelloFresh Playbook account opened automatically');
+  ok((await core.unlockPlaybook(q, { email: 'new.link@example.com', name: 'Nina Link', company: 'LINK' })).existed &&
+    (await q("select count(*)::int as n from public.users where lower(username) = 'new.link@example.com'"))[0].n === 1, 'onboarding twice never makes a second account (and never touches an existing one)');
+  ok(!(await core.unlockPlaybook(q, { email: 'x@example.com', name: 'X', company: '' })).ok, 'no company → nothing unlocked');
+  ok(!(await bcrypt.compare('anything', (await q("select password from public.users where username = 'new.link@example.com'"))[0].password)), 'the opened account has no password: email sign-in only');
+  const nl = await signIn('new.link@example.com'), nlh = await core.home(q, nl.person);
+  ok(nlh.tiles.map(t => t.id).join(',') === 'fr' && nlh.person.company === 'LINK' && nlh.person.name === 'Nina Link',
+    'LINK new starter: LINK look, only the FR Playbook; the recruitment app does not show');
+  const nj = await signIn('new.juss@example.com'), njh = await core.home(q, nj.person);
+  ok(njh.tiles.map(t => t.id).join(',') === 'hf' && njh.person.company === 'JUSS' && !njh.canConnectHf,
+    'JUSS new starter: JUSS look, only the HelloFresh Playbook; the recruitment app does not show');
+  ok(!(await core.createHandoff(q, nj.person, 'recruit')) && !(await core.createHandoff(q, nj.person, 'fr')), 'a JUSS new starter can\'t be sent into the recruitment app or the LINK playbook');
+  ok((await q("select count(*)::int as n from jl.rows where tab = 'Users' and lower(vals->>2) like 'new.%'"))[0].n === 0, 'onboarding never adds anyone to the recruitment app; only admins do that');
+  ok((await core.home(q, jo.person)).person.company === 'JUSS' && (await core.home(q, jo.person)).tiles.some(t => t.id === 'recruit'),
+    'a JUSS booker an admin added to the recruitment app: JUSS look, and the recruitment app shows');
 
   // HTTP: cookie, redirects, safety
   const call = (method, url, b, cookie) => new Promise(resolve => {

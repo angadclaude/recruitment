@@ -17,10 +17,19 @@
   const greet = () => { const h = new Date().getHours(); return h < 12 ? 'Good morning,' : h < 18 ? 'Good afternoon,' : 'Good evening,'; };
   const goUrl = app => '/api/go?app=' + encodeURIComponent(app) + '&r=' + encodeURIComponent(app === want ? back : '/');
 
+  // One brand at a time: JUSS people (and anyone arriving from the HelloFresh Playbook) see only JUSS, LINK people only LINK.
+  // Before we know who you are and where you came from: both logos.
+  const APP_BRAND = { fr: 'LINK', leaders: 'LINK', hf: 'JUSS' };
+  const BRAND_NAME = { LINK: 'LINK Marketing', JUSS: 'JUSS Marketing' };
   function theme(company) {
+    const c = company === 'LINK' || company === 'JUSS' ? company : '';
     document.documentElement.classList.remove('t-LINK', 't-JUSS');
-    if (company === 'LINK' || company === 'JUSS') document.documentElement.classList.add('t-' + company);
+    if (c) document.documentElement.classList.add('t-' + c);
+    $('logoLINK').hidden = c === 'JUSS'; $('logoJUSS').hidden = c === 'LINK'; $('logoX').hidden = !!c;
+    document.title = c ? BRAND_NAME[c] : 'LINK × JUSS';
+    document.querySelector('meta[name=theme-color]').content = c === 'JUSS' ? '#0A1D26' : '#17171D';
   }
+  const arrivalBrand = (params.get('brand') || '').toUpperCase() || APP_BRAND[want] || '';
   function header(person) {
     const first = (person.name || person.email).split(' ')[0];
     $('hello').textContent = greet();
@@ -68,7 +77,7 @@
     api('verify', { email, code: $('code').value }).then(r => { busy(btn, false); r.ok ? render(r) : msg('codeMsg', r.error); });
   });
   $('again').addEventListener('click', () => { show('stepEmail'); $('email').focus(); });
-  const signOut = () => api('logout', {}).then(() => { theme(''); location.href = location.pathname + (want ? location.search : ''); });
+  const signOut = () => api('logout', {}).then(() => { theme(arrivalBrand); location.href = location.pathname + (want ? location.search : ''); });
   $('logout').addEventListener('click', signOut);
   $('notMe').addEventListener('click', signOut);
   $('connectHf').addEventListener('submit', e => {
@@ -77,6 +86,8 @@
     api('connect', { username: $('hfUser').value, password: $('hfPass').value }).then(r => { busy(btn, false); $('hfPass').value = ''; r.ok ? render(r) : msg('hfMsg', r.error); });
   });
 
+  theme(arrivalBrand);
+  if (arrivalBrand) { $('hello').textContent = BRAND_NAME[arrivalBrand]; }
   api('me').then(r => {
     if (r.ok) return render(r);
     if (want) $('lead').textContent = 'Sign in to open ' + (NAMES[want] || 'your app') + '. You\'ll only need to do this once on this phone.';

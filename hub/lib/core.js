@@ -95,11 +95,36 @@ async function accounts(q, email, personId) {
   return out;
 }
 
-/** Who someone is across the apps: a display name and their company (LINK / JUSS). */
+/** Who someone is across the apps: a display name and their company (LINK / JUSS). JUSS people get the JUSS look
+ *  everywhere (hub, HelloFresh Playbook); LINK people the LINK look (hub, FR / Leaders Playbook). */
 function profile(acc) {
   const name = (acc.recruit && acc.recruit.name) || (acc.fr && acc.fr.name) || (acc.leaders && acc.leaders.name) || (acc.hf && acc.hf.name) || '';
-  const company = (acc.recruit && acc.recruit.company) || (acc.hf && !acc.fr ? 'JUSS' : acc.fr || acc.leaders ? 'LINK' : '');
+  const co = String((acc.recruit && acc.recruit.company) || '').toUpperCase();
+  const company = co === 'LINK' || co === 'JUSS' ? co : acc.hf && !acc.fr && !acc.leaders ? 'JUSS' : acc.fr || acc.leaders ? 'LINK' : '';
   return { name: tidyName(name), company };
+}
+
+/**
+ * New starter onboarded in the recruitment app → their playbook opens: LINK → FR Playbook, JUSS → HelloFresh Playbook.
+ * The account has no usable password (it can't be guessed or registered over); they sign in with their email through the hub.
+ * Never touches an existing account. Recruitment itself is never unlocked this way: only admins add people there.
+ */
+async function unlockPlaybook(q, starter) {
+  const email = norm(starter.email), company = String(starter.company || '').toUpperCase(), name = tidyName(starter.name);
+  if (!isEmail(email) || !name) return { ok: false, error: 'Needs a name and a valid email' };
+  const NO_PASSWORD = '!hub-login-only';  // not a bcrypt hash: no password ever matches it
+  if (company === 'LINK') {
+    if ((await q('select 1 from public.users where lower(username) = $1', [email])).length) return { ok: true, app: 'fr', existed: true };
+    await q("insert into public.users (username, password, display_name, role) values ($1, $2, $3, 'user')", [email, NO_PASSWORD, name]);
+    return { ok: true, app: 'fr', created: true };
+  }
+  if (company === 'JUSS') {
+    if ((await q('select 1 from hf.users where lower(username) = $1', [email])).length) return { ok: true, app: 'hf', existed: true };
+    await q("insert into hf.users (username, password_hash, full_name, mentor_name, start_date, role) values ($1, $2, $3, $4, $5, 'rep')",
+      [email, NO_PASSWORD, name, String(starter.mentor || ''), String(starter.startDate || new Date().toISOString().slice(0, 10))]);
+    return { ok: true, app: 'hf', created: true };
+  }
+  return { ok: false, error: 'Company must be LINK or JUSS' };
 }
 
 /** Step 1: email a code, only to people one of the apps knows (or the hub has seen). Never says which. */
@@ -153,8 +178,9 @@ async function home(q, person) {
   const acc = await accounts(q, person.email, person.id);
   const tiles = Object.keys(APPS).filter(k => acc[k]).map(k => Object.assign({ id: k }, APPS[k], { role: acc[k].role || (acc[k].roles || []).join(', ') }));
   // A JUSS person without a HelloFresh account found by email can connect their old username once
-  const canConnectHf = !acc.hf && (person.company === 'JUSS' || !tiles.length);
-  return { person: Object.assign({}, person, { name: person.name || profile(acc).name }), tiles, canConnectHf };
+  const p = profile(acc), company = p.company || person.company;
+  const canConnectHf = !acc.hf && (company === 'JUSS' || !tiles.length);
+  return { person: Object.assign({}, person, { name: person.name || p.name, company }), tiles, canConnectHf };
 }
 
 /** A one-use ticket to sign in to an app (only if this person has an account there). */
@@ -187,4 +213,4 @@ async function connectHf(q, person, username, password, bcrypt) {
   return { ok: true };
 }
 
-module.exports = { SCHEMA, APPS, norm, sha, accounts, profile, requestCode, verifyCode, sessionPerson, logout, home, createHandoff, redeemHandoff, connectHf };
+module.exports = { SCHEMA, APPS, norm, sha, accounts, profile, requestCode, verifyCode, sessionPerson, logout, home, createHandoff, redeemHandoff, connectHf, unlockPlaybook };

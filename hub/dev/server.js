@@ -24,7 +24,8 @@ const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 
     insert into public.users (username, password, display_name, role) values ('angad@linkmarketing.org.uk', 'x', 'Angad', 'manager');
     create schema leaders; create table leaders.users (id varchar primary key default gen_random_uuid(), email text, password text, display_name text, role text);
     insert into leaders.users (email, password, display_name, role) values ('angad@linkmarketing.org.uk', 'x', 'Angad', 'manager');
-    create schema hf; create table hf.users (id serial primary key, username text, password_hash text, full_name text, role text);`);
+    create schema hf; create table hf.users (id serial primary key, username text not null, password_hash text not null, full_name text not null,
+      mentor_name text not null default '', start_date text not null default '', role text not null default 'rep', created_at timestamptz not null default now());`);
   await q('insert into hf.users (username, password_hash, full_name, role) values ($1, $2, $3, $4)', ['jdoe', bcrypt.hashSync('old-pass', 4), 'Jo Doe', 'rep']);
   await exec(core.SCHEMA);
   const sendMail = async (email, code) => console.log('CODE for ' + email + ': ' + code);
