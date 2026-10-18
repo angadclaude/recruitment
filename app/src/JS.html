@@ -2209,7 +2209,7 @@ function drawAcademy(r, quiet) {
       (x <= today ? ' · ' + arr + ' arrived' + (ns ? ' · ' + ns + ' no-show' : '') : '');
     const tools = admin ? '<div class="bullbtns d1tools">' +
       (x >= today && toRemind.length ? '<button class="btn ' + (rem < toRemind.length ? 'wa' : 'ghost') + '" data-remall="' + x + '">📲 Send reminders · ' + rem + '/' + toRemind.length + '</button>' : '') +
-      '<button class="btn ghost" data-pdf="' + x + '">📄 Print list (PDF)</button></div>' : '';
+      '<button class="btn ghost" data-pdf="' + x + '">📄 New Starts List (PDF)</button></div>' : '';
     return '<div class="datehead">' + h(label(x)) + '</div><p class="hint" style="margin:-4px 4px 8px">' + h(counts) + '</p>' + tools + '<div class="list alist">' + l.map(row).join('') + '</div>';
   };
   const toOnb = admin ? r.items.filter(c => c.academy_date >= today && !c.onboard_email_at) : [];
@@ -2219,12 +2219,12 @@ function drawAcademy(r, quiet) {
       toOnb.map(c => '<button class="nm" data-cand="' + h(c.id) + '">' + h(c.first_name) + (c.databyte_at ? ' · email' : '') + '</button>').join('') + '</div>' : '') +
     upcoming.map(block).join('') +
     (past.length ? '<div class="datehead" style="margin-top:22px">Last week</div>' + past.map(block).join('') : '') +
-    '<p class="hint">' + (admin ? '📲 Send reminders: the Day 1 reminder to every starter, signed by you (Jess / Rubal: you get a nudge at 10:00 on the day). 👍 When someone replies Yes, tap "They replied Yes". 📄 Print list: the sign-in sheet for the room. ' : '💬 Remind sends them the Day 1 reminder (time, address, Maps pin). 👍 When they reply Yes, tap "They replied Yes". ') +
+    '<p class="hint">' + (admin ? '📲 Send reminders: the Day 1 reminder to every starter, signed by you (Jess / Rubal: you get a nudge at 10:00 on the day). 👍 When someone replies Yes, tap "They replied Yes". 📄 New Starts List: the sign-in sheet for the room. ' : '💬 Remind sends them the Day 1 reminder (time, address, Maps pin). 👍 When they reply Yes, tap "They replied Yes". ') +
     'On Day 1, tap Arrived or No-show for everyone: that\'s your show-up rate.</p>', quiet, !admin);
   page.querySelectorAll('.trow[data-cand] .main').forEach(el => { el.onclick = () => nav('cand', { id: el.parentNode.dataset.cand }, true); });
   page.querySelectorAll('.nm[data-cand]').forEach(b => { b.onclick = () => nav('cand', { id: b.dataset.cand }, true); });
   page.querySelectorAll('[data-remall]').forEach(b => { b.onclick = () => day1Sheet(b.dataset.remall); });
-  page.querySelectorAll('[data-pdf]').forEach(b => { b.onclick = () => { const x = b.dataset.pdf; savePdf(day1Pdf(x, r.items.filter(c => c.academy_date === x)), 'Day1-' + x + '.pdf'); }; });
+  page.querySelectorAll('[data-pdf]').forEach(b => { b.onclick = () => { const x = b.dataset.pdf; savePdf(day1Pdf(x, r.items.filter(c => c.academy_date === x)), newStartsName(x) + '.pdf'); }; });
   page.querySelectorAll('[data-rem1]').forEach(a => a.addEventListener('click', () => markReminded(r.items.filter(x => x.id === a.dataset.rem1)[0], a.dataset.via)));
   page.querySelectorAll('[data-yes]').forEach(b => {
     b.onclick = e => {
@@ -2386,6 +2386,8 @@ function pdfStr(s) {
   return String(s == null ? '' : s).replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/[–—]/g, '-')
     .replace(/[^\x20-\x7E\xA0-\xFF]/g, '').replace(/[\\()]/g, '\\$&');
 }
+/** "New Starts List 19.10.2026": the Day 1 list's title and file name, for the week it's for (Angad, 18 Oct). */
+function newStartsName(date) { return 'New Starts List ' + date.slice(8, 10) + '.' + date.slice(5, 7) + '.' + date.slice(0, 4); }
 function day1Pdf(date, list) {
   const W = 595.28, H = 841.89, M = 36, RH = 24, PER = 24;
   const cols = [['#', 20], ['Name', 128], ['Co', 40], ['Mobile', 82], ['Booked by', 88], ['Confirmed', 52], ['Arrived', 46], ['Notes', 67]];
@@ -2397,8 +2399,8 @@ function day1Pdf(date, list) {
     const o = [];
     const txt = (x, y, s, size, bold, grey) => o.push((grey ? '0.42 0.42 0.47' : '0.13 0.13 0.17') + ' rg BT /' + (bold ? 'F2' : 'F1') + ' ' + size + ' Tf ' + x.toFixed(2) + ' ' + y.toFixed(2) + ' Td (' + pdfStr(s) + ') Tj ET');
     o.push('0.95 0.42 0.11 rg 0 ' + (H - 10).toFixed(2) + ' ' + (W / 2).toFixed(2) + ' 10 re f', '0.05 0.6 0.6 rg ' + (W / 2).toFixed(2) + ' ' + (H - 10).toFixed(2) + ' ' + (W / 2).toFixed(2) + ' 10 re f');
-    txt(M, H - 50, 'BA Academy · Day 1 sign-in', 20, true);
-    txt(M, H - 68, fmtLong(date) + ' ' + date.slice(0, 4) + ' · 1:30pm · ' + (S.me.address || 'Automotive House, Grays Place, Slough SL2 5AF'), 10);
+    txt(M, H - 50, newStartsName(date), 20, true);
+    txt(M, H - 68, 'BA Academy Day 1 · ' + fmtLong(date) + ' ' + date.slice(0, 4) + ' · 1:30pm · ' + (S.me.address || 'Automotive House, Grays Place, Slough SL2 5AF'), 10);
     txt(M, H - 84, rows.length + ' expected · ' + conf + ' confirmed · ' + (rows.length - conf) + ' not confirmed  |  LINK Marketing & JUSS Marketing  |  printed ' + fmt(S.me.today) + ' ' + londonNow().slice(11) + ' by ' + S.me.user.name, 8.5, false, true);
     const top = H - 100;
     o.push('0.94 0.93 0.91 rg ' + M + ' ' + (top - 20).toFixed(2) + ' 523 20 re f');
@@ -2432,11 +2434,12 @@ function day1Pdf(date, list) {
     objs.push('<< /Length ' + st.length + ' >>\nstream\n' + st + '\nendstream');
   });
   objs[1] = '<< /Type /Pages /Kids [' + kids.map(k => k + ' 0 R').join(' ') + '] /Count ' + kids.length + ' >>';
+  objs.push('<< /Title (' + pdfStr(newStartsName(date)) + ') /Author (' + pdfStr(S.me.user.name) + ') >>');  // the title PDF viewers show
   let out = '%PDF-1.4\n', offs = [];
   objs.forEach((ob, i) => { offs.push(out.length); out += (i + 1) + ' 0 obj\n' + ob + '\nendobj\n'; });
   const xref = out.length;
   out += 'xref\n0 ' + (objs.length + 1) + '\n0000000000 65535 f \n' + offs.map(n => String(n).padStart(10, '0') + ' 00000 n \n').join('') +
-    'trailer\n<< /Size ' + (objs.length + 1) + ' /Root 1 0 R >>\nstartxref\n' + xref + '\n%%EOF\n';
+    'trailer\n<< /Size ' + (objs.length + 1) + ' /Root 1 0 R /Info ' + objs.length + ' 0 R >>\nstartxref\n' + xref + '\n%%EOF\n';
   const bytes = new Uint8Array(out.length);
   for (let i = 0; i < out.length; i++) bytes[i] = out.charCodeAt(i) & 255;
   return bytes;
