@@ -1,11 +1,13 @@
-// Builds the installable web app (GitHub Pages) into /join at the repo root from the same src/ files
-// used by Google Apps Script. Usage: node app/build.js [publicBaseUrl]
+// Builds the installable web app into /join at the repo root from the same src/ files used by Google Apps Script.
+// Where it's served from (Vercel / GitHub Pages) is in app/site.json. Usage: node app/build.js [publicBaseUrl]
 'use strict';
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-const BASE = process.argv[2] || 'https://angadclaude.github.io/recruitment/join/';
+const SITE = JSON.parse(fs.readFileSync(path.join(__dirname, 'site.json'), 'utf8'));
+const BASE = process.argv[2] || SITE.url;
+const MOVE = require('./move.js')(BASE, SITE.movedFrom);  // old addresses forward here, logged in
 const APP_NAME = 'Juss & Link Recruitment App';  // what people see when the link is shared and under the icon
 const SRC = path.join(__dirname, 'src');
 const ASSETS = path.join(__dirname, 'assets');
@@ -53,7 +55,7 @@ function page(opts) {
   return `<!DOCTYPE html>
 <html lang="en"${opts.theme ? ' class="t-' + opts.theme + '"' : ''}>
 <head>
-  <meta charset="utf-8">
+  <meta charset="utf-8">${MOVE ? '\n  ' + MOVE : ''}
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>${opts.title}</title>
   <meta name="theme-color" content="${staff ? '#F4F2EF' : opts.theme === 'JUSS' ? '#123A48' : '#26262F'}">
@@ -161,3 +163,6 @@ self.addEventListener('fetch', e => {
 fs.readdirSync(path.join(ASSETS, 'fonts')).forEach(f => copy(path.join(ASSETS, 'fonts', f), 'fonts/' + f));
 
 console.log('Built ' + OUT + ' (v' + v + ') for ' + BASE);
+// The Google code builds the links people get (welcome links, alert taps, slide QR codes) from its own PUBLIC_URL
+const gsUrl = (/PUBLIC_URL:\s*'([^']*)'/.exec(read('Code.gs')) || [])[1];
+if (!process.argv[2] && gsUrl !== BASE) console.warn('⚠️  Code.gs PUBLIC_URL is ' + gsUrl + ' but the app is at ' + BASE + ': change it, then paste Code.gs into Apps Script and deploy a New version.');
