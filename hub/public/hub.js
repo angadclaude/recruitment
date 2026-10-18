@@ -6,8 +6,9 @@
   const show = id => steps.forEach(s => { $(s).hidden = s !== id; });
   const params = new URLSearchParams(location.search);
   const want = params.get('app'), back = params.get('r') || '/';
-  const ICON = { recruit: '🗂️', fr: '📘', hf: '🥗', leaders: '🏆' };
-  const NAMES = { recruit: 'Recruitment', fr: 'Fund Raising Playbook', hf: 'HelloFresh Playbook', leaders: 'Leaders Playbook' };
+  const ICON = { recruit: '🗂️', fr: '📘', hf: '🥗', leaders: '🏆', jleaders: '🏆' };
+  const NAMES = { recruit: 'Recruitment', fr: 'Fund Raising Playbook', hf: 'HelloFresh Playbook', leaders: 'Leaders Playbook', jleaders: 'Leaders Playbook' };
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   let email = '';
 
   const api = (path, body) => fetch('/api/' + path, body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {})
@@ -19,7 +20,7 @@
 
   // One brand at a time: JUSS people (and anyone arriving from the HelloFresh Playbook) see only JUSS, LINK people only LINK.
   // Before we know who you are and where you came from: both logos.
-  const APP_BRAND = { fr: 'LINK', leaders: 'LINK', hf: 'JUSS' };
+  const APP_BRAND = { fr: 'LINK', leaders: 'LINK', hf: 'JUSS', jleaders: 'JUSS' };
   const BRAND_NAME = { LINK: 'LINK Marketing', JUSS: 'JUSS Marketing' };
   function theme(company) {
     const c = company === 'LINK' || company === 'JUSS' ? company : '';
@@ -30,17 +31,76 @@
     document.querySelector('meta[name=theme-color]').content = c === 'JUSS' ? '#0A1D26' : '#17171D';
   }
   const arrivalBrand = (params.get('brand') || '').toUpperCase() || APP_BRAND[want] || '';
-  function header(person) {
-    const first = (person.name || person.email).split(' ')[0];
+  function header(d) {
+    const person = d.person, first = (person.name || person.email).split(' ')[0];
     $('hello').textContent = greet();
     $('title').textContent = first;
     $('lead').textContent = 'Your apps, one tap away.';
-    $('chips').innerHTML = (person.company ? '<span class="chip">' + person.company + '</span>' : '') + '<span class="chip">' + person.email.replace(/</g, '') + '</span>';
+    $('chips').innerHTML = (person.company ? '<span class="chip">' + esc(person.company) + '</span>' : '') +
+      (d.stage ? '<span class="chip">Stage ' + d.stage + ' · ' + esc(d.stageName) + '</span>' : '') +
+      (d.admin ? '<span class="chip">Admin</span>' : d.approver ? '<span class="chip">Approver</span>' : '');
   }
+
+  // CG1-style path: where you are, and what opens next
+  function journey(d) {
+    if (!d.stage) { $('journey').hidden = true; return; }
+    const pb = d.person.company === 'JUSS' ? 'HelloFresh Playbook' : 'Fund Raising Playbook';
+    const steps = [
+      { n: 1, t: 'Candidate', s: 'Interview and BA Academy' },
+      { n: 2, t: 'Brand Ambassador', s: 'Your ' + pb + ' is open' },
+      { n: 3, t: 'Leader', s: d.stage >= 3 ? (d.waitingForLeaders ? 'Approved · your Leaders Playbook opens very soon' : 'Your Leaders Playbook is open') : 'Opens when an approver moves you on' },
+    ];
+    $('ladder').innerHTML = steps.map(x => '<li class="' + (x.n < d.stage ? 'done' : x.n === d.stage ? 'now' : 'next') + '"><div class="dot">' + (x.n < d.stage ? '✓' : x.n) + '</div><div><b>' + esc(x.t) + '</b><span>' + esc(x.s) + '</span></div></li>').join('');
+    $('journey').hidden = false;
+  }
+
+  // Approvers: their company's BAs, two taps to move someone on
+  let TEAM = [];
+  function drawTeam() {
+    const f = $('teamSearch').value.trim().toLowerCase();
+    const list = TEAM.filter(p => !f || p.name.toLowerCase().includes(f)).slice(0, 60);
+    $('people').innerHTML = list.map(p => '<div class="person"><div class="who"><b>' + esc(p.name) + '</b><span>' + esc(p.company) + ' · ' + (p.app === 'fr' ? 'FR' : 'HelloFresh') + (p.email ? '' : ' · needs to sign in once') + '</span></div>' +
+      (p.stage >= 3 ? '<span class="badge l">Leader</span>' : p.canPromote ? '<button class="mini" data-app="' + p.app + '" data-id="' + esc(p.id) + '" data-name="' + esc(p.name) + '">Advance to Leader</button>' : '<span class="badge">BA</span>') + '</div>').join('') ||
+      '<p class="hint" style="margin:6px 2px">Nobody matches.</p>';
+  }
+  function loadTeam() {
+    api('team').then(r => {
+      if (!r.ok) { $('moveOn').hidden = true; return; }
+      TEAM = r.people;
+      $('moveHint').textContent = 'Approve a ' + r.companies.join(' or ') + ' BA to Stage 3 · Leader and their Leaders Playbook opens on their phone.';
+      $('moveOn').hidden = false; drawTeam();
+    });
+  }
+  $('teamSearch').addEventListener('input', drawTeam);
+  $('people').addEventListener('click', e => {
+    const b = e.target.closest('button.mini'); if (!b) return;
+    if (!b.classList.contains('sure')) { b.classList.add('sure'); b.textContent = 'Tap to confirm'; setTimeout(() => { if (b.isConnected && !b.disabled) { b.classList.remove('sure'); b.textContent = 'Advance to Leader'; } }, 4000); return; }
+    b.disabled = true; b.textContent = 'Moving on…';
+    api('promote', { app: b.dataset.app, id: b.dataset.id }).then(r => {
+      const m = $('moveMsg'); m.className = 'msg ' + (r.ok ? 'ok' : 'err'); m.hidden = false;
+      m.textContent = r.ok ? (r.already ? r.name + ' is already a Leader.' : r.name + ' is now a Leader 🎉 ' + (r.opened ? 'Their Leaders Playbook is open.' : 'Their Leaders Playbook opens as soon as it\'s live.')) : r.error;
+      loadTeam();
+    });
+  });
+
+  // Admins: who can approve
+  function drawApprovers(list) {
+    $('approverList').innerHTML = list.map(a => '<div class="person"><div class="who"><b>' + esc(a.name || a.email) + '</b><span>' + esc((a.company ? a.company + ' · ' : '') + a.email) + '</span></div><button class="mini ghost" data-email="' + esc(a.email) + '">Remove</button></div>').join('') ||
+      '<p class="hint" style="margin:6px 2px">No approvers yet. Admins can move anyone on.</p>';
+  }
+  function loadApprovers() { api('approvers').then(r => { $('approversCard').hidden = !r.ok; if (r.ok) drawApprovers(r.approvers); }); }
+  $('addApprover').addEventListener('submit', e => {
+    e.preventDefault();
+    api('approvers', { email: $('approverEmail').value, on: true }).then(r => { msg('approverMsg', r.ok ? '' : r.error); $('approverMsg').className = 'msg err'; if (r.ok) { $('approverEmail').value = ''; drawApprovers(r.approvers); } });
+  });
+  $('approverList').addEventListener('click', e => {
+    const b = e.target.closest('button.mini'); if (!b) return;
+    api('approvers', { email: b.dataset.email, on: false }).then(r => { if (r.ok) drawApprovers(r.approvers); });
+  });
 
   function render(d) {
     theme(d.person.company);
-    header(d.person);
+    header(d);
     // Came from an app: go straight back, signed in (one tap if the browser blocks the jump)
     if (want && d.tiles.some(t => t.id === want)) {
       $('goTitle').textContent = 'Opening ' + NAMES[want] + '…';
@@ -56,6 +116,9 @@
     $('connectHf').hidden = !d.canConnectHf;
     const no = params.get('noaccount') || (want && !d.tiles.some(t => t.id === want) ? want : '');
     msg('homeMsg', no ? 'You don\'t have a ' + (NAMES[no] || no) + ' account with this email yet. Ask your manager, or connect your old account below.' : '');
+    journey(d);
+    if (d.approver) loadTeam(); else $('moveOn').hidden = true;
+    if (d.admin) loadApprovers(); else $('approversCard').hidden = true;
     show('stepHome');
   }
 

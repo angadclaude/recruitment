@@ -33,6 +33,25 @@ async function sendCodeEmail(email, code) {
   if (!j.ok) throw new Error('relay: ' + j.error);
 }
 
+/** "You're a Leader now": in their brand, from Gmail via the relay. Same launch rule as the codes. */
+async function sendCongrats(email, name, company, opened) {
+  const allow = String(process.env.MAIL_ALLOW || 'angad@linkmarketing.org.uk').toLowerCase().split(/[,\s]+/);
+  if (process.env.HUB_LAUNCHED !== '1' && !allow.includes(email)) return;
+  const juss = company === 'JUSS', stripe = juss ? 'linear-gradient(90deg,#E4613F,#EDA03A 45%,#34B1C0)' : 'linear-gradient(90deg,#FF8A3D,#F15A24 55%,#CF3A10)';
+  const first = String(name || '').split(' ')[0] || 'there', brand = juss ? 'JUSS Marketing' : 'LINK Marketing';
+  const html = '<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:440px;margin:0 auto;padding:24px;color:#22222B">' +
+    '<div style="height:6px;border-radius:3px;background:' + stripe + '"></div>' +
+    '<p style="font-size:24px;font-weight:700;margin:22px 0 8px">You\'re a Leader, ' + first + ' 🎉</p>' +
+    '<p style="font-size:15px;margin:0 0 16px">You\'ve been moved on to <b>Stage 3 · Leader</b> at ' + brand + '. ' +
+    (opened ? 'Your Leaders Playbook is open now.' : 'Your Leaders Playbook opens as soon as it\'s ready; we\'ll have it waiting for you.') + '</p>' +
+    '<p style="margin:0 0 18px"><a href="https://link-juss.vercel.app/" style="display:inline-block;background:#22222B;color:#fff;text-decoration:none;padding:13px 20px;border-radius:12px;font-weight:600">Open my apps</a></p>' +
+    '<p style="font-size:13px;color:#6E6C78;margin:0">Sign in with this email address; we\'ll send you a code.</p></div>';
+  const res = await fetch(process.env.RELAY_URL, { method: 'POST', headers: { 'content-type': 'text/plain' }, signal: AbortSignal.timeout(60000),
+    body: JSON.stringify({ action: 'relayMail', secret: process.env.RELAY_SECRET, mail: { via: 'mail', msg: { to: email, subject: 'You\'re a Leader 🎉 Your Leaders Playbook', htmlBody: html, name: brand } } }) });
+  const j = JSON.parse(await res.text());
+  if (!j.ok) throw new Error('relay: ' + j.error);
+}
+
 function cookieToken(req) {
   const m = new RegExp('(?:^|;\\s*)' + COOKIE + '=([^;]+)').exec(req.headers.cookie || '');
   return m ? decodeURIComponent(m[1]) : '';
@@ -54,6 +73,7 @@ function safePath(r) { const s = String(r || '/'); return /^\/(?!\/)[^\s]*$/.tes
 async function handle(req, res, opts) {
   const o = opts || {};
   const q = o.q || db().q, exec = o.exec || db().exec, sendMail = o.sendMail || sendCodeEmail, bcrypt = o.bcrypt || require('bcryptjs');
+  const notify = o.notify || sendCongrats;
   const url = new URL(req.url, 'https://hub.local');
   const action = url.pathname.replace(/^\/api\//, '').replace(/\/$/, '');
   try {
@@ -83,6 +103,11 @@ async function handle(req, res, opts) {
       const b = body(req), r = await core.connectHf(q, person, b.username, b.password, bcrypt);
       return json(res, 200, r.ok ? Object.assign({ ok: true }, await core.home(q, person)) : r);
     }
+    if (!person && ['team', 'promote', 'approvers'].includes(action)) return json(res, 200, { ok: false, auth: true });
+    if (action === 'team') return json(res, 200, await core.team(q, person));
+    if (action === 'promote' && req.method === 'POST') { const b = body(req); return json(res, 200, await core.promote(q, person, b.app, b.id, notify)); }
+    if (action === 'approvers' && req.method === 'POST') { const b = body(req); return json(res, 200, await core.setApprover(q, person, b.email, !!b.on)); }
+    if (action === 'approvers') return json(res, 200, await core.approvers(q, person));
     return json(res, 404, { ok: false, error: 'Not found' });
   } catch (e) {
     console.error(action, e);
