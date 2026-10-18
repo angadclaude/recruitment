@@ -1,0 +1,6 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "buildCommand": "echo 'Nothing to build: the app in join/ is built and tested before it is pushed'",
+  "outputDirectory": "join"
+}
