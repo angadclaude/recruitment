@@ -1,5 +1,5 @@
 // End-to-end walk-through of the whole journey in a real browser (phone-sized), using the
-// installable app (/join, what GitHub Pages serves) wired to the real Code.gs on a fake Google backend.
+// installable app (/join, what Vercel serves) wired to the real Code.gs on a fake Google backend.
 // Usage: node app/build.js && node app/dev/e2e.js <screenshot-dir>   (starts its own dev server on :8787)
 'use strict';
 const { chromium } = require('playwright');
@@ -10,7 +10,7 @@ const { spawn } = require('child_process');
 
 const BASE = 'http://localhost:8787';
 const APP = BASE + '/join/';
-const PUBLIC = 'https://angadclaude.github.io/recruitment/join/';
+const PUBLIC = require('../site.json').url;  // where the app lives (Code.gs PUBLIC_URL must match)
 const SHOTS = process.argv[2] || './shots';
 fs.mkdirSync(SHOTS, { recursive: true });
 const PHONE = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true };

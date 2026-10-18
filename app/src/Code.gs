@@ -19,9 +19,9 @@ const CONFIG = {
   RETENTION_DAYS: 183,            // 6 months: everything deleted (= the repeat-candidate window). Matches the check-in notice.
   CHECKIN_FROM: '07:00',          // check-ins outside these times are flagged amber for admins (never blocked)
   CHECKIN_TO: '17:00',
-  // Where the app lives for staff and candidates (the GitHub Pages / custom domain address, ending in /).
+  // Where the app lives for staff and candidates (the Vercel / custom domain address, ending in /). Same as app/site.json "url".
   // Leave '' to use the Google Apps Script link instead (no push notifications).
-  PUBLIC_URL: 'https://angadclaude.github.io/recruitment/join/',
+  PUBLIC_URL: 'https://jl-recruitment.vercel.app/',
   ACADEMY_SIGNOFF: { LINK: 'Jess', JUSS: 'Rubal' }, // who signs the BA Academy WhatsApp, whoever sends it
   // Who sends the thank-you WhatsApp to every appointment (their company's candidates), and gets the reminder.
   // The same email for both = one person sends them all.

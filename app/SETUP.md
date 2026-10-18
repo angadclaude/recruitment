@@ -5,10 +5,12 @@
 | Piece | What it does | Cost |
 |---|---|---|
 | **Google Sheet + Apps Script** | Stores the data (private) and runs the rules, logins and alerts | £0 |
-| **GitHub Pages** (this repo, already on) | Hosts the app people open: the slide QR codes, welcome pages, staff app | £0 |
+| **Vercel** (project `jl-recruitment`, linked to this repo) | Hosts the app people open: the slide QR codes, welcome pages, staff app | Part of the Link Marketing Vercel Pro plan |
 | **OneSignal** | Sends the phone push notifications | £0 (free plan) |
 
-Your app's address: **https://angadclaude.github.io/recruitment/join/**
+Your app's address: **https://jl-recruitment.vercel.app/**
+
+*(Until 18 Oct 2026 it lived at https://angadclaude.github.io/recruitment/join/. GitHub Pages is still on, only to forward old links, QR codes and home-screen icons to the new address, logged in. Keep it on.)*
 
 ---
 
@@ -33,15 +35,16 @@ Choose **`importHistory`** → **▶ Run**.
 **Deploy → New deployment → ⚙️ → Web app** → Execute as **Me**, Who has access **Anyone** → **Deploy**.
 Copy the **Web app URL** (ends in `/exec`). You need it in B2.
 
-*(Only using Google, without the GitHub web address? Set `PUBLIC_URL: ''` in Code.gs and also add the HTML files `Index`, `Styles`, `JS`, `Logos` and `QR` from `src/`.)*
+*(Only using Google, without the Vercel web address? Set `PUBLIC_URL: ''` in Code.gs and also add the HTML files `Index`, `Styles`, `JS`, `Logos` and `QR` from `src/`.)*
 
 ---
 
-## Part B. GitHub: the app people open (5 min)
+## Part B. Vercel: the app people open (5 min)
 
 ### B1. Put the app live
-The app lives in the `join/` folder on the `recruitment-app` branch. GitHub Pages publishes `main`, so merge the branch into `main`. *(Ask Claude to open the pull request, then click **Merge**.)*
-Then check **repo → Settings → Pages → Source: Deploy from a branch → `main` / root**.
+The app lives in the `join/` folder. Vercel publishes `main` by itself about a minute after each merge. *(Claude opens the pull request; you click **Merge**.)*
+Set up once (done 18 Oct 2026): Vercel → **Add New → Project → Import Git Repository** → `angadclaude/recruitment` → name `jl-recruitment` → Framework **Other** → **Deploy**. `vercel.json` tells it to serve `join/` with no build step.
+GitHub Pages (**repo → Settings → Pages → `main` / root**) stays on only so the old address forwards to Vercel.
 
 ### B2. Connect it to Google
 Open [`join/config.js`](../join/config.js) on GitHub → ✏️ edit → paste the URL from A5 between the quotes on `API_URL:` → **Commit**.
@@ -53,9 +56,9 @@ Open [`join/config.js`](../join/config.js) on GitHub → ✏️ edit → paste t
 
 1. Sign up free at **onesignal.com** (click the link in OneSignal's confirmation email) → **New App** → name it *LINK × JUSS Recruitment* → choose **Web**.
 2. **Typical Site** setup:
-   - Site name: `Recruitment` · Site URL: `https://angadclaude.github.io`
+   - Site name: `Recruitment` · Site URL: `https://jl-recruitment.vercel.app`
    - Default icon: upload [`assets/icon-192.png`](assets/icon-192.png)
-   - **Advanced → Service worker:** path `/recruitment/join/`, filename `OneSignalSDKWorker.js`, scope `/recruitment/join/`
+   - **Advanced → Service worker:** path `/`, filename `OneSignalSDKWorker.js`, scope `/` *(the app also sets these itself from the address it's opened on)*
    - Skip the "add code to site" step. It's already built in.
 3. **Settings → Keys & IDs** → copy the **App ID**. Click **Add key** to create the **REST API Key**, and copy it straight away: it's only shown once.
 4. Paste the **App ID** into [`join/config.js`](../join/config.js) after `ONESIGNAL_APP_ID:` → Commit.
@@ -71,11 +74,11 @@ Until Part C is done, alerts go by email instead. Nothing breaks.
 
 ## Part D. Get the team on it
 
-1. Open **https://angadclaude.github.io/recruitment/join/** → tap **🛡️ Admin login** (Angad, Jess, Satpal, Rubal) → your email → the 6-digit code.
+1. Open **https://jl-recruitment.vercel.app/** → tap **🛡️ Admin login** (Angad, Jess, Satpal, Rubal) → your email → the 6-digit code.
 2. **👥 Team → + Add person** for every booker and presenter: name, email, **LINK or JUSS**, access. Bookers and presenters are BAs: they use **🙌 BA login**. Only bookers earn the **recruitment incentive** (net 5): admins can be picked as someone's booker, but they're never on the incentive board and get no incentive alerts.
 3. Send everyone the link with this message:
 
-> 📲 Our new recruitment app is live. Open https://angadclaude.github.io/recruitment/join/ → tap **🙌 BA login** → your email → the 6-digit code we email you.
+> 📲 Our new recruitment app is live. Open https://jl-recruitment.vercel.app/ → tap **🙌 BA login** → your email → the 6-digit code we email you.
 > **iPhone:** tap Share ⎋ → *Add to Home Screen* → open it from the icon → tap **Turn on** for alerts.
 > **Android:** Chrome menu ⋮ → *Install app* → tap **Turn on** for alerts.
 
@@ -277,4 +280,4 @@ Every WhatsApp button has **Not on WhatsApp? 📱 Text · ✉️ Email** under i
 
 ## Changing something later
 Apps Script: edit → Save → **Deploy → Manage deployments → ✏️ → New version → Deploy**. The URL stays the same.
-App screens: Claude edits `app/src`, runs `node app/build.js`, and pushes. GitHub Pages updates in about a minute.
+App screens: Claude edits `app/src`, runs `node app/build.js`, and pushes. Vercel updates in about a minute after the merge.
