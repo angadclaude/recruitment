@@ -12,7 +12,7 @@ Slide N QR → evaluation (same phone straight in · other phone by mobile · or
   → Everything grouped by date / week ending → weekly recruitment incentive (net attended, bookers only — admins don't earn it)
 ```
 
-**To set it up, follow [SETUP.md](SETUP.md).** Free: Google Apps Script + Sheet (data), GitHub Pages (`/join`), OneSignal (push).
+**To set it up, follow [SETUP.md](SETUP.md).** Google Apps Script + Sheet (data), Vercel (`/join`, live at https://jl-recruitment.vercel.app/), OneSignal (push).
 
 Slide QR codes (permanent): [`docs/qr-1-checkin.png`](docs/qr-1-checkin.png) · [`docs/qr-2-evaluation.png`](docs/qr-2-evaluation.png)
 
@@ -22,9 +22,9 @@ Slide QR codes (permanent): [`docs/qr-1-checkin.png`](docs/qr-1-checkin.png) · 
 | `src/Code.gs` | Server: data, rules (flags, recruitment incentive, deadlines, 6-month repeats), logins, push/email alerts, welcome page API, setup, history import |
 | `src/JS.html` | The app: check-in, evaluation, welcome page, and the staff app (Today, My candidates, All, Incentive, Team, slide QR codes) |
 | `src/Index.html`, `Styles.html`, `Logos.html`, `QR.html` | Page shell, styles, embedded logos, QR generator (qrcode-generator 1.4.4, MIT) |
-| `build.js` | Builds the installable app into `/join` (GitHub Pages) from the same `src/` files |
+| `build.js` | Builds the installable app into `/join` (Vercel) from the same `src/` files. The address is in `site.json` |
 | `assets/` | Icons, Week 1 posters, WhatsApp link-preview cards |
-| `../join/` | **Built output, served by GitHub Pages.** `config.js` holds the Apps Script URL + OneSignal App ID |
+| `../join/` | **Built output, served by Vercel** (and by GitHub Pages only to forward the old address). `config.js` holds the Apps Script URL + OneSignal App ID |
 | `dev/` | Fake Google services, end-to-end browser test, screenshot tour (`shots.js`) |
 
 ## Testing locally

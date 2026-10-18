@@ -8,7 +8,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 
 const PORT = 8788, BASE = 'http://localhost:' + PORT, APP = BASE + '/join/';
-const PUBLIC = 'https://angadclaude.github.io/recruitment/join/';
+const PUBLIC = require('../site.json').url;
 const DIR = process.argv[2] || './shots-ui';
 const ONLY = process.argv[3] || '';
 fs.mkdirSync(DIR, { recursive: true });
