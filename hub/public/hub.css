@@ -94,6 +94,39 @@ html:not(.t-LINK):not(.t-JUSS) .btn { background: linear-gradient(120deg, #3A3A4
 .tile .go { margin-left: auto; font-size: 22px; color: var(--muted); }
 .foot { text-align: center; margin-top: 18px; }
 
+/* The ladder (Candidate → BA → Leader) */
+.label.dark { opacity: 1; color: var(--muted); margin-bottom: 12px; }
+.ladder { list-style: none; margin: 0; padding: 0; position: relative; }
+.ladder li { position: relative; display: flex; gap: 14px; align-items: flex-start; padding: 0 0 18px; }
+.ladder li:last-child { padding-bottom: 0; }
+.ladder li::before { content: ''; position: absolute; left: 17px; top: 36px; bottom: 0; width: 2px; background: var(--line); }
+.ladder li:last-child::before { display: none; }
+.ladder li.done::before { background: var(--brand); }
+.ladder .dot { flex: none; width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font: 400 17px Anton, Impact, sans-serif; background: var(--soft); color: var(--muted); border: 2px solid var(--line); position: relative; z-index: 1; }
+.ladder li.done .dot { background: var(--brand); border-color: var(--brand); color: #fff; }
+.ladder li.now .dot { background: var(--grad); border-color: transparent; color: #fff; box-shadow: 0 0 0 6px rgba(var(--glow), .15); animation: pulse 2.2s ease-in-out infinite; }
+html:not(.t-LINK):not(.t-JUSS) .ladder li.now .dot { background: #2A2A33; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 11px rgba(var(--glow), .05); } }
+.ladder b { display: block; font: 400 19px/1.15 Anton, Impact, sans-serif; letter-spacing: .01em; }
+.ladder span { display: block; color: var(--muted); font-size: 13.5px; margin-top: 2px; }
+.ladder li.next b { color: var(--muted); }
+
+/* People lists (move on / approvers) */
+.people { margin-top: 12px; display: grid; gap: 8px; max-height: 420px; overflow: auto; }
+.person { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 14px; background: var(--soft); }
+.person .who { flex: 1; min-width: 0; }
+.person .who b { display: block; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.person .who span { display: block; font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.badge { flex: none; font: 600 11px/1 Oswald; letter-spacing: .06em; text-transform: uppercase; padding: 6px 9px; border-radius: 999px; background: #fff; color: var(--muted); border: 1px solid var(--line); }
+.badge.l { background: var(--tint); color: var(--brand-ink); border-color: transparent; }
+.mini { flex: none; border: 0; border-radius: 10px; padding: 9px 11px; font: 600 12px Oswald; letter-spacing: .06em; text-transform: uppercase; background: #22222B; color: #fff; cursor: pointer; }
+.mini.sure { background: var(--grad); }
+.mini.ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); }
+.mini[disabled] { opacity: .5; }
+.row { display: flex; gap: 8px; margin-top: 12px; }
+.row input { flex: 1; }
+.btn.small { width: auto; margin-top: 0; padding: 0 16px; }
+
 /* Entrances (backwards fill: no leftover transform) */
 .rise { animation: rise .55s cubic-bezier(.2, .7, .2, 1) backwards; }
 .rise:nth-child(2) { animation-delay: .06s; } .rise:nth-child(3) { animation-delay: .12s; } .rise:nth-child(4) { animation-delay: .18s; } .rise:nth-child(5) { animation-delay: .24s; }

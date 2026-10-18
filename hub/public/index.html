@@ -14,7 +14,7 @@
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-180.png">
   <link rel="preload" href="fonts/anton-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="hub.css?v=1">
+  <link rel="stylesheet" href="hub.css?v=2">
 </head>
 <body>
   <header class="stage">
@@ -70,9 +70,30 @@
         <button class="btn" type="submit" id="hfBtn">Connect</button>
         <div class="msg err" id="hfMsg" hidden></div>
       </form>
+      <div class="card rise" id="journey" hidden>
+        <div class="label dark">Your journey</div>
+        <ol class="ladder" id="ladder"></ol>
+      </div>
+      <div class="card rise" id="moveOn" hidden>
+        <h2>Move people on</h2>
+        <p class="hint" id="moveHint">Approve a BA to Stage 3 · Leader and their Leaders Playbook opens on their phone.</p>
+        <input type="text" id="teamSearch" placeholder="Search by name" autocomplete="off">
+        <div class="people" id="people"></div>
+        <div class="msg" id="moveMsg" hidden></div>
+      </div>
+      <div class="card rise" id="approversCard" hidden>
+        <h2>Approvers</h2>
+        <p class="hint">People who can move BAs in their own company on to Leader. Admins can move on anyone.</p>
+        <div class="people" id="approverList"></div>
+        <form id="addApprover" class="row">
+          <input type="email" id="approverEmail" placeholder="their work email" required>
+          <button class="btn small" type="submit">Add</button>
+        </form>
+        <div class="msg" id="approverMsg" hidden></div>
+      </div>
       <div class="foot"><button class="link" type="button" id="logout">Sign out</button></div>
     </section>
   </main>
-  <script src="hub.js?v=1"></script>
+  <script src="hub.js?v=2"></script>
 </body>
 </html>

@@ -50,6 +50,22 @@ create table if not exists core.app_links (
   how text not null default '',
   primary key (person_id, app)
 );
+create table if not exists core.approvers (
+  email text primary key,
+  granted_by text not null default '',
+  granted_at timestamptz not null default now()
+);
+create table if not exists core.promotions (
+  id bigserial primary key,
+  email text not null,
+  name text not null default '',
+  company text not null,
+  to_stage integer not null,
+  by_email text not null,
+  at timestamptz not null default now(),
+  applied_app text,
+  applied_at timestamptz
+);
 `;
 
 /** The apps. handoff: where the one-use ticket is sent (#c=…); each app redeems it with redeemHandoff(). */
@@ -57,8 +73,15 @@ const APPS = {
   recruit: { name: 'Recruitment', blurb: 'Check-ins, outcomes, Chase, Day 1', url: 'https://jl-recruitment.vercel.app/', handoff: 'https://jl-recruitment.vercel.app/index.html', company: '' },
   fr: { name: 'Fund Raising Playbook', blurb: 'LINK · your BA playbook', url: 'https://link-fr-playbook.vercel.app/', handoff: 'https://link-fr-playbook.vercel.app/auth/hub', company: 'LINK' },
   hf: { name: 'HelloFresh Playbook', blurb: 'JUSS · your BA playbook', url: 'https://juss-hf-playbook.vercel.app/', handoff: 'https://juss-hf-playbook.vercel.app/auth/hub', company: 'JUSS' },
-  leaders: { name: 'Leaders Playbook', blurb: 'For team leaders', url: 'https://link-leaders-playbook.vercel.app/', handoff: 'https://link-leaders-playbook.vercel.app/auth/hub', company: 'LINK' },
+  leaders: { name: 'Leaders Playbook', blurb: 'LINK · for team leaders', url: 'https://link-leaders-playbook.vercel.app/', handoff: 'https://link-leaders-playbook.vercel.app/auth/hub', company: 'LINK' },
+  // Being built in another session (18 Oct): schema jleaders, address to confirm. Promotions wait until it exists.
+  jleaders: { name: 'Leaders Playbook', blurb: 'JUSS · for team leaders', url: 'https://juss-leaders-playbook.vercel.app/', handoff: 'https://juss-leaders-playbook.vercel.app/auth/hub', company: 'JUSS' },
 };
+
+/** The ladder (like CG1): 1 Candidate (recruitment app) → 2 BA (their company's playbook) → 3 Leader (Leaders Playbook).
+ *  BA playbook and Leaders playbook per company; an approver moves people on within their own company, admins anyone. */
+const STAGES = { 1: 'Candidate', 2: 'BA', 3: 'Leader' };
+const PLAYBOOK = { LINK: 'fr', JUSS: 'hf' }, LEADERS = { LINK: 'leaders', JUSS: 'jleaders' };
 
 const CODE_MINUTES = 10, CODE_TRIES = 5, SENDS_PER_HOUR = 5, SESSION_DAYS = 90, HANDOFF_SECONDS = 120;
 const norm = e => String(e || '').trim().toLowerCase();
@@ -92,7 +115,26 @@ async function accounts(q, email, personId) {
   }
   if (!hf) hf = (await q('select id::text, full_name, role from hf.users where lower(username) = $1', [email]).catch(() => []))[0];
   if (hf) out.hf = { id: hf.id, name: hf.full_name, role: hf.role };
+  if (await hasSchema(q, 'jleaders')) {
+    const jl = (await q('select id::text, display_name, role from jleaders.users where lower(email) = $1', [email]).catch(() => []))[0];
+    if (jl) out.jleaders = { id: jl.id, name: jl.display_name, role: jl.role };
+  }
   return out;
+}
+const SCHEMA_SEEN = {};
+async function hasSchema(q, name) {
+  if (SCHEMA_SEEN[name]) return true;
+  const r = await q("select 1 from information_schema.tables where table_schema = $1 and table_name = 'users'", [name]);
+  return (SCHEMA_SEEN[name] = r.length > 0);
+}
+
+/** Admin = an admin in the recruitment app (Angad, Jess, Satpal, Rubal). Approver = someone an admin chose. */
+function isAdmin(acc) { return !!(acc.recruit && (acc.recruit.roles || []).includes('admin')); }
+async function isApprover(q, email) { return (await q('select 1 from core.approvers where email = $1', [email])).length > 0; }
+function stageOf(acc, pending) {
+  if (acc.leaders || acc.jleaders || pending) return 3;
+  if (acc.fr || acc.hf) return 2;
+  return 0;  // staff only (recruitment app), no BA stage
 }
 
 /** Who someone is across the apps: a display name and their company (LINK / JUSS). JUSS people get the JUSS look
@@ -100,7 +142,7 @@ async function accounts(q, email, personId) {
 function profile(acc) {
   const name = (acc.recruit && acc.recruit.name) || (acc.fr && acc.fr.name) || (acc.leaders && acc.leaders.name) || (acc.hf && acc.hf.name) || '';
   const co = String((acc.recruit && acc.recruit.company) || '').toUpperCase();
-  const company = co === 'LINK' || co === 'JUSS' ? co : acc.hf && !acc.fr && !acc.leaders ? 'JUSS' : acc.fr || acc.leaders ? 'LINK' : '';
+  const company = co === 'LINK' || co === 'JUSS' ? co : (acc.hf || acc.jleaders) && !acc.fr && !acc.leaders ? 'JUSS' : acc.fr || acc.leaders ? 'LINK' : '';
   return { name: tidyName(name), company };
 }
 
@@ -173,14 +215,112 @@ async function sessionPerson(q, token) {
 }
 async function logout(q, token) { if (token) await q('delete from core.sessions where token_hash = $1', [sha(token)]); }
 
-/** What the hub home shows: the person and a tile for each app they can open. */
+/** What the hub home shows: the person, their stage, a tile for each app they can open, and what they may manage. */
 async function home(q, person) {
+  await applyPending(q);
   const acc = await accounts(q, person.email, person.id);
   const tiles = Object.keys(APPS).filter(k => acc[k]).map(k => Object.assign({ id: k }, APPS[k], { role: acc[k].role || (acc[k].roles || []).join(', ') }));
   // A JUSS person without a HelloFresh account found by email can connect their old username once
   const p = profile(acc), company = p.company || person.company;
   const canConnectHf = !acc.hf && (company === 'JUSS' || !tiles.length);
-  return { person: Object.assign({}, person, { name: person.name || p.name, company }), tiles, canConnectHf };
+  const waiting = (await q('select 1 from core.promotions where email = $1 and to_stage = 3 and applied_at is null', [person.email])).length > 0;
+  const stage = stageOf(acc, waiting), admin = isAdmin(acc);
+  return {
+    person: Object.assign({}, person, { name: person.name || p.name, company }), tiles, canConnectHf,
+    stage, stageName: STAGES[stage] || '', waitingForLeaders: waiting && !acc.leaders && !acc.jleaders,
+    admin, approver: admin || await isApprover(q, person.email),
+  };
+}
+
+/** Everyone an approver may move on: BAs of their company (admins: both), with their stage. */
+async function team(q, viewer) {
+  const vacc = await accounts(q, viewer.email, viewer.id), admin = isAdmin(vacc);
+  if (!admin && !(await isApprover(q, viewer.email))) return { ok: false, error: 'Only approvers can move people on. Ask an admin.' };
+  await applyPending(q);
+  const vco = profile(vacc).company || viewer.company, cos = admin ? ['LINK', 'JUSS'] : [vco];
+  const pending = new Set((await q('select email from core.promotions where to_stage = 3 and applied_at is null')).map(r => r.email));
+  const people = [];
+  if (cos.includes('LINK')) {
+    const leaders = new Set((await q('select lower(email) as e from leaders.users').catch(() => [])).map(r => r.e));
+    (await q("select id::text, lower(username) as email, display_name from public.users where role <> 'manager' order by display_name")).forEach(u => {
+      const stage = leaders.has(u.email) || pending.has(u.email) ? 3 : 2;
+      people.push({ app: 'fr', id: u.id, name: tidyName(u.display_name), email: u.email, company: 'LINK', stage, canPromote: stage === 2 });
+    });
+  }
+  if (cos.includes('JUSS')) {
+    const jl = (await hasSchema(q, 'jleaders')) ? new Set((await q('select lower(email) as e from jleaders.users')).map(r => r.e)) : new Set();
+    const linked = {};
+    (await q("select l.local_id, p.email from core.app_links l join core.people p on p.id = l.person_id where l.app = 'hf'")).forEach(r => { linked[r.local_id] = r.email; });
+    (await q("select id::text, lower(username) as username, full_name from hf.users where role <> 'coach' order by full_name")).forEach(u => {
+      const email = linked[u.id] || (isEmail(u.username) ? u.username : '');
+      const stage = email && (jl.has(email) || pending.has(email)) ? 3 : 2;
+      people.push({ app: 'hf', id: u.id, name: tidyName(u.full_name), email, company: 'JUSS', stage, canPromote: stage === 2 && !!email });
+    });
+  }
+  return { ok: true, companies: cos, people };
+}
+
+/** An approver moves a BA on to Leader: their company's Leaders Playbook opens (JUSS: as soon as that app is live). */
+async function promote(q, viewer, app, id, notify) {
+  const company = app === 'fr' ? 'LINK' : app === 'hf' ? 'JUSS' : '';
+  if (!company) return { ok: false, error: 'Unknown playbook' };
+  const vacc = await accounts(q, viewer.email, viewer.id), admin = isAdmin(vacc);
+  const vco = profile(vacc).company || viewer.company;
+  if (!admin && !((await isApprover(q, viewer.email)) && vco === company)) return { ok: false, error: 'You can only move on people in your own company.' };
+  let ba;
+  if (app === 'fr') {
+    const u = (await q('select lower(username) as email, display_name from public.users where id = $1', [String(id)]))[0];
+    ba = u && { email: u.email, name: tidyName(u.display_name) };
+  } else {
+    const u = (await q('select id::text, lower(username) as username, full_name from hf.users where id = $1::int', [String(id)]))[0];
+    if (u) {
+      const link = (await q("select p.email from core.app_links l join core.people p on p.id = l.person_id where l.app = 'hf' and l.local_id = $1", [u.id]))[0];
+      ba = { email: link ? link.email : isEmail(u.username) ? u.username : '', name: tidyName(u.full_name) };
+    }
+  }
+  if (!ba) return { ok: false, error: 'Couldn\'t find that person.' };
+  if (!ba.email) return { ok: false, error: ba.name + ' needs to sign in to the hub once (so we know their email) before they can be moved on.' };
+  const had = await accounts(q, ba.email);
+  if (had[LEADERS[company]] || (await q('select 1 from core.promotions where email = $1 and to_stage = 3', [ba.email])).length) return { ok: true, already: true, name: ba.name };
+  await q('insert into core.promotions (email, name, company, to_stage, by_email) values ($1, $2, $3, 3, $4)', [ba.email, ba.name, company, viewer.email]);
+  const opened = (await applyPending(q)).includes(ba.email);
+  if (notify) { try { await notify(ba.email, ba.name, company, opened); } catch (e) { console.error('congrats email', e); } }
+  return { ok: true, name: ba.name, opened, waiting: !opened };
+}
+
+/** Open the Leaders Playbook for every approved promotion whose app exists (JUSS Leaders: once it's live). */
+async function applyPending(q) {
+  const rows = await q('select id, email, name, company from core.promotions where to_stage = 3 and applied_at is null order by id');
+  const done = [];
+  for (const r of rows) {
+    const target = LEADERS[r.company];
+    if (target === 'jleaders' && !(await hasSchema(q, 'jleaders'))) continue;
+    await q(`insert into ${target}.users (email, password, display_name, role) select $1, '!hub-login-only', $2, 'user'
+      where not exists (select 1 from ${target}.users where lower(email) = $1)`, [r.email, r.name || r.email]);
+    await q('update core.promotions set applied_app = $2, applied_at = now() where id = $1', [r.id, target]);
+    done.push(r.email);
+  }
+  return done;
+}
+
+/** Admins choose the approvers (by work email; they must be in one of the apps). */
+async function approvers(q, viewer) {
+  if (!isAdmin(await accounts(q, viewer.email, viewer.id))) return { ok: false, error: 'Only admins choose approvers.' };
+  const rows = await q('select a.email, a.granted_by, a.granted_at, p.name, p.company from core.approvers a left join core.people p on p.email = a.email order by a.email');
+  const list = [];
+  for (const r of rows) { const pr = profile(await accounts(q, r.email)); list.push({ email: r.email, name: r.name || pr.name, company: r.company || pr.company, by: r.granted_by }); }
+  return { ok: true, approvers: list };
+}
+async function setApprover(q, viewer, rawEmail, on) {
+  if (!isAdmin(await accounts(q, viewer.email, viewer.id))) return { ok: false, error: 'Only admins choose approvers.' };
+  const email = norm(rawEmail);
+  if (on) {
+    if (!isEmail(email) || !Object.keys(await accounts(q, email)).length) return { ok: false, error: 'That email isn\'t in any of the apps.' };
+    await q('insert into core.approvers (email, granted_by) values ($1, $2) on conflict (email) do nothing', [email, viewer.email]);
+  } else {
+    await q('delete from core.approvers where email = $1', [email]);
+  }
+  return approvers(q, viewer);
 }
 
 /** A one-use ticket to sign in to an app (only if this person has an account there). */
@@ -213,4 +353,5 @@ async function connectHf(q, person, username, password, bcrypt) {
   return { ok: true };
 }
 
-module.exports = { SCHEMA, APPS, norm, sha, accounts, profile, requestCode, verifyCode, sessionPerson, logout, home, createHandoff, redeemHandoff, connectHf, unlockPlaybook };
+module.exports = { SCHEMA, APPS, STAGES, norm, sha, accounts, profile, requestCode, verifyCode, sessionPerson, logout, home, createHandoff, redeemHandoff, connectHf, unlockPlaybook,
+  team, promote, applyPending, approvers, setApprover };

@@ -117,6 +117,47 @@ const ok = (c, m) => { console.log((c ? '  ✓ ' : '  ✗ ') + m); if (!c) fails
   ok((await core.home(q, jo.person)).person.company === 'JUSS' && (await core.home(q, jo.person)).tiles.some(t => t.id === 'recruit'),
     'a JUSS booker an admin added to the recruitment app: JUSS look, and the recruitment app shows');
 
+  // The ladder (Angad, 18 Oct): Candidate → BA → Leader; approvers move on BAs in their own company, admins anyone
+  const congrats = [];
+  const notify = async (email, name, company, opened) => { congrats.push({ email, name, company, opened }); };
+  const beaP = await core.sessionPerson(q, v.token) || (await signIn('ba@example.com')).person;
+  const beaH = await core.home(q, beaP);
+  ok(beaH.stage === 2 && beaH.stageName === 'BA' && !beaH.approver && !beaH.admin, 'a BA sees "Stage 2 · BA", and can\'t move anyone on');
+  ok(ah.admin === undefined || (await core.home(q, a.person)).admin === true, 'admins in the recruitment app (Angad, Jess, Satpal, Rubal) are hub admins');
+  ok((await core.team(q, beaP)).ok === false, 'a BA can\'t see the "move people on" list');
+  ok((await core.setApprover(q, beaP, 'jo@jussmarketing.co.uk', true)).ok === false, 'only admins choose approvers');
+  ok((await core.setApprover(q, a.person, 'nobody@example.com', true)).ok === false, 'an approver must be someone in one of the apps');
+  const ap1 = await core.setApprover(q, a.person, 'Jo@JussMarketing.co.uk', true);
+  ok(ap1.ok && ap1.approvers.length === 1 && ap1.approvers[0].email === 'jo@jussmarketing.co.uk' && ap1.approvers[0].company === 'JUSS', 'Angad makes Jo (a JUSS booker) an approver');
+  const joT = await core.team(q, jo.person);
+  ok(joT.ok && joT.companies.join() === 'JUSS' && joT.people.length && joT.people.every(p => p.app === 'hf' && p.company === 'JUSS'), 'a JUSS approver sees only JUSS BAs');
+  const linkBa = (await core.team(q, a.person)).people.find(p => p.email === 'ba@example.com');
+  ok(linkBa && linkBa.stage === 2 && linkBa.canPromote, 'an admin sees both companies (Bea, LINK, at Stage 2)');
+  ok(/own company/.test((await core.promote(q, jo.person, 'fr', linkBa.id, notify)).error), 'a JUSS approver can\'t move on a LINK BA');
+  const njRow = joT.people.find(p => p.email === 'new.juss@example.com');
+  const pj = await core.promote(q, jo.person, 'hf', njRow.id, notify);
+  ok(pj.ok && !pj.opened && pj.waiting && congrats.some(c => c.email === 'new.juss@example.com' && c.company === 'JUSS' && !c.opened),
+    'JUSS approver moves Jay on to Leader before the JUSS Leaders Playbook exists: recorded, Jay gets a JUSS congratulations email');
+  let jayH = await core.home(q, nj.person);
+  ok(jayH.stage === 3 && jayH.waitingForLeaders && !jayH.tiles.some(t => t.id === 'jleaders'), 'Jay sees "Stage 3 · Leader", Leaders Playbook "opening soon"');
+  ok((await core.promote(q, jo.person, 'hf', njRow.id, notify)).already, 'moving someone on twice does nothing');
+  await exec("create schema jleaders; create table jleaders.users (id varchar primary key default gen_random_uuid(), email text not null unique, password text not null, display_name text not null, role text not null default 'user')");
+  jayH = await core.home(q, nj.person);
+  const jlRow = (await q("select password, display_name from jleaders.users where email = 'new.juss@example.com'"))[0];
+  ok(jayH.tiles.some(t => t.id === 'jleaders' && t.company === 'JUSS') && !jayH.waitingForLeaders && jlRow && jlRow.display_name === 'Jay Juss' && !(await bcrypt.compare('x', jlRow.password)),
+    'the JUSS Leaders Playbook goes live → Jay\'s account opens by itself (email sign-in only) and his JUSS Leaders tile appears');
+  const pl = await core.promote(q, a.person, 'fr', linkBa.id, notify);
+  const beaH2 = await core.home(q, beaP);
+  ok(pl.ok && pl.opened && beaH2.stage === 3 && beaH2.tiles.some(t => t.id === 'leaders') && congrats.some(c => c.email === 'ba@example.com' && c.company === 'LINK' && c.opened),
+    'Angad moves Bea (LINK) on: her Leaders Playbook opens straight away, tile on her phone, LINK congratulations email');
+  ok((await q("select count(*)::int as n from core.promotions where by_email = 'jo@jussmarketing.co.uk' and email = 'new.juss@example.com'"))[0].n === 1, 'who moved whom, and when, is kept');
+  await q("insert into hf.users (username, password_hash, full_name, role) values ('kimrep', 'x', 'Kim Rep', 'rep')");
+  const kim = (await core.team(q, jo.person)).people.find(p => p.name === 'Kim Rep');
+  ok(kim && !kim.canPromote && /sign in to the hub once/.test((await core.promote(q, jo.person, 'hf', kim.id, notify)).error),
+    'a HelloFresh BA with a plain username must sign in to the hub once (so we know their email) before moving on');
+  await core.setApprover(q, a.person, 'jo@jussmarketing.co.uk', false);
+  ok((await core.team(q, jo.person)).ok === false, 'an admin can take approval away again');
+
   // HTTP: cookie, redirects, safety
   const call = (method, url, b, cookie) => new Promise(resolve => {
     const res = { statusCode: 200, headers: {}, setHeader(k, val) { this.headers[k.toLowerCase()] = val; }, end(x) { resolve({ status: this.statusCode, headers: this.headers, body: x ? (/json/.test(this.headers['content-type'] || '') ? JSON.parse(x) : x) : null }); } };
@@ -126,7 +167,8 @@ const ok = (c, m) => { console.log((c ? '  ✓ ' : '  ✗ ') + m); if (!c) fails
   await call('POST', '/api/code', { email: 'ba@example.com' });
   const vr = await call('POST', '/api/verify', { email: 'ba@example.com', code: mail[mail.length - 1].code });
   const setc = vr.headers['set-cookie'] || '';
-  ok(vr.body.ok && /HttpOnly/.test(setc) && /Secure/.test(setc) && /SameSite=Lax/.test(setc) && vr.body.tiles.length === 1, 'web: verify sets a secure, HttpOnly cookie and returns her tiles');
+  ok(vr.body.ok && /HttpOnly/.test(setc) && /Secure/.test(setc) && /SameSite=Lax/.test(setc) && vr.body.tiles.map(t => t.id).join() === 'fr,leaders' && vr.body.stage === 3,
+    'web: verify sets a secure, HttpOnly cookie and returns her tiles (FR + Leaders, Stage 3)');
   const cookie = setc.split(';')[0];
   ok((await call('GET', '/api/me', null, cookie)).body.person.email === 'ba@example.com', 'web: /api/me knows her from the cookie');
   const g1 = await call('GET', '/api/go?app=fr&r=/home', null, '');
@@ -135,7 +177,8 @@ const ok = (c, m) => { console.log((c ? '  ✓ ' : '  ✗ ') + m); if (!c) fails
   ok(g2.status === 302 && /^https:\/\/link-fr-playbook\.vercel\.app\/auth\/hub#hub=[\w-]{32}&r=%2Fhome$/.test(g2.headers.location), 'web: signed in → straight to the FR Playbook with a one-use ticket (in the #, never sent to servers in logs)');
   const g3 = await call('GET', '/api/go?app=fr&r=//evil.example', null, cookie);
   ok(/&r=%2F$/.test(g3.headers.location), 'web: only paths on the app itself, never another site');
-  ok((await call('GET', '/api/go?app=leaders', null, cookie)).headers.location === '/?noaccount=leaders', 'web: no account there → back to the hub with a message');
+  ok((await call('GET', '/api/go?app=hf', null, cookie)).headers.location === '/?noaccount=hf', 'web: no account there → back to the hub with a message');
+  ok((await call('GET', '/api/team', null, cookie)).body.ok === false && (await call('GET', '/api/team', null, '')).body.auth === true, 'web: the "move people on" list needs an approver');
   await call('POST', '/api/logout', null, cookie);
   ok((await call('GET', '/api/me', null, cookie)).body.auth === true, 'web: signed out → the cookie is useless');
 
