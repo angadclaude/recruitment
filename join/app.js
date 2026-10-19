@@ -1,4 +1,4 @@
-window.APP_VERSION = 'e0be957e';
+window.APP_VERSION = '360e597a';
 
 (function () {
 'use strict';
@@ -918,7 +918,7 @@ function fetchWeek(we, extra) {
     if (pend.length) b.items = b.items.map(x => pend.indexOf(x.id) >= 0 ? (findCand(x.id) || x) : x);
     S.data[b.weekEnding] = { items: b.items, pay: b.pay, at: Date.now() };
     if (b.users) S.users = b.users;
-    if (typeof b.chase === 'number' && b.chase !== S.chaseN) { S.chaseN = b.chase; paintTabs(); }
+    if (typeof b.chase === 'number' && (b.chase !== S.chaseN || (b.chaseCarry || 0) !== (S.chaseCarry || 0))) { S.chaseN = b.chase; S.chaseCarry = b.chaseCarry || 0; paintTabs(); }
     if (b.me) {
       const old = S.me;
       S.me = b.me;
@@ -964,7 +964,7 @@ function upsert(c) {
 
 /** Signed in (login code or the hub): keep the token, start fresh. */
 function signedIn(token) {
-  S.token = token; store.set('tok', token); store.del('cache'); store.del('codeSent'); S.data = {}; S.users = null; S.chase = null; S.chaseN = 0; S.academy = null; startStaff();
+  S.token = token; store.set('tok', token); store.del('cache'); store.del('codeSent'); S.data = {}; S.users = null; S.chase = null; S.chaseN = 0; S.chaseCarry = 0; S.academy = null; startStaff();
 }
 function startStaff() {
   stopTimer();
@@ -1313,7 +1313,7 @@ function toggleMenu() {
   const mt = document.getElementById('mTeam'); if (mt) mt.onclick = () => { m.hidden = true; nav('team', {}, true); };
   document.getElementById('mLogout').onclick = () => {
     if (outbox().length && !navigator.onLine) { toast('Wait for signal first: you have changes that haven\'t synced'); return; }
-    store.del('outbox'); store.del('tok'); store.del('cache'); S.token = ''; S.me = null; S.data = {}; S.users = null; S.chase = null; S.chaseN = 0; S.academy = null; S.booted = false; S.tab = '';
+    store.del('outbox'); store.del('tok'); store.del('cache'); S.token = ''; S.me = null; S.data = {}; S.users = null; S.chase = null; S.chaseN = 0; S.chaseCarry = 0; S.academy = null; S.booted = false; S.tab = '';
     if (PUSH.os) PUSH.os.logout().catch(() => {});
     startStaff();
   };
@@ -1429,6 +1429,9 @@ function quickRow(c, kind) {
     return '<div class="quick" data-for="' + h(c.id) + '"><span class="q-lbl">🎉 Day 1' + (via === 'sms' ? '<br>by text' : '') + '</span>' + ['LINK', 'JUSS'].map(co => '<a class="q-co ' + co + '" data-send="offer" data-co="' + co + '" data-via="' + via + '" href="' + h(brandUrl(c, 'offer', via, co)) + '" target="_blank" rel="noopener">' + co + '</a>').join('') + '</div>';
   }
   if (kind === 'offer') return '<div class="quick" data-for="' + h(c.id) + '"><a class="q-go" data-send="offer" data-via="' + (c.no_whatsapp ? 'sms' : 'whatsapp') + '" href="' + h(msgUrl(c, msgAcademy(c))) + '" target="_blank" rel="noopener">🎉 Send Day 1 details ' + (c.no_whatsapp ? 'by text' : 'on WhatsApp') + '</a></div>';
+  // Chase, carried over: close them out (each opens the outcome sheet with that answer picked), or a call-back to keep chasing
+  if (kind === 'close') return '<div class="quick qclose" data-for="' + h(c.id) + '"><button type="button" class="q-go" data-out="Academy booked">✅ Booked</button>' +
+    '<button type="button" data-out="Declined">Declined</button><button type="button" data-out="Not suitable">Not suitable</button><button type="button" data-out="Thinking it over">🔁 Call back</button></div>';
   return '';
 }
 function item(c, showStatus, kind) {
@@ -1464,7 +1467,7 @@ function bindItems(root) {
   (root || document).querySelectorAll('.quick[data-for]').forEach(q => {
     const id = q.dataset.for;
     q.querySelectorAll('[data-rate]').forEach(b => { b.onclick = () => quickRate(id, b.dataset.rate); });
-    q.querySelectorAll('[data-out]').forEach(b => { b.onclick = () => outcomeSheet(id); });
+    q.querySelectorAll('[data-out]').forEach(b => { b.onclick = () => outcomeSheet(id, b.dataset.out === '1' ? '' : b.dataset.out); });
     q.querySelectorAll('[data-send]').forEach(a => {
       if (a._wired) return; a._wired = 1;  // kept by a background refresh: already wired
       a.addEventListener('click', () => {
@@ -2023,30 +2026,29 @@ function slideQR(url, title, caption, colour) {
 
 const QR_CAPTIONS = { checkin: 'Takes 1 minute 👋', eval: '4 minutes · your answers shape your next step' };
 // ───── Chase tab: nobody drops out of the pipeline. Admins: everyone, by booker (one tap nudges them). Bookers: their own. ─────
-// Same rule as leakOf() in Code.gs (the nudges and the badge use that one); re-run here so a change shows straight away.
-const LEAKS = { stale: '🔴 Stale: close it out', log: '📞 Log the call', callback: '🔁 Call back', text: '📲 Send Day 1 text', confirm: '⏳ Day 1 not confirmed', noshow: '❌ No-show: rebook', pending: '⚖️ Waiting on your decision', unticked: '🎓 Day 1 not ticked' };
-const BOOKER_LEAKS = ['stale', 'log', 'callback', 'text', 'confirm', 'noshow'];
+// Week by week (week ending Sunday); anything older still open is "carried over". Day 1 people are on the Day 1 tab only.
+// Same rule as leakOf() / chaseWeek() in Code.gs (the nudges and the badge use those); re-run here so a change shows straight away.
+const LEAKS = { stale: '🔴 Stale: close it out', log: '📞 Log the call', callback: '🔁 Call back' };
+const BOOKER_LEAKS = ['stale', 'log', 'callback'];
 function leakOf(c, today, days) {
   const from = addDays(today, -((days || 14) - 1));
-  if (c.outcome === 'Academy booked') {
-    if (c.admin_status === 'rejected' || c.day1_status === 'arrived' || !c.academy_date || c.academy_date < from) return '';
-    if (c.admin_status === 'pending') return 'pending';
-    if (c.day1_status === 'no_show') return 'noshow';
-    if (c.academy_date >= today) return c.academy_confirmed_at ? '' : c.offer_sent_at ? 'confirm' : 'text';
-    return 'unticked';
-  }
+  if (c.outcome === 'Academy booked') return '';
   if (!(c.in_room === true || c.in_room === 'TRUE') || c.non_qual) return '';
   if (c.outcome === 'No answer' || c.outcome === 'Thinking it over') return c.attended_date < from && !(c.callback_at > londonNow()) ? 'stale' : 'callback';
   if (c.attended_date < from) return '';
   return c.outcome ? '' : 'log';
 }
+/** The week a chase belongs to: its appointment's week, or a later call-back's week ("call me next Tuesday"). */
+function chaseWeek(c) { const cb = String(c.callback_at || '').slice(0, 10); return weekEndingOf(cb > c.attended_date ? cb : c.attended_date); }
+/** The Chase tab's number: this week's + carried over, e.g. "3+8". */
+function chaseBadge() { const n = S.chaseN || 0, cc = S.chaseCarry || 0; return cc && n > cc ? (n - cc) + '+' + cc : n > 99 ? '99+' : String(n); }
 function msgRebook(c) {
   return 'Hey ' + c.first_name + '! 👋' + heartOf(c) + '\n\n' +
     'We missed you at *BA Academy Day 1* with *' + brandOf(c) + '* on ' + fmtLong(c.academy_date) + ' 😕 Everything OK?\n\n' +
     'Your place is still there: let\'s get you *rebooked*. Which day works for you? 📅\n\n' +
     '– ' + S.me.user.name.split(' ')[0] + ', ' + brandOf(c);
 }
-function paintTabs() { const tb = document.getElementById('tabbar'); if (tb && S.me) setHtml(tb, tabs().map(t => '<button data-tab="' + t[0] + '" class="' + (S.tab === t[0] ? 'on' : '') + '">' + icon(t[0]) + (t[0] === 'chase' && S.chaseN ? '<i class="tbadge">' + (S.chaseN > 99 ? '99+' : S.chaseN) + '</i>' : '') + '<span>' + t[1] + '</span></button>').join('')); }
+function paintTabs() { const tb = document.getElementById('tabbar'); if (tb && S.me) setHtml(tb, tabs().map(t => '<button data-tab="' + t[0] + '" class="' + (S.tab === t[0] ? 'on' : '') + '">' + icon(t[0]) + (t[0] === 'chase' && S.chaseN ? '<i class="tbadge">' + chaseBadge() + '</i>' : '') + '<span>' + t[1] + '</span></button>').join('')); }
 /** Make `from` look like `to`, keeping every node that's already right (and its taps / listeners). Rows match by data-id. */
 function morph(from, to, inner) {
   if (!inner) {  // the page itself keeps its own id / classes; only what's inside it changes
@@ -2100,28 +2102,32 @@ function viewChase(quiet) {
   loadChase().then(() => { if (S.viewId === id) drawChase(true); }).catch(e => { if (S.viewId === id && !S.chase) paint('Chase', '<div class="err">' + h(/Unknown action/.test(e.message) ? 'Paste the new Google code (Code.gs) into Apps Script first, then open this again.' : e.message) + '</div>'); });
 }
 function drawChase(quiet) {
-  const r = S.chase, today = r.today || S.me.today, admin = isAdmin(), due = S.me.deadlineLabel || 'Fri 18:00';
-  const list = r.items.map(c => ({ c: c, k: leakOf(c, today, r.days) })).filter(x => x.k && (admin || BOOKER_LEAKS.indexOf(x.k) >= 0));
-  S.chaseN = list.length;
+  const r = S.chase, today = r.today || S.me.today, admin = isAdmin(), due = S.me.deadlineLabel || 'Fri 18:00', cw = weekEndingOf(today);
+  const all = r.items.map(c => ({ c: c, k: leakOf(c, today, r.days), w: chaseWeek(c) })).filter(x => x.k && (admin || BOOKER_LEAKS.indexOf(x.k) >= 0));
+  if (S.chaseWeekOn !== cw) { S.chaseWeek = cw; S.chaseWeekOn = cw; }  // a new week has started: back to this week
+  const week = S.chaseWeek, isNow = week === cw;
+  const list = all.filter(x => x.w === week), carry = isNow ? all.filter(x => x.w < cw).sort((a, b) => a.w.localeCompare(b.w)) : [];
+  S.chaseN = all.filter(x => x.w <= cw).length; S.chaseCarry = all.filter(x => x.w < cw).length;
   const late = l => l.filter(x => x.k === 'log' && x.c.deadline && londonNow() > x.c.deadline).length;
   const count = (k, l) => (l || list).filter(x => x.k === k).length;
-  const page = paint('Chase', admin ? chaseAdmin(list, today, due, late, count) : chaseBooker(list, due, late), quiet);
+  const ahead = week < cw || all.some(x => x.w > week);  // after this week there's only somewhere to go if call-backs are booked
+  const wk = '<div class="seg-nav"><div class="lbl"><span>' + (isNow ? 'This week · ending' : week < cw ? 'Week ending' : 'Coming up · week ending') + '</span><b>' + fmt(week) + '</b></div>' +
+    '<button class="iconbtn" id="cprev" aria-label="Previous week">‹</button><button class="iconbtn" id="cnext" aria-label="Next week"' + (ahead ? '' : ' disabled') + '>›</button></div>';
+  const v = { week: week, cw: cw, isNow: isNow, due: due, late: late, count: count };
+  const page = paint('Chase', wk + (admin ? chaseAdmin(list, carry, v) : chaseBooker(list, carry, v)), quiet);
+  paintTabs();
   bindItems(page);
+  const go = w => { S.chaseWeek = w; drawChase(true); window.scrollTo(0, 0); };
+  page.querySelector('#cprev').onclick = () => go(addDays(week, -7));
+  page.querySelector('#cnext').onclick = () => go(addDays(week, 7));
+  const det = page.querySelector('details.carry'); if (det) det.ontoggle = () => { S.carryOpen = det.open; };
   page.querySelectorAll('[data-cand]').forEach(b => { b.onclick = () => nav('cand', { id: b.dataset.cand }, true); });
   const ga = page.querySelector('#goAcademy'); if (ga) ga.onclick = () => nav('academy', {}, true);
-  page.querySelectorAll('.quick [data-yes]').forEach(b => {
-    b.onclick = () => { const c = r.items.filter(x => x.id === b.closest('.quick').dataset.for)[0]; if (c) saidYes(c, b).then(() => { if (S.view === 'chase') drawChase(true); }); };
-  });
-  // Sent the Day 1 text from here → they move to "not confirmed" straight away
-  page.querySelectorAll('[data-send]').forEach(a => a.addEventListener('click', () => {
-    const c = r.items.filter(x => x.id === a.closest('.quick').dataset.for)[0];
-    if (c) { c.offer_sent_at = londonNow(); setTimeout(() => { if (S.view === 'chase') drawChase(true); }, 400); }
-  }));
   if (!admin) return;
   const res = page.querySelector('#cres'), first = n => String(n).split(' ')[0];
   const nudge = (ids, btn) => {
     busy(btn, true, 'Sending…');
-    call('chaseOutcomes', { ids: ids }).then(x => {
+    call('chaseOutcomes', { ids: ids, week: week }).then(x => {
       busy(btn, false);
       // The list may have refreshed in the background while Google was sending: show it on the one on screen
       (document.getElementById('cres') || res).innerHTML = (x.nudged.length ? '<div class="flag green">🔔 Nudged: ' + h(x.nudged.map(first).join(', ')) + '</div>' : '') +
@@ -2133,49 +2139,71 @@ function drawChase(quiet) {
   const na = page.querySelector('#nudgeAll'); if (na) na.onclick = () => nudge([], na);
   page.querySelectorAll('[data-nudge]').forEach(b => { b.onclick = () => nudge([b.dataset.nudge], b); });
 }
-/** Booker: their own people, grouped by what to do, with the call / WhatsApp / log buttons right there. */
-function chaseBooker(list, due, late) {
-  const kind = x => x.k === 'log' ? 'call' : x.k === 'callback' || x.k === 'stale' ? (x.c.outcome === 'No answer' ? 'noanswer' : 'call') : x.k === 'text' ? 'offer' : x.k === 'confirm' ? 'remind' : 'rebook';
-  const why = { stale: 'over 2 weeks: booked or declined?', log: 'by ' + due, callback: 'still warm: call them', text: 'they can\'t confirm without it', confirm: 'remind them', noshow: 'find out why, rebook' };
-  const n = list.length, lt = late(list);
-  return '<div class="card"><div class="display" style="font-size:24px">' + (n ? n + ' to chase' : 'Nobody to chase 🎉') + '</div>' +
-    '<p class="hint" style="margin:6px 0 0">' + (n ? 'Everyone here could drop out of your pipeline. Sort them before ' + h(due) + '.' + (lt ? ' <b class="red">' + lt + ' outcome' + (lt === 1 ? '' : 's') + ' LATE.</b>' : '') : 'Your pipeline\'s clean. Keep it that way.') + '</p></div>' +
+/** The headline for the week on screen: this week, an earlier week (what's still open) or a later one (call-backs booked). */
+function chaseHead(n, v, unit) {
+  if (v.isNow) return n ? n + ' ' + unit(n) + 'to chase this week' : 'Nothing to chase this week 🎉';
+  if (v.week < v.cw) return n ? n + ' still open' : 'All closed out 🎉';
+  return n ? n + ' call-back' + (n === 1 ? '' : 's') + ' booked' : 'No call-backs booked';
+}
+/** Earlier weeks' people with no final answer yet, at the top of this week. Close each one out, or book a call-back to keep
+ *  chasing them (they move to that week). */
+function carryCard(carry, openFirst) {
+  if (!carry.length) return '';
+  const open = S.carryOpen === undefined ? openFirst : S.carryOpen;
+  const weeks = carry.map(x => x.w).filter((w, i, a) => a.indexOf(w) === i);
+  return '<details class="card carry"' + (open ? ' open' : '') + '><summary><b>↩️ Carried over · ' + carry.length + '</b><span>' +
+    (weeks.length === 1 ? 'from w/e ' + fmt(weeks[0]) : 'from ' + weeks.length + ' earlier weeks') + '</span></summary>' +
+    '<p class="hint" style="margin:6px 0 2px">No final answer yet. Close each one out, or book a call-back to keep chasing them (they move to that week).</p>' +
+    '<div class="list">' + carry.map(x => item(x.c, true, 'close')).join('') + '</div></details>';
+}
+/** Booker: their own people for the week, grouped by what to do, with the call / WhatsApp / log buttons right there. */
+function chaseBooker(list, carry, v) {
+  const kind = x => v.week < v.cw ? 'close' : x.k === 'log' || x.c.outcome !== 'No answer' ? 'call' : 'noanswer';
+  const why = { stale: 'over 2 weeks: booked or declined?', log: 'by ' + v.due, callback: 'still warm: call them' };
+  const n = list.length, lt = v.late(list);
+  const sub = v.isNow ? (n ? 'Everyone here could drop out of your pipeline. Sort them before ' + h(v.due) + '.' + (lt ? ' <b class="red">' + lt + ' outcome' + (lt === 1 ? '' : 's') + ' LATE.</b>' : '') : 'This week\'s pipeline is clean. Keep it that way.')
+    : v.week < v.cw ? (n ? 'Still no final answer from that week. Close each one out.' : 'Everyone from that week has a final answer.') : 'The call-back times people asked for. You get a reminder at each one.';
+  return '<div class="card"><div class="display" style="font-size:24px">' + chaseHead(n, v, () => '') + '</div><p class="hint" style="margin:6px 0 0">' + sub + '</p></div>' +
+    carryCard(carry, true) +
     BOOKER_LEAKS.map(k => {
       const l = list.filter(x => x.k === k);
-      return l.length ? '<div class="section-h"><b>' + LEAKS[k] + ' · ' + l.length + '</b><span>' + h(k === 'log' && late(l) ? late(l) + ' LATE' : why[k]) + '</span></div><div class="list">' + l.map(x => item(x.c, true, kind(x))).join('') + '</div>' : '';
+      return l.length ? '<div class="section-h"><b>' + LEAKS[k] + ' · ' + l.length + '</b><span>' + h(k === 'log' && v.late(l) ? v.late(l) + ' LATE' : why[k]) + '</span></div><div class="list">' + l.map(x => item(x.c, true, kind(x))).join('') + '</div>' : '';
     }).join('') +
     '<button class="btn ghost block" id="goAcademy" style="margin-top:14px">🎓 My Day 1 starters</button>';
 }
-/** Admin: everyone at risk, one card per booker, one tap to nudge them all (or post the list to the team WhatsApp). */
-function chaseAdmin(list, today, due, late, count) {
+/** Admin: the week's people at risk, one card per booker (with what they're carrying over), one tap to nudge them all (or post
+ *  the list to the team WhatsApp). */
+function chaseAdmin(list, carry, v) {
   const users = S.users || [], first = n => String(n).split(' ')[0], by = {};
-  list.filter(x => BOOKER_LEAKS.indexOf(x.k) >= 0 && x.c.booker_id).forEach(x => {
-    const b = (by[x.c.booker_id] = by[x.c.booker_id] || { id: x.c.booker_id, name: x.c.booker_name, company: x.c.company, L: {}, n: 0 });
-    (b.L[x.k] = b.L[x.k] || []).push(x); b.n++;
-  });
+  const KEYS = BOOKER_LEAKS.concat('carry'), label = k => k === 'carry' ? '↩️ Carried over' : LEAKS[k];
+  const add = (x, k) => { const b = (by[x.c.booker_id] = by[x.c.booker_id] || { id: x.c.booker_id, name: x.c.booker_name, company: x.c.company, L: {}, n: 0 }); (b.L[k] = b.L[k] || []).push(x); b.n++; };
+  list.filter(x => x.c.booker_id).forEach(x => add(x, x.k));
+  carry.filter(x => x.c.booker_id).forEach(x => add(x, 'carry'));
   const rows = Object.keys(by).map(k => by[k]).sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
-  const noBooker = list.filter(x => BOOKER_LEAKS.indexOf(x.k) >= 0 && !x.c.booker_id), pending = list.filter(x => x.k === 'pending'), unticked = list.filter(x => x.k === 'unticked');
+  const noBooker = list.concat(carry).filter(x => !x.c.booker_id);
   const nm = l => l.map(x => '<button class="nm" data-cand="' + h(x.c.id) + '">' + h(x.c.first_name) + '</button>').join('');
   const names = l => l.map(x => x.c.first_name).join(', ');
-  const people = list.length, lt = late(list);
-  const tally = BOOKER_LEAKS.map(k => count(k) ? LEAKS[k].split(' ')[0] + ' ' + count(k) + ' ' + { stale: 'stale', log: 'to log' + (lt ? ' (' + lt + ' LATE)' : ''), callback: 'call back', text: 'Day 1 text', confirm: 'not confirmed', noshow: 'no-show' }[k] : '').filter(String).join(' · ');
-  const group = '⏰ *Pipeline check: don\'t lose anyone*\n_Outcomes due ' + due + '_\n' +
-    rows.map(b => '\n*' + first(b.name) + '*\n' + BOOKER_LEAKS.filter(k => b.L[k]).map(k => LEAKS[k] + ': ' + names(b.L[k])).join('\n')).join('\n') +
+  const people = list.length, lt = v.late(list), canNudge = rows.length && v.week <= v.cw;
+  const tally = BOOKER_LEAKS.map(k => v.count(k) ? LEAKS[k].split(' ')[0] + ' ' + v.count(k) + ' ' + { stale: 'stale', log: 'to log' + (lt ? ' (' + lt + ' LATE)' : ''), callback: 'call back' }[k] : '')
+    .concat(carry.length ? ['↩️ ' + carry.length + ' carried over'] : []).filter(String).join(' · ');
+  const group = '⏰ *Pipeline check: week ending ' + fmt(v.week) + '*\n_Outcomes due ' + v.due + '_\n' +
+    rows.map(b => '\n*' + first(b.name) + '*\n' + KEYS.filter(k => b.L[k]).map(k => label(k) + ': ' + names(b.L[k])).join('\n')).join('\n') +
     '\n\nSort them now 👉 ' + ((S.me.links && S.me.links.staff) || '');
   const noApp = id => { const u = users.filter(x => x.id === id)[0]; return u && !u.email; };
   const row = b => '<div class="trow"><span class="av co-' + h(b.company) + '">' + h(initials(b.name)) + '</span><div class="main"><div class="name">' + h(b.name) + ' <span class="co ' + h(b.company) + '">' + h(b.company) + '</span></div>' +
-    BOOKER_LEAKS.filter(k => b.L[k]).map(k => '<div class="leakline">' + LEAKS[k] + ': ' + nm(b.L[k]) + '</div>').join('') +
+    KEYS.filter(k => b.L[k]).map(k => '<div class="leakline">' + label(k) + ': ' + nm(b.L[k]) + '</div>').join('') +
     (noApp(b.id) ? '<div class="sub wrap muted">Not in the app yet: WhatsApp only</div>' : '') + '</div>' +
-    (noApp(b.id) ? '' : '<button class="btn ghost sm" data-nudge="' + h(b.id) + '">🔔 Nudge</button>') + '</div>';
-  const yours = (pending.length ? '<div class="leakline">' + LEAKS.pending + ': ' + nm(pending) + '</div>' : '') +
-    (noBooker.length ? '<div class="leakline">❓ No booker: ' + nm(noBooker) + '</div>' : '') +
-    (unticked.length ? '<div class="leakline">' + LEAKS.unticked + ': ' + nm(unticked) + '</div>' : '');
-  return '<div class="card"><div class="display" style="font-size:24px">' + (people ? people + ' ' + (people === 1 ? 'person' : 'people') + ' to chase' : 'Nobody to chase 🎉') + '</div>' +
-    '<p class="hint" style="margin:6px 0 0">' + (people ? 'across ' + rows.length + ' booker' + (rows.length === 1 ? '' : 's') + (noBooker.length ? ' + ' + noBooker.length + ' with no booker' : '') + ' · ' + h(tally) : 'Every appointment has an outcome, every starter has their Day 1 text and has confirmed.') + '</p>' +
-    (rows.length ? '<div class="bullbtns" style="margin-top:12px"><button class="btn" id="nudgeAll">🔔 Nudge all ' + rows.length + '</button><a class="btn wa" id="waGroup" target="_blank" rel="noopener" href="' + h('https://wa.me/?text=' + encodeURIComponent(group)) + '">💬 Post to team WhatsApp</a></div>' +
-      '<p class="hint" style="margin:8px 0 0">Nudge = an alert on each booker\'s phone listing exactly who to chase (email if they\'re not set up). WhatsApp = the same list for the bookers\' group.</p>' : '') + '</div>' +
+    (noApp(b.id) || !canNudge ? '' : '<button class="btn ghost sm" data-nudge="' + h(b.id) + '">🔔 Nudge</button>') + '</div>';
+  const sub = rows.length || noBooker.length
+    ? 'across ' + rows.length + ' booker' + (rows.length === 1 ? '' : 's') + (noBooker.length ? ' + ' + noBooker.length + ' with no booker' : '') + (tally ? ' · ' + h(tally) : '')
+    : v.isNow ? 'Every appointment this week has an outcome.' : v.week < v.cw ? 'Everyone from that week has a final answer.' : 'Call-backs people ask for that week show here.';
+  return '<div class="card"><div class="display" style="font-size:24px">' + chaseHead(people, v, n => (n === 1 ? 'person' : 'people') + ' ') + '</div>' +
+    '<p class="hint" style="margin:6px 0 0">' + sub + '</p>' +
+    (canNudge ? '<div class="bullbtns" style="margin-top:12px"><button class="btn" id="nudgeAll">🔔 Nudge all ' + rows.length + '</button><a class="btn wa" id="waGroup" target="_blank" rel="noopener" href="' + h('https://wa.me/?text=' + encodeURIComponent(group)) + '">💬 Post to team WhatsApp</a></div>' +
+      '<p class="hint" style="margin:8px 0 0">Nudge = an alert on each booker\'s phone listing exactly who to chase' + (v.isNow && carry.length ? ', carried over included' : '') + ' (email if they\'re not set up). WhatsApp = the same list for the bookers\' group.</p>' : '') + '</div>' +
     '<div id="cres"></div>' +
-    (yours ? '<div class="card needs"><b>👀 Needs you</b>' + yours + '</div>' : '') +
+    (noBooker.length ? '<div class="card needs"><b>👀 Needs you</b><div class="leakline">❓ No booker: ' + nm(noBooker) + '</div></div>' : '') +
+    carryCard(carry, false) +
     (rows.length ? '<div class="list alist">' + rows.map(row).join('') + '</div>' : '');
 }
 
@@ -2208,6 +2236,19 @@ function viewAcademy(quiet) {
   }).catch(e => { if (S.viewId === id && !S.academy) paint('Day 1', '<div class="err">' + h(/Unknown action/.test(e.message) ? 'Paste the new Google code (Code.gs) into Apps Script first, then open this again.' : e.message) + '</div>', false, !isAdmin()); });
 }
 function remindedToday(c) { return String(c.day1_reminded_at || '').slice(0, 10) === ((S.academy && S.academy.today) || S.me.today); }
+/** One order for a Day 1 list on screen and in the week's PDF (Angad, 19 Oct): Monday's starters then Tuesday's, by name,
+ *  the no-shows at the bottom. */
+function d1Order(list) {
+  return list.slice().sort((a, b) => (a.day1_status === 'no_show') - (b.day1_status === 'no_show') || a.academy_date.localeCompare(b.academy_date) || a.full_name.localeCompare(b.full_name));
+}
+/** Some starters are booked for Tuesday instead of the usual Monday (Angad, 19 Oct): a Monday starter can move to
+ *  Tuesday, a Tuesday one back to Monday (the undo), before the day or on it, while that day is still to come. */
+function d1Move(c, today) {
+  const w = D(c.academy_date).getUTCDay(), st = w === 1 ? 'next_day' : w === 2 ? 'prev_day' : '';
+  if (!st) return null;
+  const to = addDays(c.academy_date, st === 'next_day' ? 1 : -1);
+  return to >= today ? { st: st, day: DAYS_LONG[D(to).getUTCDay()] } : null;
+}
 function drawAcademy(r, quiet) {
   const today = r.today || S.me.today, dates = [], admin = isAdmin();
   r.items.forEach(c => { if (dates.indexOf(c.academy_date) < 0) dates.push(c.academy_date); });
@@ -2221,38 +2262,58 @@ function drawAcademy(r, quiet) {
       (remindedToday(c) && !c.day1_status ? '<span class="pill blue">📲 Reminded ' + h(String(c.day1_reminded_at).slice(11, 16)) + '</span>' : '') +
       (c.day1_status === 'arrived' ? '<span class="pill green">🎓 Arrived</span>' : c.day1_status === 'no_show' ? '<span class="pill red">❌ No-show</span>' : '') +
       (!admin || started ? '' : c.onboard_email_at ? '<span class="pill green">🚀 Onboarded</span>' : c.databyte_at ? '<span class="pill amber">🚀 Welcome email to send</span>' : '<span class="pill red">🚀 Not on Databyte</span>');
+    // Moved here from Chase (19 Oct): the Day 1 details still to send come first (the reminder only makes sense after them),
+    // and a no-show gets the rebook buttons
+    const offer = !started && !c.offer_sent_at && !c.academy_confirmed_at && c.welcome_url && (admin || c.booker_id === S.me.user.id);
+    const q = offer ? quickRow(c, 'offer') : started && c.day1_status === 'no_show' ? quickRow(c, 'rebook') : '';
+    // Booked for Tuesday instead of Monday: "📅 Tuesday" on a Monday starter ("📅 Monday" on a Tuesday one, to undo),
+    // before the day or on it: their Day 1 moves there
+    const mv = d1Move(c, today);
+    const mvBtn = mv ? '<button class="btn sm ghost" data-d1="' + mv.st + '" data-day="' + mv.day + '" data-id="' + h(c.id) + '">📅 ' + mv.day + '</button>' : '';
     const act = started
       ? '<div class="d1btns"><button class="btn sm ' + (c.day1_status === 'arrived' ? 'green' : 'ghost') + '" data-d1="arrived" data-id="' + h(c.id) + '">Arrived</button>' +
-        '<button class="btn sm ' + (c.day1_status === 'no_show' ? 'red' : 'ghost') + '" data-d1="no_show" data-id="' + h(c.id) + '">No-show</button></div>'
-      : '<a class="btn ' + (c.no_whatsapp ? 'sms' : 'wa') + ' sm" data-rem1="' + h(c.id) + '" data-via="' + (c.no_whatsapp ? 'sms' : 'whatsapp') + '" target="_blank" rel="noopener" href="' + h(msgUrl(c, msgDay1Reminder(c))) + '">💬 Remind</a>';
-    return '<div class="trow" data-cand="' + h(c.id) + '">' + avatar(c) + '<div class="main"><div class="name">' + h(c.full_name) + ' <span class="co ' + h(c.company) + '">' + h(c.company) + '</span></div>' +
+        '<button class="btn sm ' + (c.day1_status === 'no_show' ? 'red' : 'ghost') + '" data-d1="no_show" data-id="' + h(c.id) + '">No-show</button>' + mvBtn + '</div>'
+      : offer && !mvBtn ? '' : '<div class="d1btns">' + (offer ? '' : '<a class="btn ' + (c.no_whatsapp ? 'sms' : 'wa') + ' sm" data-rem1="' + h(c.id) + '" data-via="' + (c.no_whatsapp ? 'sms' : 'whatsapp') + '" target="_blank" rel="noopener" href="' + h(msgUrl(c, msgDay1Reminder(c))) + '">💬 Remind</a>') + mvBtn + '</div>';
+    return '<div class="trow' + (q ? ' d1q' : '') + (c.day1_status === 'arrived' ? ' arrived' : '') + '" data-cand="' + h(c.id) + '">' + avatar(c) + '<div class="main"><div class="name">' + h(c.full_name) + ' <span class="co ' + h(c.company) + '">' + h(c.company) + '</span></div>' +
       '<div class="sub">' + (c.booker_name ? 'booked by ' + h(c.booker_name) : 'no booker') + '</div>' +
-      (c.offer_sent_at ? '<div class="sub d1by">🎉 Day 1 details ' + offerBy(c) + '</div>' : '') + '<div class="pills">' + pills + '</div></div>' + act + '</div>';
+      (c.offer_sent_at ? '<div class="sub d1by">🎉 Day 1 details ' + offerBy(c) + '</div>' : '') + '<div class="pills">' + pills + '</div></div>' + act + q + '</div>';
   };
   const block = x => {
-    const l = r.items.filter(c => c.academy_date === x), conf = l.filter(c => c.academy_confirmed_at).length;
+    const l = d1Order(r.items.filter(c => c.academy_date === x)), conf = l.filter(c => c.academy_confirmed_at).length;
     const arr = l.filter(c => c.day1_status === 'arrived').length, ns = l.filter(c => c.day1_status === 'no_show').length;
     const toRemind = l.filter(c => !c.day1_status), rem = toRemind.filter(remindedToday).length;
     const counts = l.length + ' expected · ' + conf + ' confirmed' + (l.length - conf ? ' · ' + (l.length - conf) + ' not' : '') +
-      (x <= today ? ' · ' + arr + ' arrived' + (ns ? ' · ' + ns + ' no-show' : '') : '');
+      (x <= today ? ' · ' + arr + ' arrived' + (ns ? ' · ' + ns + ' no-show' : '') + (x < today && toRemind.length ? ' · ' + toRemind.length + ' not ticked' : '') : '');
     const tools = admin ? '<div class="bullbtns d1tools">' +
       (x >= today && toRemind.length ? '<button class="btn ' + (rem < toRemind.length ? 'wa' : 'ghost') + '" data-remall="' + x + '">📲 Send reminders · ' + rem + '/' + toRemind.length + '</button>' : '') +
       '<button class="btn ghost" data-pdf="' + x + '">📄 New Starts List (PDF)</button></div>' : '';
     return '<div class="datehead">' + h(label(x)) + '</div><p class="hint" style="margin:-4px 4px 8px">' + h(counts) + '</p>' + tools + '<div class="list alist">' + l.map(row).join('') + '</div>';
   };
   const toOnb = admin ? r.items.filter(c => c.academy_date >= today && !c.onboard_email_at) : [];
+  const pend = admin ? r.pending || [] : [];  // Academy bookings waiting on an admin (moved here from Chase)
   const page = paint('Day 1',
-    (r.items.length ? '' : empty('🎓', 'Nobody booked onto the Academy yet.')) +
+    (r.items.length || pend.length ? '' : empty('🎓', 'Nobody booked onto the Academy yet.')) +
+    (pend.length ? '<div class="card needs"><b>⚖️ Waiting on your decision · ' + pend.length + '</b><p class="small muted" style="margin:4px 0 2px">Booked onto the Academy, but marked RED or not suitable before. Tap a name to approve or decline.</p>' +
+      pend.map(c => '<button class="nm" data-cand="' + h(c.id) + '">' + h(c.first_name) + ' · ' + h(fmt(c.academy_date)) + '</button>').join('') + '</div>' : '') +
     (toOnb.length ? '<div class="card needs onbq"><b>🚀 To onboard · ' + toOnb.length + '</b><p class="small muted" style="margin:4px 0 2px">Databyte, then the welcome email with FieldIQ. Tap a name.</p>' +
       toOnb.map(c => '<button class="nm" data-cand="' + h(c.id) + '">' + h(c.first_name) + (c.databyte_at ? ' · email' : '') + '</button>').join('') + '</div>' : '') +
     upcoming.map(block).join('') +
     (past.length ? '<div class="datehead" style="margin-top:22px">Last week</div>' + past.map(block).join('') : '') +
     '<p class="hint">' + (admin ? '📲 Send reminders: the Day 1 reminder to every starter, signed by you (Jess / Rubal: you get a nudge at 10:00 on the day). 👍 When someone replies Yes, tap "They replied Yes". 📄 New Starts List: the sign-in sheet for the room. ' : '💬 Remind sends them the Day 1 reminder (time, address, Maps pin). 👍 When they reply Yes, tap "They replied Yes". ') +
-    'On Day 1, tap Arrived or No-show for everyone: that\'s your show-up rate.</p>', quiet, !admin);
+    'On Day 1, tap Arrived or No-show for everyone: that\'s your show-up rate. Booked for Tuesday instead of Monday? Tap 📅 Tuesday (twice), before the day or on it: they move to Tuesday\'s list (📅 Monday moves them back). The PDF shows the same ticks.</p>', quiet, !admin);
   page.querySelectorAll('.trow[data-cand] .main').forEach(el => { el.onclick = () => nav('cand', { id: el.parentNode.dataset.cand }, true); });
   page.querySelectorAll('.nm[data-cand]').forEach(b => { b.onclick = () => nav('cand', { id: b.dataset.cand }, true); });
+  bindItems(page);  // the Day 1 details / rebook buttons
+  // Sent the Day 1 details from here → the reminder button takes its place straight away
+  page.querySelectorAll('[data-send]').forEach(a => a.addEventListener('click', () => {
+    const c = r.items.filter(x => x.id === a.closest('.quick').dataset.for)[0];
+    if (c) { c.offer_sent_at = londonNow(); setTimeout(() => { if (S.view === 'academy') drawAcademy(r, true); }, 400); }
+  }));
   page.querySelectorAll('[data-remall]').forEach(b => { b.onclick = () => day1Sheet(b.dataset.remall); });
-  page.querySelectorAll('[data-pdf]').forEach(b => { b.onclick = () => { const x = b.dataset.pdf; savePdf(day1Pdf(x, r.items.filter(c => c.academy_date === x)), newStartsName(x) + '.pdf'); }; });
+  // One New Starts List per week: Monday's and Tuesday's buttons give the same PDF, with everyone starting that week
+  page.querySelectorAll('[data-pdf]').forEach(b => {
+    b.onclick = () => { const mon = d1WeekStart(b.dataset.pdf); savePdf(day1Pdf(mon, r.items.filter(c => d1WeekStart(c.academy_date) === mon)), newStartsName(mon) + '.pdf'); };
+  });
   page.querySelectorAll('[data-rem1]').forEach(a => a.addEventListener('click', () => markReminded(r.items.filter(x => x.id === a.dataset.rem1)[0], a.dataset.via)));
   page.querySelectorAll('[data-yes]').forEach(b => {
     b.onclick = e => {
@@ -2264,10 +2325,19 @@ function drawAcademy(r, quiet) {
   page.querySelectorAll('[data-d1]').forEach(b => {
     b.onclick = () => {
       const c = r.items.filter(x => x.id === b.dataset.id)[0]; if (!c) return;
-      const st = c.day1_status === b.dataset.d1 ? '' : b.dataset.d1;  // tap again to clear
+      const move = b.dataset.d1 === 'next_day' || b.dataset.d1 === 'prev_day';
+      // Moving their Day 1 is a bigger change than a tick: the first tap asks, the second (within 4 s) does it
+      if (move && !b.classList.contains('sure')) {
+        b.classList.add('sure'); b.textContent = 'Move to ' + b.dataset.day.slice(0, 3) + '?';
+        setTimeout(() => { if (b.isConnected && b.classList.contains('sure')) { b.classList.remove('sure'); b.textContent = '📅 ' + b.dataset.day; } }, 4000);
+        return;
+      }
+      const st = move ? b.dataset.d1 : c.day1_status === b.dataset.d1 ? '' : b.dataset.d1;  // tap again to clear
       busy(b, true, '…');
-      call('markDay1', { id: c.id, status: st }).then(nc => { Object.assign(c, nc); upsert(nc); drawAcademy(r, true); toast(st === 'arrived' ? '🎓 ' + c.first_name + ' arrived' : st === 'no_show' ? c.first_name + ': no-show' : 'Cleared'); })
-        .catch(e => { busy(b, false); toast(e.message); });
+      call('markDay1', { id: c.id, status: st }).then(nc => {
+        Object.assign(c, nc); upsert(nc); drawAcademy(r, true);
+        toast(move ? '📅 ' + c.first_name + ' starts ' + fmtLong(nc.academy_date) + ' instead' : st === 'arrived' ? '🎓 ' + c.first_name + ' arrived' : st === 'no_show' ? c.first_name + ': no-show' : 'Cleared');
+      }).catch(e => { busy(b, false); toast(e.message); });
     };
   });
 }
@@ -2416,45 +2486,64 @@ function pdfStr(s) {
 }
 /** "New Starts List 19.10.2026": the Day 1 list's title and file name, for the week it's for (Angad, 18 Oct). */
 function newStartsName(date) { return 'New Starts List ' + date.slice(8, 10) + '.' + date.slice(5, 7) + '.' + date.slice(0, 4); }
-function day1Pdf(date, list) {
+/** The Monday of a Day 1's week: one New Starts List per week, Monday and Tuesday starters together (Angad, 19 Oct). */
+function d1WeekStart(ymd) { return addDays(weekEndingOf(ymd), -6); }
+/** "Monday 19 October 2026", or "Monday 19 & Tuesday 20 October 2026" when some start on the Tuesday. */
+function d1Days(dates) {
+  const d = dates.map(D), last = d[d.length - 1], sameMonth = d.every(x => x.getUTCMonth() === last.getUTCMonth());
+  return (sameMonth ? d.map(x => DAYS_LONG[x.getUTCDay()] + ' ' + x.getUTCDate()).join(' & ') + ' ' + MONTHS_LONG[last.getUTCMonth()]
+    : dates.map(fmtLong).join(' & ')) + ' ' + last.getUTCFullYear();
+}
+/** The week's New Starts List: everyone starting that week (Monday and Tuesday), each with their start day and date. */
+function day1Pdf(mon, list) {
   const W = 595.28, H = 841.89, M = 36, RH = 24, PER = 24;
-  const cols = [['#', 20], ['Name', 128], ['Co', 40], ['Mobile', 82], ['Booked by', 88], ['Confirmed', 52], ['Arrived', 46], ['Notes', 67]];
-  const rows = list.slice().sort((a, b) => a.full_name.localeCompare(b.full_name)), conf = rows.filter(c => c.academy_confirmed_at).length;
+  const cols = [['#', 20], ['Name', 116], ['Co', 36], ['Mobile', 78], ['Starts', 50], ['Booked by', 80], ['Confirmed', 52], ['Arrived', 46], ['Notes', 45]];
+  // Same order and ticks as the Day 1 tab (Angad, 19 Oct): Monday's then Tuesday's, arrived rows light green, no-shows at the bottom
+  const rows = d1Order(list), conf = rows.filter(c => c.academy_confirmed_at).length;
+  const arr = rows.filter(c => c.day1_status === 'arrived').length, ns = rows.filter(c => c.day1_status === 'no_show').length, ticked = arr + ns > 0;
+  const dates = rows.map(c => c.academy_date).filter((x, i, a) => a.indexOf(x) === i).sort();
+  const perDay = dates.length > 1 ? ' (' + dates.map(x => fmt(x) + ': ' + rows.filter(c => c.academy_date === x).length).join(' · ') + ')' : '';
   const fit = (s, w, size) => { s = String(s || ''); const max = Math.floor(w / (size * 0.55)); return s.length <= max ? s : s.slice(0, Math.max(1, max - 2)) + '...'; };
   const pages = [];
   for (let p = 0; p === 0 || p * PER < rows.length; p++) pages.push(rows.slice(p * PER, (p + 1) * PER));
   const streams = pages.map((chunk, p) => {
     const o = [];
-    const txt = (x, y, s, size, bold, grey) => o.push((grey ? '0.42 0.42 0.47' : '0.13 0.13 0.17') + ' rg BT /' + (bold ? 'F2' : 'F1') + ' ' + size + ' Tf ' + x.toFixed(2) + ' ' + y.toFixed(2) + ' Td (' + pdfStr(s) + ') Tj ET');
+    const txt = (x, y, s, size, bold, grey, col) => o.push((col || (grey ? '0.42 0.42 0.47' : '0.13 0.13 0.17')) + ' rg BT /' + (bold ? 'F2' : 'F1') + ' ' + size + ' Tf ' + x.toFixed(2) + ' ' + y.toFixed(2) + ' Td (' + pdfStr(s) + ') Tj ET');
     o.push('0.95 0.42 0.11 rg 0 ' + (H - 10).toFixed(2) + ' ' + (W / 2).toFixed(2) + ' 10 re f', '0.05 0.6 0.6 rg ' + (W / 2).toFixed(2) + ' ' + (H - 10).toFixed(2) + ' ' + (W / 2).toFixed(2) + ' 10 re f');
-    txt(M, H - 50, newStartsName(date), 20, true);
-    txt(M, H - 68, 'BA Academy Day 1 · ' + fmtLong(date) + ' ' + date.slice(0, 4) + ' · 1:30pm · ' + (S.me.address || 'Automotive House, Grays Place, Slough SL2 5AF'), 10);
-    txt(M, H - 84, rows.length + ' expected · ' + conf + ' confirmed · ' + (rows.length - conf) + ' not confirmed  |  LINK Marketing & JUSS Marketing  |  printed ' + fmt(S.me.today) + ' ' + londonNow().slice(11) + ' by ' + S.me.user.name, 8.5, false, true);
-    const top = H - 100;
+    txt(M, H - 50, newStartsName(mon), 20, true);
+    txt(M, H - 68, 'BA Academy Day 1 · ' + d1Days(dates.length ? dates : [mon]) + ' · 1:30pm · ' + (S.me.address || 'Automotive House, Grays Place, Slough SL2 5AF'), 10);
+    txt(M, H - 84, rows.length + ' expected' + perDay + ' · ' + conf + ' confirmed · ' + (rows.length - conf) + ' not confirmed' + (ticked ? ' · ' + arr + ' arrived · ' + ns + ' no-show' : ''), 8.5, false, true);
+    txt(M, H - 96, 'LINK Marketing & JUSS Marketing  |  printed ' + fmt(S.me.today) + ' ' + londonNow().slice(11) + ' by ' + S.me.user.name, 8.5, false, true);
+    const top = H - 110;
     o.push('0.94 0.93 0.91 rg ' + M + ' ' + (top - 20).toFixed(2) + ' 523 20 re f');
     let x = M; cols.forEach(c => { txt(x + 4, top - 14, c[0], 8.5, true); x += c[1]; });
     chunk.forEach((c, i) => {
       const t = top - 20 - i * RH, b = t - RH, y = t - 15;
       const at = k => { let v = M; for (let j = 0; j < k; j++) v += cols[j][1]; return v + 4; };
+      if (c.day1_status === 'arrived') o.push('0.88 0.96 0.9 rg ' + M + ' ' + b.toFixed(2) + ' 523 ' + RH + ' re f');  // light green, like the app
       txt(at(0), y, String(p * PER + i + 1), 9, false, true);
       txt(at(1), y, fit(c.full_name, cols[1][1] - 8, 10), 10, true);
       txt(at(2), y, c.company || '', 9);
       txt(at(3), y, c.mobile || '', 9);
-      txt(at(4), y, fit(c.booker_name || '-', cols[4][1] - 8, 9), 9);
-      txt(at(5), y, c.academy_confirmed_at ? 'Yes' : 'No', 9, !c.academy_confirmed_at);
-      o.push('0.2 0.2 0.25 RG 0.8 w ' + (at(6) + 12).toFixed(2) + ' ' + (b + 6.5).toFixed(2) + ' 11 11 re S');
+      txt(at(4), y, fmt(c.academy_date), 9, D(c.academy_date).getUTCDay() !== 1);  // a Tuesday start in bold: it's the exception
+      txt(at(5), y, fit(c.booker_name || '-', cols[5][1] - 8, 9), 9);
+      txt(at(6), y, c.academy_confirmed_at ? 'Yes' : 'No', 9, !c.academy_confirmed_at);
+      // Arrived: what was ticked in the app, or an empty box to tick by hand
+      if (c.day1_status === 'arrived') txt(at(7), y, 'Yes', 9, true, false, '0.08 0.5 0.25');
+      else if (c.day1_status === 'no_show') txt(at(7), y, 'No-show', 9, true, false, '0.8 0.15 0.15');
+      else o.push('0.2 0.2 0.25 RG 0.8 w ' + (at(7) + 12).toFixed(2) + ' ' + (b + 6.5).toFixed(2) + ' 11 11 re S');
       o.push('0.85 0.84 0.82 RG 0.5 w ' + M + ' ' + b.toFixed(2) + ' m ' + (M + 523) + ' ' + b.toFixed(2) + ' l S');
     });
-    if (!chunk.length) txt(M + 4, top - 38, 'Nobody booked for this day.', 10, false, true);
+    if (!chunk.length) txt(M + 4, top - 38, 'Nobody booked for this week.', 10, false, true);
     if (p === pages.length - 1) {
       const y = top - 20 - Math.max(chunk.length, 1) * RH - 34;
-      txt(M, y, 'Arrived: ______ of ' + rows.length + '          Checked by: ___________________________', 10);
+      txt(M, y, (ticked ? 'Arrived: ' + arr + ' of ' + rows.length + (ns ? '  ·  No-show: ' + ns : '') : 'Arrived: ______ of ' + rows.length) + '          Checked by: ___________________________', 10);
     }
     txt(M, 24, 'Personal data: keep this sheet safe and shred it after Day 1.', 8, false, true);
     txt(W - M - 52, 24, 'Page ' + (p + 1) + ' of ' + pages.length, 8, false, true);
     return o.join('\n');
   });
-  return pdfFile(streams, newStartsName(date));
+  return pdfFile(streams, newStartsName(mon));
 }
 /** The PDF file around A4 pages of drawing commands (Helvetica F1, Helvetica-Bold F2). title: what PDF viewers show. */
 function pdfFile(streams, title) {
@@ -2922,16 +3011,18 @@ function closeSheet(now) {
   b.querySelector('.sheet').classList.add('closing'); b.style.transition = 'opacity .22s'; b.style.opacity = '0';
   setTimeout(() => b.remove(), 230);
 }
-function outcomeSheet(id) {
+/** preset: an answer already picked (Chase's close-out buttons); Save still confirms it. */
+function outcomeSheet(id, preset) {
   const c = findCand(id); if (!c) return;
+  const sel = preset || c.outcome;
   closeSheet(true);
   const back = document.createElement('div');
   back.className = 'sheet-back';
   back.innerHTML = '<div class="sheet" role="dialog" aria-label="Log the call outcome"><div class="grab"></div>' +
     '<div class="sheet-h">' + avatar(c) + '<div style="min-width:0"><div class="label muted">Log the call · ' + h(c.full_name) + '</div><div class="display">How did it go?</div></div></div>' +
-    '<div id="sh">' + chips('outcome', S.me.outcomes, c.outcome, true) +
-    '<div id="sacad"' + (c.outcome === 'Academy booked' ? '' : ' hidden') + '><label class="q">BA Academy Day 1 date</label><input type="date" id="sadate" value="' + h(c.academy_date || nextMonday(S.me.today)) + '"></div>' +
-    '<div id="scbk"' + (c.outcome === 'Thinking it over' ? '' : ' hidden') + '>' + cbPicker(c) + '</div>' +
+    '<div id="sh">' + chips('outcome', S.me.outcomes, sel, true) +
+    '<div id="sacad"' + (sel === 'Academy booked' ? '' : ' hidden') + '><label class="q">BA Academy Day 1 date</label><input type="date" id="sadate" value="' + h(c.academy_date || nextMonday(S.me.today)) + '"></div>' +
+    '<div id="scbk"' + (sel === 'Thinking it over' ? '' : ' hidden') + '>' + cbPicker(c) + '</div>' +
     '<label class="q">Notes from the call</label><textarea id="sonotes" class="short" placeholder="Anything the team should know">' + h(c.outcome_notes) + '</textarea>' +
     '<div id="soerr"></div><button class="btn block" id="sosave" style="margin-top:14px">Save outcome</button>' +
     '<button class="btn ghost block" id="socancel" style="margin-top:8px">Cancel</button>' +
