@@ -91,15 +91,18 @@ function runtime() { return RT ? Promise.resolve(RT) : (STARTING = STARTING || s
 async function start() {
   DB = postgresAdapter({ url: process.env.DATABASE_URL, password: process.env.DATABASE_PASSWORD });
   RELAY = relay(DB);
-  // The phone-alert key lives in Google's Script Properties; Google hands it over (nobody copies it). Asked at the same
-  // time as the database is checked, not after it: waking up costs one round trip, not two (19 Oct: a login code took 9 s)
-  const keyAsk = process.env.ONESIGNAL_API_KEY ? Promise.resolve(process.env.ONESIGNAL_API_KEY)
-    : RELAY.call('relayInfo', { withKeys: true }).then(i => i.onesignalKey || '', e => { console.error('no alert key yet', e.message); return ''; });
-  const [, key] = await Promise.all([DB.migrate(), keyAsk]);
+  // The phone-alert key lives in Google's Script Properties; Google hands it over (nobody copies it). Asked in the
+  // background: waking up never waits for Google (19 Oct: that was 3–5 s of every wake-up, so of some login codes).
+  // Only a phone alert waits for it, the first time. A failed ask is asked again next time.
+  let keyAsk = null;
+  const alertKey = () => keyAsk || (keyAsk = process.env.ONESIGNAL_API_KEY ? Promise.resolve(process.env.ONESIGNAL_API_KEY)
+    : RELAY.call('relayInfo', { withKeys: true }).then(i => i.onesignalKey || '', e => { console.error('no alert key yet', e.message); keyAsk = null; return ''; }));
+  alertKey();
+  await DB.migrate();
   const rt = new Runtime({
-    db: DB, http, mail: RELAY,
+    db: DB, http, mail: RELAY, secret: k => (k === 'ONESIGNAL_API_KEY' ? alertKey() : ''),
     codePath: path.join(__dirname, '..', 'app', 'src', 'Code.gs'),
-    env: { PUBLIC_URL: process.env.PUBLIC_URL || '', OWNER_EMAIL: process.env.OWNER_EMAIL || 'angad@linkmarketing.org.uk', ONESIGNAL_API_KEY: key, TRIGGERS },
+    env: { PUBLIC_URL: process.env.PUBLIC_URL || '', OWNER_EMAIL: process.env.OWNER_EMAIL || 'angad@linkmarketing.org.uk', TRIGGERS },
   });
   await rt.start();
   return (RT = rt);
