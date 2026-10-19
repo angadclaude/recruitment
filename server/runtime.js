@@ -6,6 +6,8 @@ const path = require('path');
 const { Worker, MessageChannel } = require('worker_threads');
 
 const LOCK_KEY = 7342001;  // the "script lock": one writer at a time across every server instance
+let HUB = null;
+const hub = () => HUB || (HUB = require('../hub/lib/core.js'));
 
 class Runtime {
   /**
@@ -108,8 +110,17 @@ class Runtime {
       }
       case 'mail.quota': return this.o.testMode ? 1500 - this.testMail.length : this.o.mail.quota();
       case 'mail.aliases': return this.o.mail.aliases();
+      // The hub's tables live in the same Supabase (schema core): same transaction as the rest of the job, inside a
+      // savepoint so a hub failure leaves the job usable (Code.gs carries on: the welcome email still goes)
+      case 'core.redeem': return this.savepoint(async () => { const r = await hub().redeemHandoff(q, a[0], a[1]); return r ? { email: r.email, name: r.name } : null; });
+      case 'core.unlock': return this.savepoint(() => hub().unlockPlaybook(q, a[0] || {}));
       default: throw new Error('Unknown database call: ' + op);
     }
+  }
+
+  async savepoint(fn) {
+    await this.conn.q('savepoint hub');
+    try { const r = await fn(); await this.conn.q('release savepoint hub'); return r; } catch (e) { await this.conn.q('rollback to savepoint hub'); throw e; }
   }
 
   /** Queue a job (one transaction). type: 'call' { fn, args } · 'eval' { js } · 'pushes'.

@@ -118,7 +118,9 @@ async function accounts(q, email, personId) {
   if (!hf) hf = (await q('select id::text, full_name, role from hf.users where lower(username) = $1', [email]).catch(() => []))[0];
   if (hf) out.hf = { id: hf.id, name: hf.full_name, role: hf.role };
   if (await hasSchema(q, 'jleaders')) {
-    const jl = (await q('select id::text, display_name, role from jleaders.users where lower(email) = $1', [email]).catch(() => []))[0];
+    // Some leaders have two accounts differing only in capitals (Replit was case-sensitive): the exact spelling, else the
+    // one used most recently (the same rule as the JUSS Leaders Playbook's own hub sign-in)
+    const jl = (await q('select id::text, display_name, role from jleaders.users where lower(email) = $1 order by (email = $1) desc, last_login desc nulls last limit 1', [email]).catch(() => []))[0];
     if (jl) out.jleaders = { id: jl.id, name: jl.display_name, role: jl.role };
   }
   return out;
