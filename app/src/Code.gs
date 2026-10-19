@@ -164,7 +164,33 @@ function include(name) {
 // Every relay call carries Vercel's RELAY_SECRET (a long random key in Vercel's settings). Only its SHA-256 fingerprint
 // is here (safe to publish: it can't be turned back into the key), so nobody has to copy the key into Google.
 const RELAY_SECRET_SHA256 = 'f648c4393028bfc5db8e40b94fd30bb09f068d190d024534f9c9e88e076a3163';
-const RELAY_ACTIONS = { relayInfo: relayInfo, relayMail: relayMail, relayExport: relayExport, relayFreeze: relayFreeze, relaySwitch: relaySwitch };
+const RELAY_ACTIONS = { relayInfo: relayInfo, relayMail: relayMail, relayExport: relayExport, relayFreeze: relayFreeze, relaySwitch: relaySwitch, relayMirror: relayMirror };
+/** The live copy for the team (19 Oct): Vercel writes each tab here every 5 minutes when it changed, so the Sheet keeps
+ *  showing today's people. Read-only: the app's data lives in Supabase, and edits made here are overwritten (each tab
+ *  warns before an edit). Never the login tabs. Everything as plain text, so mobiles keep their leading 0. */
+const MIRROR_SKIP = ['Sessions', 'Codes'], MIRROR_INFO = 'ℹ️ Live copy';
+function relayMirror(req) {
+  relayCheck(req);
+  const name = String(req.tab || ''), head = (req.headers || []).map(String), rows = req.rows || [];
+  if (!/^[A-Za-z][\w ]{0,40}$/.test(name) || MIRROR_SKIP.indexOf(name) >= 0) throw new Error('Not allowed');
+  const book = ss(), width = Math.max(1, head.length);
+  const sh = book.getSheetByName(name) || book.insertSheet(name);
+  const cell = v => (v === null || v === undefined ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v));
+  const values = [head.length ? head : ['']].concat(rows.map(r => head.map((_, i) => cell(r[i]))));
+  if (sh.getMaxColumns() < width) sh.insertColumnsAfter(sh.getMaxColumns(), width - sh.getMaxColumns());
+  if (sh.getMaxRows() < values.length) sh.insertRowsAfter(sh.getMaxRows(), values.length - sh.getMaxRows());
+  sh.getRange(1, 1, sh.getMaxRows(), sh.getMaxColumns()).clearContent();
+  sh.getRange(1, 1, values.length, width).setNumberFormat('@').setValues(values);
+  sh.setFrozenRows(1);
+  if (!sh.getProtections(SpreadsheetApp.ProtectionType.SHEET).length) {
+    sh.protect().setWarningOnly(true).setDescription('Live copy from the recruitment app: changes here are overwritten every 5 minutes. Use the app.');
+  }
+  const info = book.getSheetByName(MIRROR_INFO) || book.insertSheet(MIRROR_INFO, 0);
+  info.getRange(1, 1, 3, 1).setValues([['Live copy from the recruitment app (jl-recruitment.vercel.app)'],
+    ['Updated every 5 minutes. Read-only: changes made in this Sheet are overwritten, so make them in the app.'],
+    ['Last copy: ' + nowStr() + ' (' + name + ')']]);
+  return { tab: name, rows: rows.length };
+}
 function onSupabase() { return typeof SUPABASE_BACKEND !== 'undefined'; }
 function relayCheck(req) {
   const want = onSupabase() ? '' : String(PropertiesService.getScriptProperties().getProperty('RELAY_SECRET_SHA256') || RELAY_SECRET_SHA256);
