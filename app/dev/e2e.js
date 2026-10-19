@@ -916,6 +916,29 @@ async function fillEval(p) {
   ok(dl.suggestedFilename() === 'JL-top5-2026-10-18.jpg', 'Share → image ready for WhatsApp (saved where sharing isn\'t available)');
   await ap.click('#abBack'); await ap.waitForSelector('#bullDaily');
 
+  // ── The week's appointments as a PDF (All tab, admins): everyone who checked in, by day, with evaluation + outcome ──
+  await ap.click('.tabbar button[data-tab=all]'); await ap.waitForSelector('#weekPdf');
+  ok((await ap.textContent('#weekPdf')).trim() === '📄 Appointments w/e Sun 18 Oct (PDF)', 'All tab (admins): "📄 Appointments w/e Sun 18 Oct (PDF)" for the week on screen');
+  await ap.click('#flt .chip[data-f=late]'); await ap.waitForSelector('#flt .chip.on[data-f=late]');
+  const [wdl] = await Promise.all([ap.waitForEvent('download'), ap.click('#weekPdf')]);
+  const wPath = `${SHOTS}/17-week-appointments.pdf`; await wdl.saveAs(wPath);
+  await ap.click('#flt .chip[data-f=all]');
+  const wRaw = fs.readFileSync(wPath, 'latin1'), wHas = s => wRaw.includes('(' + s.replace(/[\\()]/g, '\\$&') + ') Tj');
+  const wk = (await api(admin, 'listWeek', { weekEnding: '2026-10-18' })).items, wkMon = wk.filter(c => c.attended_date === '2026-10-12');
+  ok(wdl.suggestedFilename() === 'Appointments w-e 18.10.2026.pdf' && /^%PDF-1\.4/.test(wRaw) && /%%EOF\s*$/.test(wRaw) && /\/Title \(Appointments w-e 18\.10\.2026\)/.test(wRaw),
+    '📄 → "Appointments w-e 18.10.2026.pdf" (the PDF\'s own title too)');
+  ok(wHas('Appointments · week ending Sunday 18 October 2026') && wHas('Monday 12 October') && wHas(String(wk.length)) && wHas('Checked in') && wHas('Evaluated') && wHas('No outcome yet'),
+    'a summary on top (checked in, evaluated, Academy booked, follow-ups, declined, no outcome yet), then the week day by day');
+  ok(wk.length > 3 && wk.every(c => wHas(c.full_name) && (!c.mobile || wHas(c.mobile))),
+    'everyone who checked in that week (all ' + wk.length + ', whatever filter is on screen), with their mobile');
+  ok((wRaw.match(/\(Yes\) Tj/g) || []).length === wk.filter(c => !c.non_qual && c.eval_at).length && (wRaw.match(/\(No\) Tj/g) || []).length === wk.filter(c => !c.non_qual && !c.eval_at).length,
+    'Eval: Yes / No for each one (evaluation form filled or not)');
+  ok(/\(Academy booked: Mon 19 Oct[^)]*\) Tj/.test(wRaw) && /\(No answer \\\(late\\\)\) Tj/.test(wRaw) && (!wk.some(c => c.non_qual) || /\(Non-qualifier: /.test(wRaw)),
+    'outcomes filled in automatically: "Academy booked: Mon 19 Oct", "No answer (late)", non-qualifiers say why');
+  ok(wHas(wkMon.length + ' checked in  ·  ' + wkMon.filter(c => c.eval_at).length + ' evaluated  ·  ' + wkMon.filter(c => !c.non_qual && c.admin_status !== 'rejected' && c.outcome === 'Academy booked').length + ' Academy booked  ·  ' +
+    wkMon.filter(c => !c.non_qual && c.admin_status !== 'rejected' && !c.outcome).length + ' no outcome yet') && /\(Page 1 of \d\) Tj/.test(wRaw), 'each day has its own totals line; pages numbered');
+  try { require('child_process').execFileSync('pdftoppm', ['-png', '-r', '70', '-singlefile', wPath, `${SHOTS}/17-week-appointments`]); } catch (e) { /* no renderer here */ }
+
   // ── Who's expected on Monday: the evening-before briefing + the Day 1 list ──
   await setTime('2026-10-18T17:55:00+01:00');
   const beforeBrief = (await getJson('/dev/pushes')).length;
@@ -1583,6 +1606,82 @@ async function fillEval(p) {
   ok((await pushesTo(fiza.id)).slice(stP0).some(p => /🔴 Stale: close it out: Ali/.test(p.body.contents.en)), 'her nudge lists it too: "🔴 Stale: close it out: Ali"');
   await api(admin, 'saveOutcome', { id: ali.id, outcome: 'Declined', outcome_notes: 'not for him' });
   ok(!(await api(admin, 'chaseList', {})).items.some(c => c.id === ali.id), 'log a final answer (Declined) → off Chase');
+
+  // ── One login for every LINK × JUSS app (link-juss.vercel.app): Supabase only, hidden until Angad launches it ──
+  const hubOff = await post('/api', { action: 'loginInfo' });
+  ok(hubOff.ok && hubOff.data.hub === '', 'one login: hidden until launch (no "Sign in with your work email" button)');
+  if (process.env.JL_BACKEND === 'pg') {
+    const hubCore = require('../../hub/lib/core.js');
+    const hq = async (text, params) => (await post('/dev/sql', { sql: text, params: params || [] })).rows;
+    const person = async email => (await hq('insert into core.people (email) values ($1) on conflict (email) do update set email = excluded.email returning id::text as id, email', [email]))[0];
+    // A ticket made by hand, skipping the hub's own checks (to prove the app checks too)
+    const rawTicket = async (email, app, secs) => {
+      const code = require('crypto').randomBytes(24).toString('base64url'), p = await person(email);
+      await hq('insert into core.handoffs (code_hash, person_id, app, expires_at) values ($1, $2::uuid, $3, now() + make_interval(secs => $4::int))', [hubCore.sha(code), p.id, app, secs || 120]);
+      return code;
+    };
+    const hubIn = ticket => post('/api', { action: 'hubLogin', ticket });
+    const t1 = await hubCore.createHandoff(hq, await person('angad@linkmarketing.org.uk'), 'recruit');
+    const h1 = await hubIn(t1);
+    ok(h1.ok && h1.data.user.email === 'angad@linkmarketing.org.uk' && (await api(h1.data.token, 'me')).user.email === 'angad@linkmarketing.org.uk',
+      'one login: a ticket from the hub signs Angad straight in (the same session a login code gives)');
+    ok(/expired/.test((await hubIn(t1)).error), 'a ticket works once');
+    ok(/expired/.test((await hubIn(await rawTicket('angad@linkmarketing.org.uk', 'fr'))).error), 'a ticket for another app (FR Playbook) doesn\'t open Recruitment');
+    ok(/expired/.test((await hubIn(await rawTicket('angad@linkmarketing.org.uk', 'recruit', -60))).error), 'an old ticket (over 2 minutes) doesn\'t work');
+    ok(/expired/.test((await hubIn('made-up')).error) && (await hubIn('')).ok === false, 'a made-up ticket doesn\'t work');
+    await hq("insert into public.users (username, password, display_name) values ('zz.starter@example.com', 'x', 'Zz Starter')");
+    ok(await hubCore.createHandoff(hq, await person('zz.starter@example.com'), 'recruit') === null && /expired/.test((await hubIn(await rawTicket('zz.starter@example.com', 'recruit'))).error),
+      'new starters never get into Recruitment through the hub: only people active in Users (admins add them)');
+    const hubLog = async () => (await getJson('/dev/sheet?name=Log')).filter(r => r[2] === 'hub_login').map(r => r[4]);
+    ok((await hubLog()).join() === 'angad@linkmarketing.org.uk', 'each hub sign-in is in the Log');
+
+    // Launch: the button appears, the welcome email's playbook link goes through the hub, the playbook opens by itself
+    await post('/dev/props', { HUB_SIGNIN: '1' });
+    const HUB_RECRUIT = 'https://link-juss.vercel.app/?app=recruit&r=%2F';
+    ok((await post('/api', { action: 'loginInfo' })).data.hub === HUB_RECRUIT, 'launched: the login screen gets the hub link');
+    const hc = await browser.newContext(PHONE), hp = await hc.newPage();
+    await hp.goto(APP + 'index.html'); await hp.waitForSelector('#hubIn:not([hidden]) #hubGo');
+    ok(await hp.getAttribute('#hubGo', 'href') === HUB_RECRUIT && await hp.$('#go'), 'login screen: "Sign in with your work email" (to the hub), with the 6-digit code login still underneath');
+    await shot(hp, '60-login-hub');
+    await hp.goto('about:blank');  // coming from the hub (another site) is always a fresh page load
+    await hp.goto(APP + 'index.html#hub='+ encodeURIComponent(await hubCore.createHandoff(hq, await person('jess@linkmarketing.org.uk'), 'recruit')) + '&r=%2F');
+    await hp.waitForSelector('.tabbar button');
+    ok(!/hub=/.test(hp.url()) && (await hubLog()).pop() === 'jess@linkmarketing.org.uk',
+      'arriving from the hub: signed in as Jess straight away, and the ticket is wiped from the address bar');
+    await hp.reload(); await hp.waitForSelector('.tabbar button');
+    ok(true, 'and she stays signed in (reopening the app doesn\'t ask again)');
+    await hc.close();
+
+    const welcome = async (id, to) => {
+      const mb = (await getJson('/dev/mail')).length;
+      await api(admin, 'onboardSend', { id });
+      return (await getJson('/dev/mail')).slice(mb).find(m => m.to === to);
+    };
+    const adWm = await welcome(adham.id, 'adham@example.com');
+    const adHf = await hq('select username, password_hash, full_name, start_date, role from hf.users where username = $1', ['adham@example.com']);
+    const adNow2 = await api(admin, 'getCandidate', { id: adham.id });
+    ok(adHf.length === 1 && adHf[0].full_name === 'Adham Soliman' && adHf[0].password_hash === '!hub-login-only' && adHf[0].start_date === adNow2.academy_date && adHf[0].role === 'rep',
+      'onboarded (JUSS) → his HelloFresh Playbook opens by itself: email sign-in only, no password anyone could guess');
+    ok(adWm && /https:\/\/link-juss\.vercel\.app\/\?app=hf&r=%2F/.test(adWm.body) && /href="https:\/\/link-juss\.vercel\.app\/\?app=hf&amp;r=%2F"|href="https:\/\/link-juss\.vercel\.app\/\?app=hf&r=%2F"/.test(adWm.htmlBody || ''),
+      'his welcome email\'s playbook button goes through the hub (JUSS look, HelloFresh Playbook)');
+    const jasWm = await welcome(jasId, 'jasraj@example.com');
+    const jasFr = await hq('select username, password, display_name from public.users where username = $1', ['jasraj@example.com']);
+    ok(jasFr.length === 1 && jasFr[0].display_name === 'Jasraj Bhuller' && jasFr[0].password === '!hub-login-only' && jasWm && /link-juss\.vercel\.app\/\?app=fr&r=%2F/.test(jasWm.body),
+      'onboarded (LINK) → his FR Playbook opens, and the email links to it through the hub (LINK look)');
+    const acc = await hubCore.accounts(hq, 'jasraj@example.com');
+    ok(acc.fr && !acc.recruit && !acc.hf && await hubCore.createHandoff(hq, await person('jasraj@example.com'), 'recruit') === null,
+      'a new starter gets their own company\'s playbook only: never Recruitment, never the other company\'s');
+    await welcome(jasId, 'jasraj@example.com');
+    ok((await hq('select count(*)::int as n from public.users where username = $1', ['jasraj@example.com']))[0].n === 1, 'sending the email again never makes a second account (or touches the one there)');
+    const unl = (await getJson('/dev/sheet?name=Log')).filter(r => r[2] === 'playbook_unlocked').map(r => r[4]);
+    ok(unl.includes('hf opened') && unl.includes('fr opened') && unl.includes('fr already open'), 'the Log says which playbook opened for whom');
+    await post('/dev/props', { HUB_SIGNIN: '' });
+  } else {
+    ok(/isn't available here/.test((await post('/api', { action: 'hubLogin', ticket: 'x' })).error), 'one login: Supabase only (on Google the code login carries on)');
+    await post('/dev/props', { HUB_SIGNIN: '1' });
+    ok((await post('/api', { action: 'loginInfo' })).data.hub === '', 'even switched on, Google never shows the hub button');
+    await post('/dev/props', { HUB_SIGNIN: '' });
+  }
 
   // ── 10. Access removed / Apps Script fallback / GDPR ──
   await api(admin, 'saveUser', { user: Object.assign({}, fiza, { active: false }) });

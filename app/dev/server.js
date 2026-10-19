@@ -27,6 +27,16 @@ async function onPostgres() {
   const { pgliteAdapter } = require('../../server/db');
   const db = await pgliteAdapter();
   await db.migrate();
+  // The one-login hub's tables and the playbooks' user tables (as in the shared Supabase), so hub sign-in and the
+  // automatic playbook unlock run for real in the tests
+  await db.db.exec(require('../../hub/lib/core.js').SCHEMA + `
+    create table if not exists public.users (id varchar primary key default gen_random_uuid(), username text not null, password text not null,
+      display_name text not null, role text not null default 'user', start_date timestamp not null default now(), last_login timestamp not null default now());
+    create schema if not exists leaders;
+    create table if not exists leaders.users (id varchar primary key default gen_random_uuid(), email text not null, password text not null, display_name text not null, role text not null default 'user');
+    create schema if not exists hf;
+    create table if not exists hf.users (id serial primary key, username text not null, password_hash text not null, full_name text not null,
+      mentor_name text not null default '', start_date text not null default '', role text not null default 'rep', created_at timestamptz not null default now());`);
   const rt = new Runtime({ db, testMode: true, env: { PUBLIC_URL: `http://localhost:${PORT}/exec` } });
   await rt.start();
   const plain = v => JSON.parse(JSON.stringify(v === undefined ? null : v));
@@ -34,6 +44,7 @@ async function onPostgres() {
     api: b => rt.call('api', b), run: (fn, args) => rt.call(fn, ...args), eval: js => rt.run({ type: 'eval', js }),
     setOffsetMs: ms => rt.run({ type: 'eval', js: '__offset = ' + Number(ms) }), pushes: () => rt.run({ type: 'pushes' }), mail: async () => plain(rt.testMail),
     setProps: o => rt.withDb(async q => { for (const k of Object.keys(o)) await q('insert into jl.props (key, val) values ($1, $2) on conflict (key) do update set val = excluded.val', [k, String(o[k])]); }),
+    sql: (text, params) => rt.withDb(q => q(text, params || [])),
     sheet: n => rt.withDb(async q => {
       const t = (await q('select headers from jl.tabs where name = $1', [n]))[0];
       if (!t) return null;
@@ -106,6 +117,12 @@ ready.then(gas => http.createServer(async (req, res) => {
       const b = await body(req);
       await gas.setOffsetMs(b.iso ? new Date(b.iso).getTime() - Date.now() : 0);
       res.writeHead(200, { 'content-type': 'application/json' }); return res.end('{"ok":true}');
+    }
+    if (u.pathname === '/dev/sql' && req.method === 'POST') {  // Postgres back end only (tests of the hub tables)
+      if (!gas.sql) { res.writeHead(404); return res.end('Postgres back end only'); }
+      const b = await body(req);
+      const rows = await gas.sql(b.sql, b.params);
+      res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ rows }));
     }
     if (u.pathname === '/dev/sheet') {
       const data = await gas.sheet(u.searchParams.get('name'));
