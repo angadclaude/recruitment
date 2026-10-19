@@ -1,4 +1,4 @@
-window.APP_VERSION = 'e1b9cbf2';
+window.APP_VERSION = 'e0be957e';
 
 (function () {
 'use strict';
@@ -118,8 +118,10 @@ function setTheme(co, dark) {
   if (document.body) { if (co) document.body.dataset.co = co; else delete document.body.dataset.co; }
   let m = document.querySelector('meta[name=theme-color]');
   if (!m) { m = document.createElement('meta'); m.name = 'theme-color'; document.head.appendChild(m); }
-  m.content = dark ? (co === 'JUSS' ? '#123A48' : '#26262F') : (co === 'JUSS' ? '#EDF5F5' : co === 'LINK' ? '#F7F1EC' : '#F4F2EF');
+  m.content = dark ? (co === 'JUSS' ? '#0D2833' : '#17171D') : (co === 'JUSS' ? '#EDF5F5' : co === 'LINK' ? '#F7F1EC' : '#F4F2EF');  // dark = the stage colour
 }
+/** The stage inside a dark header: two slow brand lights and the brand as a floating 3D shape (Styles: "Immersive layer"). */
+const FX = '<div class="fx" aria-hidden="true"><i class="orb o1"></i><i class="orb o2"></i><div class="prism"><div><span></span><span></span><span></span></div></div></div>';
 /** Candidate page logos: both until we know the booker's company (on check-in the other one dims the moment they pick), then just theirs. */
 function heroLogos() {
   if (C.co) return '<div class="brandbar c-logos"><img class="lg-' + C.co + '" alt="' + C.co + ' Marketing" src="' + LOGOS[C.co] + '"></div>';
@@ -270,7 +272,7 @@ function renderCheckin(then, pre, preErr) {
   pre = pre || {}; $app.dataset.screen = 'checkin'; $app.dataset.mark = '';
   const sources = ['Indeed', 'TikTok', 'Instagram', 'Facebook', 'LinkedIn', BA_REFERRAL, 'Other'];
   const sec = (icon, title) => '<section class="evsec"><div class="evsec-h"><span>' + icon + '</span>' + title + '</div><div class="qcard ci">';
-  $app.innerHTML = '<div class="c-hero">' + heroLogos() + '<span class="label">Recruitment day' + (C.cfg.today ? ' · ' + h(fmtLong(C.cfg.today)) : '') + '</span>' +
+  $app.innerHTML = '<div class="c-hero">' + FX + heroLogos() + '<span class="label">Recruitment day' + (C.cfg.today ? ' · ' + h(fmtLong(C.cfg.today)) : '') + '</span>' +
     (then === 'eval' ? '<h1>Quick <span class="gtext">check-in</span> first 👋</h1><p>We couldn\'t find you, so fill this in, then your evaluation opens straight after.</p>'
       : '<h1><span class="gtext">Welcome</span> 👋</h1><p>Let\'s check you in. Takes about a minute.</p>') +
     '<div class="evtags"><span>⏱ 1 min</span><span>🔒 Private</span></div><div id="with"></div></div>' +
@@ -410,7 +412,7 @@ function rtwOptions(sel) { return '<option value="">Choose one…</option>' + (C
 /** Evaluation QR scanned on a phone we don't recognise: find today's check-in by mobile. */
 function renderFind(notFound) {
   scrollTop(); brandTheme(''); $app.dataset.screen = 'find';
-  $app.innerHTML = '<div class="c-hero">' + heroLogos() + '<span class="label">Last slide · evaluation</span><h1><span class="gtext">Evaluation</span> time 📝</h1>' +
+  $app.innerHTML = '<div class="c-hero">' + FX + heroLogos() + '<span class="label">Last slide · evaluation</span><h1><span class="gtext">Evaluation</span> time 📝</h1>' +
     '<p>Enter the mobile number you checked in with this morning.</p></div>' +
     '<div class="card c-form"><label class="q">Your mobile</label><input type="tel" id="m" inputmode="tel" autocomplete="tel" placeholder="07…" value="' + h(store.get('lastMobile') || '') + '"><div id="err">' +
     (notFound ? '<div class="err">We can\'t find a check-in for that number today. Check the number, or check in now.</div>' : '') + '</div>' +
@@ -431,7 +433,7 @@ function renderFind(notFound) {
 
 function renderIsThisYou() {
   scrollTop(); brandTheme(C.rec.company);
-  $app.innerHTML = '<div class="c-hero">' + heroLogos() + '<span class="label">Evaluation</span><h1>Is this you, <span class="gname">' + h(C.rec.first_name) + '</span>?</h1>' +
+  $app.innerHTML = '<div class="c-hero">' + FX + heroLogos() + '<span class="label">Evaluation</span><h1>Is this you, <span class="gname">' + h(C.rec.first_name) + '</span>?</h1>' +
     '<p>Just checking we\'ve got the right person.</p></div><div class="card c-form" style="padding-top:18px">' +
     '<button class="btn block" id="yes">Yes, start my evaluation</button>' +
     '<button class="btn ghost block" id="no" style="margin-top:8px">No, that\'s not me</button></div>';
@@ -441,7 +443,7 @@ function renderIsThisYou() {
 function renderCheckedIn(first, evalDone, canEdit, nonQual) {
   if (evalDone) return renderDone('already', canEdit);
   scrollTop(); brandTheme(C.rec && C.rec.company); $app.dataset.screen = 'checkedin';
-  $app.innerHTML = '<div class="c-hero">' + heroLogos() + '<span class="label">Checked in</span><h1>You\'re checked in, <span class="gname">' + h(first) + '</span>!</h1>' +
+  $app.innerHTML = '<div class="c-hero">' + FX + heroLogos() + '<span class="label">Checked in</span><h1>You\'re checked in, <span class="gname">' + h(first) + '</span>!</h1>' +
     '<p>We aim to begin at 10 AM 🕙</p></div><div class="card c-done">' + tickSvg() +
     (nonQual ? '<div class="ok">🙋 <b>Thanks for coming in.</b> A member of our team will have a quick chat with you today.</div></div>'
       : '<div class="ok">📝 <b>After the presentation</b>, please scan the second QR code on the screen (<b>Evaluation form</b>) for us to proceed with your application.</div></div>');
@@ -454,7 +456,7 @@ function renderCheckedIn(first, evalDone, canEdit, nonQual) {
 /** Non-qualifier (under 18 / no right to work self-employed) scanned the evaluation QR: no form, the team speaks to them. */
 function renderNoEval() {
   stopTimer(); scrollTop(); brandTheme(C.rec && C.rec.company); $app.dataset.screen = 'noeval';
-  $app.innerHTML = '<div class="c-hero">' + heroLogos() + '<span class="label">Evaluation</span><h1>No form needed, <span class="gname">' + h(C.rec.first_name) + '</span></h1>' +
+  $app.innerHTML = '<div class="c-hero">' + FX + heroLogos() + '<span class="label">Evaluation</span><h1>No form needed, <span class="gname">' + h(C.rec.first_name) + '</span></h1>' +
     '<p>Thanks for coming in today 🙏</p></div><div class="card c-done">' + tickSvg() +
     '<p>You don\'t need to fill in the evaluation. <b>Our team will speak to you directly</b> about your options 📲</p>' +
     (C.co ? magCard(C.co) : magCard('LINK') + magCard('JUSS')) +
@@ -574,11 +576,11 @@ function renderEval(edit) {
     r.forEach(q => { const c = document.querySelector('.qwrap[data-k="' + q.k + '"]'); if (c && String(a[q.k] || '').trim()) c.classList.remove('miss'); });
   };
   const meter = () => { const v = Number(a.q1_excitement) || 0; document.querySelectorAll('.chips.scale .chip').forEach(c => c.classList.toggle('lit', Number(c.dataset.v) <= v)); };
-  C.co = coOf(C.rec.company); setTheme(C.co);  // light page top (progress bar), so a light status bar
+  C.co = coOf(C.rec.company); setTheme(C.co, true);  // the progress bar sits on the dark stage, so a dark status bar
   const draw = () => {
     num = 0;
     $app.innerHTML = '<div class="evprog"><div class="evtrack"><i id="evbar"></i></div><span id="evcount"></span></div>' +
-      '<div class="evhero">' + heroLogos() + (edit
+      '<div class="evhero">' + FX + heroLogos() + (edit
         ? '<h1>Change your answers, <span class="gname">' + h(C.rec.first_name) + '</span> ✏️</h1><p>Your answers are filled in. Change what you need, then save.</p>'
         : '<h1>Your evaluation, <span class="gname">' + h(C.rec.first_name) + '</span> 👋</h1><p>About 4 minutes. Your answers shape your next step with us, so make them count.</p>') +
       '<div class="evtags"><span>⏱ 4 min</span><span>🔒 Private</span><span>📲 Saves as you go</span></div></div>' +
@@ -635,7 +637,7 @@ function renderDone(mode, canEdit) {
   const first = C.rec && C.rec.first_name ? ', <span class="gname">' + h(C.rec.first_name) + '</span>' : '';
   const top = mode === 'already' ? ['Evaluation', 'Already done' + first, '<p>You\'ve already sent your evaluation today. No need to do it again.</p>']
     : mode === 'updated' ? ['Evaluation', 'Updated' + first + '!', '<p>Your changes have been saved.</p>'] : ['Evaluation sent 🙌', 'Thank you' + first + '!', '<p>Your evaluation is in 🚀</p>'];
-  $app.innerHTML = '<div class="c-hero">' + heroLogos() + '<span class="label">' + top[0] + '</span><h1>' + top[1] + '</h1></div>' +
+  $app.innerHTML = '<div class="c-hero">' + FX + heroLogos() + '<span class="label">' + top[0] + '</span><h1>' + top[1] + '</h1></div>' +
     '<div class="card c-done">' + tickSvg() + top[2] + '<div class="evsec-h c-next"><span>📲</span>What happens next</div>' +
     '<p>Our team will contact you about your next steps by close of business on Friday 6PM at the latest 📲</p>' +
     '<p class="muted">Keep your phone close and check WhatsApp.</p>' +
@@ -792,7 +794,7 @@ function renderWelcome(w, keepScroll) {
   const sec = (icon, title) => '<section class="evsec"><div class="evsec-h"><span>' + icon + '</span>' + title + '</div>';
 
   $app.innerHTML = '<div class="wl wl-' + co + '">' +
-    '<div class="wl-hero"><img class="wl-logo" src="' + LOGOS[co] + '" alt="' + h(brand) + '">' +
+    '<div class="wl-hero">' + FX + '<img class="wl-logo" src="' + LOGOS[co] + '" alt="' + h(brand) + '">' +
     '<h1>You\'re in, <span class="gname">' + h(w.first_name) + '</span> 🎉</h1><p>Welcome to the <b>' + h(brand) + ' BA Academy</b></p>' +
     '<span class="wl-pill">' + h(when) + '</span></div>' +
 
@@ -1003,7 +1005,7 @@ function renderLogin() {
   stopTimer(); scrollTop();
   setTheme(store.get('lastCo'));  // the last person on this phone's brand; co-branded on a new phone
   let door = store.get('door') === 'admin' ? 'admin' : 'ba';
-  $app.innerHTML = '<div class="login"><div class="login-hero">' + logos(58) + '<div class="label">Juss &amp; Link</div><div class="display">Recruitment</div></div>' +
+  $app.innerHTML = '<div class="login"><div class="login-hero">' + FX + logos(58) + '<div class="label">Juss &amp; Link</div><div class="display">Recruitment</div></div>' +
     '<div class="seg doors" id="doors" role="tablist">' + Object.keys(DOORS).map(k => '<button type="button" role="tab" data-door="' + k + '">' + DOORS[k][0] + '</button>').join('') + '</div>' +
     '<div class="card c-form"><div id="hubIn" hidden></div><div id="doorHead"></div>' +
     '<label class="q">Work email</label><input type="email" id="em" autocomplete="email" placeholder="you@company.co.uk" value="' + h(store.get('lastEmail') || '') + '">' +
@@ -1221,7 +1223,7 @@ function ensureShell() {
   document.getElementById('tabbar').onclick = e => { const b = e.target.closest('button[data-tab]'); if (b) { if (b.dataset.tab === S.view) window.scrollTo({ top: 0, behavior: 'smooth' }); else go(b.dataset.tab); } };
 }
 function paint(title, html, quiet, sub) {
-  setTheme(S.me.user.company);
+  setTheme(S.me.user.company, true);  // dark status bar: the top bar is the stage
   ensureShell();
   if (!quiet) closeSheet(true);
   const y = window.scrollY;
@@ -1265,6 +1267,8 @@ function paint(title, html, quiet, sub) {
   }
   return page;
 }
+// The top bar is see-through over the Today / Mine stage until you scroll (Styles: "Immersive layer")
+addEventListener('scroll', () => { const s = window.scrollY > 6; if (s !== paint._scrolled) { paint._scrolled = s; document.documentElement.classList.toggle('scrolled', s); } }, { passive: true });
 // Pull down at the top of a list to refresh
 const PTR = { y: 0, d: 0, on: false };
 document.addEventListener('touchstart', e => {
@@ -1542,11 +1546,11 @@ function viewToday(quiet) {
     '<div class="hero-name">' + h(isToday ? S.me.user.name.split(' ')[0] : DAYS_LONG[D(S.day).getUTCDay()]) + '</div><div class="hero-date">' + h(isToday ? 'Today · ' + fmtLong(S.day) : fmtLong(S.day)) + '</div></div>' +
     '<div class="hero-nav"><button class="iconbtn light" id="dprev" aria-label="Previous day">‹</button><button class="iconbtn light" id="dnext" aria-label="Next day"' + (isToday ? ' disabled' : '') + '>›</button></div></div>';
   let body;
-  if (!d) body = '<div class="hero">' + top + '</div>' + skeleton();
+  if (!d) body = '<div class="hero">' + FX + top + '</div>' + skeleton();
   else {
     const items = d.items.filter(c => c.attended_date === S.day).sort((a, b) => a.created_at.localeCompare(b.created_at));
     const rated = items.filter(c => c.in_room).length, toCall = items.filter(c => !c.limited && c.eval_at && !c.outcome).length;
-    body = '<div class="hero">' + top + kpis([[items.length, 'Checked in'], [rated, 'Rated'], [items.filter(c => c.eval_at).length, 'Evaluated'], [toCall, 'To call', toCall > 0]]) + '</div>' +
+    body = '<div class="hero">' + FX + top + kpis([[items.length, 'Checked in'], [rated, 'Rated'], [items.filter(c => c.eval_at).length, 'Evaluated'], [toCall, 'To call', toCall > 0]]) + '</div>' +
       (isAdmin() || canThank() ? thanksButton(items) : '') +
       (isAdmin() ? '<div class="bullbtns"><button class="btn" id="bullDaily">📣 ' + (isToday ? 'Today\'s' : DAYS[D(S.day).getUTCDay()]) + ' bulletin</button><button class="btn ghost" id="bullWeek">🏆 Week top 5</button></div>' : '') +
       (items.length ? '<div class="section-h"><b>In the room</b><span>' + rated + ' of ' + items.length + ' rated</span></div>' +
@@ -1571,7 +1575,7 @@ function viewMine(quiet) {
     '<div class="hero-name">' + h(S.me.user.name.split(' ')[0]) + '</div><div class="hero-date">Week ending ' + h(fmt(S.week)) + '</div></div>' +
     '<div class="hero-nav">' + weekArrows(true) + '</div></div>';
   let body;
-  if (!d) body = '<div class="hero">' + top + '</div>' + skeleton();
+  if (!d) body = '<div class="hero">' + FX + top + '</div>' + skeleton();
   else {
     const me = S.me.user.id;
     const items = d.items.filter(c => c.booker_id === me);
@@ -1581,7 +1585,7 @@ function viewMine(quiet) {
     const toSend = items.filter(c => toCall.indexOf(c) < 0 && c.outcome === 'Academy booked' && c.welcome_url && !c.offer_sent_at && !c.academy_confirmed_at && c.admin_status !== 'pending' && c.admin_status !== 'rejected');
     const left = Math.max(0, d.pay.target - r.net);
     // Admins can book people but don't earn the recruitment incentive: their numbers, no target
-    body = '<div class="hero">' + top + (isAdmin() ? kpis([[items.filter(c => c.in_room).length, 'Attended'], [items.filter(c => c.outcome === 'Academy booked' && c.admin_status !== 'rejected').length, 'Booked'], [toCall.length, 'To call', toCall.length > 0]]) :
+    body = '<div class="hero">' + FX + top + (isAdmin() ? kpis([[items.filter(c => c.in_room).length, 'Attended'], [items.filter(c => c.outcome === 'Academy booked' && c.admin_status !== 'rejected').length, 'Booked'], [toCall.length, 'To call', toCall.length > 0]]) :
       '<div class="hero-body">' + ring(r.net, d.pay.target) + '<div class="hero-txt"><b>' + (left ? left + ' more to hit ' + d.pay.target : 'Target smashed 🔥') + '</b>' +
       '<span>' + r.attended + ' attended · ' + r.excluded.length + ' don\'t count</span>' +
       (r.excluded.length ? '<span class="small">' + r.excluded.map(x => h(x.name) + ' (' + h(x.why) + ')').join(' · ') + '</span>' : '') + '</div></div>') + '</div>' +
@@ -1642,7 +1646,7 @@ function viewPay(quiet) {
     const rows = p.rows.filter(r => r.attended > 0 || isAdmin());
     const hit = rows.filter(r => r.net >= p.target).length;
     const late = rows.reduce((n, r) => n + r.late, 0), missing = rows.reduce((n, r) => n + r.missing, 0);
-    body = (isAdmin() ? '<div class="hero"><div class="label">Team this week</div>' + kpis([[rows.reduce((n, r) => n + r.net, 0), 'Net'], [hit + '/' + rows.filter(r => r.attended).length, 'Hit ' + p.target],
+    body = (isAdmin() ? '<div class="hero">' + FX + '<div class="label">Team this week</div>' + kpis([[rows.reduce((n, r) => n + r.net, 0), 'Net'], [hit + '/' + rows.filter(r => r.attended).length, 'Hit ' + p.target],
       [late, 'Late', late > 0], [missing, 'No outcome', missing > 0]]) + '</div>' : '') +
       '<div class="list">' + (rows.length ? rows.map((r, i) => '<div class="payrow" data-i="' + i + '"><div class="rank' + (i < 3 && r.net ? ' top' + (i + 1) : '') + '">' + (i + 1) + '</div>' +
         '<div class="main"><div class="name">' + h(r.name) + ' <span class="co ' + h(r.company) + '">' + h(r.company) + '</span></div>' +
@@ -3091,7 +3095,7 @@ function renderCandidate(c, quiet) {
   const canOutcome = isAdmin() || c.booker_id === S.me.user.id;
   // Someone else's candidate (a presenter rating the room): who + appointment feedback, nothing else
   if (c.limited) {
-    const lim = '<div class="profile">' + avatar(c, 'xl') + '<h1>' + h(c.full_name) + '</h1>' +
+    const lim = '<div class="profile">' + FX + avatar(c, 'xl') + '<h1>' + h(c.full_name) + '</h1>' +
       '<div class="muted small">Checked in ' + fmtTs(c.created_at) + (bookedBy(c, true) ? ' · ' + bookedBy(c, true) : '') +
         (c.company ? ' <span class="co ' + h(c.company) + '">' + h(c.company) + '</span>' : '') + '</div>' +
       '<div class="pills center-pills">' + statusPill(c) + (c._pending ? '<span class="pill">⏳ Syncing…</span>' : '') + '</div>' +
@@ -3123,7 +3127,7 @@ function renderCandidate(c, quiet) {
 
 
   // Summary: who, how they did, one-tap contact
-  const summary = '<div class="profile">' + avatar(c, 'xl') + '<h1>' + h(c.full_name) + '</h1>' +
+  const summary = '<div class="profile">' + FX + avatar(c, 'xl') + '<h1>' + h(c.full_name) + '</h1>' +
     '<div class="muted small">Attended ' + fmt(c.attended_date) + ' · ' + (c.booker_name ? 'booked by <b>' + h(c.booker_name) + '</b> <span class="co ' + h(c.company) + '">' + h(c.company) + '</span>' +
       (c.booker_typed && normName(c.booker_typed) !== normName(c.booker_name) ? ' <span class="small">(they said "' + h(c.booker_typed) + '")</span>' : '') : '<b>booker not confirmed</b>' + (c.booker_typed ? ' ("' + h(c.booker_typed) + '")' : '')) + '</div>' +
     presentedLine(c) + day1SentLine(c) +
