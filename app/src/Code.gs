@@ -1983,16 +1983,22 @@ function sendableFrom() {
   cache.put('send_as', JSON.stringify(list), 600);
   return list;
 }
+/** Can the app send as this address? Listed itself, or its whole domain ("*@jussmarketing.co.uk": on Supabase, a domain
+ *  verified in Resend, where any address works). */
+function canSendAs(email, list) {
+  const e = String(email || '').toLowerCase();
+  return list.indexOf(e) >= 0 || list.indexOf('*@' + e.split('@')[1]) >= 0;
+}
 function welcomeNotReady(s) {
-  return sendableFrom().indexOf(s.email) >= 0 ? '' : 'Can\'t send as ' + s.email + ' yet. Angad: add it in Gmail → Settings → Accounts → "Send mail as" (SETUP.md, "Welcome emails"), then try again in 10 minutes.';
+  return canSendAs(s.email, sendableFrom()) ? '' : 'Can\'t send as ' + s.email + ' yet. Angad: add it in Gmail → Settings → Accounts → "Send mail as" (SETUP.md, "Welcome emails"), then try again in 10 minutes.';
 }
 /** For the admin cards: who each brand's welcome email comes from, and whether it's ready.
  *  mine: your own address, if you're on the recruitment team (then it always comes from you). */
 function welcomeFromInfo(u) {
   const team = thanksTeam(), can = sendableFrom(), out = {};
-  ['LINK', 'JUSS'].forEach(k => { out[k] = { name: team[k] ? team[k].name : '', email: ONBOARD[k].from, ready: can.indexOf(ONBOARD[k].from) >= 0 }; });
+  ['LINK', 'JUSS'].forEach(k => { out[k] = { name: team[k] ? team[k].name : '', email: ONBOARD[k].from, ready: canSendAs(ONBOARD[k].from, can) }; });
   const me = u ? recruitTeam().filter(t => t.id === u.id)[0] : null;
-  out.mine = me ? { name: me.name, email: me.email, ready: can.indexOf(me.email) >= 0 } : null;
+  out.mine = me ? { name: me.name, email: me.email, ready: canSendAs(me.email, can) } : null;
   return out;
 }
 /** Run once from the Apps Script editor (after adding the "Send mail as" addresses): approves Gmail and says what's ready. */
@@ -2001,7 +2007,7 @@ function setupWelcomeEmail() {
   const can = sendableFrom();
   console.log('This script sends as: ' + can.join(', '));
   const all = [ONBOARD.LINK.from, ONBOARD.JUSS.from].concat(recruitTeam().map(t => t.email), (CONFIG.RECRUIT_TEAM || []).map(e => String(e).toLowerCase()));
-  all.filter((a, i) => all.indexOf(a) === i).forEach(a => console.log(can.indexOf(a) >= 0 ? '✅ ' + a + ' ready' : '❌ ' + a + ': add it in Gmail → Settings → Accounts → "Send mail as", then run this again'));
+  all.filter((a, i) => all.indexOf(a) === i).forEach(a => console.log(canSendAs(a, can) ? '✅ ' + a + ' ready' : '❌ ' + a + ': add it in Gmail → Settings → Accounts → "Send mail as", then run this again'));
 }
 
 function firstNames(list, max) {

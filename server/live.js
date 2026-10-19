@@ -1,7 +1,9 @@
 // The live back end on Vercel: one Runtime per server instance, connected to Supabase, OneSignal and Google's email relay.
 // Settings (Vercel → jl-recruitment → Settings → Environment Variables; never in this public repo):
 //   DATABASE_URL, DATABASE_PASSWORD   Supabase (shared project, schema `jl`)
-//   RELAY_URL, RELAY_SECRET           Apps Script web app that sends the emails from Gmail (Code.gs relayMail)
+//   RESEND_API_KEY, RESEND_EMAIL_DOMAIN  Resend (added from Vercel's marketplace, 19 Oct): sends every email, from any
+//                                     address on a domain verified in Resend (linkmarketing.org.uk, jussmarketing.co.uk)
+//   RELAY_URL, RELAY_SECRET           Apps Script web app: the backup sender (Gmail) when Resend can't (Code.gs relayMail)
 //   ONESIGNAL_API_KEY                 phone alerts (the REST API key; the App ID is a normal setting)
 //   CRON_SECRET                       Vercel sends it to /api/cron
 //   REHEARSAL=1                       test copy: emails only to MAIL_ALLOW, no phone alerts
@@ -43,6 +45,51 @@ function viaGmail(m) {
   return { via: 'gmail', to: x.to, subject: x.subject || '', body: text, opts };
 }
 
+/** Any outbox message as a Resend email (API shape). MailApp messages come from OWNER_EMAIL like before; Gmail ones from
+ *  their own address (welcome emails: Jess / Rubal / Fiza, who get the bcc copy). */
+function viaResend(m) {
+  const g = m && m.via === 'mail' ? viaGmail(m) : m;
+  if (!g || !g.to) return null;
+  const o = g.opts || {}, list = s => String(s || '').split(',').map(x => x.trim()).filter(Boolean);
+  const from = o.from || process.env.OWNER_EMAIL || 'angad@linkmarketing.org.uk', name = String(o.name || 'Juss & Link Recruitment App').replace(/["<>]/g, '');
+  const msg = { from: '"' + name + '" <' + from + '>', to: list(g.to), subject: g.subject || '' };
+  if (o.htmlBody) msg.html = o.htmlBody;
+  if (g.body) msg.text = g.body;
+  if (o.cc) msg.cc = list(o.cc);
+  if (o.bcc) msg.bcc = list(o.bcc);
+  if (o.replyTo) msg.reply_to = list(o.replyTo);
+  return msg;
+}
+
+/** Resend: the sender for every email (fast, and it passes the domains' DMARC: no more codes in Spam). Domains it may
+ *  send from are the verified ones (checked every 10 minutes). Anything it refuses goes through Google instead. */
+function resend() {
+  const key = () => process.env.RESEND_API_KEY;
+  let domains = null, domainsAt = 0;
+  async function api(method, p, body) {
+    const res = await fetch('https://api.resend.com' + p, { method, headers: { authorization: 'Bearer ' + key(), 'content-type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(15000) });
+    const text = await res.text();
+    let j = {}; try { j = JSON.parse(text); } catch (e) { /* not JSON */ }
+    if (!res.ok) throw new Error('resend ' + res.status + ': ' + (j.message || text.slice(0, 160)));
+    return j;
+  }
+  return {
+    on: () => !!key(),
+    /** Verified sending domains, e.g. ['linkmarketing.org.uk']. */
+    async verified() {
+      if (!key()) return [];
+      if (!domains || Date.now() - domainsAt > 10 * 60000) {
+        try { domains = ((await api('GET', '/domains')).data || []).filter(d => d.status === 'verified').map(d => String(d.name).toLowerCase()); }
+        catch (e) { console.error('resend domains', e.message); domains = domains || []; }
+        domainsAt = Date.now();
+      }
+      return domains;
+    },
+    send: msg => api('POST', '/emails', msg),
+  };
+}
+
 /** Google sends the emails (same Gmail, same "send mail as" addresses); asked through Code.gs's relay. */
 function relay(db) {
   let info = null, infoAt = 0;
@@ -80,11 +127,20 @@ function relay(db) {
     }
     return call('relayMail', { mail: m });
   }
+  // Resend first; Google when Resend can't (its domain isn't verified yet, the daily limit, an outage)
+  const RS = resend();
+  async function send(m) {
+    const r = viaResend(m), dom = r ? String(r.from.split('<').pop()).replace('>', '').split('@')[1] : '';
+    if (r && RS.on() && (await RS.verified()).includes(dom)) {
+      try { return await RS.send(r); } catch (e) { console.error('resend failed, Google instead:', e.message); }
+    }
+    return relayMail(m);
+  }
   async function sendOne(id) {
     const row = (await db.sql`select payload, sent_at from jl.outbox where id = ${id}::bigint`)[0];
     if (!row || row.sent_at) return;
     try {
-      if (allowed(row.payload)) await relayMail(row.payload);
+      if (allowed(row.payload)) await send(row.payload);
       await db.sql`update jl.outbox set sent_at = now(), tries = tries + 1, error = ${allowed(row.payload) ? null : 'rehearsal: not sent'} where id = ${id}::bigint`;
     } catch (e) {
       await db.sql`update jl.outbox set tries = tries + 1, error = ${String(e.message || e).slice(0, 500)} where id = ${id}::bigint`;
@@ -94,7 +150,12 @@ function relay(db) {
   return {
     call,
     quota: async () => { try { return (await getInfo()).quota; } catch (e) { console.error(e); return -1; } },
-    aliases: async () => { try { return (await getInfo()).aliases; } catch (e) { console.error(e); return []; } },
+    /** Who the app can send as: Gmail's "send mail as" addresses, plus "*@domain" for each domain verified in Resend
+     *  (any address there works, so welcome emails from Jess / Rubal / Fiza need no Gmail setup). */
+    aliases: async () => {
+      const [g, d] = await Promise.all([getInfo().then(i => i.aliases || [], e => { console.error(e); return []; }), RS.verified()]);
+      return g.concat(d.map(x => '*@' + x));
+    },
     /** Send these outbox rows, 4 at a time. */
     async deliver(ids) {
       const queue = ids.slice(), errors = [];
@@ -134,4 +195,4 @@ async function start() {
   return (RT = rt);
 }
 
-module.exports = { runtime, relay: () => RELAY, db: () => DB, TRIGGERS, REHEARSAL, _test: { viaGmail, relay } };
+module.exports = { runtime, relay: () => RELAY, db: () => DB, TRIGGERS, REHEARSAL, _test: { viaGmail, viaResend, relay } };
