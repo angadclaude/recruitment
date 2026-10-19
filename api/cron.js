@@ -39,6 +39,14 @@ module.exports = async (req, res) => {
   }
   try { await rt.call('keepWarm'); ran.push('keepWarm'); } catch (e) { console.error('keepWarm', e); ran.push('keepWarm FAILED'); }
   const retried = await relay().retry();
+  // Keep the app's API and Google's email relay awake, so a login code goes out straight away even after a quiet spell
+  // (19 Oct: 9 s from tap to Gmail with both asleep; 0.2 s for the app when awake)
+  const host = process.env.VERCEL_PROJECT_PRODUCTION_URL, t0 = Date.now(), warm = {};
+  await Promise.all([
+    host ? fetch('https://' + host + '/api/rpc', { method: 'POST', body: '{"action":"publicConfig"}', signal: AbortSignal.timeout(20000) })
+      .then(r => { warm.api = r.status + ' in ' + (Date.now() - t0) + 'ms'; }, e => { warm.api = 'failed: ' + e.message; }) : null,
+    relay().call('relayInfo').then(() => { warm.relay = 'ok in ' + (Date.now() - t0) + 'ms'; }, e => { warm.relay = 'failed: ' + e.message; }),
+  ]);
   res.setHeader('content-type', 'application/json');
-  res.end(JSON.stringify({ at: now, ran, mailRetried: retried }));
+  res.end(JSON.stringify({ at: now, ran, mailRetried: retried, warm }));
 };
