@@ -1008,11 +1008,13 @@ async function fillEval(p) {
     'older sends filled in once from the Log: Adham\'s Day 1 details went ' + adFill[2].length + ' times (' + adFill[2].join(', ') + ') → "' + adFill[0].offer_by + ' · ' + adFill[0].offer_via + '" (the latest), then never again');
   ok(await ap.textContent('#abTitle') === 'Day 1' && await ap.$('.tabbar button.on[data-tab=academy]') && /Monday 19 October · TOMORROW/i.test(d1Txt) && new RegExp(monStarters.length + ' expected · ' + nConf + ' confirmed').test(d1Txt),
     'tapping it opens the Day 1 tab: "Monday 19 October · TOMORROW · ' + monStarters.length + ' expected · ' + nConf + ' confirmed"');
+  ok(/📅 Tuesday/.test(await ap.textContent('[data-d1="next_day"][data-id="' + jasId + '"]')) && await ap.$('.trow[data-cand="' + jasId + '"] a.btn[data-rem1]'),
+    'before the day too: each Monday starter has "📅 Tuesday" under 💬 Remind (some are booked for Tuesday instead)');
   const remind = decodeURIComponent((await ap.$eval('.trow[data-cand="' + jasId + '"] a.btn', a => a.href)).split('?text=')[1]);
   ok(/^Hi Jasraj,\n\nHope you are well\.\n\nJust a quick reminder that you’re due to start your training tomorrow, Monday 19th October at 1:30 PM 🕜/.test(remind) &&
     /https:\/\/maps\.app\.goo\.gl\/f4pkh222EHHTyQSM9/.test(remind) && /Kind Regards\nAngad Oshan\nIn Association with Juss Marketing and Link Marketing$/.test(remind),
     '💬 Remind: Jess / Rubal\'s wording, "…due to start your training tomorrow, Monday 19th October at 1:30 PM", LINK Maps pin, signed by the sender');
-  ok(!(await ap.$('[data-d1]')), 'no Arrived / No-show buttons before Day 1');
+  ok(!(await ap.$('[data-d1="arrived"], [data-d1="no_show"]')), 'no Arrived / No-show buttons before Day 1');
   await shot(ap, '27-day1-list', true);
   let early = null; try { await api(admin, 'markDay1', { id: jasId, status: 'arrived' }); } catch (e) { early = e.message; }
   ok(/hasn't happened yet/.test(early), 'can\'t mark someone arrived before their Day 1');
@@ -1232,10 +1234,16 @@ async function fillEval(p) {
   const tue = await api(admin, 'getCandidate', { id: adham.id });
   ok(tue.academy_date === '2026-10-20' && !tue.day1_status && !(await api(admin, 'academyList', {})).items.some(c => c.id === adham.id && c.academy_date === '2026-10-19'),
     'the second tap moves Adham\'s Day 1 to Tue 20 Oct: on Tuesday\'s list to tick there, off Monday\'s (and its PDF)');
-  let tooLate = null; try { await api(admin, 'markDay1', { id: adham.id, status: 'next_day' }); } catch (e) { tooLate = e.message; }
-  ok(/hasn't happened yet/.test(tooLate), 'only on the day itself (Tuesday\'s list can\'t move him again before Tuesday)');
   await shot(ap, '28b-day1-moved-to-tuesday', true);
-  await post('/dev/eval', { js: `(() => { MEMO = {}; const c = getC('${adham.id}'); c.academy_date = '2026-10-19'; writeRow('Candidates', c); MEMO = {}; return 1; })()` });  // back to Monday for the rest
+  const monB = '[data-d1="prev_day"][data-id="' + adham.id + '"]';
+  await ap.waitForSelector(monB);
+  ok(/📅 Monday/.test(await ap.textContent(monB)) && !(await ap.$('[data-d1="next_day"][data-id="' + adham.id + '"]')), 'on Tuesday\'s list he has "📅 Monday" instead, to undo it');
+  await ap.click(monB); await ap.click(monB);  // "Move to Mon?" → yes
+  await ap.waitForFunction(() => !/Tuesday 20 October/i.test(document.getElementById('page').innerText));
+  const backMon = await api(admin, 'getCandidate', { id: adham.id });
+  ok(backMon.academy_date === '2026-10-19' && !backMon.day1_status, '📅 Monday (twice) puts him back on Monday\'s list');
+  let gone = null; try { await api(admin, 'markDay1', { id: jasId, status: 'prev_day' }); } catch (e) { gone = e.message; }
+  ok(/already gone/.test(gone), 'never onto a day that has gone (Monday → Sunday refused)');
   await api(admin, 'markDay1', { id: adham.id, status: 'arrived' });
   // Call log: every response logged, who and when (not just the latest)
   const adLog = JSON.parse((await api(admin, 'getCandidate', { id: adham.id })).outcome_log || '[]');

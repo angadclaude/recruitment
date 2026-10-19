@@ -2237,10 +2237,13 @@ function viewAcademy(quiet) {
 function remindedToday(c) { return String(c.day1_reminded_at || '').slice(0, 10) === ((S.academy && S.academy.today) || S.me.today); }
 /** One order for a Day 1 list on screen and in its PDF (Angad, 19 Oct): by name, the no-shows at the bottom. */
 function d1Order(list) { return list.slice().sort((a, b) => (a.day1_status === 'no_show') - (b.day1_status === 'no_show') || a.full_name.localeCompare(b.full_name)); }
-/** "Starting the next day instead" (Monday → Tuesday): the next weekday's name, or '' when that day has gone or is a weekend. */
-function nextDayName(c, today) {
-  const nd = addDays(c.academy_date, 1), w = D(nd).getUTCDay();
-  return nd >= today && w > 0 && w < 6 ? DAYS_LONG[w] : '';
+/** Some starters are booked for Tuesday instead of the usual Monday (Angad, 19 Oct): a Monday starter can move to
+ *  Tuesday, a Tuesday one back to Monday (the undo), before the day or on it, while that day is still to come. */
+function d1Move(c, today) {
+  const w = D(c.academy_date).getUTCDay(), st = w === 1 ? 'next_day' : w === 2 ? 'prev_day' : '';
+  if (!st) return null;
+  const to = addDays(c.academy_date, st === 'next_day' ? 1 : -1);
+  return to >= today ? { st: st, day: DAYS_LONG[D(to).getUTCDay()] } : null;
 }
 function drawAcademy(r, quiet) {
   const today = r.today || S.me.today, dates = [], admin = isAdmin();
@@ -2259,13 +2262,14 @@ function drawAcademy(r, quiet) {
     // and a no-show gets the rebook buttons
     const offer = !started && !c.offer_sent_at && !c.academy_confirmed_at && c.welcome_url && (admin || c.booker_id === S.me.user.id);
     const q = offer ? quickRow(c, 'offer') : started && c.day1_status === 'no_show' ? quickRow(c, 'rebook') : '';
-    // On the day: Arrived · No-show · Tuesday (starting the next day instead: their Day 1 moves there)
-    const nd = started ? nextDayName(c, today) : '';
+    // Booked for Tuesday instead of Monday: "📅 Tuesday" on a Monday starter ("📅 Monday" on a Tuesday one, to undo),
+    // before the day or on it: their Day 1 moves there
+    const mv = d1Move(c, today);
+    const mvBtn = mv ? '<button class="btn sm ghost" data-d1="' + mv.st + '" data-day="' + mv.day + '" data-id="' + h(c.id) + '">📅 ' + mv.day + '</button>' : '';
     const act = started
       ? '<div class="d1btns"><button class="btn sm ' + (c.day1_status === 'arrived' ? 'green' : 'ghost') + '" data-d1="arrived" data-id="' + h(c.id) + '">Arrived</button>' +
-        '<button class="btn sm ' + (c.day1_status === 'no_show' ? 'red' : 'ghost') + '" data-d1="no_show" data-id="' + h(c.id) + '">No-show</button>' +
-        (nd ? '<button class="btn sm ghost" data-d1="next_day" data-day="' + nd + '" data-id="' + h(c.id) + '">📅 ' + nd + '</button>' : '') + '</div>'
-      : offer ? '' : '<a class="btn ' + (c.no_whatsapp ? 'sms' : 'wa') + ' sm" data-rem1="' + h(c.id) + '" data-via="' + (c.no_whatsapp ? 'sms' : 'whatsapp') + '" target="_blank" rel="noopener" href="' + h(msgUrl(c, msgDay1Reminder(c))) + '">💬 Remind</a>';
+        '<button class="btn sm ' + (c.day1_status === 'no_show' ? 'red' : 'ghost') + '" data-d1="no_show" data-id="' + h(c.id) + '">No-show</button>' + mvBtn + '</div>'
+      : offer && !mvBtn ? '' : '<div class="d1btns">' + (offer ? '' : '<a class="btn ' + (c.no_whatsapp ? 'sms' : 'wa') + ' sm" data-rem1="' + h(c.id) + '" data-via="' + (c.no_whatsapp ? 'sms' : 'whatsapp') + '" target="_blank" rel="noopener" href="' + h(msgUrl(c, msgDay1Reminder(c))) + '">💬 Remind</a>') + mvBtn + '</div>';
     return '<div class="trow' + (q ? ' d1q' : '') + (c.day1_status === 'arrived' ? ' arrived' : '') + '" data-cand="' + h(c.id) + '">' + avatar(c) + '<div class="main"><div class="name">' + h(c.full_name) + ' <span class="co ' + h(c.company) + '">' + h(c.company) + '</span></div>' +
       '<div class="sub">' + (c.booker_name ? 'booked by ' + h(c.booker_name) : 'no booker') + '</div>' +
       (c.offer_sent_at ? '<div class="sub d1by">🎉 Day 1 details ' + offerBy(c) + '</div>' : '') + '<div class="pills">' + pills + '</div></div>' + act + q + '</div>';
@@ -2292,7 +2296,7 @@ function drawAcademy(r, quiet) {
     upcoming.map(block).join('') +
     (past.length ? '<div class="datehead" style="margin-top:22px">Last week</div>' + past.map(block).join('') : '') +
     '<p class="hint">' + (admin ? '📲 Send reminders: the Day 1 reminder to every starter, signed by you (Jess / Rubal: you get a nudge at 10:00 on the day). 👍 When someone replies Yes, tap "They replied Yes". 📄 New Starts List: the sign-in sheet for the room. ' : '💬 Remind sends them the Day 1 reminder (time, address, Maps pin). 👍 When they reply Yes, tap "They replied Yes". ') +
-    'On Day 1, tap Arrived or No-show for everyone: that\'s your show-up rate. Starting the next day instead? Tap 📅 Tuesday (twice): they move to Tuesday\'s list. The PDF shows the same ticks.</p>', quiet, !admin);
+    'On Day 1, tap Arrived or No-show for everyone: that\'s your show-up rate. Booked for Tuesday instead of Monday? Tap 📅 Tuesday (twice), before the day or on it: they move to Tuesday\'s list (📅 Monday moves them back). The PDF shows the same ticks.</p>', quiet, !admin);
   page.querySelectorAll('.trow[data-cand] .main').forEach(el => { el.onclick = () => nav('cand', { id: el.parentNode.dataset.cand }, true); });
   page.querySelectorAll('.nm[data-cand]').forEach(b => { b.onclick = () => nav('cand', { id: b.dataset.cand }, true); });
   bindItems(page);  // the Day 1 details / rebook buttons
@@ -2314,14 +2318,14 @@ function drawAcademy(r, quiet) {
   page.querySelectorAll('[data-d1]').forEach(b => {
     b.onclick = () => {
       const c = r.items.filter(x => x.id === b.dataset.id)[0]; if (!c) return;
-      const move = b.dataset.d1 === 'next_day';
+      const move = b.dataset.d1 === 'next_day' || b.dataset.d1 === 'prev_day';
       // Moving their Day 1 is a bigger change than a tick: the first tap asks, the second (within 4 s) does it
       if (move && !b.classList.contains('sure')) {
         b.classList.add('sure'); b.textContent = 'Move to ' + b.dataset.day.slice(0, 3) + '?';
         setTimeout(() => { if (b.isConnected && b.classList.contains('sure')) { b.classList.remove('sure'); b.textContent = '📅 ' + b.dataset.day; } }, 4000);
         return;
       }
-      const st = move ? 'next_day' : c.day1_status === b.dataset.d1 ? '' : b.dataset.d1;  // tap again to clear
+      const st = move ? b.dataset.d1 : c.day1_status === b.dataset.d1 ? '' : b.dataset.d1;  // tap again to clear
       busy(b, true, '…');
       call('markDay1', { id: c.id, status: st }).then(nc => {
         Object.assign(c, nc); upsert(nc); drawAcademy(r, true);
