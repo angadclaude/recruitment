@@ -52,10 +52,15 @@ function postgresAdapter({ url, password, limits }) {
   const L = Object.assign({ idle: 20000, connect: 6000, query: 25000 }, limits);
   const make = () => postgres(url, { password, max: 4, prepare: false, idle_timeout: 20, connect_timeout: 15, onnotice: () => {} });
   let sql = make(), used = Date.now();
-  // The old connections close in the background (anything still running on them gets 5 s)
-  const renew = () => { const old = sql; sql = make(); old.end({ timeout: 5 }).catch(() => {}); };
-  const pool = () => { if (Date.now() - used > L.idle) renew(); used = Date.now(); return sql; };
-  const step = (p, ms, what) => timed(p, ms, what).then(r => { used = Date.now(); return r; }, e => { if (e.stuck) renew(); throw e; });
+  // After a quiet spell the old connections are closed 5 minutes later (something still holding the old `sql`, like
+  // the Sheet copy, keeps working); after a stuck step they're closed now (anything still running on them gets 5 s)
+  const renew = stuck => {
+    const old = sql, close = () => old.end({ timeout: 5 }).catch(() => {});
+    sql = make();
+    if (stuck) close(); else setTimeout(close, 300000).unref();
+  };
+  const pool = () => { if (Date.now() - used > L.idle) renew(false); used = Date.now(); return sql; };
+  const step = (p, ms, what) => timed(p, ms, what).then(r => { used = Date.now(); return r; }, e => { if (e.stuck) renew(true); throw e; });
   return {
     get sql() { return pool(); },
     async begin() {
