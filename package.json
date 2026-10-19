@@ -2,13 +2,16 @@
   "name": "jl-recruitment",
   "private": true,
   "description": "LINK x JUSS Recruitment app: static app in join/, back end in api/ + server/ (Code.gs on Supabase)",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "build": "node app/build.js",
     "e2e": "node app/dev/e2e.js",
     "e2e:pg": "node -e \"process.env.JL_BACKEND='pg';require('./app/dev/e2e.js')\""
   },
   "dependencies": {
+    "@vercel/functions": "^3.10.1",
     "postgres": "^3.4.5"
   },
   "devDependencies": {

@@ -1,5 +1,6 @@
 // The app's API on Vercel: the same { action, token, … } requests and answers as Google's /exec (Code.gs api()).
 'use strict';
+const { waitUntil } = require('@vercel/functions');
 const { runtime, REHEARSAL } = require('../server/live');
 
 // Until switch day the live address answers nothing (the data here is a rehearsal copy); test copies (REHEARSAL) do.
@@ -21,7 +22,8 @@ module.exports = async (req, res) => {
   try {
     const rt = await runtime();
     if (!(await isLive(rt))) return res.end(JSON.stringify({ ok: false, error: 'Not switched on yet.' }));
-    const out = await rt.call('api', body);
+    // Answer first, then the emails (a login code: "Check your email" straight away, the email a moment later)
+    const out = await rt.run({ type: 'call', fn: 'api', args: [body], later: process.env.VERCEL ? waitUntil : null });
     res.end(JSON.stringify(out));
   } catch (e) {
     console.error('rpc', body.action, e);
