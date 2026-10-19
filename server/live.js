@@ -33,6 +33,16 @@ async function http(reqs) {
   }));
 }
 
+/** A MailApp message ({ via: 'mail', msg }) as a Gmail one ({ via: 'gmail', to, subject, body, opts }); null if it isn't one. */
+function viaGmail(m) {
+  if (!m || m.via !== 'mail' || !m.msg || !m.msg.to) return null;
+  const x = m.msg, opts = {};
+  ['htmlBody', 'name', 'cc', 'bcc', 'replyTo', 'noReply'].forEach(k => { if (x[k] !== undefined && x[k] !== '') opts[k] = x[k]; });
+  const text = x.body || String(x.htmlBody || '').replace(/<br\s*\/?>/gi, '\n').replace(/<\/(p|div|h\d|li|tr)>/gi, '\n').replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\n{3,}/g, '\n\n').trim();
+  return { via: 'gmail', to: x.to, subject: x.subject || '', body: text, opts };
+}
+
 /** Google sends the emails (same Gmail, same "send mail as" addresses); asked through Code.gs's relay. */
 function relay(db) {
   let info = null, infoAt = 0;
@@ -54,11 +64,27 @@ function relay(db) {
     const to = (m.via === 'mail' ? [m.msg && m.msg.to, m.msg && m.msg.bcc, m.msg && m.msg.cc] : [m.to, m.opts && m.opts.bcc, m.opts && m.opts.cc]).join(',').toLowerCase();
     return to.split(/[,\s]+/).filter(Boolean).every(a => MAIL_ALLOW.includes(a));
   };
+  // MailApp's emails fail linkmarketing.org.uk's DMARC check (they leave through Google's own bounce address, not the
+  // domain's), and the domain says "quarantine" → Spam, so login codes "took forever" (19 Oct). Gmail itself (GmailApp)
+  // sends as the person and passes. Until Google has been given Gmail permission it refuses; then it's MailApp as before
+  // (the Gmail route is tried again every 10 minutes, so it starts by itself once allowed).
+  let gmailBlockedUntil = 0;
+  async function relayMail(m) {
+    const g = viaGmail(m);
+    if (g && Date.now() >= gmailBlockedUntil) {
+      try { return await call('relayMail', { mail: g }); } catch (e) {
+        if (!/permission/i.test(String(e.message))) throw e;
+        gmailBlockedUntil = Date.now() + 10 * 60000;
+        console.error('Gmail route not allowed yet, MailApp instead');
+      }
+    }
+    return call('relayMail', { mail: m });
+  }
   async function sendOne(id) {
     const row = (await db.sql`select payload, sent_at from jl.outbox where id = ${id}::bigint`)[0];
     if (!row || row.sent_at) return;
     try {
-      if (allowed(row.payload)) await call('relayMail', { mail: row.payload });
+      if (allowed(row.payload)) await relayMail(row.payload);
       await db.sql`update jl.outbox set sent_at = now(), tries = tries + 1, error = ${allowed(row.payload) ? null : 'rehearsal: not sent'} where id = ${id}::bigint`;
     } catch (e) {
       await db.sql`update jl.outbox set tries = tries + 1, error = ${String(e.message || e).slice(0, 500)} where id = ${id}::bigint`;
@@ -108,4 +134,4 @@ async function start() {
   return (RT = rt);
 }
 
-module.exports = { runtime, relay: () => RELAY, db: () => DB, TRIGGERS, REHEARSAL };
+module.exports = { runtime, relay: () => RELAY, db: () => DB, TRIGGERS, REHEARSAL, _test: { viaGmail, relay } };
