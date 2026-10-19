@@ -1235,6 +1235,18 @@ async function fillEval(p) {
   ok(tue.academy_date === '2026-10-20' && !tue.day1_status && !(await api(admin, 'academyList', {})).items.some(c => c.id === adham.id && c.academy_date === '2026-10-19'),
     'the second tap moves Adham\'s Day 1 to Tue 20 Oct: on Tuesday\'s list to tick there, off Monday\'s (and its PDF)');
   await shot(ap, '28b-day1-moved-to-tuesday', true);
+  // One New Starts List for the week: Monday's and Tuesday's 📄 give the same PDF, each person with their start day
+  const wkPdf = async x => {
+    const [d] = await Promise.all([ap.waitForEvent('download'), ap.click('[data-pdf="' + x + '"]')]);
+    const pth = `${SHOTS}/31-week-starts-${x}.pdf`; await d.saveAs(pth);
+    return { name: d.suggestedFilename(), raw: fs.readFileSync(pth, 'latin1'), pth: pth };
+  };
+  const pMon = await wkPdf('2026-10-19'), pTue = await wkPdf('2026-10-20');
+  const facts = p => [p.name, /Monday 19 & Tuesday 20 October 2026/.test(p.raw), /2 expected \\\(Mon 19 Oct: 1 · Tue 20 Oct: 1\\\)/.test(p.raw),
+    /\(Starts\) Tj/.test(p.raw), /\(Mon 19 Oct\) Tj/.test(p.raw), /\(Tue 20 Oct\) Tj/.test(p.raw), p.raw.indexOf('(Jasraj Bhuller)') > 0 && p.raw.indexOf('(Jasraj Bhuller)') < p.raw.indexOf('(Adham Soliman)')].join('|');
+  ok(facts(pMon) === 'New Starts List 19.10.2026.pdf|true|true|true|true|true|true' && facts(pTue) === facts(pMon),
+    'Monday\'s and Tuesday\'s 📄 give the same New Starts List for the week: "Monday 19 & Tuesday 20 October 2026", "2 expected (Mon 19 Oct: 1 · Tue 20 Oct: 1)", a Starts column (Jasraj Mon 19 Oct, then Adham Tue 20 Oct)');
+  try { require('child_process').execFileSync('pdftoppm', ['-png', '-r', '70', '-singlefile', pMon.pth, `${SHOTS}/31-week-starts`]); } catch (e) { /* no renderer here */ }
   const monB = '[data-d1="prev_day"][data-id="' + adham.id + '"]';
   await ap.waitForSelector(monB);
   ok(/📅 Monday/.test(await ap.textContent(monB)) && !(await ap.$('[data-d1="next_day"][data-id="' + adham.id + '"]')), 'on Tuesday\'s list he has "📅 Monday" instead, to undo it');

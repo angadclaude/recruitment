@@ -2235,8 +2235,11 @@ function viewAcademy(quiet) {
   }).catch(e => { if (S.viewId === id && !S.academy) paint('Day 1', '<div class="err">' + h(/Unknown action/.test(e.message) ? 'Paste the new Google code (Code.gs) into Apps Script first, then open this again.' : e.message) + '</div>', false, !isAdmin()); });
 }
 function remindedToday(c) { return String(c.day1_reminded_at || '').slice(0, 10) === ((S.academy && S.academy.today) || S.me.today); }
-/** One order for a Day 1 list on screen and in its PDF (Angad, 19 Oct): by name, the no-shows at the bottom. */
-function d1Order(list) { return list.slice().sort((a, b) => (a.day1_status === 'no_show') - (b.day1_status === 'no_show') || a.full_name.localeCompare(b.full_name)); }
+/** One order for a Day 1 list on screen and in the week's PDF (Angad, 19 Oct): Monday's starters then Tuesday's, by name,
+ *  the no-shows at the bottom. */
+function d1Order(list) {
+  return list.slice().sort((a, b) => (a.day1_status === 'no_show') - (b.day1_status === 'no_show') || a.academy_date.localeCompare(b.academy_date) || a.full_name.localeCompare(b.full_name));
+}
 /** Some starters are booked for Tuesday instead of the usual Monday (Angad, 19 Oct): a Monday starter can move to
  *  Tuesday, a Tuesday one back to Monday (the undo), before the day or on it, while that day is still to come. */
 function d1Move(c, today) {
@@ -2306,7 +2309,10 @@ function drawAcademy(r, quiet) {
     if (c) { c.offer_sent_at = londonNow(); setTimeout(() => { if (S.view === 'academy') drawAcademy(r, true); }, 400); }
   }));
   page.querySelectorAll('[data-remall]').forEach(b => { b.onclick = () => day1Sheet(b.dataset.remall); });
-  page.querySelectorAll('[data-pdf]').forEach(b => { b.onclick = () => { const x = b.dataset.pdf; savePdf(day1Pdf(x, r.items.filter(c => c.academy_date === x)), newStartsName(x) + '.pdf'); }; });
+  // One New Starts List per week: Monday's and Tuesday's buttons give the same PDF, with everyone starting that week
+  page.querySelectorAll('[data-pdf]').forEach(b => {
+    b.onclick = () => { const mon = d1WeekStart(b.dataset.pdf); savePdf(day1Pdf(mon, r.items.filter(c => d1WeekStart(c.academy_date) === mon)), newStartsName(mon) + '.pdf'); };
+  });
   page.querySelectorAll('[data-rem1]').forEach(a => a.addEventListener('click', () => markReminded(r.items.filter(x => x.id === a.dataset.rem1)[0], a.dataset.via)));
   page.querySelectorAll('[data-yes]').forEach(b => {
     b.onclick = e => {
@@ -2479,12 +2485,23 @@ function pdfStr(s) {
 }
 /** "New Starts List 19.10.2026": the Day 1 list's title and file name, for the week it's for (Angad, 18 Oct). */
 function newStartsName(date) { return 'New Starts List ' + date.slice(8, 10) + '.' + date.slice(5, 7) + '.' + date.slice(0, 4); }
-function day1Pdf(date, list) {
+/** The Monday of a Day 1's week: one New Starts List per week, Monday and Tuesday starters together (Angad, 19 Oct). */
+function d1WeekStart(ymd) { return addDays(weekEndingOf(ymd), -6); }
+/** "Monday 19 October 2026", or "Monday 19 & Tuesday 20 October 2026" when some start on the Tuesday. */
+function d1Days(dates) {
+  const d = dates.map(D), last = d[d.length - 1], sameMonth = d.every(x => x.getUTCMonth() === last.getUTCMonth());
+  return (sameMonth ? d.map(x => DAYS_LONG[x.getUTCDay()] + ' ' + x.getUTCDate()).join(' & ') + ' ' + MONTHS_LONG[last.getUTCMonth()]
+    : dates.map(fmtLong).join(' & ')) + ' ' + last.getUTCFullYear();
+}
+/** The week's New Starts List: everyone starting that week (Monday and Tuesday), each with their start day and date. */
+function day1Pdf(mon, list) {
   const W = 595.28, H = 841.89, M = 36, RH = 24, PER = 24;
-  const cols = [['#', 20], ['Name', 128], ['Co', 40], ['Mobile', 82], ['Booked by', 88], ['Confirmed', 52], ['Arrived', 46], ['Notes', 67]];
-  // Same order and ticks as the Day 1 tab (Angad, 19 Oct): arrived rows light green, no-shows at the bottom
+  const cols = [['#', 20], ['Name', 116], ['Co', 36], ['Mobile', 78], ['Starts', 50], ['Booked by', 80], ['Confirmed', 52], ['Arrived', 46], ['Notes', 45]];
+  // Same order and ticks as the Day 1 tab (Angad, 19 Oct): Monday's then Tuesday's, arrived rows light green, no-shows at the bottom
   const rows = d1Order(list), conf = rows.filter(c => c.academy_confirmed_at).length;
   const arr = rows.filter(c => c.day1_status === 'arrived').length, ns = rows.filter(c => c.day1_status === 'no_show').length, ticked = arr + ns > 0;
+  const dates = rows.map(c => c.academy_date).filter((x, i, a) => a.indexOf(x) === i).sort();
+  const perDay = dates.length > 1 ? ' (' + dates.map(x => fmt(x) + ': ' + rows.filter(c => c.academy_date === x).length).join(' · ') + ')' : '';
   const fit = (s, w, size) => { s = String(s || ''); const max = Math.floor(w / (size * 0.55)); return s.length <= max ? s : s.slice(0, Math.max(1, max - 2)) + '...'; };
   const pages = [];
   for (let p = 0; p === 0 || p * PER < rows.length; p++) pages.push(rows.slice(p * PER, (p + 1) * PER));
@@ -2492,11 +2509,11 @@ function day1Pdf(date, list) {
     const o = [];
     const txt = (x, y, s, size, bold, grey, col) => o.push((col || (grey ? '0.42 0.42 0.47' : '0.13 0.13 0.17')) + ' rg BT /' + (bold ? 'F2' : 'F1') + ' ' + size + ' Tf ' + x.toFixed(2) + ' ' + y.toFixed(2) + ' Td (' + pdfStr(s) + ') Tj ET');
     o.push('0.95 0.42 0.11 rg 0 ' + (H - 10).toFixed(2) + ' ' + (W / 2).toFixed(2) + ' 10 re f', '0.05 0.6 0.6 rg ' + (W / 2).toFixed(2) + ' ' + (H - 10).toFixed(2) + ' ' + (W / 2).toFixed(2) + ' 10 re f');
-    txt(M, H - 50, newStartsName(date), 20, true);
-    txt(M, H - 68, 'BA Academy Day 1 · ' + fmtLong(date) + ' ' + date.slice(0, 4) + ' · 1:30pm · ' + (S.me.address || 'Automotive House, Grays Place, Slough SL2 5AF'), 10);
-    txt(M, H - 84, rows.length + ' expected · ' + conf + ' confirmed · ' + (rows.length - conf) + ' not confirmed' + (ticked ? ' · ' + arr + ' arrived · ' + ns + ' no-show' : '') +
-      '  |  LINK Marketing & JUSS Marketing  |  printed ' + fmt(S.me.today) + ' ' + londonNow().slice(11) + ' by ' + S.me.user.name, 8.5, false, true);
-    const top = H - 100;
+    txt(M, H - 50, newStartsName(mon), 20, true);
+    txt(M, H - 68, 'BA Academy Day 1 · ' + d1Days(dates.length ? dates : [mon]) + ' · 1:30pm · ' + (S.me.address || 'Automotive House, Grays Place, Slough SL2 5AF'), 10);
+    txt(M, H - 84, rows.length + ' expected' + perDay + ' · ' + conf + ' confirmed · ' + (rows.length - conf) + ' not confirmed' + (ticked ? ' · ' + arr + ' arrived · ' + ns + ' no-show' : ''), 8.5, false, true);
+    txt(M, H - 96, 'LINK Marketing & JUSS Marketing  |  printed ' + fmt(S.me.today) + ' ' + londonNow().slice(11) + ' by ' + S.me.user.name, 8.5, false, true);
+    const top = H - 110;
     o.push('0.94 0.93 0.91 rg ' + M + ' ' + (top - 20).toFixed(2) + ' 523 20 re f');
     let x = M; cols.forEach(c => { txt(x + 4, top - 14, c[0], 8.5, true); x += c[1]; });
     chunk.forEach((c, i) => {
@@ -2507,15 +2524,16 @@ function day1Pdf(date, list) {
       txt(at(1), y, fit(c.full_name, cols[1][1] - 8, 10), 10, true);
       txt(at(2), y, c.company || '', 9);
       txt(at(3), y, c.mobile || '', 9);
-      txt(at(4), y, fit(c.booker_name || '-', cols[4][1] - 8, 9), 9);
-      txt(at(5), y, c.academy_confirmed_at ? 'Yes' : 'No', 9, !c.academy_confirmed_at);
+      txt(at(4), y, fmt(c.academy_date), 9, D(c.academy_date).getUTCDay() !== 1);  // a Tuesday start in bold: it's the exception
+      txt(at(5), y, fit(c.booker_name || '-', cols[5][1] - 8, 9), 9);
+      txt(at(6), y, c.academy_confirmed_at ? 'Yes' : 'No', 9, !c.academy_confirmed_at);
       // Arrived: what was ticked in the app, or an empty box to tick by hand
-      if (c.day1_status === 'arrived') txt(at(6), y, 'Yes', 9, true, false, '0.08 0.5 0.25');
-      else if (c.day1_status === 'no_show') txt(at(6), y, 'No-show', 9, true, false, '0.8 0.15 0.15');
-      else o.push('0.2 0.2 0.25 RG 0.8 w ' + (at(6) + 12).toFixed(2) + ' ' + (b + 6.5).toFixed(2) + ' 11 11 re S');
+      if (c.day1_status === 'arrived') txt(at(7), y, 'Yes', 9, true, false, '0.08 0.5 0.25');
+      else if (c.day1_status === 'no_show') txt(at(7), y, 'No-show', 9, true, false, '0.8 0.15 0.15');
+      else o.push('0.2 0.2 0.25 RG 0.8 w ' + (at(7) + 12).toFixed(2) + ' ' + (b + 6.5).toFixed(2) + ' 11 11 re S');
       o.push('0.85 0.84 0.82 RG 0.5 w ' + M + ' ' + b.toFixed(2) + ' m ' + (M + 523) + ' ' + b.toFixed(2) + ' l S');
     });
-    if (!chunk.length) txt(M + 4, top - 38, 'Nobody booked for this day.', 10, false, true);
+    if (!chunk.length) txt(M + 4, top - 38, 'Nobody booked for this week.', 10, false, true);
     if (p === pages.length - 1) {
       const y = top - 20 - Math.max(chunk.length, 1) * RH - 34;
       txt(M, y, (ticked ? 'Arrived: ' + arr + ' of ' + rows.length + (ns ? '  ·  No-show: ' + ns : '') : 'Arrived: ______ of ' + rows.length) + '          Checked by: ___________________________', 10);
@@ -2524,7 +2542,7 @@ function day1Pdf(date, list) {
     txt(W - M - 52, 24, 'Page ' + (p + 1) + ' of ' + pages.length, 8, false, true);
     return o.join('\n');
   });
-  return pdfFile(streams, newStartsName(date));
+  return pdfFile(streams, newStartsName(mon));
 }
 /** The PDF file around A4 pages of drawing commands (Helvetica F1, Helvetica-Bold F2). title: what PDF viewers show. */
 function pdfFile(streams, title) {

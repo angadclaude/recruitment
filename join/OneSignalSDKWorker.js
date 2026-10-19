@@ -3,8 +3,8 @@ try { importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js')
 
 // Pages (and config) come from the network first, so a new version shows up on the very next open;
 // the phone's copy is only used when there's no signal. Versioned files (?v=…) and images are safe to serve from the copy.
-const CACHE = 'recruit-acc428d0';
-const SHELL = ['index.html', 'checkin.html', 'eval.html', 'app.css?v=acc428d0', 'app.js?v=acc428d0', 'logos.js?v=acc428d0', 'qr.js?v=acc428d0', 'bulletin.js?v=acc428d0',
+const CACHE = 'recruit-360e597a';
+const SHELL = ['index.html', 'checkin.html', 'eval.html', 'app.css?v=360e597a', 'app.js?v=360e597a', 'logos.js?v=360e597a', 'qr.js?v=360e597a', 'bulletin.js?v=360e597a',
   'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-180.png',
   'fonts/anton-latin-400-normal.woff2', 'fonts/oswald-latin-500-normal.woff2', 'fonts/oswald-latin-600-normal.woff2', 'fonts/oswald-latin-700-normal.woff2'];
 self.addEventListener('install', e => {
@@ -15,7 +15,7 @@ self.addEventListener('activate', e => {
     .then(() => self.clients.claim()));
 });
 // The app asks which version this is, so it only reloads when there's actually something new to show.
-self.addEventListener('message', e => { if (e.data === 'version' && e.ports && e.ports[0]) e.ports[0].postMessage('acc428d0'); });
+self.addEventListener('message', e => { if (e.data === 'version' && e.ports && e.ports[0]) e.ports[0].postMessage('360e597a'); });
 function pageKey(u) { return u.origin + u.pathname + (u.pathname.slice(-1) === '/' ? 'index.html' : ''); }
 self.addEventListener('fetch', e => {
   const r = e.request;
