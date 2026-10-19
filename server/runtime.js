@@ -70,13 +70,15 @@ class Runtime {
       case 'tab.create': await q('insert into jl.tabs (name) values ($1) on conflict do nothing', [a[0]]); return null;
       case 'tab.list': return (await q('select name from jl.tabs order by created_at, name')).map(r => r.name);
       case 'tab.drop': await q('delete from jl.tabs where name = $1', [a[0]]); return null;
-      case 'tab.headers': await q('update jl.tabs set headers = $2::jsonb where name = $1', [a[0], JSON.stringify(a[1])]); return null;
+      // jsonb values go in as text then cast (::text::jsonb): with a bare ::jsonb the live driver (postgres-js) JSON-encodes
+      // the string a second time, storing a JSON *string* (19 Oct 2026: a login-code email went out with no recipient)
+      case 'tab.headers': await q('update jl.tabs set headers = $2::text::jsonb where name = $1', [a[0], JSON.stringify(a[1])]); return null;
       case 'tab.max': await q('update jl.tabs set max_rows = $2, max_cols = $3 where name = $1', [a[0], a[1], a[2]]); return null;
       case 'rows.write': {
         const out = [];
         for (const r of a[1]) {
-          if (r.rid) { await q('update jl.rows set vals = $2::jsonb where rid = $1::bigint', [r.rid, JSON.stringify(r.vals)]); out.push(r.rid); }
-          else out.push((await q('insert into jl.rows (tab, vals) values ($1, $2::jsonb) returning rid::text as rid', [a[0], JSON.stringify(r.vals)]))[0].rid);
+          if (r.rid) { await q('update jl.rows set vals = $2::text::jsonb where rid = $1::bigint', [r.rid, JSON.stringify(r.vals)]); out.push(r.rid); }
+          else out.push((await q('insert into jl.rows (tab, vals) values ($1, $2::text::jsonb) returning rid::text as rid', [a[0], JSON.stringify(r.vals)]))[0].rid);
         }
         return out;
       }
@@ -100,7 +102,7 @@ class Runtime {
       case 'http': return this.o.http(a[0]);
       case 'mail.send': {
         if (this.o.testMode) { this.testMail.push(testMailRow(a[0])); return null; }
-        const id = (await q('insert into jl.outbox (payload) values ($1::jsonb) returning id::text as id', [JSON.stringify(a[0])]))[0].id;
+        const id = (await q('insert into jl.outbox (payload) values ($1::text::jsonb) returning id::text as id', [JSON.stringify(a[0])]))[0].id;
         this.sent.push(id);
         return null;
       }
