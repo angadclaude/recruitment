@@ -159,6 +159,13 @@ const book = {
 
 // ───── The rest of the Google services Code.gs uses ─────
 const ENV_PROPS = ['ONESIGNAL_API_KEY'];  // secrets live in Vercel's settings, never in the database
+/** A secret: from Vercel's settings, else asked for the first time it's needed (the phone-alert key comes from Google). */
+function secret(k) {
+  if (env[k]) return env[k];
+  const v = io('secret', k);
+  if (v) env[k] = v;  // kept for this server instance; a failed ask is asked again next time
+  return v || null;
+}
 function fmtDate(d, tz, f) {
   const parts = new Intl.DateTimeFormat('en-GB', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
     .formatToParts(d).reduce((a, p) => (a[p.type] = p.value, a), {});
@@ -170,7 +177,7 @@ const ctx = {
   console,
   SpreadsheetApp: { getActive: () => book, openById: () => book, flush: () => {} },
   PropertiesService: { getScriptProperties: () => ({
-    getProperty: k => (!testMode && ENV_PROPS.includes(k) ? (env[k] || null) : io('props.get', k)),
+    getProperty: k => (!testMode && ENV_PROPS.includes(k) ? secret(k) : io('props.get', k)),
     setProperty: (k, v) => { io('props.set', k, String(v)); },
     setProperties: o => { Object.keys(o).forEach(k => io('props.set', k, String(o[k]))); },
     deleteProperty: k => { io('props.delete', k); },

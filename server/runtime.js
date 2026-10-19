@@ -13,7 +13,8 @@ class Runtime {
    * @param {object} o.db       server/db.js adapter (begin() → { q, commit, rollback, cycle, release })
    * @param {function} [o.http] async (reqs) → [{ code, text }]  (live: real fetch; tests use the worker's fake)
    * @param {object} [o.mail]   { quota(): number, aliases(): string[], deliver(rows) } (live: Google relay)
-   * @param {object} [o.env]    PUBLIC_URL, OWNER_EMAIL, ONESIGNAL_API_KEY, TRIGGERS
+   * @param {object} [o.env]    PUBLIC_URL, OWNER_EMAIL, TRIGGERS (ONESIGNAL_API_KEY if it's in Vercel's settings)
+   * @param {function} [o.secret] async (name) → a secret asked for on first use (live: the phone-alert key from Google)
    * @param {boolean} [o.testMode]
    */
   constructor(o) {
@@ -108,6 +109,7 @@ class Runtime {
       }
       case 'mail.quota': return this.o.testMode ? 1500 - this.testMail.length : this.o.mail.quota();
       case 'mail.aliases': return this.o.mail.aliases();
+      case 'secret': return this.o.secret ? (await this.o.secret(a[0])) || null : null;  // live.js: the phone-alert key, on first use
       default: throw new Error('Unknown database call: ' + op);
     }
   }
