@@ -1600,6 +1600,8 @@ async function fillEval(p) {
   ok(stOf(ali.id) === 'stale' && stOf(kid.id) === 'callback',
     'over 2 weeks on "No answer": still on Chase as "🔴 Stale: close it out" (Ali); a call-back time still to come keeps them a call back (Young, Thu 18:00)');
   await ap.goto(APP + 'index.html?c=chase'); await ap.waitForSelector('[data-nudge]');
+  // The phone shows its saved copy of Chase first, then the fresh one a moment later
+  await ap.waitForFunction(() => /🔴 Stale: close it out: Ali/.test(document.getElementById('page').innerText), null, { timeout: 10000 }).catch(() => {});
   ok(/🔴 Stale: close it out: Ali/.test(await ap.innerText('#page')), 'admin Chase tab: "🔴 Stale: close it out: Ali" on Fiza\'s card');
   const stP0 = (await pushesTo(fiza.id)).length;
   await api(admin, 'chaseOutcomes', { ids: [fiza.id] });
