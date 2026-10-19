@@ -37,20 +37,20 @@
     $('title').textContent = first;
     $('lead').textContent = 'Your apps, one tap away.';
     $('chips').innerHTML = (person.company ? '<span class="chip">' + esc(person.company) + '</span>' : '') +
-      (d.stage ? '<span class="chip">Stage ' + d.stage + ' · ' + esc(d.stageName) + '</span>' : '') +
+      (d.stageLabel ? '<span class="chip">' + esc(d.stageLabel) + '</span>' : '') +
       (d.admin ? '<span class="chip">Admin</span>' : d.approver ? '<span class="chip">Approver</span>' : '');
   }
 
   // CG1-style path: where you are, and what opens next
   function journey(d) {
     if (!d.stage) { $('journey').hidden = true; return; }
+    // Angad's ladder: Stages 1 & 2 = Brand Ambassador (the playbook's Cycle of Development 1, then 2 "Becoming a Leader"), Stage 3 = Leader
     const pb = d.person.company === 'JUSS' ? 'HelloFresh Playbook' : 'Fund Raising Playbook';
     const steps = [
-      { n: 1, t: 'Candidate', s: 'Interview and BA Academy' },
-      { n: 2, t: 'Brand Ambassador', s: 'Your ' + pb + ' is open' },
-      { n: 3, t: 'Leader', s: d.stage >= 3 ? (d.waitingForLeaders ? 'Approved · your Leaders Playbook opens very soon' : 'Your Leaders Playbook is open') : 'Opens when an approver moves you on' },
+      { n: 2, dot: '1–2', t: 'Brand Ambassador', s: 'Stages 1 & 2 · your ' + pb + ' and Cycle of Development' },
+      { n: 3, dot: '3', t: 'Leader', s: d.stage >= 3 ? (d.waitingForLeaders ? 'Approved · your Leaders Playbook opens very soon' : 'Stage 3 · your Leaders Playbook is open') : 'Stage 3 · opens when an approver moves you on' },
     ];
-    $('ladder').innerHTML = steps.map(x => '<li class="' + (x.n < d.stage ? 'done' : x.n === d.stage ? 'now' : 'next') + '"><div class="dot">' + (x.n < d.stage ? '✓' : x.n) + '</div><div><b>' + esc(x.t) + '</b><span>' + esc(x.s) + '</span></div></li>').join('');
+    $('ladder').innerHTML = steps.map(x => '<li class="' + (x.n < d.stage ? 'done' : x.n === d.stage ? 'now' : 'next') + '"><div class="dot">' + (x.n < d.stage ? '✓' : x.dot) + '</div><div><b>' + esc(x.t) + '</b><span>' + esc(x.s) + '</span></div></li>').join('');
     $('journey').hidden = false;
   }
 
@@ -60,7 +60,7 @@
     const f = $('teamSearch').value.trim().toLowerCase();
     const list = TEAM.filter(p => !f || p.name.toLowerCase().includes(f)).slice(0, 60);
     $('people').innerHTML = list.map(p => '<div class="person"><div class="who"><b>' + esc(p.name) + '</b><span>' + esc(p.company) + ' · ' + (p.app === 'fr' ? 'FR' : 'HelloFresh') + (p.email ? '' : ' · needs to sign in once') + '</span></div>' +
-      (p.stage >= 3 ? '<span class="badge l">Leader</span>' : p.canPromote ? '<button class="mini" data-app="' + p.app + '" data-id="' + esc(p.id) + '" data-name="' + esc(p.name) + '">Advance to Leader</button>' : '<span class="badge">BA</span>') + '</div>').join('') ||
+      (p.stage >= 3 ? '<span class="badge l">Leader</span>' : p.canPromote ? '<button class="mini" data-app="' + p.app + '" data-id="' + esc(p.id) + '" data-name="' + esc(p.name) + '">Move to Stage 3</button>' : '<span class="badge">BA</span>') + '</div>').join('') ||
       '<p class="hint" style="margin:6px 2px">Nobody matches.</p>';
   }
   function loadTeam() {
@@ -74,7 +74,7 @@
   $('teamSearch').addEventListener('input', drawTeam);
   $('people').addEventListener('click', e => {
     const b = e.target.closest('button.mini'); if (!b) return;
-    if (!b.classList.contains('sure')) { b.classList.add('sure'); b.textContent = 'Tap to confirm'; setTimeout(() => { if (b.isConnected && !b.disabled) { b.classList.remove('sure'); b.textContent = 'Advance to Leader'; } }, 4000); return; }
+    if (!b.classList.contains('sure')) { b.classList.add('sure'); b.textContent = 'Tap to confirm'; setTimeout(() => { if (b.isConnected && !b.disabled) { b.classList.remove('sure'); b.textContent = 'Move to Stage 3'; } }, 4000); return; }
     b.disabled = true; b.textContent = 'Moving on…';
     api('promote', { app: b.dataset.app, id: b.dataset.id }).then(r => {
       const m = $('moveMsg'); m.className = 'msg ' + (r.ok ? 'ok' : 'err'); m.hidden = false;
