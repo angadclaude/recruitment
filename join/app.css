@@ -154,6 +154,17 @@ textarea.short { min-height: 64px; }
 .leakline { font-size: 13px; color: var(--muted); margin-top: 6px; line-height: 1.9; }
 .nm { border: 0; background: var(--soft); color: var(--ink); border-radius: 10px; padding: 3px 9px; margin: 0 2px; font: inherit; font-weight: 700; cursor: pointer; }
 .card.needs { margin-top: 12px; border: 2px solid var(--brand); }
+/* Chase: last weeks' people still open, folded at the top of this week */
+details.carry { margin-top: 12px; border: 2px solid var(--amber); }
+details.carry > summary { list-style: none; cursor: pointer; display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; }
+details.carry > summary::-webkit-details-marker { display: none; }
+details.carry > summary span { font-size: 13px; color: var(--muted); }
+details.carry > summary::after { content: '▾'; margin-left: auto; color: var(--muted); transition: transform .2s; }
+details.carry[open] > summary::after { transform: rotate(180deg); }
+details.carry .list { margin-top: 8px; }
+.quick.qclose { display: grid; grid-template-columns: 1fr 1fr; }
+.trow.d1q { flex-wrap: wrap; }
+.trow.d1q > .quick { flex-basis: 100%; margin-top: 2px; }
 .d1tools { margin: 0 0 10px; }
 /* New starter onboarding (admins) */
 .onb { border: 2px solid var(--brand); }

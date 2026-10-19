@@ -583,10 +583,17 @@ async function fillEval(p) {
   const pend = await api(await loginApi('mo@example.com'), 'saveOutcome', { id: ishita.id, outcome: 'Academy booked', academy_date: '2026-10-19', outcome_notes: 'keen' });
   ok(pend.admin_status === 'pending', 'RED candidate booked by booker → waits for admin');
   ok((await pushesTo(angadId)).some(p => /Decision needed/.test(p.body.headings.en)), 'PUSH → admins: "Decision needed"');
+  const d1p = await api(admin, 'academyList', {});
+  ok((d1p.pending || []).some(c => c.id === ishita.id) && !d1p.items.some(c => c.id === ishita.id) && !(await api(await loginApi('mo@example.com'), 'academyList', {})).pending &&
+    !(await api(admin, 'chaseList', {})).items.some(c => c.id === ishita.id),
+    'the decision waits on the Day 1 tab for admins, not on Chase (bookers don\'t get that list)');
 
   const ad = await browser.newContext(PHONE);
   const ap = await ad.newPage();
   await loginUi(ap, 'angad@linkmarketing.org.uk');
+  await ap.goto(APP + 'index.html?c=academy'); await ap.waitForSelector('.card.needs');
+  ok(/⚖️ Waiting on your decision · 1/.test(await ap.innerText('.card.needs')) && /Ishita/.test(await ap.innerText('.card.needs')),
+    'Day 1 tab: "⚖️ Waiting on your decision · 1: Ishita" (tap the name to approve or decline)');
   await ap.goto(APP + 'index.html?c=' + adham.id);
   await ap.waitForSelector('a.wa[data-kind=offer]');
   ok(!(await ap.$('a.wa[data-kind=thanks]')) && /Thank-you not sent yet · Rubal Oshan sends it/.test(await ap.innerText('body')), 'admin (Angad) can see Adham\'s JUSS thank-you isn\'t sent yet, and that Rubal sends it');
@@ -788,28 +795,42 @@ async function fillEval(p) {
   ok(rTeam && /Tap to chase them in one go/.test(rTeam.body.contents.en) && /\?c=chase$/.test(rTeam.body.web_url), 'the team roundup opens the Chase tab when tapped');
   ok(rFiza && /\?c=chase$/.test(rFiza.body.web_url), "each booker's roundup opens their own Chase tab");
 
-  // ── Chase tab: everyone who could drop out of the pipeline, one tap nudges every booker (no copy-pasting from the sheet) ──
-  const BL = ['stale', 'log', 'callback', 'text', 'confirm', 'noshow'];
-  const pipe = (await api(admin, 'chaseList', {})).items;
-  const toChase = [...new Set(pipe.filter(c => c.booker_id && BL.includes(c.leak)).map(c => c.booker_id))];
-  const fizaLog = pipe.filter(c => c.booker_id === fiza.id && c.leak === 'log').map(c => c.first_name);
-  ok(toChase.includes(fiza.id) && fizaLog.length > 0 && !pipe.some(c => c.id === ishita.id) && pipe.some(c => c.leak === 'callback' && c.outcome === 'No answer'),
-    'Friday 15:00: ' + pipe.length + ' at risk across ' + toChase.length + ' bookers: ' + pipe.map(c => c.first_name + ' (' + c.leak + ')').join(', ') + '. "No answer" stays on until it\'s resolved; rejected Ishita isn\'t chased');
+  // ── Chase tab, week by week: this week's people at risk (+ anything carried over from earlier weeks), one tap nudges every booker ──
+  const BL = ['stale', 'log', 'callback'];
+  const weOfE = ymd => { const d = new Date(ymd + 'T12:00:00Z'), w = d.getUTCDay(); return new Date(d.getTime() + (w ? 7 - w : 0) * 86400000).toISOString().slice(0, 10); };
+  const chaseWk = c => { const cb = String(c.callback_at || '').slice(0, 10); return weOfE(cb > c.attended_date ? cb : c.attended_date); };
+  const badgeOf = (all, carry) => carry && all > carry ? (all - carry) + '+' + carry : String(all);
+  const pipeR = await api(admin, 'chaseList', {}), pipe = pipeR.items, cw = pipeR.weekEnding;
+  const nowP = pipe.filter(c => chaseWk(c) <= cw), thisP = nowP.filter(c => chaseWk(c) === cw), carryP = nowP.filter(c => chaseWk(c) < cw);
+  const toChase = [...new Set(nowP.filter(c => c.booker_id).map(c => c.booker_id))];
+  const fizaLog = thisP.filter(c => c.booker_id === fiza.id && c.leak === 'log').map(c => c.first_name);
+  ok(cw === '2026-10-18' && toChase.includes(fiza.id) && fizaLog.length > 0 && !pipe.some(c => c.id === ishita.id) && pipe.some(c => c.leak === 'callback' && c.outcome === 'No answer') && pipe.every(c => BL.includes(c.leak)),
+    'Friday 15:00, week ending 18 Oct: ' + thisP.length + ' this week + ' + carryP.length + ' carried over, across ' + toChase.length + ' bookers: ' + nowP.map(c => c.first_name + ' (' + c.leak + ')').join(', ') + '. "No answer" stays on until it\'s resolved; rejected Ishita isn\'t chased');
+  ok(!pipe.some(c => c.outcome === 'Academy booked'), 'Day 1 people (Day 1 text, not confirmed, no-show) are on the Day 1 tab only, not Chase');
   await ap.goto(APP + 'index.html?c=chase');
   await ap.waitForSelector('#nudgeAll');
   ok(await ap.textContent('#abTitle') === 'Chase' && await ap.$('.tabbar button.on[data-tab=chase]') &&
     JSON.stringify(await ap.$$eval('.tabbar button', b => b.map(x => x.dataset.tab))) === '["today","chase","academy","all","pay","team"]',
     'admin tab bar: Today · Chase · Day 1 · All · Incentive · Team, and the alert lands on Chase');
-  ok(await ap.textContent('.tabbar button[data-tab=chase] .tbadge') === String(pipe.length) && new RegExp('^' + pipe.length + ' (person|people) to chase').test(await ap.innerText('.card .display')),
-    'the Chase tab shows how many are at risk: ' + pipe.length + ' (badge and headline agree)');
+  ok(await ap.textContent('.tabbar button[data-tab=chase] .tbadge') === badgeOf(nowP.length, carryP.length) && new RegExp('^' + thisP.length + ' (person|people) to chase this week').test(await ap.innerText('.card .display')) &&
+    /This week · ending/i.test(await ap.innerText('.seg-nav')),
+    'Chase opens on this week (ending 18 Oct): ' + thisP.length + ' to chase this week, badge "' + badgeOf(nowP.length, carryP.length) + '" (badge and headline agree)');
+  await ap.click('#cprev');
+  await ap.waitForFunction(() => /^Week ending/i.test(document.querySelector('.seg-nav .lbl span').innerText));
+  const prevHead = await ap.innerText('.card .display');
+  ok(/still open|All closed out/.test(prevHead) && !(await ap.$('details.carry')), '‹ goes back a week (ending 11 Oct): "' + prevHead + '", that week on its own');
+  await ap.click('#cnext');
+  await ap.waitForFunction(() => /^This week/i.test(document.querySelector('.seg-nav .lbl span').innerText));
+  await ap.waitForSelector('#nudgeAll');
+  ok(await ap.$eval('#cnext', b => b.disabled), '› brings it back to this week (and stops there: no call-backs booked for later weeks yet)');
   ok((await ap.$$('[data-nudge]')).length === toChase.length && new RegExp('across ' + toChase.length + ' bookers?').test(await ap.innerText('#page')),
     'one card per booker with someone to chase (' + toChase.length + ')');
   const fizaRow = await ap.$eval('[data-nudge="' + fiza.id + '"]', b => b.closest('.trow').innerText);
   ok(fizaLog.every(n => new RegExp('Log the call: .*' + n).test(fizaRow)), 'each card says exactly who: "' + fizaRow.replace(/\n/g, ' | ') + '"');
   ok(!(await ap.$('.card.needs')), 'no "Needs you" box when the admins have nothing outstanding themselves');
   const grp = decodeURIComponent((await ap.getAttribute('#waGroup', 'href')).replace('https://wa.me/?text=', ''));
-  ok(/^⏰ \*Pipeline check: don't lose anyone\*/.test(grp) && /Outcomes due Fri 18:00/.test(grp) && new RegExp('\\*Fiza\\*\\n📞 Log the call: ' + fizaLog[0]).test(grp) && /Sort them now 👉 http/.test(grp),
-    "Post to team WhatsApp: the whole list by booker in one message, ready for the bookers' group");
+  ok(/^⏰ \*Pipeline check: week ending [^*]+\*/.test(grp) && /Outcomes due Fri 18:00/.test(grp) && new RegExp('\\*Fiza\\*\\n📞 Log the call: ' + fizaLog[0]).test(grp) && /Sort them now 👉 http/.test(grp),
+    "Post to team WhatsApp: the week's list by booker in one message, ready for the bookers' group");
   await shot(ap, '25-chase-admin', true);
   await ap.click('[data-nudge="' + fiza.id + '"] >> xpath=.. >> .nm'); await ap.waitForSelector('text=Call outcome');
   ok(true, 'tapping a name opens that candidate');
@@ -820,7 +841,7 @@ async function fillEval(p) {
   const chased = (await getJson('/dev/pushes')).slice(beforeChase);
   const cFiza = chased.find(p => p.body.include_aliases.external_id.includes(fiza.id));
   ok(chased.length === toChase.length && toChase.every(id => chased.some(p => p.body.include_aliases.external_id.includes(id))) &&
-    cFiza && /^⏰ Angad: \d+ (person|people) to chase$/.test(cFiza.body.headings.en) && new RegExp('📞 Log the call: ' + fizaLog[0] + '.*\\(by Fri 18:00\\)').test(cFiza.body.contents.en) && /\?c=chase$/.test(cFiza.body.web_url),
+    cFiza && /^⏰ Angad: \d+ (person|people) to chase$/.test(cFiza.body.headings.en) && new RegExp('📞 Log the call: ' + fizaLog[0] + '.*\\((by Fri 18:00|\\d+ LATE)\\)').test(cFiza.body.contents.en) && /\?c=chase$/.test(cFiza.body.web_url),
     'Nudge all → each booker gets their own list: "' + (cFiza ? cFiza.body.headings.en + ' | ' + cFiza.body.contents.en.replace(/\n/g, ' | ') : 'none') + '"');
   ok(/Nudged: .*Fiza/.test(await ap.innerText('#cres')), 'the screen confirms who was nudged');
   await ap.click('#nudgeAll');
@@ -835,10 +856,11 @@ async function fillEval(p) {
   await loginUi(fcp, 'fiza@example.com', APP + 'index.html?c=chase');
   await fcp.waitForSelector('.section-h');
   const fizaPipe = (await api(fizaTok, 'chaseList', {})).items;
+  const fNow = fizaPipe.filter(c => chaseWk(c) <= cw), fThis = fNow.filter(c => chaseWk(c) === cw), fCarry = fNow.filter(c => chaseWk(c) < cw);
   ok(fizaPipe.length && fizaPipe.every(c => c.booker_id === fiza.id && BL.includes(c.leak)), 'a booker\'s Chase list is their own people only');
   ok(await fcp.$('.tabbar button.on[data-tab=chase]') && JSON.stringify(await fcp.$$eval('.tabbar button', b => b.map(x => x.dataset.tab))) === '["mine","chase","pay"]' &&
-    new RegExp('^' + fizaPipe.length + ' to chase').test(await fcp.innerText('.card .display')) && await fcp.textContent('.tabbar button[data-tab=chase] .tbadge') === String(fizaPipe.length),
-    'Fiza taps it → her Chase tab: "' + fizaPipe.length + ' to chase" (tabs: Mine · Chase · Incentive)');
+    new RegExp('^' + fThis.length + ' to chase this week').test(await fcp.innerText('.card .display')) && await fcp.textContent('.tabbar button[data-tab=chase] .tbadge') === badgeOf(fNow.length, fCarry.length),
+    'Fiza taps it → her Chase tab: "' + fThis.length + ' to chase this week" (tabs: Mine · Chase · Incentive)');
   ok(/📞 Log the call · \d+/i.test(await fcp.innerText('#page')) && await fcp.$('.ccard .quick [data-out]'), 'grouped by what to do, with Call / WhatsApp / Log outcome on each');
   await shot(fcp, '26-chase-booker', true);
   await fcp.click('.ccard .quick [data-out]'); await fcp.waitForSelector('.sheet #sosave');
@@ -1174,14 +1196,18 @@ async function fillEval(p) {
   ok(/1 arrived · 1 no-show/.test(await ap.innerText('#page')), 'the day\'s count updates: "… 1 arrived · 1 no-show"');
   await shot(ap, '28-day1-arrivals', true);
   const abdT = await loginApi('abdullahi@example.com');
-  ok((await api(abdT, 'chaseList', {})).items.some(c => c.id === adham.id && c.leak === 'noshow'), 'a no-show goes straight onto their booker\'s Chase list: "❌ No-show: rebook"');
+  const abdD1 = (await api(abdT, 'academyList', {})).items.find(c => c.id === adham.id);
+  ok(abdD1 && abdD1.day1_status === 'no_show' && !(await api(abdT, 'chaseList', {})).items.some(c => c.id === adham.id), 'a no-show stays on the Day 1 tab for their booker to rebook (not on Chase)');
+  const adQ = '.trow[data-cand="' + adham.id + '"] .quick';
+  ok(await ap.$(adQ + ' [data-out]') && /Rebook/.test(await ap.innerText(adQ)), 'Day 1 tab: the no-show gets Call / WhatsApp / Rebook right there');
   await ap.click('[data-d1="no_show"][data-id="' + adham.id + '"]');
   await ap.waitForSelector('[data-d1="no_show"][data-id="' + adham.id + '"].ghost');
   ok((await api(admin, 'getCandidate', { id: adham.id })).day1_status === '', 'tap again to undo a mistake');
   await api(admin, 'markDay1', { id: adham.id, status: 'no_show' });
   const reb = await api(abdT, 'saveOutcome', { id: adham.id, outcome: 'Academy booked', academy_date: '2026-10-26', outcome_notes: 'missed the train' });
-  ok(reb.day1_status === '' && !reb.academy_confirmed_at && (await api(abdT, 'chaseList', {})).items.some(c => c.id === adham.id && c.leak !== 'noshow'),
-    'rebooking (new Day 1 date) clears the no-show; they need confirming again');
+  const rebD1 = (await api(abdT, 'academyList', {})).items.find(c => c.id === adham.id);
+  ok(reb.day1_status === '' && !reb.academy_confirmed_at && rebD1 && rebD1.academy_date === '2026-10-26' && !rebD1.day1_status && !rebD1.academy_confirmed_at,
+    'rebooking (new Day 1 date) clears the no-show; on the Day 1 tab for 26 Oct, to be confirmed again');
   await api(abdT, 'saveOutcome', { id: adham.id, outcome: 'Academy booked', academy_date: '2026-10-19', outcome_notes: '' });
   await api(admin, 'markDay1', { id: adham.id, status: 'arrived' });
   // Call log: every response logged, who and when (not just the latest)
@@ -1599,13 +1625,29 @@ async function fillEval(p) {
   const st = (await api(admin, 'chaseList', {})).items, stOf = id => (st.find(c => c.id === id) || {}).leak;
   ok(stOf(ali.id) === 'stale' && stOf(kid.id) === 'callback',
     'over 2 weeks on "No answer": still on Chase as "🔴 Stale: close it out" (Ali); a call-back time still to come keeps them a call back (Young, Thu 18:00)');
+  const kidC = st.find(c => c.id === kid.id), aliC = st.find(c => c.id === ali.id);
+  ok(chaseWk(aliC) === '2026-10-18' && chaseWk(kidC) === '2026-11-01', 'week ending 1 Nov: Ali (week ending 18 Oct) is carried over; Young\'s call-back this Thursday makes them this week\'s');
   await ap.goto(APP + 'index.html?c=chase'); await ap.waitForSelector('[data-nudge]');
   // The phone shows its saved copy of Chase first, then the fresh one a moment later
-  await ap.waitForFunction(() => /🔴 Stale: close it out: Ali/.test(document.getElementById('page').innerText), null, { timeout: 10000 }).catch(() => {});
-  ok(/🔴 Stale: close it out: Ali/.test(await ap.innerText('#page')), 'admin Chase tab: "🔴 Stale: close it out: Ali" on Fiza\'s card');
+  await ap.waitForFunction(() => /↩️ Carried over: Ali/.test(document.getElementById('page').innerText), null, { timeout: 10000 }).catch(() => {});
+  ok(/↩️ Carried over: Ali/.test(await ap.innerText('#page')) && /This week · ending/i.test(await ap.innerText('.seg-nav')), 'admin Chase tab, this week: "↩️ Carried over: Ali" on Fiza\'s card');
+  const carryN = st.filter(c => chaseWk(c) < '2026-11-01').length;
+  ok(new RegExp('↩️ Carried over · ' + carryN).test(await ap.innerText('details.carry summary')) && !(await ap.$eval('details.carry', d => d.open)),
+    'a folded "↩️ Carried over · ' + carryN + '" card for closing them out (folded for admins: each booker\'s card already says who)');
+  await ap.click('details.carry summary');
+  const aliClose = '.ccard:has(.item[data-id="' + ali.id + '"]) .qclose';
+  await ap.waitForSelector(aliClose);
+  await shot(ap, '45-chase-carried-over', true);
+  ok(JSON.stringify(await ap.$$eval(aliClose + ' button', b => b.map(x => x.dataset.out))) === '["Academy booked","Declined","Not suitable","Thinking it over"]',
+    'each carried-over person: ✅ Booked · Declined · Not suitable · 🔁 Call back');
+  await ap.click(aliClose + ' [data-out="Declined"]'); await ap.waitForSelector('.sheet #sosave');
+  ok(await ap.textContent('.sheet .chips[data-name=outcome] .chip.on') === 'Declined', 'tapping Declined opens the outcome sheet with Declined picked (Save confirms it)');
+  await ap.click('#socancel');
   const stP0 = (await pushesTo(fiza.id)).length;
   await api(admin, 'chaseOutcomes', { ids: [fiza.id] });
   ok((await pushesTo(fiza.id)).slice(stP0).some(p => /🔴 Stale: close it out: Ali/.test(p.body.contents.en)), 'her nudge lists it too: "🔴 Stale: close it out: Ali"');
+  const nextWk = await api(admin, 'chaseOutcomes', { ids: [fiza.id], week: '2026-11-08' });
+  ok(!nextWk.nudged.length && !nextWk.recently.length, 'a nudge for a later week only covers that week (nothing booked for Fiza then: nobody nudged)');
   await api(admin, 'saveOutcome', { id: ali.id, outcome: 'Declined', outcome_notes: 'not for him' });
   ok(!(await api(admin, 'chaseList', {})).items.some(c => c.id === ali.id), 'log a final answer (Declined) → off Chase');
 

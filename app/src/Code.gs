@@ -934,7 +934,10 @@ function bundle(req, u) {
   const out = { weekEnding: we, items: listWeek({ weekEnding: we }, u).items, pay: payReport({ weekEnding: we }, u) };
   if (req.withMe) out.me = me(req, u);
   if (req.withUsers && isAdmin(u)) out.users = listUsers(req, u).users;
-  out.chase = chaseRows(u).length;  // the number on the Chase tab
+  // The number on the Chase tab: this week's + carried over from earlier weeks ("3+8")
+  const cw = weekEnding(todayStr()), now = chaseNow(u);
+  out.chase = now.length;
+  out.chaseCarry = now.filter(x => chaseWeek(x.c) < cw).length;
   return out;
 }
 
@@ -1632,18 +1635,12 @@ function maybeDailyDigest() {
 }
 // ───────────────────────── CHASE: nobody drops out of the pipeline ─────────────────────────
 /** Why this candidate needs chasing ('' = they don't). One rule for the Chase tab, the nudges and the badge.
- *  Booker's job: log (rated in the room, no outcome yet) · callback (No answer / Thinking it over) · text (Day 1 details not sent)
- *  · confirm (sent, not confirmed) · noshow (rebook them). Admins': pending (your decision) · unticked (Day 1 gone, nobody marked arrived / no-show). */
-const BOOKER_LEAKS = ['stale', 'log', 'callback', 'text', 'confirm', 'noshow'];
+ *  log (rated in the room, no outcome yet) · callback (No answer / Thinking it over) · stale (those, over 2 weeks).
+ *  Day 1 people (Academy booked: Day 1 text, not confirmed, no-show, admin's decision) are on the Day 1 tab only (Angad, 19 Oct). */
+const BOOKER_LEAKS = ['stale', 'log', 'callback'];
 function leakOf(c, today) {
   const from = addDays(today, -(CONFIG.CHASE_DAYS - 1));
-  if (c.outcome === 'Academy booked') {
-    if (c.admin_status === 'rejected' || c.day1_status === 'arrived' || !c.academy_date || c.academy_date < from) return '';
-    if (c.admin_status === 'pending') return 'pending';
-    if (c.day1_status === 'no_show') return 'noshow';
-    if (c.academy_date >= today) return c.academy_confirmed_at ? '' : c.offer_sent_at ? 'confirm' : 'text';
-    return 'unticked';
-  }
+  if (c.outcome === 'Academy booked') return '';
   if (!truthy(c.in_room) || nonQualifier(c)) return '';
   // No answer / Thinking it over never just drop off: after 2 weeks they're "stale" until someone logs a final answer
   // (Declined, Not suitable, Academy booked). A call-back time they asked for that's still to come keeps them as a call back.
@@ -1661,17 +1658,30 @@ function chaseRows(u) {
     return k && (admin || BOOKER_LEAKS.indexOf(k) >= 0) ? { c: c, k: k } : null;
   }).filter(Boolean);
 }
-function chaseList(req, u) {
-  return { today: todayStr(), days: CONFIG.CHASE_DAYS, items: chaseRows(u).map(x => Object.assign(shape(x.c, u), { leak: x.k })) };
+/** Chase goes week by week (week ending Sunday): a chase belongs to its appointment's week, or to a later call-back's
+ *  week ("call me next Tuesday" is next week's job). Anything from before this week still open is "carried over". */
+function chaseWeek(c) {
+  const cb = String(c.callback_at || '').slice(0, 10);
+  return weekEnding(cb > c.attended_date ? cb : c.attended_date);
 }
-const LEAK_LINES = [['stale', '🔴 Stale: close it out'], ['log', '📞 Log the call'], ['callback', '🔁 Call back'], ['text', '📲 Send Day 1 text'], ['confirm', '⏳ Day 1 not confirmed'], ['noshow', '❌ No-show, rebook']];
+/** What's on Chase now: this week's plus carried over (call-backs booked for later weeks wait for their week). */
+function chaseNow(u) {
+  const cw = weekEnding(todayStr());
+  return chaseRows(u).filter(x => chaseWeek(x.c) <= cw);
+}
+function chaseList(req, u) {
+  return { today: todayStr(), weekEnding: weekEnding(todayStr()), days: CONFIG.CHASE_DAYS, items: chaseRows(u).map(x => Object.assign(shape(x.c, u), { leak: x.k })) };
+}
+const LEAK_LINES = [['stale', '🔴 Stale: close it out'], ['log', '📞 Log the call'], ['callback', '🔁 Call back']];
 /** Admin, one tap (Chase tab): every booker with someone to chase gets an alert listing exactly who (email if they're not set up).
- *  The same booker isn't nudged twice in 30 minutes. */
+ *  Only the week on screen (req.week; this week also takes in what's carried over). The same booker isn't nudged twice in 30 minutes. */
 function chaseOutcomes(req, u) {
   if (!isAdmin(u)) throw new Error('Admin only');
   const today = todayStr(), now = nowStr(), only = Array.isArray(req.ids) && req.ids.length ? req.ids : null;
+  const cw = weekEnding(today), week = /^\d{4}-\d{2}-\d{2}$/.test(req.week || '') ? weekEnding(req.week) : cw;
+  const inView = c => { const w = chaseWeek(c); return w === week || (week === cw && w < cw); };
   const by = {};
-  chaseRows(u).forEach(x => { if (x.c.booker_id && BOOKER_LEAKS.indexOf(x.k) >= 0) { const b = (by[x.c.booker_id] = by[x.c.booker_id] || {}); (b[x.k] = b[x.k] || []).push(x.c); } });
+  chaseRows(u).forEach(x => { if (x.c.booker_id && BOOKER_LEAKS.indexOf(x.k) >= 0 && inView(x.c)) { const b = (by[x.c.booker_id] = by[x.c.booker_id] || {}); (b[x.k] = b[x.k] || []).push(x.c); } });
   const cache = CacheService.getScriptCache(), out = { nudged: [], recently: [], noApp: [] };
   usersAll().filter(b => truthy(b.active) && b.id !== u.id && by[b.id] && (!only || only.indexOf(b.id) >= 0)).forEach(b => {
     if (!b.email) { out.noApp.push(b.name); return; }
@@ -1688,13 +1698,16 @@ function chaseOutcomes(req, u) {
   return out;
 }
 
-/** Everyone booked onto the BA Academy with Day 1 from a week ago onwards: admins see everyone, bookers their own. */
+/** Everyone booked onto the BA Academy with Day 1 from a week ago onwards (no-shows still to rebook: 2 weeks): admins see
+ *  everyone, bookers their own. Admins also get the bookings waiting on their decision (these used to be on Chase). */
 function academyList(req, u) {
   try { backfillSends(); } catch (e) { console.error(e); }
-  const from = addDays(todayStr(), -7);
-  const rows = readTable('Candidates').filter(c => c.outcome === 'Academy booked' && c.admin_status !== 'rejected' && c.admin_status !== 'pending' &&
-    c.academy_date && c.academy_date >= from && fullAccess(u, c));
-  return { today: todayStr(), items: rows.sort((a, b) => a.academy_date.localeCompare(b.academy_date) || a.full_name.localeCompare(b.full_name)).map(c => shape(c, u)) };
+  const today = todayStr(), from = addDays(today, -7), longer = addDays(today, -(CONFIG.CHASE_DAYS - 1));
+  const booked = readTable('Candidates').filter(c => c.outcome === 'Academy booked' && c.admin_status !== 'rejected' && c.academy_date && fullAccess(u, c));
+  const rows = booked.filter(c => c.admin_status !== 'pending' && (c.academy_date >= from || (c.day1_status === 'no_show' && c.academy_date >= longer)));
+  const out = { today: today, items: rows.sort((a, b) => a.academy_date.localeCompare(b.academy_date) || a.full_name.localeCompare(b.full_name)).map(c => shape(c, u)) };
+  if (isAdmin(u)) out.pending = booked.filter(c => c.admin_status === 'pending' && c.academy_date >= longer).map(c => shape(c, u));
+  return out;
 }
 /** Once: who sent the Day 1 details (and how each thank-you went) before those columns existed, from the Log
  *  ("whatsapp_offer" by Fiza Iqbal at 16:03…). The latest send wins, as it does from now on. */
