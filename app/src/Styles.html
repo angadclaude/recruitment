@@ -184,6 +184,9 @@ details.carry .list { margin-top: 8px; }
 .pill.yes { border: 0; cursor: pointer; font-family: inherit; background: var(--ink); color: #fff; }
 .sub.wrap, .item .sub.wrap, .trow .sub.wrap { white-space: normal; overflow-wrap: anywhere; }
 .d1btns { display: flex; flex-direction: column; gap: 6px; flex: none; }
+/* Day 1: who's arrived stands out (light green, like the New Starts List PDF); "Move to Tue?" asks before moving a Day 1 */
+.trow.arrived { background: #E8F7EE; border-color: #B7E2C6; }
+.d1btns .btn.sure { background: #FFF3DC; border-color: #F0B44C; color: #8A5300; }
 .trow[data-cand] .main { cursor: pointer; }
 /* Alerts check (admin) */
 .achk { display: grid; gap: 6px; margin-top: 12px; font-size: 14px; }

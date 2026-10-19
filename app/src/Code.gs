@@ -1775,14 +1775,24 @@ function backfillOutcomes() {
     p.setProperty('OUTCOMES_BACKFILLED_2', nowStr());
   });
 }
-/** On Day 1: arrived / no-show (or clear it). Admins, or the person who booked them. Gives the real show-up rate. */
+/** On Day 1: arrived / no-show (or clear it). Admins, or the person who booked them. Gives the real show-up rate.
+ *  next_day: they start the day after instead ("arriving Tuesday", Angad 19 Oct). Their Day 1 moves (still confirmed),
+ *  so they're ticked on that day's list and its PDF, not counted as a no-show today. */
 function markDay1(req, u) {
-  if (['arrived', 'no_show', ''].indexOf(req.status) < 0) throw new Error('Choose arrived or no-show');
+  if (['arrived', 'no_show', 'next_day', ''].indexOf(req.status) < 0) throw new Error('Choose arrived or no-show');
   return withLock(() => {
     const c = getC(req.id);
     if (!fullAccess(u, c)) throw new Error('No access');
     if (c.outcome !== 'Academy booked') throw new Error('They aren\'t booked onto the Academy.');
     if (req.status && c.academy_date > todayStr()) throw new Error('Their Day 1 hasn\'t happened yet.');
+    if (req.status === 'next_day') {
+      const from = c.academy_date, to = addDays(from, 1);
+      if (to < todayStr()) throw new Error('That day has already gone.');
+      c.academy_date = to; c.day1_status = ''; c.day1_by = ''; c.day1_at = '';
+      writeRow('Candidates', c);
+      log(u, 'day1_moved', c.id, from + ' → ' + to);
+      return shape(c, u);
+    }
     c.day1_status = req.status; c.day1_by = req.status ? u.name : ''; c.day1_at = req.status ? nowStr() : '';
     writeRow('Candidates', c);
     log(u, 'day1_' + (req.status || 'cleared'), c.id, '');

@@ -1,4 +1,4 @@
-window.APP_VERSION = '87cffff0';
+window.APP_VERSION = '265b5633';
 
 (function () {
 'use strict';
@@ -2236,6 +2236,13 @@ function viewAcademy(quiet) {
   }).catch(e => { if (S.viewId === id && !S.academy) paint('Day 1', '<div class="err">' + h(/Unknown action/.test(e.message) ? 'Paste the new Google code (Code.gs) into Apps Script first, then open this again.' : e.message) + '</div>', false, !isAdmin()); });
 }
 function remindedToday(c) { return String(c.day1_reminded_at || '').slice(0, 10) === ((S.academy && S.academy.today) || S.me.today); }
+/** One order for a Day 1 list on screen and in its PDF (Angad, 19 Oct): by name, the no-shows at the bottom. */
+function d1Order(list) { return list.slice().sort((a, b) => (a.day1_status === 'no_show') - (b.day1_status === 'no_show') || a.full_name.localeCompare(b.full_name)); }
+/** "Starting the next day instead" (Monday → Tuesday): the next weekday's name, or '' when that day has gone or is a weekend. */
+function nextDayName(c, today) {
+  const nd = addDays(c.academy_date, 1), w = D(nd).getUTCDay();
+  return nd >= today && w > 0 && w < 6 ? DAYS_LONG[w] : '';
+}
 function drawAcademy(r, quiet) {
   const today = r.today || S.me.today, dates = [], admin = isAdmin();
   r.items.forEach(c => { if (dates.indexOf(c.academy_date) < 0) dates.push(c.academy_date); });
@@ -2253,16 +2260,19 @@ function drawAcademy(r, quiet) {
     // and a no-show gets the rebook buttons
     const offer = !started && !c.offer_sent_at && !c.academy_confirmed_at && c.welcome_url && (admin || c.booker_id === S.me.user.id);
     const q = offer ? quickRow(c, 'offer') : started && c.day1_status === 'no_show' ? quickRow(c, 'rebook') : '';
+    // On the day: Arrived · No-show · Tuesday (starting the next day instead: their Day 1 moves there)
+    const nd = started ? nextDayName(c, today) : '';
     const act = started
       ? '<div class="d1btns"><button class="btn sm ' + (c.day1_status === 'arrived' ? 'green' : 'ghost') + '" data-d1="arrived" data-id="' + h(c.id) + '">Arrived</button>' +
-        '<button class="btn sm ' + (c.day1_status === 'no_show' ? 'red' : 'ghost') + '" data-d1="no_show" data-id="' + h(c.id) + '">No-show</button></div>'
+        '<button class="btn sm ' + (c.day1_status === 'no_show' ? 'red' : 'ghost') + '" data-d1="no_show" data-id="' + h(c.id) + '">No-show</button>' +
+        (nd ? '<button class="btn sm ghost" data-d1="next_day" data-day="' + nd + '" data-id="' + h(c.id) + '">📅 ' + nd + '</button>' : '') + '</div>'
       : offer ? '' : '<a class="btn ' + (c.no_whatsapp ? 'sms' : 'wa') + ' sm" data-rem1="' + h(c.id) + '" data-via="' + (c.no_whatsapp ? 'sms' : 'whatsapp') + '" target="_blank" rel="noopener" href="' + h(msgUrl(c, msgDay1Reminder(c))) + '">💬 Remind</a>';
-    return '<div class="trow' + (q ? ' d1q' : '') + '" data-cand="' + h(c.id) + '">' + avatar(c) + '<div class="main"><div class="name">' + h(c.full_name) + ' <span class="co ' + h(c.company) + '">' + h(c.company) + '</span></div>' +
+    return '<div class="trow' + (q ? ' d1q' : '') + (c.day1_status === 'arrived' ? ' arrived' : '') + '" data-cand="' + h(c.id) + '">' + avatar(c) + '<div class="main"><div class="name">' + h(c.full_name) + ' <span class="co ' + h(c.company) + '">' + h(c.company) + '</span></div>' +
       '<div class="sub">' + (c.booker_name ? 'booked by ' + h(c.booker_name) : 'no booker') + '</div>' +
       (c.offer_sent_at ? '<div class="sub d1by">🎉 Day 1 details ' + offerBy(c) + '</div>' : '') + '<div class="pills">' + pills + '</div></div>' + act + q + '</div>';
   };
   const block = x => {
-    const l = r.items.filter(c => c.academy_date === x), conf = l.filter(c => c.academy_confirmed_at).length;
+    const l = d1Order(r.items.filter(c => c.academy_date === x)), conf = l.filter(c => c.academy_confirmed_at).length;
     const arr = l.filter(c => c.day1_status === 'arrived').length, ns = l.filter(c => c.day1_status === 'no_show').length;
     const toRemind = l.filter(c => !c.day1_status), rem = toRemind.filter(remindedToday).length;
     const counts = l.length + ' expected · ' + conf + ' confirmed' + (l.length - conf ? ' · ' + (l.length - conf) + ' not' : '') +
@@ -2283,7 +2293,7 @@ function drawAcademy(r, quiet) {
     upcoming.map(block).join('') +
     (past.length ? '<div class="datehead" style="margin-top:22px">Last week</div>' + past.map(block).join('') : '') +
     '<p class="hint">' + (admin ? '📲 Send reminders: the Day 1 reminder to every starter, signed by you (Jess / Rubal: you get a nudge at 10:00 on the day). 👍 When someone replies Yes, tap "They replied Yes". 📄 New Starts List: the sign-in sheet for the room. ' : '💬 Remind sends them the Day 1 reminder (time, address, Maps pin). 👍 When they reply Yes, tap "They replied Yes". ') +
-    'On Day 1, tap Arrived or No-show for everyone: that\'s your show-up rate.</p>', quiet, !admin);
+    'On Day 1, tap Arrived or No-show for everyone: that\'s your show-up rate. Starting the next day instead? Tap 📅 Tuesday (twice): they move to Tuesday\'s list. The PDF shows the same ticks.</p>', quiet, !admin);
   page.querySelectorAll('.trow[data-cand] .main').forEach(el => { el.onclick = () => nav('cand', { id: el.parentNode.dataset.cand }, true); });
   page.querySelectorAll('.nm[data-cand]').forEach(b => { b.onclick = () => nav('cand', { id: b.dataset.cand }, true); });
   bindItems(page);  // the Day 1 details / rebook buttons
@@ -2305,10 +2315,19 @@ function drawAcademy(r, quiet) {
   page.querySelectorAll('[data-d1]').forEach(b => {
     b.onclick = () => {
       const c = r.items.filter(x => x.id === b.dataset.id)[0]; if (!c) return;
-      const st = c.day1_status === b.dataset.d1 ? '' : b.dataset.d1;  // tap again to clear
+      const move = b.dataset.d1 === 'next_day';
+      // Moving their Day 1 is a bigger change than a tick: the first tap asks, the second (within 4 s) does it
+      if (move && !b.classList.contains('sure')) {
+        b.classList.add('sure'); b.textContent = 'Move to ' + b.dataset.day.slice(0, 3) + '?';
+        setTimeout(() => { if (b.isConnected && b.classList.contains('sure')) { b.classList.remove('sure'); b.textContent = '📅 ' + b.dataset.day; } }, 4000);
+        return;
+      }
+      const st = move ? 'next_day' : c.day1_status === b.dataset.d1 ? '' : b.dataset.d1;  // tap again to clear
       busy(b, true, '…');
-      call('markDay1', { id: c.id, status: st }).then(nc => { Object.assign(c, nc); upsert(nc); drawAcademy(r, true); toast(st === 'arrived' ? '🎓 ' + c.first_name + ' arrived' : st === 'no_show' ? c.first_name + ': no-show' : 'Cleared'); })
-        .catch(e => { busy(b, false); toast(e.message); });
+      call('markDay1', { id: c.id, status: st }).then(nc => {
+        Object.assign(c, nc); upsert(nc); drawAcademy(r, true);
+        toast(move ? '📅 ' + c.first_name + ' starts ' + fmtLong(nc.academy_date) + ' instead' : st === 'arrived' ? '🎓 ' + c.first_name + ' arrived' : st === 'no_show' ? c.first_name + ': no-show' : 'Cleared');
+      }).catch(e => { busy(b, false); toast(e.message); });
     };
   });
 }
@@ -2460,36 +2479,43 @@ function newStartsName(date) { return 'New Starts List ' + date.slice(8, 10) + '
 function day1Pdf(date, list) {
   const W = 595.28, H = 841.89, M = 36, RH = 24, PER = 24;
   const cols = [['#', 20], ['Name', 128], ['Co', 40], ['Mobile', 82], ['Booked by', 88], ['Confirmed', 52], ['Arrived', 46], ['Notes', 67]];
-  const rows = list.slice().sort((a, b) => a.full_name.localeCompare(b.full_name)), conf = rows.filter(c => c.academy_confirmed_at).length;
+  // Same order and ticks as the Day 1 tab (Angad, 19 Oct): arrived rows light green, no-shows at the bottom
+  const rows = d1Order(list), conf = rows.filter(c => c.academy_confirmed_at).length;
+  const arr = rows.filter(c => c.day1_status === 'arrived').length, ns = rows.filter(c => c.day1_status === 'no_show').length, ticked = arr + ns > 0;
   const fit = (s, w, size) => { s = String(s || ''); const max = Math.floor(w / (size * 0.55)); return s.length <= max ? s : s.slice(0, Math.max(1, max - 2)) + '...'; };
   const pages = [];
   for (let p = 0; p === 0 || p * PER < rows.length; p++) pages.push(rows.slice(p * PER, (p + 1) * PER));
   const streams = pages.map((chunk, p) => {
     const o = [];
-    const txt = (x, y, s, size, bold, grey) => o.push((grey ? '0.42 0.42 0.47' : '0.13 0.13 0.17') + ' rg BT /' + (bold ? 'F2' : 'F1') + ' ' + size + ' Tf ' + x.toFixed(2) + ' ' + y.toFixed(2) + ' Td (' + pdfStr(s) + ') Tj ET');
+    const txt = (x, y, s, size, bold, grey, col) => o.push((col || (grey ? '0.42 0.42 0.47' : '0.13 0.13 0.17')) + ' rg BT /' + (bold ? 'F2' : 'F1') + ' ' + size + ' Tf ' + x.toFixed(2) + ' ' + y.toFixed(2) + ' Td (' + pdfStr(s) + ') Tj ET');
     o.push('0.95 0.42 0.11 rg 0 ' + (H - 10).toFixed(2) + ' ' + (W / 2).toFixed(2) + ' 10 re f', '0.05 0.6 0.6 rg ' + (W / 2).toFixed(2) + ' ' + (H - 10).toFixed(2) + ' ' + (W / 2).toFixed(2) + ' 10 re f');
     txt(M, H - 50, newStartsName(date), 20, true);
     txt(M, H - 68, 'BA Academy Day 1 · ' + fmtLong(date) + ' ' + date.slice(0, 4) + ' · 1:30pm · ' + (S.me.address || 'Automotive House, Grays Place, Slough SL2 5AF'), 10);
-    txt(M, H - 84, rows.length + ' expected · ' + conf + ' confirmed · ' + (rows.length - conf) + ' not confirmed  |  LINK Marketing & JUSS Marketing  |  printed ' + fmt(S.me.today) + ' ' + londonNow().slice(11) + ' by ' + S.me.user.name, 8.5, false, true);
+    txt(M, H - 84, rows.length + ' expected · ' + conf + ' confirmed · ' + (rows.length - conf) + ' not confirmed' + (ticked ? ' · ' + arr + ' arrived · ' + ns + ' no-show' : '') +
+      '  |  LINK Marketing & JUSS Marketing  |  printed ' + fmt(S.me.today) + ' ' + londonNow().slice(11) + ' by ' + S.me.user.name, 8.5, false, true);
     const top = H - 100;
     o.push('0.94 0.93 0.91 rg ' + M + ' ' + (top - 20).toFixed(2) + ' 523 20 re f');
     let x = M; cols.forEach(c => { txt(x + 4, top - 14, c[0], 8.5, true); x += c[1]; });
     chunk.forEach((c, i) => {
       const t = top - 20 - i * RH, b = t - RH, y = t - 15;
       const at = k => { let v = M; for (let j = 0; j < k; j++) v += cols[j][1]; return v + 4; };
+      if (c.day1_status === 'arrived') o.push('0.88 0.96 0.9 rg ' + M + ' ' + b.toFixed(2) + ' 523 ' + RH + ' re f');  // light green, like the app
       txt(at(0), y, String(p * PER + i + 1), 9, false, true);
       txt(at(1), y, fit(c.full_name, cols[1][1] - 8, 10), 10, true);
       txt(at(2), y, c.company || '', 9);
       txt(at(3), y, c.mobile || '', 9);
       txt(at(4), y, fit(c.booker_name || '-', cols[4][1] - 8, 9), 9);
       txt(at(5), y, c.academy_confirmed_at ? 'Yes' : 'No', 9, !c.academy_confirmed_at);
-      o.push('0.2 0.2 0.25 RG 0.8 w ' + (at(6) + 12).toFixed(2) + ' ' + (b + 6.5).toFixed(2) + ' 11 11 re S');
+      // Arrived: what was ticked in the app, or an empty box to tick by hand
+      if (c.day1_status === 'arrived') txt(at(6), y, 'Yes', 9, true, false, '0.08 0.5 0.25');
+      else if (c.day1_status === 'no_show') txt(at(6), y, 'No-show', 9, true, false, '0.8 0.15 0.15');
+      else o.push('0.2 0.2 0.25 RG 0.8 w ' + (at(6) + 12).toFixed(2) + ' ' + (b + 6.5).toFixed(2) + ' 11 11 re S');
       o.push('0.85 0.84 0.82 RG 0.5 w ' + M + ' ' + b.toFixed(2) + ' m ' + (M + 523) + ' ' + b.toFixed(2) + ' l S');
     });
     if (!chunk.length) txt(M + 4, top - 38, 'Nobody booked for this day.', 10, false, true);
     if (p === pages.length - 1) {
       const y = top - 20 - Math.max(chunk.length, 1) * RH - 34;
-      txt(M, y, 'Arrived: ______ of ' + rows.length + '          Checked by: ___________________________', 10);
+      txt(M, y, (ticked ? 'Arrived: ' + arr + ' of ' + rows.length + (ns ? '  ·  No-show: ' + ns : '') : 'Arrived: ______ of ' + rows.length) + '          Checked by: ___________________________', 10);
     }
     txt(M, 24, 'Personal data: keep this sheet safe and shred it after Day 1.', 8, false, true);
     txt(W - M - 52, 24, 'Page ' + (p + 1) + ' of ' + pages.length, 8, false, true);

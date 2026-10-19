@@ -1194,6 +1194,17 @@ async function fillEval(p) {
   const jD1 = await api(admin, 'getCandidate', { id: jasId }), aD1 = await api(admin, 'getCandidate', { id: adham.id });
   ok(jD1.day1_status === 'arrived' && jD1.day1_by === 'Angad Oshan' && aD1.day1_status === 'no_show', 'saved on their row in the Sheet: Jasraj arrived, Adham no-show (with who marked it and when)');
   ok(/1 arrived · 1 no-show/.test(await ap.innerText('#page')), 'the day\'s count updates: "… 1 arrived · 1 no-show"');
+  const monIds = (await api(admin, 'academyList', {})).items.filter(c => c.academy_date === '2026-10-19').map(c => c.id);
+  const monRows = (await ap.$$eval('.trow[data-cand]', els => els.map(e => ({ id: e.dataset.cand, green: e.classList.contains('arrived') })))).filter(x => monIds.includes(x.id));
+  ok(monRows.find(x => x.id === jasId).green && !monRows.find(x => x.id === adham.id).green && monRows[monRows.length - 1].id === adham.id,
+    'arrived rows turn light green (Jasraj); the no-show drops to the bottom of the day (Adham)');
+  const [pdl2] = await Promise.all([ap.waitForEvent('download'), ap.click('[data-pdf="2026-10-19"]')]);
+  const pdf2 = `${SHOTS}/30-day1-ticked.pdf`; await pdl2.saveAs(pdf2);
+  const raw2 = fs.readFileSync(pdf2, 'latin1');
+  ok(raw2.indexOf('(Jasraj Bhuller)') > 0 && raw2.indexOf('(Jasraj Bhuller)') < raw2.indexOf('(Adham Soliman)') && /\(No-show\) Tj/.test(raw2) && /0\.88 0\.96 0\.9 rg/.test(raw2) &&
+    /1 arrived · 1 no-show/.test(raw2) && /Arrived: 1 of 2  ·  No-show: 1/.test(raw2),
+    'the New Starts List PDF matches the screen: Jasraj highlighted green with "Yes", Adham at the bottom as "No-show", "Arrived: 1 of 2 · No-show: 1"');
+  try { require('child_process').execFileSync('pdftoppm', ['-png', '-r', '70', '-singlefile', pdf2, `${SHOTS}/30-day1-ticked`]); } catch (e) { /* no renderer here */ }
   await shot(ap, '28-day1-arrivals', true);
   const abdT = await loginApi('abdullahi@example.com');
   const abdD1 = (await api(abdT, 'academyList', {})).items.find(c => c.id === adham.id);
@@ -1209,6 +1220,22 @@ async function fillEval(p) {
   ok(reb.day1_status === '' && !reb.academy_confirmed_at && rebD1 && rebD1.academy_date === '2026-10-26' && !rebD1.day1_status && !rebD1.academy_confirmed_at,
     'rebooking (new Day 1 date) clears the no-show; on the Day 1 tab for 26 Oct, to be confirmed again');
   await api(abdT, 'saveOutcome', { id: adham.id, outcome: 'Academy booked', academy_date: '2026-10-19', outcome_notes: '' });
+  // Starting Tuesday instead: a third button on the day moves their Day 1 (off Monday's list and its PDF, onto Tuesday's)
+  await ap.goto(APP + 'index.html?c=academy');
+  const tueB = '[data-d1="next_day"][data-id="' + adham.id + '"]';
+  await ap.waitForSelector(tueB);
+  ok(/📅 Tuesday/.test(await ap.textContent(tueB)), 'a third button on the day: Arrived · No-show · "📅 Tuesday"');
+  await ap.click(tueB);
+  ok(/Move to Tue\?/.test(await ap.textContent(tueB)) && (await api(admin, 'getCandidate', { id: adham.id })).academy_date === '2026-10-19', 'the first tap asks "Move to Tue?" (nothing moved yet)');
+  await ap.click(tueB);
+  await ap.waitForFunction(() => /Tuesday 20 October · TOMORROW/i.test(document.getElementById('page').innerText));
+  const tue = await api(admin, 'getCandidate', { id: adham.id });
+  ok(tue.academy_date === '2026-10-20' && !tue.day1_status && !(await api(admin, 'academyList', {})).items.some(c => c.id === adham.id && c.academy_date === '2026-10-19'),
+    'the second tap moves Adham\'s Day 1 to Tue 20 Oct: on Tuesday\'s list to tick there, off Monday\'s (and its PDF)');
+  let tooLate = null; try { await api(admin, 'markDay1', { id: adham.id, status: 'next_day' }); } catch (e) { tooLate = e.message; }
+  ok(/hasn't happened yet/.test(tooLate), 'only on the day itself (Tuesday\'s list can\'t move him again before Tuesday)');
+  await shot(ap, '28b-day1-moved-to-tuesday', true);
+  await post('/dev/eval', { js: `(() => { MEMO = {}; const c = getC('${adham.id}'); c.academy_date = '2026-10-19'; writeRow('Candidates', c); MEMO = {}; return 1; })()` });  // back to Monday for the rest
   await api(admin, 'markDay1', { id: adham.id, status: 'arrived' });
   // Call log: every response logged, who and when (not just the latest)
   const adLog = JSON.parse((await api(admin, 'getCandidate', { id: adham.id })).outcome_log || '[]');
