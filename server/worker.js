@@ -234,6 +234,11 @@ const ctx = {
   Session: { getEffectiveUser: () => ({ getEmail: () => env.OWNER_EMAIL || 'angad@linkmarketing.org.uk' }) },
   HtmlService: {},
   SUPABASE_BACKEND: true,  // Code.gs: the Google-only parts (email relay, handover, switch) are off here
+  // The one-login hub (hub/lib/core.js) in the same database: redeem a sign-in ticket, open a new starter's playbook
+  CoreAuth: {
+    redeem: (ticket, app) => io('core.redeem', String(ticket || ''), String(app || '')),
+    unlockPlaybook: starter => io('core.unlock', starter),
+  },
   __triggers: [],
 };
 

@@ -141,12 +141,17 @@ const ok = (c, m) => { console.log((c ? '  ✓ ' : '  ✗ ') + m); if (!c) fails
   let jayH = await core.home(q, nj.person);
   ok(jayH.stage === 3 && jayH.stageLabel === 'Stage 3 · Leader' && jayH.waitingForLeaders && !jayH.tiles.some(t => t.id === 'jleaders'), 'Jay sees "Stage 3 · Leader", Leaders Playbook "opening soon"');
   ok((await core.promote(q, jo.person, 'hf', njRow.id, notify)).already, 'moving someone on twice does nothing');
-  await exec("create schema jleaders; create table jleaders.users (id varchar primary key default gen_random_uuid(), email text not null unique, password text not null, display_name text not null, role text not null default 'user')");
+  // As built (19 Oct): emails kept as typed, so a few leaders have twin accounts differing only in capitals
+  await exec("create schema jleaders; create table jleaders.users (id varchar primary key default gen_random_uuid(), email text not null unique, password text not null, display_name text not null, role text not null default 'user', start_date timestamp, last_login timestamp)");
   jayH = await core.home(q, nj.person);
   const jlRow = (await q("select password, display_name from jleaders.users where email = 'new.juss@example.com'"))[0];
   ok(jayH.tiles.some(t => t.id === 'jleaders' && t.company === 'JUSS') && !jayH.waitingForLeaders && jlRow && jlRow.display_name === 'Jay Juss' && !(await bcrypt.compare('x', jlRow.password)),
     'the JUSS Leaders Playbook goes live → Jay\'s account opens by itself (email sign-in only) and his JUSS Leaders tile appears');
-  const pl = await core.promote(q, a.person, 'fr', linkBa.id, notify);
+  await q(`insert into jleaders.users (email, password, display_name, last_login) values ('Twin.Lead@example.com', 'x', 'Twin Old', '2026-01-01'),
+    ('twin.LEAD@example.com', 'x', 'Twin Recent', '2026-10-01'), ('Case.Lead@example.com', 'x', 'Case Recent', '2026-10-01'), ('case.lead@example.com', 'x', 'Case Exact', '2025-01-01')`);
+  ok((await core.accounts(q, 'twin.lead@example.com')).jleaders.name === 'Twin Recent' && (await core.accounts(q, 'case.lead@example.com')).jleaders.name === 'Case Exact',
+    'JUSS leaders with twin accounts (only the capitals differ): the exact spelling, else the one used most recently');
+  const pl =await core.promote(q, a.person, 'fr', linkBa.id, notify);
   const beaH2 = await core.home(q, beaP);
   ok(pl.ok && pl.opened && beaH2.stage === 3 && beaH2.tiles.some(t => t.id === 'leaders') && congrats.some(c => c.email === 'ba@example.com' && c.company === 'LINK' && c.opened),
     'Angad moves Bea (LINK) on: her Leaders Playbook opens straight away, tile on her phone, LINK congratulations email');

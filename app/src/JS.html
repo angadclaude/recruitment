@@ -959,8 +959,21 @@ function upsert(c) {
   saveCache();
 }
 
+/** Signed in (login code or the hub): keep the token, start fresh. */
+function signedIn(token) {
+  S.token = token; store.set('tok', token); store.del('cache'); store.del('codeSent'); S.data = {}; S.users = null; S.chase = null; S.chaseN = 0; S.academy = null; startStaff();
+}
 function startStaff() {
   stopTimer();
+  // Arriving from the one-login hub (link-juss.vercel.app): index.html#hub=<one-use ticket>
+  const hub = /(?:^#|&)hub=([^&]+)/.exec(location.hash);
+  if (hub) {
+    history.replaceState(history.state, '', location.href.replace(/#.*$/, ''));  // the ticket leaves the address bar
+    $app.innerHTML = '<div class="splash">' + logos(56) + '<div class="spinner"></div></div>';
+    call('hubLogin', { ticket: decodeURIComponent(hub[1]) }).then(r => signedIn(r.token))
+      .catch(ex => { store.del('tok'); renderLogin(); showErr(document.getElementById('err'), ex.message); });
+    return;
+  }
   S.token = store.get('tok') || '';
   if (!S.token) return renderLogin();
   const cached = store.get('cache');
@@ -991,7 +1004,7 @@ function renderLogin() {
   let door = store.get('door') === 'admin' ? 'admin' : 'ba';
   $app.innerHTML = '<div class="login"><div class="login-hero">' + logos(58) + '<div class="label">Juss &amp; Link</div><div class="display">Recruitment</div></div>' +
     '<div class="seg doors" id="doors" role="tablist">' + Object.keys(DOORS).map(k => '<button type="button" role="tab" data-door="' + k + '">' + DOORS[k][0] + '</button>').join('') + '</div>' +
-    '<div class="card c-form"><div id="doorHead"></div>' +
+    '<div class="card c-form"><div id="hubIn" hidden></div><div id="doorHead"></div>' +
     '<label class="q">Work email</label><input type="email" id="em" autocomplete="email" placeholder="you@company.co.uk" value="' + h(store.get('lastEmail') || '') + '">' +
     '<div id="codeBox" hidden><label class="q">6-digit code</label><input type="text" id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••" style="letter-spacing:.4em;font-weight:800;text-align:center"></div>' +
     '<div id="err"></div><button class="btn block" id="go" style="margin-top:16px">Email me a code</button>' +
@@ -1002,6 +1015,13 @@ function renderLogin() {
   };
   document.getElementById('doors').onclick = e => { const b = e.target.closest('button[data-door]'); if (b && b.dataset.door !== door) { door = b.dataset.door; store.set('door', door); drawDoor(); } };
   drawDoor();
+  // One login for every LINK × JUSS app: shown once Angad launches it (the code login stays underneath)
+  call('loginInfo').then(i => {
+    const box = document.getElementById('hubIn');
+    if (!box || !i || !i.hub) return;
+    box.innerHTML = '<a class="btn block" id="hubGo" href="' + h(i.hub) + '">Sign in with your work email</a><p class="muted small" style="text-align:center;margin:10px 0 0">One login for all your LINK × JUSS apps · or use a code below</p>';
+    box.hidden = false;
+  }).catch(() => {});
   let sent = false;
   const btn = document.getElementById('go');
   // Code box open, button = Log in. Remembered for 10 minutes, so coming back from the email app doesn't start over.
@@ -1028,7 +1048,7 @@ function renderLogin() {
       door = r.wrongDoor; store.set('door', door); drawDoor();
       return verify(email, door === 'admin' ? 'You\'re an admin, so you\'re in through Admin login 👍' : 'You\'re a BA, so you\'re in through BA login 👍');
     }
-    S.token = r.token; store.set('tok', r.token); store.del('cache'); store.del('codeSent'); S.data = {}; S.users = null; S.chase = null; S.chaseN = 0; S.academy = null; startStaff();
+    signedIn(r.token);
     if (note) toast(note);
   });
   btn.onclick = () => {
@@ -1591,11 +1611,14 @@ function viewAll(quiet) {
   if (!d) body = skeleton();
   else {
     const items = d.items.filter(F[S.filter][1]);
-    body = '<div class="chips scroll fchips" id="flt">' + Object.keys(F).map(k => '<button class="chip' + (S.filter === k ? ' on' : '') + '" data-f="' + k + '">' + F[k][0] + ' <b>' + d.items.filter(F[k][1]).length + '</b></button>').join('') + '</div>' +
+    body = (isAdmin() ? '<button class="btn ghost block" id="weekPdf" style="margin:2px 0 12px">📄 Appointments w/e ' + h(fmt(S.week)) + ' (PDF)</button>' : '') +
+      '<div class="chips scroll fchips" id="flt">' + Object.keys(F).map(k => '<button class="chip' + (S.filter === k ? ' on' : '') + '" data-f="' + k + '">' + F[k][0] + ' <b>' + d.items.filter(F[k][1]).length + '</b></button>').join('') + '</div>' +
       (items.length ? groupByDate(items) : empty('✨', 'Nothing here.'));
   }
   const page = paint('All', '<div class="search"><input type="search" id="q" placeholder="Search name, mobile or email" value="' + h(S.q || '') + '"></div><div id="sr"></div>' + weekNav() + body, quiet);
   bindItems(page); bindWeekNav();
+  const wp = document.getElementById('weekPdf');
+  if (wp) wp.onclick = () => { const x = want(S.week); if (x) savePdf(weekPdf(S.week, x.items), weekPdfName(S.week) + '.pdf'); };
   page.querySelectorAll('#flt .chip').forEach(b => { b.onclick = () => { S.filter = b.dataset.f; render(true); }; });
   let t;
   const q = document.getElementById('q');
@@ -2426,6 +2449,11 @@ function day1Pdf(date, list) {
     txt(W - M - 52, 24, 'Page ' + (p + 1) + ' of ' + pages.length, 8, false, true);
     return o.join('\n');
   });
+  return pdfFile(streams, newStartsName(date));
+}
+/** The PDF file around A4 pages of drawing commands (Helvetica F1, Helvetica-Bold F2). title: what PDF viewers show. */
+function pdfFile(streams, title) {
+  const W = 595.28, H = 841.89;
   const objs = ['<< /Type /Catalog /Pages 2 0 R >>', '', '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>',
     '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>'], kids = [];
   streams.forEach(st => {
@@ -2434,7 +2462,7 @@ function day1Pdf(date, list) {
     objs.push('<< /Length ' + st.length + ' >>\nstream\n' + st + '\nendstream');
   });
   objs[1] = '<< /Type /Pages /Kids [' + kids.map(k => k + ' 0 R').join(' ') + '] /Count ' + kids.length + ' >>';
-  objs.push('<< /Title (' + pdfStr(newStartsName(date)) + ') /Author (' + pdfStr(S.me.user.name) + ') >>');  // the title PDF viewers show
+  objs.push('<< /Title (' + pdfStr(title) + ') /Author (' + pdfStr(S.me.user.name) + ') >>');
   let out = '%PDF-1.4\n', offs = [];
   objs.forEach((ob, i) => { offs.push(out.length); out += (i + 1) + ' 0 obj\n' + ob + '\nendobj\n'; });
   const xref = out.length;
@@ -2444,6 +2472,125 @@ function day1Pdf(date, list) {
   for (let i = 0; i < out.length; i++) bytes[i] = out.charCodeAt(i) & 255;
   return bytes;
 }
+
+// ───── The week's appointments as a PDF (All tab, admins): everyone who checked in, day by day, with their evaluation
+// and outcome, and a summary on top (Angad, 19 Oct) ─────
+/** "Appointments w-e 25.10.2026": the title and file name, for the week ending that Sunday. */
+function weekPdfName(we) { return 'Appointments w-e ' + we.slice(8, 10) + '.' + we.slice(5, 7) + '.' + we.slice(0, 4); }
+/** booked / follow / no / none / nq: which summary box someone counts in. */
+function outcomeKind(c) {
+  if (c.non_qual) return 'nq';
+  if (c.admin_status === 'rejected') return 'no';
+  if (c.outcome === 'Academy booked') return 'booked';
+  if (c.outcome === 'Thinking it over' || c.outcome === 'No answer') return 'follow';
+  if (c.outcome) return 'no';
+  return 'none';
+}
+function outcomeText(c) {
+  const late = c.outcome_late ? ' (late)' : '';
+  if (c.non_qual) return 'Non-qualifier: ' + (/^Not eligible/.test(c.non_qual) ? 'not eligible to work' : /^Visa expired/.test(c.non_qual) ? 'visa expired' : c.non_qual.toLowerCase());
+  if (c.admin_status === 'rejected') return 'Academy booking rejected by admin';
+  if (c.outcome === 'Academy booked') return 'Academy booked: ' + fmt(c.academy_date) + (c.admin_status === 'pending' ? ', awaiting admin' : c.academy_confirmed_at ? ', confirmed' : '') + late;
+  if (c.outcome === 'Thinking it over' && c.callback_at) return 'Thinking it over: call back ' + fmtTs(c.callback_at) + late;
+  if (c.outcome) return c.outcome + late;
+  return c.eval_at ? 'No outcome yet' : 'No outcome yet (no evaluation)';
+}
+/** Helvetica's letter widths (1/1000 of the font size), space to ~: so text is cut to fit its column exactly. */
+const HELV_W = '278,278,355,556,556,889,667,191,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,278,278,584,584,584,556,1015,667,667,722,722,667,611,778,722,278,500,667,556,833,722,778,667,778,722,667,611,722,667,944,667,667,611,278,278,278,469,556,333,556,556,500,556,556,278,556,556,222,222,500,222,833,556,556,556,556,333,500,278,556,500,722,500,500,500,334,260,334,584'.split(',').map(Number);
+function pdfTextW(s, size, bold) {
+  let w = 0;
+  for (const ch of pdfStr(s).replace(/\\(.)/g, '$1')) { const k = ch.charCodeAt(0) - 32; w += k >= 0 && k < 95 ? HELV_W[k] : 556; }
+  return w * size / 1000 * (bold ? 1.07 : 1);  // Helvetica-Bold runs ~7% wider
+}
+/** s, shortened with "..." if it's wider than w points. */
+function pdfFit(s, w, size, bold) {
+  s = String(s == null ? '' : s);
+  if (pdfTextW(s, size, bold) <= w) return s;
+  while (s.length > 1 && pdfTextW(s + '...', size, bold) > w) s = s.slice(0, -1);
+  return s.trim() + '...';
+}
+function weekPdf(we, list) {
+  const W = 595.28, H = 841.89, M = 36, RH = 19, BOTTOM = 48, TW = 523;
+  const cols = [['#', 18], ['Time', 30], ['Name', 106], ['Co', 30], ['Mobile', 70], ['Booked by', 78], ['Eval', 28], ['Outcome', 163]];
+  const colX = []; cols.reduce((x, c) => { colX.push(x + 4); return x + c[1]; }, M);
+  const items = list.slice().sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')));
+  const days = [6, 5, 4, 3, 2, 1, 0].map(n => addDays(we, -n)).filter(d => items.some(c => c.attended_date === d));
+  const count = (l, k) => l.filter(c => outcomeKind(c) === k).length, evals = l => l.filter(c => c.eval_at).length;
+  const fit = (s, i, size, bold) => pdfFit(s, cols[i][1] - 7, size, bold);
+  /** Long names / outcomes: a smaller size first (down to min), "..." only if it still doesn't fit. */
+  const shrink = (s, i, size, min, bold) => { let z = size; while (z > min && pdfTextW(s, z, bold) > cols[i][1] - 7) z -= 0.5; return [fit(s, i, z, bold), z]; };
+  const INK = { grey: '0.42 0.42 0.47', green: '0.05 0.5 0.3', amber: '0.75 0.38 0.02', red: '0.75 0.15 0.15' };
+  const pages = [];
+  let o, y;
+  const txt = (x, yy, s, size, bold, ink) => o.push((INK[ink] || '0.13 0.13 0.17') + ' rg BT /' + (bold ? 'F2' : 'F1') + ' ' + size + ' Tf ' + x.toFixed(2) + ' ' + yy.toFixed(2) + ' Td (' + pdfStr(s) + ') Tj ET');
+  const newPage = () => {
+    o = []; pages.push(o);
+    o.push('0.95 0.42 0.11 rg 0 ' + (H - 10).toFixed(2) + ' ' + (W / 2).toFixed(2) + ' 10 re f', '0.05 0.6 0.6 rg ' + (W / 2).toFixed(2) + ' ' + (H - 10).toFixed(2) + ' ' + (W / 2).toFixed(2) + ' 10 re f');
+    y = H - 34;
+  };
+  const room = need => { if (y - need >= BOTTOM) return false; newPage(); return true; };
+  const colHead = () => {
+    o.push('0.94 0.93 0.91 rg ' + M + ' ' + (y - 17).toFixed(2) + ' ' + TW + ' 17 re f');
+    cols.forEach((c, i) => txt(colX[i], y - 12, c[0], 8, true));
+    y -= 17;
+  };
+  const dayHead = (d, dl, cont) => {
+    y -= 10;
+    txt(M, y - 12, fmtLong(d) + (cont ? ' (continued)' : ''), 12, true);
+    if (!cont) txt(M + 190, y - 12, dl.length + ' checked in  ·  ' + evals(dl) + ' evaluated  ·  ' + count(dl, 'booked') + ' Academy booked  ·  ' + count(dl, 'none') + ' no outcome yet', 8.5, false, 'grey');
+    y -= 20;
+  };
+  const row = (c, i) => {
+    const yy = y - 13, k = outcomeKind(c), ev = c.non_qual ? '-' : c.eval_at ? 'Yes' : 'No';
+    txt(colX[0], yy, String(i + 1), 8, false, 'grey');
+    txt(colX[1], yy, String(c.created_at || '').slice(11, 16), 8.5);
+    const nm = shrink(c.full_name, 2, 9, 7, true), oc = shrink(outcomeText(c), 7, 8, 6.5);
+    txt(colX[2], yy, nm[0], nm[1], true);
+    txt(colX[3], yy, c.company || '', 8.5);
+    txt(colX[4], yy, fit(c.mobile, 4, 8.5), 8.5);
+    txt(colX[5], yy, fit(c.booker_name || (c.booker_typed ? c.booker_typed + '?' : '-'), 5, 8.5), 8.5);
+    txt(colX[6], yy, ev, 8.5, ev === 'No', ev === 'No' ? 'amber' : '');
+    txt(colX[7], yy, oc[0], oc[1], false, { booked: 'green', none: 'amber', nq: 'red' }[k] || '');
+    o.push('0.85 0.84 0.82 RG 0.5 w ' + M + ' ' + (y - RH).toFixed(2) + ' m ' + (M + TW) + ' ' + (y - RH).toFixed(2) + ' l S');
+    y -= RH;
+  };
+
+  newPage();
+  txt(M, H - 50, 'Appointments · week ending ' + fmtLong(we) + ' ' + we.slice(0, 4), 18, true);
+  txt(M, H - 67, 'Everyone who checked in (Mon-Sun) with their evaluation and call outcome  |  LINK Marketing & JUSS Marketing', 9.5);
+  txt(M, H - 82, 'Printed ' + fmt(S.me.today) + ' ' + londonNow().slice(11) + ' by ' + S.me.user.name + '. Outcomes as logged in the app at that moment.', 8.5, false, 'grey');
+  y = H - 94;
+  // Summary: six boxes, then the rest on one line
+  const boxes = [[items.length, 'Checked in'], [evals(items), 'Evaluated'], [count(items, 'booked'), 'Academy booked', 'green'],
+    [count(items, 'follow'), 'Thinking it over\nor no answer'], [count(items, 'no'), 'Declined or\nnot suitable'], [count(items, 'none'), 'No outcome yet', count(items, 'none') ? 'amber' : '']];
+  const bw = (TW - 5 * 6) / 6;
+  boxes.forEach((b, i) => {
+    const x = M + i * (bw + 6);
+    o.push('0.97 0.96 0.94 rg ' + x.toFixed(2) + ' ' + (y - 52).toFixed(2) + ' ' + bw.toFixed(2) + ' 52 re f');
+    txt(x + 7, y - 23, String(b[0]), 17, true, b[2]);
+    b[1].split('\n').forEach((l, j) => txt(x + 7, y - 36 - j * 9, pdfFit(l, bw - 12, 7.5), 7.5, false, 'grey'));
+  });
+  y -= 66;
+  const late = items.filter(c => c.outcome_late).length, co = k => items.filter(c => c.company === k).length;
+  txt(M, y, 'Late outcomes ' + late + '  ·  Non-qualifiers ' + count(items, 'nq') + '  ·  LINK ' + co('LINK') + '  ·  JUSS ' + co('JUSS') +
+    (days.length ? '  ·  ' + days.map(d => DAYS[D(d).getUTCDay()] + ' ' + items.filter(c => c.attended_date === d).length).join(', ') : ''), 8.5, false, 'grey');
+  y -= 8;
+  if (!items.length) { y -= 24; txt(M, y, 'Nobody checked in this week.', 11, false, 'grey'); }
+  days.forEach(d => {
+    const dl = items.filter(c => c.attended_date === d);
+    room(30 + 17 + RH);
+    dayHead(d, dl, false); colHead();
+    dl.forEach((c, i) => { if (room(RH)) { dayHead(d, dl, true); colHead(); } row(c, i); });
+  });
+  const streams = pages.map((p, i) => {
+    o = p;
+    txt(M, 24, 'Personal data: keep it safe, share it only inside LINK / JUSS, and delete it when you\'re done.', 8, false, 'grey');
+    txt(W - M - 52, 24, 'Page ' + (i + 1) + ' of ' + pages.length, 8, false, 'grey');
+    return p.join('\n');
+  });
+  return pdfFile(streams, weekPdfName(we));
+}
+
 /** Phone: the share sheet (Print, Save to Files, WhatsApp, AirDrop). Computer: a download. */
 function savePdf(bytes, name) {
   const blob = new Blob([bytes], { type: 'application/pdf' });

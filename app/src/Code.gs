@@ -589,13 +589,46 @@ function verifyCode(req) {
     if (u && (req.door === 'admin' || req.door === 'ba') && req.door !== door) return { wrongDoor: door };
     rec.expires = '0000'; writeRow('Codes', rec);
     if (!u) throw new Error('Access not active.');
-    const t = token();
-    appendRow('Sessions', {
-      token: sha(t), user_id: u.id,
-      expires: Utilities.formatDate(new Date(Date.now() + CONFIG.SESSION_DAYS * 86400000), CONFIG.TZ, 'yyyy-MM-dd HH:mm'),
-    });
-    return { token: t, user: publicUser(u) };
+    return newSession(u);
   });
+}
+/** A logged-in session for this person (inside the lock). */
+function newSession(u) {
+  const t = token();
+  appendRow('Sessions', {
+    token: sha(t), user_id: u.id,
+    expires: Utilities.formatDate(new Date(Date.now() + CONFIG.SESSION_DAYS * 86400000), CONFIG.TZ, 'yyyy-MM-dd HH:mm'),
+  });
+  return { token: t, user: publicUser(u) };
+}
+
+// ───── One login for every LINK × JUSS app: the hub (link-juss.vercel.app, hub/ in this repo) ─────
+// Only on Supabase (CoreAuth comes from server/worker.js). The hub only ever gives a Recruitment ticket to someone active in
+// the Users tab: new starters never get in here. The "Sign in with your work email" button, the automatic playbook unlock
+// and the hub link in welcome emails switch on at launch with the HUB_SIGNIN setting (jl.props) = 1.
+const HUB_URL = 'https://link-juss.vercel.app/';
+function hubOn() { return onSupabase() && typeof CoreAuth !== 'undefined' && PropertiesService.getScriptProperties().getProperty('HUB_SIGNIN') === '1'; }
+function hubLink(app, path) { return HUB_URL + '?app=' + app + '&r=' + encodeURIComponent(path || '/'); }
+function loginInfo() { return { hub: hubOn() ? hubLink('recruit', '/') : '' }; }
+/** Arriving from the hub (index.html#hub=<ticket>): the same session a login code gives. Works once, for 2 minutes. */
+function hubLogin(req) {
+  if (!onSupabase() || typeof CoreAuth === 'undefined') throw new Error('Signing in through the hub isn\'t available here.');
+  const r = CoreAuth.redeem(String(req.ticket || ''), 'recruit');
+  if (!r) throw new Error('That sign-in link has expired. Please try again.');
+  const email = normEmail(r.email);
+  const u = usersAll().filter(x => normEmail(x.email) === email && truthy(x.active))[0];
+  if (!u) throw new Error('You don\'t have access to the recruitment app. Ask ' + ADMINS.map(a => a.name.split(' ')[0]).join(', ').replace(/, ([^,]*)$/, ' or $1') + '.');
+  log(u, 'hub_login', '', email);
+  return withLock(() => newSession(u));
+}
+/** Onboarded → their company's playbook opens (LINK: FR Playbook, JUSS: HelloFresh), email sign-in only. Never Recruitment. */
+function unlockPlaybook(c, co, u) {
+  if (!hubOn()) return null;
+  try {
+    const r = CoreAuth.unlockPlaybook({ email: c.email, name: c.full_name, company: co, startDate: c.academy_date });
+    log(u, 'playbook_unlocked', c.id, (r && r.app) + (r && r.created ? ' opened' : r && r.existed ? ' already open' : ' ' + (r && r.error)));
+    return r;
+  } catch (e) { console.error(e); log(u, 'playbook_unlock_failed', c.id, String(e.message || e)); return null; }
 }
 
 // ───────────────────────── PUBLIC (candidate) ─────────────────────────
@@ -1309,6 +1342,7 @@ function deleteUser(req, u) {
 const PUBLIC_ACTIONS = {
   publicConfig: publicConfig, checkin: checkin, candidateStatus: candidateStatus,
   resumeByMobile: resumeByMobile, submitEval: submitEval, myEval: myEval, requestCode: requestCode, verifyCode: verifyCode,
+  hubLogin: hubLogin, loginInfo: loginInfo,
   welcomeInfo: welcomeInfo, confirmAcademy: confirmAcademy,
 };
 const STAFF_ACTIONS = {
@@ -1808,6 +1842,8 @@ function onboardStep(req, u) {
  *  chunky buttons). Table layout + inline styles so it holds up in Gmail, Outlook and Apple Mail (Outlook desktop: solid colours). */
 function onboardEmail(c, u, pick) {
   const co = brandCo(c, pick), o = ONBOARD[co], first = c.full_name.split(' ')[0];
+  // After launch the playbook button goes through the hub: they sign in with this email and land in their own playbook
+  const pbUrl = hubOn() ? hubLink(co === 'JUSS' ? 'hf' : 'fr', '/') : o.playbook[1];
   const T = co === 'JUSS'
     ? { solid: '#E4613F', hero: 'linear-gradient(115deg,#D9534F 0%,#E4813F 28%,#EDA03A 44%,#34B1C0 62%,#2F86B5 100%)', btn: '#1FA3B1', tint: '#DCF2F4', ink: '#13808C' }
     : { solid: '#EE5A24', hero: 'linear-gradient(115deg,#FF7A2F 0%,#EE5A24 54%,#26252D 54.3%,#34333D 100%)', btn: '#EE5A24', tint: '#FDE6DC', ink: '#C2410C' };
@@ -1850,7 +1886,7 @@ function onboardEmail(c, u, pick) {
       (o.preCoaching ? step(2, 'Complete the short online <b>Pre-Coaching Module</b>: around <b>15–20 minutes</b> of short videos and quick questions. It’s important it’s done before ' + DAYS_LONG[weekday(d1)] + ', so you’re fully prepared for coaching.') : '') +
       step(o.preCoaching ? 3 : 2, 'Read your <b>' + esc(o.playbook[0]) + '</b>, so you walk in on Day 1 already knowing how we work.') +
       '</table>' + bigBtn('📲 Download FieldIQ', ONBOARD.FIELDIQ_URL) + (o.preCoaching ? bigBtn('📝 Open the Pre-Coaching Module', o.preCoaching[1]) : '') +
-      bigBtn('📘 Open my ' + esc(o.playbook[0]), o.playbook[1])) +
+      bigBtn('📘 Open my ' + esc(o.playbook[0]), pbUrl)) +
     // Day 1
     head('📅', 'Day 1 · Induction') +
     card(big(esc(longDate(d1))) + pill('⏰ 1:30pm – 6:00pm') +
@@ -1883,7 +1919,7 @@ function onboardEmail(c, u, pick) {
     'Quick one: reply GOT IT to this email so we know it reached you.\n\n' +
     'BEFORE DAY 1\n1. Download FieldIQ and complete your vetting form before your first day: ' + ONBOARD.FIELDIQ_URL + '\n' +
     (o.preCoaching ? '2. Complete the Pre-Coaching Module (15-20 minutes): ' + o.preCoaching[1] + '\n' : '') +
-    (o.preCoaching ? '3' : '2') + '. Read your ' + o.playbook[0] + ': ' + o.playbook[1] + '\n' +
+    (o.preCoaching ? '3' : '2') + '. Read your ' + o.playbook[0] + ': ' + pbUrl + '\n' +
     '\nDAY 1 · INDUCTION: ' + longDate(d1) + ', 1:30pm (finish 5:30-6:00pm)\n' + CONFIG.OFFICE_ADDRESS + ' · ' + o.maps + '\n' +
     'DAY 2 · SALES COACHING: ' + longDate(d2) + ', 1:00pm (finish 5:30-6:00pm)\n' + (o.day3 ? 'Day 3 onwards: 10:00am - 8:30pm\n' : '') +
     '\nBRING: notepad and pen, photo ID, your right-to-work share code\n' +
@@ -1912,6 +1948,7 @@ function onboardSend(req, u) {
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(c.email || '')) throw new Error('No valid email for ' + c.full_name + '.');
   const pick = brandPick(req, u), s = welcomeSender(c, u, pick), bad = welcomeNotReady(s);
   if (bad) throw new Error(bad);
+  unlockPlaybook(c, brandCo(c, pick), u);  // their playbook is open before they tap the link (after launch)
   const m = onboardEmail(c, s, pick), brand = ONBOARD[brandCo(c, pick)].brand;
   const opts = { htmlBody: m.html, name: s.name + ' | ' + brand, bcc: s.email };
   if (s.email !== scriptEmail()) opts.from = s.email;
