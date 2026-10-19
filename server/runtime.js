@@ -123,7 +123,8 @@ class Runtime {
     try { const r = await fn(); await this.conn.q('release savepoint hub'); return r; } catch (e) { await this.conn.q('rollback to savepoint hub'); throw e; }
   }
 
-  /** Queue a job (one transaction). type: 'call' { fn, args } · 'eval' { js } · 'pushes'. */
+  /** Queue a job (one transaction). type: 'call' { fn, args } · 'eval' { js } · 'pushes'.
+   *  job.later(promise): the emails go out after the answer (Vercel's waitUntil), so a login code doesn't wait on Google. */
   run(job) {
     const p = this.queue.then(() => this.exec(job));
     this.queue = p.catch(() => {});
@@ -140,7 +141,9 @@ class Runtime {
       value = await new Promise((resolve, reject) => {
         const id = ++this.seq;
         this.pending.set(id, { resolve, reject });
-        this.worker.postMessage(Object.assign({ id }, job));
+        const msg = Object.assign({ id }, job);
+        delete msg.later;  // a function can't go to the worker
+        this.worker.postMessage(msg);
       });
       await this.conn.commit();
     } catch (e) {
@@ -150,7 +153,12 @@ class Runtime {
       this.conn.release();
       this.conn = null;
     }
-    if (this.sent.length && this.o.mail) await this.o.mail.deliver(this.sent).catch(e => console.error('mail delivery', e));
+    if (this.sent.length && this.o.mail) {
+      // Sent after the commit. With job.later, after the answer too (and the next job doesn't wait for Google). A failed
+      // send stays in jl.outbox and the 5-minute timer tries it again.
+      const delivery = this.o.mail.deliver(this.sent).catch(e => console.error('mail delivery', e));
+      if (job.later) job.later(delivery); else await delivery;
+    }
     return value;
   }
 
