@@ -1,9 +1,11 @@
 // Google's timers, run by Vercel Cron every 5 minutes (vercel.json). Times are London time, like the Apps Script triggers:
 // keepWarm every 5 min (it sends the 10:00 / 12:00 / 18:00 reminders when they're due), dailyMaintenance 02:00,
 // weeklyProgressEmails Wed + Fri 10:00, saturdayDeadlineEmails Sat 14:00, mondayPayReportEmail Mon 09:00.
+// Then the live copy of the data into the team's Google Sheet (server/mirror.js).
 // Nothing runs until switch day sets VERCEL_LIVE (until then Google's own timers are the live ones).
 'use strict';
-const { runtime, relay } = require('../server/live');
+const { runtime, relay, db } = require('../server/live');
+const { mirrorToSheet } = require('../server/mirror');
 
 const SCHEDULE = [
   { fn: 'dailyMaintenance', days: [0, 1, 2, 3, 4, 5, 6], hour: 2 },
@@ -47,6 +49,9 @@ module.exports = async (req, res) => {
       .then(r => { warm.api = r.status + ' in ' + (Date.now() - t0) + 'ms'; }, e => { warm.api = 'failed: ' + e.message; }) : null,
     relay().call('relayInfo').then(() => { warm.relay = 'ok in ' + (Date.now() - t0) + 'ms'; }, e => { warm.relay = 'failed: ' + e.message; }),
   ]);
+  // The team's live copy in the Google Sheet (only the tabs that changed)
+  let mirrored;
+  try { mirrored = await mirrorToSheet(db().sql, relay().call); } catch (e) { console.error('mirror', e); mirrored = 'failed: ' + e.message; }
   res.setHeader('content-type', 'application/json');
-  res.end(JSON.stringify({ at: now, ran, mailRetried: retried, warm }));
+  res.end(JSON.stringify({ at: now, ran, mailRetried: retried, warm, mirrored }));
 };
