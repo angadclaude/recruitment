@@ -36,20 +36,50 @@ create table if not exists jl.outbox (
  *  was stopped mid-job) is ended by Postgres after 30 s, releasing its locks. */
 const BEGIN = "begin; set local lock_timeout = '8s'; set local statement_timeout = '20s'; set local idle_in_transaction_session_timeout = '30s'";
 
-/** Live: Supabase through its transaction pooler (so no prepared statements, and each job pins one connection). */
-function postgresAdapter({ url, password }) {
+/** A database step that gets no answer in time fails (and the app says "Trying again…") instead of waiting forever. */
+function timed(p, ms, what) {
+  let t;
+  const late = new Promise((_, reject) => { t = setTimeout(() => reject(Object.assign(new Error('Service error: the database ' + what + ' took over ' + ms / 1000 + ' s'), { retry: true, stuck: true })), ms); });
+  return Promise.race([p, late]).finally(() => clearTimeout(t));
+}
+
+/** Live: Supabase through its transaction pooler (so no prepared statements, and each job pins one connection).
+ *  Vercel pauses a server copy between requests. A connection left open across a pause can be dead without either end
+ *  knowing (the network drops it silently), and a query sent on it waits forever: pages hung for 25–60 s after a quiet
+ *  spell, several at once (19 Oct). So connections unused for 20 s are replaced before use, and every step has a limit. */
+function postgresAdapter({ url, password, limits }) {
   const postgres = require('postgres');
-  const sql = postgres(url, { password, max: 4, prepare: false, idle_timeout: 20, connect_timeout: 15, onnotice: () => {} });
+  const L = Object.assign({ idle: 20000, connect: 6000, query: 25000 }, limits);
+  const make = () => postgres(url, { password, max: 4, prepare: false, idle_timeout: 20, connect_timeout: 15, onnotice: () => {} });
+  let sql = make(), used = Date.now();
+  // The old connections close in the background (anything still running on them gets 5 s)
+  const renew = () => { const old = sql; sql = make(); old.end({ timeout: 5 }).catch(() => {}); };
+  const pool = () => { if (Date.now() - used > L.idle) renew(); used = Date.now(); return sql; };
+  const step = (p, ms, what) => timed(p, ms, what).then(r => { used = Date.now(); return r; }, e => { if (e.stuck) renew(); throw e; });
   return {
-    sql,
+    get sql() { return pool(); },
     async begin() {
-      const c = await sql.reserve();
-      await c.unsafe(BEGIN);
+      let c;
+      for (let attempt = 1; ; attempt++) {
+        c = null;
+        try {
+          const reserving = pool().reserve();
+          c = await step(reserving, L.connect, 'connection');
+          await step(c.unsafe(BEGIN), L.connect, 'start');
+          break;
+        } catch (e) {
+          if (c) c.release();
+          if (attempt >= 2 || !e.stuck) throw e;  // a stuck connection: once more on a fresh one
+        }
+      }
+      // After a stuck step this connection is written off: no rollback to wait for (closing it ends the transaction)
+      let dead = false;
+      const on = (p, ms, what) => step(p, ms, what).catch(e => { if (e.stuck) dead = true; throw e; });
       return {
-        q: (text, params) => c.unsafe(text, params || []),
-        commit: () => c.unsafe('commit'),
-        rollback: () => c.unsafe('rollback'),
-        cycle: async () => { await c.unsafe('commit'); await c.unsafe(BEGIN); },
+        q: (text, params) => on(c.unsafe(text, params || []), L.query, 'query'),
+        commit: () => on(c.unsafe('commit'), L.query, 'commit'),
+        rollback: () => (dead ? Promise.resolve() : on(c.unsafe('rollback'), L.connect, 'rollback')),
+        cycle: async () => { await on(c.unsafe('commit'), L.query, 'commit'); await on(c.unsafe(BEGIN), L.connect, 'start'); },
         release: () => c.release(),
       };
     },
