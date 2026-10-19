@@ -122,7 +122,7 @@ const ok = (c, m) => { console.log((c ? '  ✓ ' : '  ✗ ') + m); if (!c) fails
   const notify = async (email, name, company, opened) => { congrats.push({ email, name, company, opened }); };
   const beaP = await core.sessionPerson(q, v.token) || (await signIn('ba@example.com')).person;
   const beaH = await core.home(q, beaP);
-  ok(beaH.stage === 2 && beaH.stageName === 'BA' && !beaH.approver && !beaH.admin, 'a BA sees "Stage 2 · BA", and can\'t move anyone on');
+  ok(beaH.stage === 2 && beaH.stageLabel === 'Stage 1–2 · Brand Ambassador' && !beaH.approver && !beaH.admin, 'a BA sees "Stage 1–2 · Brand Ambassador" (Angad\'s ladder), and can\'t move anyone on');
   ok(ah.admin === undefined || (await core.home(q, a.person)).admin === true, 'admins in the recruitment app (Angad, Jess, Satpal, Rubal) are hub admins');
   ok((await core.team(q, beaP)).ok === false, 'a BA can\'t see the "move people on" list');
   ok((await core.setApprover(q, beaP, 'jo@jussmarketing.co.uk', true)).ok === false, 'only admins choose approvers');
@@ -139,7 +139,7 @@ const ok = (c, m) => { console.log((c ? '  ✓ ' : '  ✗ ') + m); if (!c) fails
   ok(pj.ok && !pj.opened && pj.waiting && congrats.some(c => c.email === 'new.juss@example.com' && c.company === 'JUSS' && !c.opened),
     'JUSS approver moves Jay on to Leader before the JUSS Leaders Playbook exists: recorded, Jay gets a JUSS congratulations email');
   let jayH = await core.home(q, nj.person);
-  ok(jayH.stage === 3 && jayH.waitingForLeaders && !jayH.tiles.some(t => t.id === 'jleaders'), 'Jay sees "Stage 3 · Leader", Leaders Playbook "opening soon"');
+  ok(jayH.stage === 3 && jayH.stageLabel === 'Stage 3 · Leader' && jayH.waitingForLeaders && !jayH.tiles.some(t => t.id === 'jleaders'), 'Jay sees "Stage 3 · Leader", Leaders Playbook "opening soon"');
   ok((await core.promote(q, jo.person, 'hf', njRow.id, notify)).already, 'moving someone on twice does nothing');
   await exec("create schema jleaders; create table jleaders.users (id varchar primary key default gen_random_uuid(), email text not null unique, password text not null, display_name text not null, role text not null default 'user')");
   jayH = await core.home(q, nj.person);

@@ -78,9 +78,11 @@ const APPS = {
   jleaders: { name: 'Leaders Playbook', blurb: 'JUSS · for team leaders', url: 'https://juss-leaders-playbook.vercel.app/', handoff: 'https://juss-leaders-playbook.vercel.app/auth/hub', company: 'JUSS' },
 };
 
-/** The ladder (like CG1): 1 Candidate (recruitment app) → 2 BA (their company's playbook) → 3 Leader (Leaders Playbook).
- *  BA playbook and Leaders playbook per company; an approver moves people on within their own company, admins anyone. */
-const STAGES = { 1: 'Candidate', 2: 'BA', 3: 'Leader' };
+/** The ladder (like CG1), Angad's words (19 Oct): Stages 1 & 2 = Brand Ambassador (their company's playbook; the playbook's
+ *  Cycle of Development Stage 1, then Stage 2 "Becoming a Leader"), Stage 3 = Leader (Leaders Playbook). stage 2 here means
+ *  "a Brand Ambassador, Stage 1 or 2". An approver moves people on to Stage 3 within their own company, admins anyone. */
+const STAGES = { 2: 'Brand Ambassador', 3: 'Leader' };
+const STAGE_LABEL = { 2: 'Stage 1–2 · Brand Ambassador', 3: 'Stage 3 · Leader' };
 const PLAYBOOK = { LINK: 'fr', JUSS: 'hf' }, LEADERS = { LINK: 'leaders', JUSS: 'jleaders' };
 
 const CODE_MINUTES = 10, CODE_TRIES = 5, SENDS_PER_HOUR = 5, SESSION_DAYS = 90, HANDOFF_SECONDS = 120;
@@ -227,7 +229,7 @@ async function home(q, person) {
   const stage = stageOf(acc, waiting), admin = isAdmin(acc);
   return {
     person: Object.assign({}, person, { name: person.name || p.name, company }), tiles, canConnectHf,
-    stage, stageName: STAGES[stage] || '', waitingForLeaders: waiting && !acc.leaders && !acc.jleaders,
+    stage, stageName: STAGES[stage] || '', stageLabel: STAGE_LABEL[stage] || '', waitingForLeaders: waiting && !acc.leaders && !acc.jleaders,
     admin, approver: admin || await isApprover(q, person.email),
   };
 }
