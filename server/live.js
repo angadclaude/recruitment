@@ -55,9 +55,20 @@ function relay(db) {
     if (!j.ok) throw new Error('relay ' + action + ': ' + j.error);
     return j.data;
   }
+  // Asked from inside a job (opening the app, as an admin), so Google is never waited on for long: what we last knew,
+  // refreshed in the background every 10 minutes; at most 3 s the first time (19 Oct: a slow Google held every request
+  // queued behind it)
+  let infoAsk = null;
+  function refreshInfo() {
+    if (!infoAsk && (!info || Date.now() - infoAt > 10 * 60000)) {
+      infoAsk = call('relayInfo').then(i => { info = i; infoAt = Date.now(); }, e => console.error('relayInfo', e.message)).finally(() => { infoAsk = null; });
+    }
+    return infoAsk;
+  }
   async function getInfo() {
-    if (!info || Date.now() - infoAt > 10 * 60000) { info = await call('relayInfo'); infoAt = Date.now(); }
-    return info;
+    const asking = refreshInfo();
+    if (!info && asking) await Promise.race([asking, new Promise(r => setTimeout(r, 3000))]);
+    return info || { quota: -1, aliases: [] };
   }
   const allowed = m => {
     if (!REHEARSAL) return true;
