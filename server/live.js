@@ -90,11 +90,12 @@ let STARTING;
 function runtime() { return RT ? Promise.resolve(RT) : (STARTING = STARTING || start().catch(e => { STARTING = null; throw e; })); }
 async function start() {
   DB = postgresAdapter({ url: process.env.DATABASE_URL, password: process.env.DATABASE_PASSWORD });
-  await DB.migrate();
   RELAY = relay(DB);
-  // The phone-alert key lives in Google's Script Properties; Google hands it over (nobody copies it)
-  let key = process.env.ONESIGNAL_API_KEY || '';
-  if (!key) { try { key = (await RELAY.call('relayInfo', { withKeys: true })).onesignalKey || ''; } catch (e) { console.error('no alert key yet', e.message); } }
+  // The phone-alert key lives in Google's Script Properties; Google hands it over (nobody copies it). Asked at the same
+  // time as the database is checked, not after it: waking up costs one round trip, not two (19 Oct: a login code took 9 s)
+  const keyAsk = process.env.ONESIGNAL_API_KEY ? Promise.resolve(process.env.ONESIGNAL_API_KEY)
+    : RELAY.call('relayInfo', { withKeys: true }).then(i => i.onesignalKey || '', e => { console.error('no alert key yet', e.message); return ''; });
+  const [, key] = await Promise.all([DB.migrate(), keyAsk]);
   const rt = new Runtime({
     db: DB, http, mail: RELAY,
     codePath: path.join(__dirname, '..', 'app', 'src', 'Code.gs'),
