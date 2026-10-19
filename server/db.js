@@ -31,6 +31,11 @@ create table if not exists jl.outbox (
 );
 `;
 
+/** Every job's transaction has limits, so one slow or stuck job can't freeze the others (they get "Trying again…" instead
+ *  of a 60 s timeout): wait at most 8 s for a lock, 20 s for a query, and a transaction left idle (a server copy that
+ *  was stopped mid-job) is ended by Postgres after 30 s, releasing its locks. */
+const BEGIN = "begin; set local lock_timeout = '8s'; set local statement_timeout = '20s'; set local idle_in_transaction_session_timeout = '30s'";
+
 /** Live: Supabase through its transaction pooler (so no prepared statements, and each job pins one connection). */
 function postgresAdapter({ url, password }) {
   const postgres = require('postgres');
@@ -39,16 +44,22 @@ function postgresAdapter({ url, password }) {
     sql,
     async begin() {
       const c = await sql.reserve();
-      await c.unsafe('begin');
+      await c.unsafe(BEGIN);
       return {
         q: (text, params) => c.unsafe(text, params || []),
         commit: () => c.unsafe('commit'),
         rollback: () => c.unsafe('rollback'),
-        cycle: async () => { await c.unsafe('commit'); await c.unsafe('begin'); },
+        cycle: async () => { await c.unsafe('commit'); await c.unsafe(BEGIN); },
         release: () => c.release(),
       };
     },
-    async migrate() { await sql.unsafe(SCHEMA); },
+    // Only when the tables aren't there yet. "create index if not exists" still locks jl.rows, and on a busy lunchtime
+    // every new server copy queued that lock behind live saves, so everyone else queued behind it (19 Oct: requests
+    // timing out at 60 s in waves). With a short lock limit too, so it can never hold others up.
+    async migrate() {
+      if ((await sql`select to_regclass('jl.outbox') as t`)[0].t) return;
+      await sql.begin(async t => { await t.unsafe("set local lock_timeout = '5s'"); await t.unsafe(SCHEMA); });
+    },
     end: () => sql.end({ timeout: 5 }),
   };
 }

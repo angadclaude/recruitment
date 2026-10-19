@@ -19,11 +19,23 @@ module.exports = async (req, res) => {
   if (typeof body === 'string') { try { body = JSON.parse(body || '{}'); } catch (e) { body = {}; } }
   if (!body || typeof body !== 'object' || Array.isArray(body)) body = {};
   res.setHeader('content-type', 'application/json; charset=utf-8');
+  const t0 = Date.now();
   try {
     const rt = await runtime();
     if (!(await isLive(rt))) return res.end(JSON.stringify({ ok: false, error: 'Not switched on yet.' }));
     // Answer first, then the emails (a login code: "Check your email" straight away, the email a moment later)
-    const out = await rt.run({ type: 'call', fn: 'api', args: [body], later: process.env.VERCEL ? waitUntil : null });
+    const work = rt.run({ type: 'call', fn: 'api', args: [body], later: process.env.VERCEL ? waitUntil : null });
+    // Never hang the phone: after 25 s it gets "Trying again…" (and retries by itself) instead of Vercel's 60 s timeout,
+    // which the app showed as "No connection" (19 Oct). The job still finishes properly in the background.
+    let timer;
+    const out = await Promise.race([work, new Promise(r => { timer = setTimeout(() => r(null), 25000); })]);
+    clearTimeout(timer);
+    const ms = Date.now() - t0;
+    if (ms > 5000) console.error('slow rpc', body.action, ms + 'ms', out ? '' : '(answered "trying again")');
+    if (!out) {
+      if (process.env.VERCEL) waitUntil(work.catch(e => console.error('rpc late', body.action, e)));
+      return res.end(JSON.stringify({ ok: false, retry: true, error: 'Lots of people are sending at once. Trying again…' }));
+    }
     res.end(JSON.stringify(out));
   } catch (e) {
     console.error('rpc', body.action, e);
