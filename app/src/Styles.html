@@ -766,6 +766,106 @@ table.t td { padding: 9px 4px; border-bottom: 1px solid var(--line); vertical-al
 @keyframes shake { 20%, 60% { transform: translateX(-5px); } 40%, 80% { transform: translateX(5px); } }
 @keyframes glow { 50% { box-shadow: 0 16px 36px -10px rgba(var(--glow), .95), inset 0 1px 0 rgba(255,255,255,.22); } }
 @keyframes fall { to { transform: translateY(110vh) rotate(540deg); opacity: .2; } }
+
+/* ══════════ Immersive layer (Angad, 19 Oct 2026: "make it immersive", like the playbooks) ══════════
+   Every dark header is a stage: check-in, evaluation, welcome page, login, the staff Today / Mine headers and the
+   candidate page. A deep radial background, two slow-moving brand lights, and the brand as a floating 3D object:
+   LINK: the logo's triangle in glass layers · JUSS: the logo's three paint swipes · co-branded: a LINK-to-JUSS triangle.
+   Markup: FX in JS.html (inside each header). In the staff app the top bar is dark glass and the Today / Mine
+   header runs edge to edge under it, so the top of the screen is one stage, like the FR Playbook's home. */
+@property --st1 { syntax: '<color>'; inherits: true; initial-value: #2C2C38; }
+@property --st2 { syntax: '<color>'; inherits: true; initial-value: #17171D; }
+@property --st3 { syntax: '<color>'; inherits: true; initial-value: #0F0F14; }
+@property --o1 { syntax: '<color>'; inherits: true; initial-value: rgba(241, 90, 36, .45); }
+@property --o2 { syntax: '<color>'; inherits: true; initial-value: rgba(59, 180, 193, .40); }
+:root { --st1: #2C2C38; --st2: #17171D; --st3: #0F0F14; --o1: rgba(241, 90, 36, .50); --o2: rgba(59, 180, 193, .45); }
+.t-LINK { --st1: #2C2C38; --st2: #17171D; --st3: #0F0F14; --o1: rgba(241, 90, 36, .60); --o2: rgba(255, 138, 61, .34); }
+.t-JUSS { --st1: #1D5566; --st2: #0D2833; --st3: #071820; --o1: rgba(237, 160, 58, .50); --o2: rgba(52, 177, 192, .45); }
+:root.theme-anim { transition: --b1 .6s, --b2 .6s, --b3 .6s, --brand .6s, --brand-ink .6s, --tint .6s, --bg .6s, --line .6s, --dark1 .6s, --dark2 .6s, --wash .6s,
+  --st1 .6s, --st2 .6s, --st3 .6s, --o1 .6s, --o2 .6s; }
+
+.hero, .c-hero, .evhero, .login-hero, .wl-hero { background: radial-gradient(120% 90% at 85% 0%, var(--st1) 0%, var(--st2) 55%, var(--st3) 100%); }
+.profile::before { background: radial-gradient(120% 160% at 85% 0%, var(--st1), var(--st2) 60%, var(--st3)); }
+/* The stage replaces the old flat corner shape */
+:is(.hero, .c-hero, .evhero, .login-hero, .wl-hero, .profile):has(> .fx)::after { display: none; }
+
+.fx { position: absolute; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; border-radius: inherit; }
+.profile > .fx { bottom: auto; height: 96px; border-radius: 26px 26px 0 0; }
+.fx .orb { position: absolute; border-radius: 50%; filter: blur(46px); }
+.fx .o1 { width: 320px; height: 320px; right: -70px; top: -120px; background: radial-gradient(closest-side, var(--o1), transparent); animation: orb 9s ease-in-out infinite alternate; }
+.fx .o2 { width: 280px; height: 280px; left: -130px; bottom: -170px; background: radial-gradient(closest-side, var(--o2), transparent); animation: orb 11s ease-in-out infinite alternate-reverse; }
+.fx .prism { position: absolute; right: -16px; top: -20px; width: 128px; height: 128px; perspective: 700px; filter: drop-shadow(0 10px 26px rgba(241, 90, 36, .45)); }
+.fx .prism > div { position: absolute; inset: 0; transform-style: preserve-3d; animation: spin3d 14s ease-in-out infinite alternate; }
+.fx .prism span { position: absolute; inset: 0; clip-path: polygon(8% 0, 100% 0, 100% 92%); border-radius: 14px; }
+/* Co-branded: one triangle, LINK orange into JUSS teal */
+.fx .prism span:nth-child(1) { background: linear-gradient(135deg, #FF8A3D, #F15A24 40%, #EDA03A 68%, #34B1C0); transform: translateZ(18px); }
+.fx .prism span:nth-child(2) { background: linear-gradient(135deg, rgba(255, 170, 120, .55), rgba(52, 177, 192, .28)); transform: translateZ(0); }
+.fx .prism span:nth-child(3) { background: linear-gradient(135deg, rgba(255, 255, 255, .35), rgba(255, 255, 255, 0)); transform: translateZ(-18px); }
+/* LINK: the logo's triangle */
+.t-LINK .fx .prism span:nth-child(1) { background: linear-gradient(135deg, #FF8A3D, #F15A24 55%, #CF3A10); }
+.t-LINK .fx .prism span:nth-child(2) { background: linear-gradient(135deg, rgba(255, 170, 120, .55), rgba(241, 90, 36, .25)); }
+/* JUSS: the logo's three paint swipes */
+.t-JUSS .fx .prism { width: 150px; height: 116px; right: -18px; top: -4px; filter: drop-shadow(0 8px 24px rgba(52, 177, 192, .4)); }
+.t-JUSS .fx .prism span { clip-path: none; inset: auto 0; height: 34%; border-radius: 40px 14px 40px 14px; }
+.t-JUSS .fx .prism span:nth-child(1) { top: 4%; background: linear-gradient(100deg, #E4613F, #EDA03A); transform: translateZ(22px) rotate(-14deg) skewX(-12deg); }
+.t-JUSS .fx .prism span:nth-child(2) { top: 33%; background: linear-gradient(100deg, #EDA03A, #34B1C0); transform: translateZ(4px) rotate(-14deg) skewX(-12deg); }
+.t-JUSS .fx .prism span:nth-child(3) { top: 62%; background: linear-gradient(100deg, #34B1C0, rgba(111, 214, 223, .6)); transform: translateZ(-16px) rotate(-14deg) skewX(-12deg); }
+/* Bigger on the full-width headers (check-in, welcome), smaller on the cards */
+.c-hero .fx .prism, .wl-hero .fx .prism { width: 118px; height: 118px; right: 18px; top: calc(16px + env(safe-area-inset-top)); }
+.t-JUSS .c-hero .fx .prism, .t-JUSS .wl-hero .fx .prism { width: 144px; height: 110px; right: 12px; top: calc(20px + env(safe-area-inset-top)); }
+.evhero .fx .prism, .login-hero .fx .prism, .profile .fx .prism { width: 112px; height: 112px; right: -14px; top: -16px; }
+.t-JUSS :is(.evhero, .login-hero, .profile) .fx .prism { width: 132px; height: 102px; right: -16px; top: -6px; }
+
+/* Glass on the stage */
+.evtags span, .c-hero .evtags span { background: rgba(255, 255, 255, .08); border: 1px solid rgba(255, 255, 255, .14); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.iconbtn.light { backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+.login-hero .display, .wl-hero h1 .gname { filter: drop-shadow(0 6px 22px rgba(var(--glow), .35)); }
+/* Co-branded (company not known yet): names in LINK orange into JUSS teal; the brand's dark grey vanished on the stage */
+:root:not(.t-LINK):not(.t-JUSS) :is(.c-hero .gname, .evhero .gname, .hero-name) { background: linear-gradient(120deg, #fff, #FFB27D 45%, #7FDDE4); -webkit-background-clip: text; background-clip: text; }
+
+/* Evaluation: the progress bar is glass on the stage (dark glass once you scroll); the header runs edge to edge under it */
+.evprog { height: calc(40px + env(safe-area-inset-top)); padding: env(safe-area-inset-top) 18px 0; margin-bottom: 0; color: #fff;
+  background: radial-gradient(45% 170% at 96% 0%, var(--o1), transparent 70%), radial-gradient(130% 260% at 88% 0%, var(--st1), var(--st2) 55%, var(--st3)); }
+:root:not(.scrolled) .evprog { background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.evtrack { background: rgba(255, 255, 255, .16); }
+#evcount { color: rgba(255, 255, 255, .78); }
+.evprog + .evhero { margin: calc(-40px - env(safe-area-inset-top)) -16px 16px; padding: calc(54px + env(safe-area-inset-top)) 20px 24px; border-radius: 0 0 30px 30px; }
+.evprog + .evhero .fx .prism { right: 18px; top: calc(52px + env(safe-area-inset-top)); width: 104px; height: 104px; }
+.t-JUSS .evprog + .evhero .fx .prism { width: 128px; height: 98px; right: 12px; }
+
+/* Headers rise in line by line, the cards on the forms one after another */
+:is(.c-hero, .evhero, .wl-hero) > :is(.label, h1, p, .evtags) { animation: rise .55s cubic-bezier(.2, .8, .2, 1) backwards; }
+:is(.c-hero, .evhero, .wl-hero) > h1 { animation-delay: .06s; }
+:is(.c-hero, .evhero, .wl-hero) > p { animation-delay: .12s; }
+:is(.c-hero, .evhero, .wl-hero) > .evtags { animation-delay: .18s; }
+.evform > :is(.evsec, .evsubmit) { animation: rise .5s cubic-bezier(.2, .8, .2, 1) backwards; }
+.evform > :nth-child(2) { animation-delay: .08s; } .evform > :nth-child(3) { animation-delay: .16s; } .evform > :nth-child(4) { animation-delay: .24s; }
+.evform > :nth-child(n+5) { animation-delay: .3s; }
+/* Further down, each question rises in as you scroll to it (phones that support it; on the rest they're simply there) */
+@supports (animation-timeline: view()) {
+  .evform .qcard { animation: rise linear both; animation-timeline: view(); animation-range: entry 0% entry 30%; }
+}
+@media (prefers-reduced-motion: reduce) { .evform .qcard { animation: none !important; } }
+
+/* Staff app: dark glass top bar; the Today / Mine header runs edge to edge under it */
+.appbar { color: #fff; background: radial-gradient(45% 170% at 96% 0%, var(--o1), transparent 70%), radial-gradient(130% 260% at 88% 0%, var(--st1), var(--st2) 55%, var(--st3)); }
+.ab-title { background: linear-gradient(120deg, #fff 30%, #FFC9A8 70%, #FF8A3D); -webkit-background-clip: text; background-clip: text; }
+.t-JUSS .ab-title { background: linear-gradient(120deg, #fff 30%, #F5C26B 70%, #6FD6DF); -webkit-background-clip: text; background-clip: text; }
+.appbar .iconbtn { background: rgba(255, 255, 255, .10); border-color: rgba(255, 255, 255, .14); color: #fff; box-shadow: none; }
+.avatar-btn span { border-color: var(--st2); }
+.ab-brand img { box-shadow: 0 8px 18px -8px rgba(0, 0, 0, .7); }
+:root { --abh: calc(63px + env(safe-area-inset-top)); }  /* the top bar's height (60 + the 3px stripe) */
+/* Today / Mine: the stage runs up behind the top bar, which stays see-through until you scroll */
+#app:has(> #page > .hero:first-child) > .appbar::after { opacity: 0; }
+:root:not(.scrolled) #app:has(> #page > .hero:first-child) > .appbar { background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; }
+#page > .hero:first-child { margin: calc(-14px - var(--abh)) -16px 16px; padding: calc(var(--abh) + 10px) 20px 22px; border-radius: 0 0 32px 32px; box-shadow: 0 26px 40px -26px rgba(var(--glow), .7); }
+#page.cascade > .hero:first-child { animation: fadeIn .3s ease both; }
+#page > .hero:first-child .fx .prism { right: 18px; top: calc(var(--abh) + 44px); width: 86px; height: 86px; opacity: .9; }
+.t-JUSS #page > .hero:first-child .fx .prism { width: 108px; height: 84px; right: 12px; }
+
+@keyframes orb { from { transform: translate(0, 0) scale(1); opacity: .85; } to { transform: translate(-30px, 25px) scale(1.15); opacity: 1; } }
+@keyframes spin3d { 0% { transform: rotateX(12deg) rotateY(-28deg) translateY(0); } 100% { transform: rotateX(-10deg) rotateY(26deg) translateY(10px); } }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; animation-delay: 0s !important; transition-duration: .01ms !important; }
 }

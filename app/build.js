@@ -58,7 +58,7 @@ function page(opts) {
   <meta charset="utf-8">${MOVE ? '\n  ' + MOVE : ''}
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>${opts.title}</title>
-  <meta name="theme-color" content="${staff ? '#F4F2EF' : opts.theme === 'JUSS' ? '#123A48' : '#26262F'}">
+  <meta name="theme-color" content="${opts.theme === 'JUSS' ? '#0D2833' : '#17171D'}">
   <meta name="color-scheme" content="only light">
   <meta name="robots" content="noindex, nofollow">
   <link rel="icon" href="icons/icon-192.png">
@@ -106,7 +106,7 @@ pages.forEach(p => write(p.file, page(p)));
 write('manifest.webmanifest', JSON.stringify({
   name: APP_NAME, short_name: APP_NAME,
   start_url: './index.html', scope: './', display: 'standalone',
-  background_color: '#F4F2EF', theme_color: '#F4F2EF',
+  background_color: '#F4F2EF', theme_color: '#17171D',  // the top bar is dark (the stage)
   icons: [
     { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
     { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
