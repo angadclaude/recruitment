@@ -54,8 +54,11 @@ class Runtime {
 
   /** Answer one synchronous call from Code.gs, then wake the worker. */
   async serve({ op, args }) {
+    const now = this.now;
+    if (now) { this.phase(now, op); now.calls++; }
     let reply;
     try { reply = { value: await this.op(op, args) }; } catch (e) { reply = { error: String((e && e.message) || e), retry: !!(e && e.retry) }; }
+    if (now) this.phase(now, 'Code.gs');
     this.io.postMessage(reply);
     Atomics.store(this.flag, 0, 1);
     Atomics.notify(this.flag, 0);
@@ -128,38 +131,69 @@ class Runtime {
   /** Queue a job (one transaction). type: 'call' { fn, args } · 'eval' { js } · 'pushes'.
    *  job.later(promise): the emails go out after the answer (Vercel's waitUntil), so a login code doesn't wait on Google. */
   run(job) {
-    const p = this.queue.then(() => this.exec(job));
+    this.waiting = (this.waiting || 0) + 1;
+    const p = this.queue.then(() => { this.waiting--; return this.exec(job); });
     this.queue = p.catch(() => {});
     return p;
   }
   call(fn, ...args) { return this.run({ type: 'call', fn, args }); }
 
+  /** What this server copy is doing right now, for the "slow rpc" log line (where a slow request spent its time). */
+  status() {
+    const n = this.now, w = (this.waiting || 0) + ' waiting';
+    if (!n) return 'idle, ' + w;
+    return n.label + ' for ' + (Date.now() - n.t0) + 'ms: now ' + n.step + ' for ' + (Date.now() - n.at) + 'ms, ' + n.calls + ' calls ' + JSON.stringify(n.spent) + ', ' + w;
+  }
+  track(label) {
+    const t = Date.now();
+    return (this.now = { label, t0: t, step: 'starting', at: t, calls: 0, spent: {} });
+  }
+  phase(n, step) {
+    const t = Date.now();
+    n.spent[n.step] = (n.spent[n.step] || 0) + t - n.at;
+    n.step = step; n.at = t;
+  }
+  done(n) {
+    const ms = Date.now() - n.t0;
+    if (ms > 5000) console.error('slow job', n.label, ms + 'ms', JSON.stringify(n.spent), n.calls + ' calls');
+    if (this.now === n) this.now = null;
+  }
+
   async exec(job) {
-    await this.start();
-    this.conn = await this.o.db.begin();
-    this.sent = [];
+    const n = this.track(job.type === 'call' ? (job.fn === 'api' ? 'api ' + ((job.args && job.args[0]) || {}).action : job.fn) : job.type);
     let value;
     try {
-      value = await new Promise((resolve, reject) => {
-        const id = ++this.seq;
-        this.pending.set(id, { resolve, reject });
-        const msg = Object.assign({ id }, job);
-        delete msg.later;  // a function can't go to the worker
-        this.worker.postMessage(msg);
-      });
-      await this.conn.commit();
-    } catch (e) {
-      try { await this.conn.rollback(); } catch (e2) { /* connection gone */ }
-      throw e;
+      await this.start();
+      this.phase(n, 'connecting');
+      this.conn = await this.o.db.begin();
+      this.phase(n, 'Code.gs');
+      this.sent = [];
+      try {
+        value = await new Promise((resolve, reject) => {
+          const id = ++this.seq;
+          this.pending.set(id, { resolve, reject });
+          const msg = Object.assign({ id }, job);
+          delete msg.later;  // a function can't go to the worker
+          this.worker.postMessage(msg);
+        });
+        this.phase(n, 'committing');
+        await this.conn.commit();
+      } catch (e) {
+        try { await this.conn.rollback(); } catch (e2) { /* connection gone */ }
+        throw e;
+      } finally {
+        this.conn.release();
+        this.conn = null;
+      }
+      if (this.sent.length && this.o.mail) {
+        // Sent after the commit. With job.later, after the answer too (and the next job doesn't wait for Google). A failed
+        // send stays in jl.outbox and the 5-minute timer tries it again.
+        const delivery = this.o.mail.deliver(this.sent).catch(e => console.error('mail delivery', e));
+        if (job.later) job.later(delivery); else { this.phase(n, 'emailing'); await delivery; }
+      }
     } finally {
-      this.conn.release();
-      this.conn = null;
-    }
-    if (this.sent.length && this.o.mail) {
-      // Sent after the commit. With job.later, after the answer too (and the next job doesn't wait for Google). A failed
-      // send stays in jl.outbox and the 5-minute timer tries it again.
-      const delivery = this.o.mail.deliver(this.sent).catch(e => console.error('mail delivery', e));
-      if (job.later) job.later(delivery); else await delivery;
+      this.phase(n, 'done');
+      this.done(n);
     }
     return value;
   }
@@ -167,8 +201,13 @@ class Runtime {
   /** Run something directly on the database between jobs (tests, imports). */
   withDb(fn) {
     const p = this.queue.then(async () => {
-      const conn = await this.o.db.begin();
-      try { const r = await fn((t, ps) => conn.q(t, ps)); await conn.commit(); return r; } catch (e) { await conn.rollback(); throw e; } finally { conn.release(); }
+      const n = this.track('database');
+      try {
+        this.phase(n, 'connecting');
+        const conn = await this.o.db.begin();
+        this.phase(n, 'query');
+        try { const r = await fn((t, ps) => conn.q(t, ps)); await conn.commit(); return r; } catch (e) { await conn.rollback(); throw e; } finally { conn.release(); }
+      } finally { this.phase(n, 'done'); this.done(n); }
     });
     this.queue = p.catch(() => {});
     return p;

@@ -31,7 +31,8 @@ module.exports = async (req, res) => {
     const out = await Promise.race([work, new Promise(r => { timer = setTimeout(() => r(null), 25000); })]);
     clearTimeout(timer);
     const ms = Date.now() - t0;
-    if (ms > 5000) console.error('slow rpc', body.action, ms + 'ms', out ? '' : '(answered "trying again")');
+    // Where it was stuck (e.g. "api bundle for 25003ms: now connecting for 24990ms"); a finished slow job logs "slow job"
+    if (ms > 5000) console.error('slow rpc', body.action, ms + 'ms', out ? '' : '(answered "trying again")', '|', rt.status());
     if (!out) {
       if (process.env.VERCEL) waitUntil(work.catch(e => console.error('rpc late', body.action, e)));
       return res.end(JSON.stringify({ ok: false, retry: true, error: 'Lots of people are sending at once. Trying again…' }));
