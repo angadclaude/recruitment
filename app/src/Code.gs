@@ -82,12 +82,25 @@ const ONBOARD = {
     client: ['NDCS', 'https://www.ndcs.org.uk/'], magazine: ['Link Magazine', 'https://linkmagflip-74ibv4pf.manus.space/'],
     playbook: ['Link FR Playbook', 'https://link-fr-playbook.vercel.app/'],
     from: 'jess@linkmarketing.org.uk',  // welcome emails only ever go from Jess's or Rubal's inbox (either can send either brand)
+    // Week 1, day by day (same as the welcome page's WEEK1 in JS.html): [emoji, what, time, about]
+    week1: [
+      ['🗓️', 'Induction Day', '1:30pm – 6:00pm', 'Meet the team and learn more about the industry. Expected finish between 5:30 and 6:00 PM.'],
+      ['👣', 'Sales Coaching', '1:00pm – 6:00pm', 'Deep dive into office-based sales coaching. Expected finish between 5:30 and 6:00 PM.'],
+      ['🏢', 'Practical Learning Day', '10:00am – 8:30pm', 'Meet your 1-on-1 coach & mentor and shadow them.'],
+      ['💰', 'Sales Day', '10:30am – 8:30pm', '1st day on badge! Your coach is side by side with you. Apply what you’ve learnt and bag your incentives.'],
+    ],
   },
   JUSS: {
     brand: 'JUSS Marketing', colour: '#E4613F', phone: '077823 77774', maps: 'https://maps.app.goo.gl/n2wTFyzScHLr1Voy9', day3: false,
     client: ['Hello Fresh', 'http://www.hellofresh.co.uk/'], website: ['JUSS Marketing', 'https://jussmarketing.co.uk/'], magazine: ['JUSS Magazine', 'https://jmomagazine-gjfukcw6.manus.space/'],
     playbook: ['JUSS HF Playbook', 'https://juss-hf-playbook.vercel.app/'],
     from: 'rubal@jussmarketing.co.uk',
+    week1: [
+      ['🗓️', 'Induction Day', '1:30pm – 6:00pm', 'Meet the team and learn more about the industry. Expected finish between 5:30 and 6:00 PM.'],
+      ['👣', 'Sales Coaching', '1:00pm – 6:00pm', 'Deep dive into in-house sales coaching. Expected finish between 5:30 and 6:00 PM.'],
+      ['🏢', 'Practical Learning Day', '10:00am – 8:30pm', 'Meet your 1-on-1 coach & mentor and shadow them.'],
+      ['💰', 'Sales Days', '10:30am – 8:30pm', '1st day on badge! Your coach is side by side with you. Apply what you’ve learnt and bag your incentives.'],
+    ],
   },
 };
 
@@ -1918,83 +1931,120 @@ function onboardEmail(c, u, pick) {
   const signCo = homeCo(u.email) && homeCo(u.email) !== co ? 'In association with ' + o.brand : o.brand;
   // After launch the playbook button goes through the hub: they sign in with this email and land in their own playbook
   const pbUrl = hubOn() ? hubLink(co === 'JUSS' ? 'hf' : 'fr', '/') : o.playbook[1];
-  const T = co === 'JUSS'
-    ? { solid: '#E4613F', hero: 'linear-gradient(115deg,#D9534F 0%,#E4813F 28%,#EDA03A 44%,#34B1C0 62%,#2F86B5 100%)', btn: '#1FA3B1', tint: '#DCF2F4', ink: '#13808C' }
-    : { solid: '#EE5A24', hero: 'linear-gradient(115deg,#FF7A2F 0%,#EE5A24 54%,#26252D 54.3%,#34333D 100%)', btn: '#EE5A24', tint: '#FDE6DC', ink: '#C2410C' };
+  // The app's look (Angad, 20 Oct: "more immersive, like we have the app"): the dark stage with the brand's glow on top,
+  // light cards below, and Week 1 as cards that step up like the Sales Skill Ladder instead of the poster
+  const S = co === 'JUSS'
+    ? { bg: '#EDF5F5', line: '#CFE4E6', tint: '#DDF2F3', ink: '#0F7C88', dark: '#0D2833', solid: '#2BA9B8',
+        stage: 'radial-gradient(55% 110% at 96% 0%,rgba(237,160,58,.55) 0%,rgba(237,160,58,0) 70%),radial-gradient(60% 130% at 66% 0%,rgba(52,177,192,.45) 0%,rgba(52,177,192,0) 70%),radial-gradient(130% 160% at 85% 0%,#1D5566 0%,#0D2833 55%,#071820 100%)',
+        grad: 'linear-gradient(120deg,#E4613F 0%,#EDA03A 48%,#34B1C0 100%)' }
+    : { bg: '#F7F1EC', line: '#EEDED3', tint: '#FFEBE1', ink: '#C2410C', dark: '#17171D', solid: '#F15A24',
+        stage: 'radial-gradient(60% 120% at 94% 0%,rgba(241,90,36,.62) 0%,rgba(241,90,36,0) 70%),radial-gradient(130% 160% at 85% 0%,#2C2C38 0%,#17171D 55%,#0F0F14 100%)',
+        grad: 'linear-gradient(120deg,#FF8A3D 0%,#F15A24 48%,#CF3A10 100%)' };
   const F = "font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;";
-  const d1 = c.academy_date, d2 = addDays(d1, 1), img = CONFIG.PUBLIC_URL ? CONFIG.PUBLIC_URL + 'img/' : '';
+  const D_ = "font-family:Impact,'Arial Black','Helvetica Neue',sans-serif;";
+  const d1 = c.academy_date, img = CONFIG.PUBLIC_URL ? CONFIG.PUBLIC_URL + 'img/' : '';
   const ymd = d1.replace(/-/g, ''), title = 'BA Academy Day 1 – ' + o.brand;
   const gcal = 'https://calendar.google.com/calendar/render?action=TEMPLATE&text=' + encodeURIComponent(title) + '&dates=' + ymd + 'T133000/' + ymd + 'T180000&ctz=Europe/London' +
     '&location=' + encodeURIComponent(CONFIG.OFFICE_ADDRESS) + '&details=' + encodeURIComponent('Induction 1:30pm. Bring a notepad and pen, photo ID and your right-to-work share code.');
   // Gmail's dark theme (its own setting, not the phone's) turns white text on our colours dark (Angad, 20 Oct). Colours set as
   // background-image aren't changed, and white text inside white() stays white: Gmail-only CSS (u + .body), nothing elsewhere.
+  // Light cards are left to Gmail: it darkens them and lightens their text together.
   const white = s => '<span class="jls" style="display:inline-block"><span class="jld" style="display:inline-block">' + s + '</span></span>';
   // A label's leading emoji stays outside (inside, Gmail's trick washes its colours out)
   const whiteLabel = s => { const m = /^([^\x00-\x7E]\S*) (.*)$/.exec(s); return m ? m[1] + ' ' + white(m[2]) : white(s); };
   const fill = col => 'background:' + col + ';background-image:linear-gradient(' + col + ',' + col + ');';
-  const btn = (label, url, solid) => '<a href="' + esc(url) + '" style="display:inline-block;margin:6px 6px 0 0;padding:12px 18px;border-radius:14px;font-weight:800;font-size:15px;text-decoration:none;' +
-    (solid ? fill(T.btn) + 'color:#ffffff;border:2px solid ' + T.btn + ';">' + whiteLabel(label) : 'background:#ffffff;color:#22222B;border:2px solid #E7E3DE;">' + label) + '</a>';
-  const bigBtn = (label, url) => '<a href="' + esc(url) + '" style="display:block;margin:10px 0 0;padding:15px 18px;border-radius:16px;text-align:center;font-weight:800;font-size:16px;text-decoration:none;color:#ffffff;background:' + T.solid + ';background-image:' + T.hero + ';">' + whiteLabel(label) + '</a>';
-  const head = (emoji, label) => '<tr><td style="padding:22px 4px 8px;' + F + 'font-size:13px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#22222B">' +
-    '<span style="display:inline-block;width:34px;height:34px;line-height:34px;text-align:center;border-radius:11px;background:' + T.tint + ';margin-right:10px;font-size:17px;letter-spacing:0">' + emoji + '</span>' + label + '</td></tr>';
-  const card = inner => '<tr><td style="background:#ffffff;border-radius:22px;padding:20px 20px 22px;' + F + 'font-size:15px;line-height:1.5;color:#22222B;box-shadow:0 6px 24px -14px rgba(0,0,0,.25)">' + inner + '</td></tr>';
-  const pill = t => '<span style="display:inline-block;padding:7px 14px;border-radius:999px;background:' + T.tint + ';color:' + T.ink + ';font-weight:800;font-size:15px">' + t + '</span>';
-  const big = t => '<div style="font-size:24px;font-weight:900;letter-spacing:-.01em;margin:0 0 10px">' + t + '</div>';
-  const step = (n, t) => '<tr><td style="vertical-align:top;width:34px;padding:8px 0"><span style="display:inline-block;width:26px;height:26px;line-height:26px;border-radius:50%;text-align:center;' + fill(T.solid) + 'color:#fff;font-weight:800;font-size:13px">' + white(n) + '</span></td><td style="padding:8px 0;' + F + 'font-size:15px;line-height:1.45">' + t + '</td></tr>';
+  const stageBg = 'background:' + S.dark + ';background-image:' + S.stage + ';';
+  const gradBg = 'background:' + S.solid + ';background-image:' + S.grad + ';';
+  const glass = 'background:#3A3A46;background-image:linear-gradient(rgba(255,255,255,.16),rgba(255,255,255,.16));';
+  const btn = (label, url, solid) => '<a href="' + esc(url) + '" style="display:inline-block;margin:6px 6px 0 0;padding:12px 18px;border-radius:14px;' + F + 'font-weight:800;font-size:15px;text-decoration:none;' +
+    (solid ? gradBg + 'color:#ffffff;border:0;">' + whiteLabel(label) : 'background:#ffffff;color:#22222B;border:2px solid ' + S.line + ';">' + label) + '</a>';
+  const bigBtn = (label, url) => '<a href="' + esc(url) + '" style="display:block;margin:10px 0 0;padding:16px 18px;border-radius:16px;text-align:center;' + F + 'font-weight:800;font-size:16px;text-decoration:none;color:#ffffff;' + gradBg + '">' + whiteLabel(label) + '</a>';
+  const gap = h => '<tr><td style="height:' + h + 'px;line-height:' + h + 'px;font-size:0">&nbsp;</td></tr>';
+  /** A section heading like the app's: emoji tile, label, one line under it. */
+  const head = (emoji, label, sub) => '<tr><td style="padding:28px 2px 12px;' + F + '"><table role="presentation" cellpadding="0" cellspacing="0"><tr>' +
+    '<td style="width:40px;height:40px;border-radius:13px;background:' + S.tint + ';text-align:center;font-size:19px;line-height:40px">' + emoji + '</td>' +
+    '<td style="padding-left:12px;font-size:13px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#22222B">' + label +
+    (sub ? '<div style="font-size:14px;font-weight:500;letter-spacing:0;text-transform:none;color:#6E6C78;margin-top:2px">' + sub + '</div>' : '') + '</td></tr></table></td></tr>';
+  const card = inner => '<tr><td style="background:#ffffff;border:1px solid ' + S.line + ';border-radius:22px;padding:20px;' + F + 'font-size:15px;line-height:1.5;color:#22222B">' + inner + '</td></tr>';
+  /** The numbered tile (Business Development steps, the Week 1 cards): brand gradient, white number. */
+  const tile = (n, size) => '<span style="display:inline-block;width:' + size + 'px;height:' + size + 'px;line-height:' + size + 'px;border-radius:' + Math.round(size / 3) + 'px;text-align:center;' + gradBg +
+    'color:#ffffff;' + D_ + 'font-weight:400;font-size:' + Math.round(size * .46) + 'px">' + white(n) + '</span>';
+  const pill = (emoji, t, dark) => '<span style="display:inline-block;padding:6px 12px;border-radius:999px;font-weight:800;font-size:14px;' +
+    (dark ? glass + 'color:#ffffff">' + emoji + ' ' + white(t) : 'background:' + S.tint + ';color:' + S.ink + '">' + emoji + ' ' + t) + '</span>';
+  /** The Skill Ladder's level meter: how far into the week this day is. */
+  const meter = (lit, total, dark) => '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 14px"><tr>' +
+    Array.from({ length: total }, (x, j) => '<td style="padding:0 ' + (j < total - 1 ? 4 : 0) + 'px 0 0"><div style="height:5px;border-radius:99px;font-size:0;line-height:0;' +
+      (j < lit ? gradBg : dark ? glass : 'background:' + S.tint + ';') + '">&nbsp;</div></td>').join('') + '</tr></table>';
+  const step = (n, t) => '<tr><td style="vertical-align:top;width:40px;padding:7px 0">' + tile(String(n), 30) + '</td><td style="padding:7px 0 7px 10px;' + F + 'font-size:15px;line-height:1.45">' + t + '</td></tr>';
+  const chip = (emoji, t) => '<span style="display:inline-block;margin:0 6px 8px 0;padding:9px 14px;border-radius:14px;background:' + S.tint + ';color:#22222B;font-weight:700;font-size:15px">' + emoji + ' ' + t + '</span>';
   const pre = '<div style="display:none;max-height:0;overflow:hidden;opacity:0">You\'re in, ' + esc(first) + ' 🎉 Day 1: ' + esc(longDate(d1)) + ' @ 1:30 PM. Download FieldIQ and read your ' + esc(o.playbook[0]) + ' before you come in.</div>';
+
+  // Week 1: a card a day, stepping up to the first day on badge (the dark one, like Mastery on the ladder)
+  const W = o.week1, dayName = i => 'Day ' + (i + 1) + (i === W.length - 1 && co === 'JUSS' ? ' onwards' : '') + ' · ' + longDate(addDays(d1, i));
+  const day1More = '<div style="margin-top:12px">📍 ' + esc(CONFIG.OFFICE_ADDRESS) + '<br><span style="color:#6E6C78;font-size:13px">2 mins from Slough station</span></div>' +
+    '<div style="margin-top:4px">' + btn('🗺️ Google Maps', o.maps, true) + btn('📅 Add to calendar', gcal) + '</div>';
+  const dayCard = (r, i) => {
+    const top = i === W.length - 1, t = s => (top ? white(s) : s);
+    return '<tr><td style="border-radius:22px;padding:18px 20px 20px;' + F + 'font-size:15px;line-height:1.5;' +
+      (top ? stageBg + 'color:#ffffff' : 'background:#ffffff;border:1px solid ' + S.line + ';color:#22222B') + '">' + meter(i + 1, W.length, top) +
+      '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="width:58px;vertical-align:middle">' + tile('0' + (i + 1), 46) + '</td>' +
+      '<td style="vertical-align:middle;padding-left:12px">' +
+        '<div style="font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;' + (top ? '' : 'color:' + S.ink) + '">' + t(esc(dayName(i))) + '</div>' +
+        '<div style="font-size:20px;font-weight:900;letter-spacing:-.01em;line-height:1.25;margin:3px 0 0">' + r[0] + ' ' + t(esc(r[1])) + '</div></td></tr>' +
+      '<tr><td colspan="2" style="padding-top:12px">' + pill('⏰', esc(r[2]), top) +
+        '<div style="margin-top:10px;' + (top ? '' : 'color:#3A3942') + '">' + t(esc(r[3])) + '</div>' + (i === 0 ? day1More : '') +
+      '</td></tr></table></td></tr>' + (top ? '' : gap(10));
+  };
 
   const logoW = co === 'JUSS' ? 90 : 51;  // the logo's width at 56px high, so its box keeps its shape before the image loads
   const html = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light">' +
     '<style>u + .body .jls{background:#000;mix-blend-mode:screen}u + .body .jld{background:#000;mix-blend-mode:difference}</style></head>' +
-    '<body class="body" style="margin:0;padding:0;background:#F5F1EC">' + pre +
-    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F5F1EC"><tr><td align="center" style="padding:18px 12px 30px">' +
+    '<body class="body" style="margin:0;padding:0;background:' + S.bg + '">' + pre +
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:' + S.bg + '"><tr><td align="center" style="padding:18px 12px 30px">' +
     '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px">' +
-    // Hero: same as the congratulations page
-    '<tr><td style="border-radius:26px;padding:26px 24px 26px;background:' + T.solid + ';background-image:' + T.hero + ';' + F + 'color:#ffffff">' +
-      (img ? '<div style="display:inline-block;' + fill('#ffffff') + 'border-radius:18px;padding:8px 12px;margin-bottom:14px"><img src="' + img + 'logo-' + co.toLowerCase() + '.png" alt="' + esc(o.brand) + '" width="' + logoW + '" height="56" style="display:block;width:' + logoW + 'px;height:56px;border:0"></div>' : '') +
-      '<div style="font-size:34px;line-height:1.1;font-weight:900;letter-spacing:-.02em;margin:0 0 10px">' + white('You\'re in, ' + esc(first)) + ' 🎉</div>' +
-      '<div style="font-size:17px;line-height:1.4;margin:0 0 16px">' + white('Welcome to the <b>' + esc(o.brand) + '</b> team, and <b>Congratulations</b> on being selected to join us!') + '</div>' +
-      '<span style="display:inline-block;background:#ffffff;color:#22222B;border-radius:999px;padding:9px 16px;font-weight:800;font-size:15px">📅 ' + esc(longDate(d1)) + ' · 1:30 PM</span>' +
+    // Hero: the app's dark stage with the brand's light on it
+    '<tr><td style="border-radius:28px;padding:24px 24px 28px;' + stageBg + F + 'color:#ffffff">' +
+      '<div style="height:5px;width:64px;border-radius:99px;font-size:0;line-height:0;margin:0 0 18px;' + gradBg + '">&nbsp;</div>' +
+      (img ? '<div style="display:inline-block;' + fill('#ffffff') + 'border-radius:18px;padding:8px 12px;margin-bottom:18px"><img src="' + img + 'logo-' + co.toLowerCase() + '.png" alt="' + esc(o.brand) + '" width="' + logoW + '" height="56" style="display:block;width:' + logoW + 'px;height:56px;border:0"></div>' : '') +
+      '<div style="font-size:12px;font-weight:800;letter-spacing:.18em;text-transform:uppercase;margin:0 0 6px">' + white(esc(o.brand) + ' · BA Academy') + '</div>' +
+      '<div style="font-size:32px;line-height:1.1;font-weight:900;letter-spacing:-.02em;margin:0 0 12px">' + white('You\'re in, ' + esc(first)) + ' 🎉</div>' +
+      '<div style="font-size:17px;line-height:1.45;margin:0 0 18px">' + white('Welcome to the <b>' + esc(o.brand) + '</b> team, and <b>Congratulations</b> on being selected to join us!') + '</div>' +
+      '<span style="display:inline-block;border-radius:999px;padding:10px 16px;font-weight:800;font-size:15px;' + gradBg + '">📅 ' + white(esc(longDate(d1)) + ' · 1:30 PM') + '</span>' +
     '</td></tr>' +
-    '<tr><td style="padding:20px 6px 0;' + F + 'font-size:15px;line-height:1.55;color:#3A3942">Hi ' + esc(first) + ', you’re coming on board at an exciting time as we continue to expand our business and head into a highly productive season. ' +
+    '<tr><td style="padding:22px 6px 0;' + F + 'font-size:15px;line-height:1.6;color:#3A3942">Hi ' + esc(first) + ', you’re coming on board at an exciting time as we continue to expand our business and head into a highly productive season. ' +
       'We’re confident that with your enthusiasm and dedication, you’ll thrive in your new role as a <b>Brand Ambassador</b>. Product training and sales coaching begins <b>' + esc(longDate(d1)) + ' @ 1:30 PM</b>.</td></tr>' +
     // A reply is the strongest "this isn't spam" signal there is, and tells Jess / Rubal it arrived
-    '<tr><td style="padding:16px 0 0"><div style="border:2px dashed ' + T.solid + ';border-radius:16px;padding:12px 16px;background:#ffffff;' + F + 'font-size:15px;line-height:1.45;color:#22222B">' +
+    '<tr><td style="padding:16px 0 0"><div style="border:2px dashed ' + S.solid + ';border-radius:16px;padding:12px 16px;background:#ffffff;' + F + 'font-size:15px;line-height:1.45;color:#22222B">' +
       '✅ <b>Quick one:</b> reply <b>GOT IT</b> to this email so we know it reached you.</div></td></tr>' +
     // Before Day 1
-    head('⚡', 'Before Day 1') +
+    head('⚡', 'Before Day 1', 'Two minutes now saves you an hour on Day 1') +
     card('<table role="presentation" width="100%" cellpadding="0" cellspacing="0">' +
       step(1, '<b>Download FieldIQ</b> and complete your vetting form before your first day.') +
       (o.preCoaching ? step(2, 'Complete the short online <b>Pre-Coaching Module</b>: around <b>15–20 minutes</b> of short videos and quick questions. It’s important it’s done before ' + DAYS_LONG[weekday(d1)] + ', so you’re fully prepared for coaching.') : '') +
       step(o.preCoaching ? 3 : 2, 'Read your <b>' + esc(o.playbook[0]) + '</b>, so you walk in on Day 1 already knowing how we work.') +
       '</table>' + bigBtn('📲 Download FieldIQ', ONBOARD.FIELDIQ_URL) + (o.preCoaching ? bigBtn('📝 Open the Pre-Coaching Module', o.preCoaching[1]) : '') +
       bigBtn('📘 Open my ' + esc(o.playbook[0]), pbUrl)) +
-    // Day 1
-    head('📅', 'Day 1 · Induction') +
-    card(big(esc(longDate(d1))) + pill('⏰ 1:30pm – 6:00pm') +
-      '<p style="margin:12px 0 0">📍 ' + esc(CONFIG.OFFICE_ADDRESS) + '<br><span style="color:#6E6C78;font-size:13px">2 mins from Slough station · expected finish between 5:30 and 6:00 PM</span></p>' +
-      '<div style="margin-top:8px">' + btn('🗺️ Google Maps', o.maps, true) + btn('📅 Add to calendar', gcal) + '</div>') +
-    // Day 2 (+ Day 3 onwards)
-    head('🎯', 'Day 2 · Sales Coaching') +
-    card(big(esc(longDate(d2))) + pill('⏰ 1:00pm – 6:00pm') +
-      '<p style="margin:12px 0 0;color:#6E6C78;font-size:13px">Expected finish between 5:30 and 6:00 PM</p>' +
-      (o.day3 ? '<p style="margin:12px 0 0"><b>Day 3 onwards:</b> the same timings as previously discussed, <b>10:00am – 8:30pm</b>.</p>' : '')) +
+    // Week 1, day by day
+    head('🗓️', 'Your Week 1', 'From induction to your first day on badge') +
+    W.map(dayCard).join('') +
+    (c.welcome_token ? '<tr><td style="padding:4px 0 0">' + bigBtn('👀 See my Week 1 plan + CONFIRM', welcomeUrl(c)) +
+      '<div style="' + F + 'font-size:13px;color:#6E6C78;text-align:center;margin-top:8px">Your welcome page, with the Sales Skill Ladder. Tap <b>CONFIRM</b> so we know you’re coming.</div></td></tr>' : '') +
     // Bring
     head('🎒', 'Bring with you') +
-    card('<div style="font-size:16px;line-height:2">📝 Notepad and pen<br>🪪 Photo ID<br>🔑 Your right-to-work share code</div>') +
-    // Week 1
-    (c.welcome_token ? head('🗓️', 'Your Week 1 game plan') +
-      card('<p style="margin:0 0 4px">Your first week, day by day, plus the Sales Skill Ladder. Tap <b>CONFIRM</b> on it so we know you’re coming.</p>' +
-        (img ? '<a href="' + esc(welcomeUrl(c)) + '"><img src="' + img + 'poster-' + co.toLowerCase() + '.jpg" alt="' + esc(o.brand) + ' Week 1 plan" width="100%" style="display:block;width:100%;max-width:520px;height:auto;border:0;border-radius:16px;margin:12px 0 0"></a>' : '') +
-        bigBtn('👀 See my Week 1 plan + CONFIRM', welcomeUrl(c))) : '') +
+    card(chip('📝', 'Notepad &amp; pen') + chip('🪪', 'Photo ID') + chip('🔑', 'Your right-to-work share code')) +
     // Get ready
     head('📚', 'Get ready') +
     card('<p style="margin:0">' + (co === 'JUSS' ? 'We highly recommend you read up on our client, <b>' + esc(o.client[0]) + '</b>, ahead of your training.' : 'Read up and do some research on our client, <b>' + esc(o.client[0]) + '</b>, before your product coaching.') +
       ' And check out the team in our online magazine!</p><div style="margin-top:6px">' + btn('🌐 ' + esc(o.client[0]), o.client[1], true) + btn('📖 ' + esc(o.magazine[0]), o.magazine[1]) +
       (o.website ? btn('✨ ' + esc(o.website[0]), o.website[1]) : '') + '</div>') +
-    // Sign-off
-    '<tr><td style="padding:24px 6px 0;' + F + 'font-size:15px;line-height:1.55;color:#22222B">Any questions' + (co === 'JUSS' ? ' regarding anything' : '') + ', just reply to this email or call <b>' + esc(o.phone) + '</b>.<br><br>' +
-      'I’ll be in the office to meet you when you arrive. Excited to work with you! 🔥<br><br>Thanks,<br>Kind Regards,<br><b>' + esc(u.name) + '</b><br><span style="color:' + T.ink + ';font-weight:700">' + esc(signCo) + '</span></td></tr>' +
+    // Sign-off, as a signature card
+    gap(24) +
+    card('<p style="margin:0 0 16px">Any questions' + (co === 'JUSS' ? ' regarding anything' : '') + ', just reply to this email or call <b>' + esc(o.phone) + '</b>.<br>' +
+      'I’ll be in the office to meet you when you arrive. Excited to work with you! 🔥</p>' +
+      '<table role="presentation" cellpadding="0" cellspacing="0"><tr><td style="width:58px;vertical-align:middle">' + tile(initialsOf(u.name), 48) + '</td>' +
+      '<td style="padding-left:12px;vertical-align:middle;line-height:1.35"><div style="font-size:13px;color:#6E6C78">Thanks, Kind Regards,</div>' +
+      '<div style="font-size:17px"><b>' + esc(u.name) + '</b></div><div style="font-weight:700;color:' + S.ink + '">' + esc(signCo) + '</div></td></tr></table>') +
+    '<tr><td style="padding:18px 6px 0;' + F + 'font-size:12px;line-height:1.5;color:#8A8794;text-align:center">' + esc(o.brand) + ' · ' + esc(CONFIG.OFFICE_ADDRESS) + '</td></tr>' +
     '</table></td></tr></table></body></html>';
   const text = 'Hi ' + first + ',\n\nWelcome to the ' + o.brand + ' team, and Congratulations on being selected to join us!\n\n' +
     'Product training and sales coaching begins ' + longDate(d1) + ' @ 1:30 PM.\n\n' +
@@ -2002,8 +2052,8 @@ function onboardEmail(c, u, pick) {
     'BEFORE DAY 1\n1. Download FieldIQ and complete your vetting form before your first day: ' + ONBOARD.FIELDIQ_URL + '\n' +
     (o.preCoaching ? '2. Complete the Pre-Coaching Module (15-20 minutes): ' + o.preCoaching[1] + '\n' : '') +
     (o.preCoaching ? '3' : '2') + '. Read your ' + o.playbook[0] + ': ' + pbUrl + '\n' +
-    '\nDAY 1 · INDUCTION: ' + longDate(d1) + ', 1:30pm (finish 5:30-6:00pm)\n' + CONFIG.OFFICE_ADDRESS + ' · ' + o.maps + '\n' +
-    'DAY 2 · SALES COACHING: ' + longDate(d2) + ', 1:00pm (finish 5:30-6:00pm)\n' + (o.day3 ? 'Day 3 onwards: 10:00am - 8:30pm\n' : '') +
+    '\nYOUR WEEK 1\n' + W.map((r, i) => dayName(i) + ': ' + r[1] + ', ' + r[2] + '. ' + r[3]).join('\n') + '\n' +
+    'Address: ' + CONFIG.OFFICE_ADDRESS + ' · ' + o.maps + '\n' +
     '\nBRING: notepad and pen, photo ID, your right-to-work share code\n' +
     (c.welcome_token ? '\nYour Week 1 plan + CONFIRM: ' + welcomeUrl(c) + '\n' : '') +
     '\nGet ready: ' + o.client[0] + ' ' + o.client[1] + ' · ' + o.magazine[0] + ' ' + o.magazine[1] + (o.website ? ' · ' + o.website[1] : '') + '\n' +
@@ -2055,6 +2105,8 @@ function welcomeSender(c, u, pick) {
   const team = thanksTeam(), k = brandCo(c, pick);
   return { name: team[k].name || (k === 'JUSS' ? 'Rubal Oshan' : 'Jess Grace'), email: ONBOARD[k].from };
 }
+/** "Jess Grace" → "JG": the signature card's tile. */
+function initialsOf(name) { return String(name || '').trim().split(/\s+/).map(p => p.charAt(0)).join('').slice(0, 2).toUpperCase(); }
 /** The company someone works for, from their email address ('' if it's neither company's). */
 function homeCo(email) { const e = String(email || '').toLowerCase(); return /@jussmarketing\./.test(e) ? 'JUSS' : /@linkmarketing\./.test(e) ? 'LINK' : ''; }
 function scriptEmail() { try { return String(Session.getEffectiveUser().getEmail()).toLowerCase(); } catch (e) { return ''; } }
