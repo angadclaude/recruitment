@@ -25,6 +25,13 @@ The recruitment app for **LINK Marketing** and **JUSS Marketing** (Angad runs bo
   - `scripts/import-from-google.js` copies every tab and setting from Google, then compares them field by field (`--apply`, `--verify`).
   - Local secrets in the repo root (gitignored): `.env.supabase`, `.env.relay`, `.env.cron`.
   - **Test it the same way:** `$env:JL_BACKEND = "pg"` makes `app/dev/server.js` (and so e2e/speed/room) run on this back end with PGlite (in-memory Postgres). Both back ends must pass everything.
+- **The office robot (built 20 Oct 2026; Off until Angad switches it on; team guide in `app/SETUP.md`):** an AI recruiter for the Slough office, adapted from Cube Group USA's CGRecruit (MIT) to UK self-employed wording. Calls first (ElevenLabs voice agent over the robot's Twilio number), then WhatsApp / text from the same number (Claude reads replies), books Mon–Fri 10:00 presentations, reminders, no-shows, 3 calls over 2 days, then Jess and Rubal. It never turns anyone down: any "no" goes to a person.
+  - All of it is in `Code.gs` (section "THE OFFICE ROBOT"): tab `Applicants` (one row each; `thread` = chat + notes, `calls` = call log with summaries and transcripts, `answers` JSON). Settings live in Script property `ROBOT` (Applicants → ⚙️, admins); `ROBOT_EL_HOOK_SECRET` / `ROBOT_INIT_KEY` are made by "Set up the voice".
+  - Network calls (Twilio, ElevenLabs, Anthropic, Teamtailor) go through `UrlFetchApp` **outside** `withLock` (`robotDo`: work out under the lock, send after). Keys come from Vercel env through the worker's `ENV_PROPS`: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `ELEVENLABS_API_KEY`, `ANTHROPIC_API_KEY`, `TEAMTAILOR_API_KEY`.
+  - `api/robot.js` (+ `server/robot.js`): webhooks `?h=voice` (ElevenLabs post-call, HMAC), `?h=init` (inbound caller lookup, `X-Robot-Key`), `?h=msg` / `?h=status` (Twilio, `X-Twilio-Signature`); `Code.gs` `robotHook` checks every signature on the raw body. `api/robot-tick.js` = Vercel Cron every minute (`robotTick`).
+  - `REHEARSAL=1` copies only call / message numbers in `ROBOT_ALLOW` (`server/live.js`). The Sheet copy leaves out `thread` / `calls` (`server/mirror.js`).
+  - Tests: `node app/dev/office.js <scratch folder>` (96 checks, both back ends) with pretend services in `server/fakenet.js` (`__net` in Code.gs's world).
+  - Booked-by-robot check-ins: `Candidates.booked_via = 'robot'`, no booker, Office Recruitment, not in the incentive's "needs a booker".
 
 ## Shipping a change
 1. Branch from `main` and edit `app/src/`. Then run `node app/build.js`.
@@ -34,7 +41,8 @@ The recruitment app for **LINK Marketing** and **JUSS Marketing** (Angad runs bo
      - `dev/speed.js`: must print ALL INSTANT.
      - `dev/room.js`: busy room, 20 check-ins; `CPU=10` for a slow phone.
      - `dev/move-test.js`: address moves.
-   - **Needs:** Node 22+ and Playwright with Chromium (`npm i -g playwright && npx playwright install chromium`). `pdftotext` is optional.
+     - `dev/office.js`: the office robot (calls, WhatsApp, bookings, check-in), on both back ends.
+   - **Needs:** Node 22+ and Playwright with Chromium (`npm i -g playwright && npx playwright install chromium`). `pdftotext` is optional; on Angad's PC Git's own copy (`mingw64\bin`) turns "·" into "�" and fails the New Starts List check, so leave it off `PATH` for e2e.
    - **On Angad's PC (PowerShell):** Playwright is installed in `%LOCALAPPDATA%\jl-recruitment-tools`, so first run `$env:NODE_PATH = "$env:LOCALAPPDATA\jl-recruitment-tools\node_modules"`. Run the harnesses one at a time: with `speed.js` running alongside, an e2e step (Chase → Nudge all) once timed out. Alone, e2e passes 379/379 on UK time and on UTC. Git is at `%LOCALAPPDATA%\Programs\Git\cmd\git.exe` (not on PATH in older shells). This clone has `core.autocrlf=false`: keep files LF, or the build's version hash changes. `private/` (ignored locally) holds files that must never go in this public repo.
    - **Test browser clocks** follow the fake server clock (`setTime`), so tests don't depend on today's real date.
 3. Commit, open a PR, merge. Vercel picks up `main` by itself within about a minute.

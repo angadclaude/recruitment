@@ -510,7 +510,7 @@ async function fillEval(p) {
   ok(/💡 Plays semi-pro football/.test(snap) && /Wants to earn on results, saving for a house/.test(snap), 'booker sees the room answers: 💡 ice-breaker + why sales');
   ok(/🎤 Presentation by Nathan Smith/.test(snap) && !/rated by/.test(snap), 'their page says who ran the presentation: "🎤 Presentation by Nathan Smith" (he rated the room too)');
   const hdr = (await getJson('/dev/sheet?name=Candidates'))[0];
-  ok(hdr.slice(-17).join() === 'recruit_source,databyte_at,databyte_by,onboard_email_at,onboard_email_by,brand,presented_by_id,presented_by,offer_by,offer_via,offer_co,thanks_via,thanks_co,outcome_log,callback_at,callback_by_id,callback_nudged' && new Set(hdr).size === hdr.length,
+  ok(hdr.slice(-18).join() === 'recruit_source,databyte_at,databyte_by,onboard_email_at,onboard_email_by,brand,presented_by_id,presented_by,offer_by,offer_via,offer_co,thanks_via,thanks_co,outcome_log,callback_at,callback_by_id,callback_nudged,booked_via' && new Set(hdr).size === hdr.length,
     'live Sheet with the presenter headers written twice: the empty copies cleared, the new columns added in the right place (no data moved)');
   ok(!/Unspent convictions/.test(snap), 'conviction answer hidden from bookers');
   await bp.click('.chips[data-name=outcome] .chip:has-text("Academy booked")');

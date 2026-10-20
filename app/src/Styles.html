@@ -889,4 +889,12 @@ table.t td { padding: 9px 4px; border-bottom: 1px solid var(--line); vertical-al
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; animation-delay: 0s !important; transition-duration: .01ms !important; }
 }
+/* The office robot: an applicant's WhatsApp / text chat and what happened (calls, bookings, someone taking over) */
+.chat { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
+.bub { max-width: 84%; padding: 9px 12px; border-radius: 16px; font-size: 14.5px; line-height: 1.4; overflow-wrap: anywhere; box-shadow: var(--shadow); }
+.bub span { display: block; margin-top: 4px; font-size: 11.5px; opacity: .65; }
+.bub.in { align-self: flex-start; background: #fff; border: 1px solid var(--line); border-bottom-left-radius: 6px; }
+.bub.out { align-self: flex-end; background: #DCF8C6; border-bottom-right-radius: 6px; }
+.bub.note { align-self: center; max-width: 94%; background: var(--soft); box-shadow: none; font-size: 13px; color: var(--muted); text-align: center; }
+.bub.note span { display: inline; margin: 0 0 0 4px; }
 </style>

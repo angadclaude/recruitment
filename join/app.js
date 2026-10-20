@@ -1,4 +1,4 @@
-window.APP_VERSION = '6156f16d';
+window.APP_VERSION = 'fe4160df';
 
 (function () {
 'use strict';
@@ -1089,6 +1089,10 @@ function boot() {
     // From the evening-before briefing / the 10:00 "starters to remind" alert (that one opens the send list too)
     S.openRemind = BOOT.cid === 'remind' && isAdmin(); BOOT.cid = '';
     if (isAdmin()) { S.tab = 'academy'; nav('academy', {}, false); } else { nav(S.tab, {}, false); nav('academy', {}, true); }
+  } else if (BOOT.cid === 'robot' || /^ap-/.test(BOOT.cid)) {
+    // From a robot alert: its Applicants page, or the person it's about
+    const ap = BOOT.cid.slice(3); BOOT.cid = ''; nav(S.tab, {}, false);
+    if (S.me.robot) { nav('robot', {}, true); if (ap) nav('ap', { id: ap }, true); }
   } else if (BOOT.cid) { const id = BOOT.cid; BOOT.cid = ''; nav('cand', { id: id }, true); } else nav(S.tab, {}, false);
   stopTimer();
   S.lastPoll = Date.now();
@@ -1162,9 +1166,9 @@ function nav(view, params, push) {
   render();
 }
 function hist(kind, st) { try { kind === 'push' ? history.pushState(st, '') : history.replaceState(st, ''); S.hist = kind === 'push' ? (S.hist || 0) + 1 : (S.hist || 0); } catch (e) { /* not allowed in this frame */ } }
-function back() { if (S.hist > 0 && history.state && ['cand', 'user', 'slideqr', 'bulletin', 'alerts', 'academy'].indexOf(history.state.v) >= 0) { S.hist--; history.back(); } else nav(S.tab); }
+function back() { if (S.hist > 0 && history.state && ['cand', 'user', 'slideqr', 'bulletin', 'alerts', 'academy', 'robot', 'ap'].indexOf(history.state.v) >= 0) { S.hist--; history.back(); } else nav(S.tab); }
 function go(tab) { nav(tab, {}, false); }
-function titleOf(v) { return { today: 'Today', mine: 'My candidates', all: 'All candidates', pay: 'Appts Attended', team: 'Team', slideqr: 'Slide QR codes', user: 'Team', bulletin: 'Bulletin', alerts: 'Alerts check', chase: 'Chase', academy: 'Day 1' }[v] || ''; }
+function titleOf(v) { return { today: 'Today', mine: 'My candidates', all: 'All candidates', pay: 'Appts Attended', team: 'Team', slideqr: 'Slide QR codes', user: 'Team', bulletin: 'Bulletin', alerts: 'Alerts check', chase: 'Chase', academy: 'Day 1', robot: 'Applicants', ap: 'Applicant' }[v] || ''; }
 
 function render(quiet) {
   const v = S.view;
@@ -1172,6 +1176,8 @@ function render(quiet) {
   if (v === 'user') return editUser(S.params.id ? (S.users || []).filter(u => u.id === S.params.id)[0] : null);
   if (v === 'slideqr') return viewSlideQR();
   if (v === 'alerts') return viewAlerts();
+  if (v === 'robot') return viewRobot();
+  if (v === 'ap') return viewAp(S.params.id);
   if (v === 'chase') return viewChase(quiet);
   if (v === 'academy') return viewAcademy(quiet);
   if (v === 'bulletin') return viewBulletin();
@@ -1304,6 +1310,7 @@ function toggleMenu() {
   m.innerHTML = '<div class="menu-card"><div class="row" style="flex-wrap:nowrap"><span class="av lg co-' + h(coOf(u.company) || 'LINK') + '">' + h(initials(u.name)) + '</span><div style="min-width:0"><b>' + h(u.name) + '</b><div class="small muted" style="overflow:hidden;text-overflow:ellipsis">' + h(u.email) + '</div>' +
     '<div class="small muted"><span class="co ' + h(u.company) + '">' + h(u.company) + '</span> · ' + (isAdmin() ? '<b>Admin</b>' : '<b>BA</b> · ' + h(u.roles.join(', '))) + '</div></div></div>' +
     (isAdmin() && isBooker() ? '<button class="btn ghost block" id="mTeam" style="margin-top:12px">👥 Team</button>' : '') +
+    (S.me.robot ? '<button class="btn ghost block" id="mRobot" style="margin-top:8px">🤖 Applicants (' + h(S.me.robot.name) + ')</button>' : '') +
     '<button class="btn ghost block" id="mRefresh" style="margin-top:' + (isAdmin() && isBooker() ? 8 : 12) + 'px">↻ Refresh now</button>' +
     '<button class="btn ghost block" id="mLogout" style="margin-top:8px;color:var(--red)">Log out</button>' +
     '<p class="small muted center" style="margin:10px 0 0">App version ' + h(window.APP_VERSION || 'dev') + '<br>Alerts: ' + h(pushStatus()) + '</p></div>';
@@ -1311,6 +1318,7 @@ function toggleMenu() {
   m.onclick = e => { if (e.target === m) m.hidden = true; };
   document.getElementById('mRefresh').onclick = () => { m.hidden = true; pullRefresh(); };
   const mt = document.getElementById('mTeam'); if (mt) mt.onclick = () => { m.hidden = true; nav('team', {}, true); };
+  const mr = document.getElementById('mRobot'); if (mr) mr.onclick = () => { m.hidden = true; nav('robot', {}, true); };
   document.getElementById('mLogout').onclick = () => {
     if (outbox().length && !navigator.onLine) { toast('Wait for signal first: you have changes that haven\'t synced'); return; }
     store.del('outbox'); store.del('tok'); store.del('cache'); S.token = ''; S.me = null; S.data = {}; S.users = null; S.chase = null; S.chaseN = 0; S.chaseCarry = 0; S.academy = null; S.booted = false; S.tab = '';
@@ -1555,6 +1563,7 @@ function viewToday(quiet) {
     const rated = items.filter(c => c.in_room).length, toCall = items.filter(c => !c.limited && c.eval_at && !c.outcome).length;
     body = '<div class="hero">' + FX + top + kpis([[items.length, 'Checked in'], [rated, 'Rated'], [items.filter(c => c.eval_at).length, 'Evaluated'], [toCall, 'To call', toCall > 0]]) + '</div>' +
       (isAdmin() || canThank() ? thanksButton(items) : '') +
+      (S.me.robot && S.me.robot.mode !== 'off' ? '<button class="btn ghost block" id="robotBtn" style="margin-bottom:10px">🤖 ' + h(S.me.robot.name) + ' · Applicants</button>' : '') +
       (isAdmin() ? '<div class="bullbtns"><button class="btn" id="bullDaily">📣 ' + (isToday ? 'Today\'s' : DAYS[D(S.day).getUTCDay()]) + ' bulletin</button><button class="btn ghost" id="bullWeek">🏆 Week top 5</button></div>' : '') +
       (items.length ? '<div class="section-h"><b>In the room</b><span>' + rated + ' of ' + items.length + ' rated</span></div>' +
         (isPresenter() ? '<p class="hint">Tap Green, Amber or Red to rate. Rating = they were in the room (that\'s what counts for the recruitment incentive). Tap a name for stars and notes.</p>' : '') +
@@ -1565,6 +1574,7 @@ function viewToday(quiet) {
   const page = paint('', body, quiet);
   bindItems(page);
   const ta = document.getElementById('thanksAll'); if (ta) ta.onclick = thanksSheet;
+  const rb = document.getElementById('robotBtn'); if (rb) rb.onclick = () => nav('robot', {}, true);
   [['bullDaily', 'daily'], ['bullWeek', 'weekly']].forEach(b => { const el = document.getElementById(b[0]); if (el) el.onclick = () => nav('bulletin', { day: S.day, kind: b[1] }, true); });
   document.getElementById('dprev').onclick = () => { S.day = addDays(S.day, -1); render(); };
   document.getElementById('dnext').onclick = () => { if (S.day < S.me.today) { S.day = addDays(S.day, 1); render(); } };
@@ -2908,6 +2918,176 @@ function drawAlerts(r) {
   };
   const ta = page.querySelector('#testAll'); if (ta) ta.onclick = () => test(on.map(p => p.id), ta);
   page.querySelectorAll('[data-test]').forEach(b => { b.onclick = () => test([b.dataset.test], b); });
+}
+
+// ───── The office robot (Angad, 20 Oct): who it's calling and messaging, who's booked, who needs a person ─────
+// Admins and the recruitment team (Jess, Rubal, Fiza). Settings (on/off, name, presentation times) are admins only.
+const AP_TONE = { booked: 'green', attended: 'green', person: 'red', no_reply: 'amber', no_show: 'amber', calling: 'blue', chat: 'blue', new: '', closed: '', stopped: '' };
+const AP_ASK = [['age', '18 or over'], ['se', 'Can be self-employed'], ['days', 'Days a week'], ['commute', 'Can get to Slough'], ['want', 'Looking for'], ['why', 'Why sales']];
+const AP_GROUPS = [['need', '👋 Needs you'], ['booked', '✅ Booked'], ['going', '📞 In progress'], ['done', 'Came in'], ['all', 'All']];
+const AP_IN = {
+  need: a => a.status === 'person' || a.status === 'no_reply',
+  booked: a => a.status === 'booked',
+  going: a => ['new', 'calling', 'chat', 'no_show'].indexOf(a.status) >= 0,
+  done: a => a.status === 'attended',
+  all: () => true,
+};
+const DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const AP_TPL = [['missed', 'Missed call'], ['booked', 'Booked'], ['remind', 'Reminder'], ['noshow', 'Didn\'t come'], ['nudge', 'Finish by message']];
+function robotName() { return (S.robot && S.robot.cfg.name) || (S.me.robot && S.me.robot.name) || 'Robot'; }
+function apPill(a) { return '<span class="pill ' + (AP_TONE[a.status] || '') + '">' + h(a.status_label) + '</span>'; }
+function apRow(a) {
+  const sub = a.status === 'booked' || a.status === 'no_show' ? '📅 ' + h(a.slot_label) + (a.confirmed_at ? ' · confirmed ✅' : '')
+    : a.flag ? '⚠️ ' + h(a.flag) : a.last ? (a.last.d === 'in' ? '💬 ' : '↪️ ') + h(a.last.t) : a.next_at ? '📞 Next call ' + h(fmtTs(a.next_at)) : h(a.job || '');
+  return '<button class="item" data-ap="' + h(a.id) + '"><span class="av">' + h(initials(a.full_name)) + '</span><div class="main"><div class="name">' + h(a.full_name) +
+    (a.paused_by ? ' <span class="pill">✋ ' + h(a.paused_by.split(' ')[0]) + '</span>' : '') + '</div><div class="sub">' + sub + '</div><div class="pills">' + apPill(a) +
+    (a.source === 'manual' ? '<span class="pill">Added by hand</span>' : a.source === 'inbound' ? '<span class="pill">Contacted us</span>' : '') + '</div></div><span class="chev">›</span></button>';
+}
+function viewRobot() {
+  const id = S.viewId;
+  if (S.robot) drawRobot(S.robot); else paint('Applicants', skeleton(5), false, true);
+  call('robotList').then(r => { S.robot = r; if (S.viewId === id && S.view === 'robot') drawRobot(r, true); }).catch(e => {
+    if (S.viewId === id && !S.robot) paint('Applicants', '<div class="err">' + h(e.message) + '</div>', false, true);
+  });
+}
+function drawRobot(r, quiet) {
+  const c = r.cfg, f = S.apFilter || 'need', list = r.items.filter(AP_IN[f]);
+  const mode = c.mode === 'live' ? '<span class="pill green">● Live</span>' : c.mode === 'test' ? '<span class="pill amber">● Test: only people you add</span>' : '<span class="pill">Off</span>';
+  const missing = [!c.keys.phone && 'Twilio (phone number)', !c.keys.voice && 'ElevenLabs (voice)', !c.keys.ai && 'Anthropic (WhatsApp replies)', !c.keys.teamtailor && 'Teamtailor'].filter(Boolean);
+  const html = '<div class="card"><div class="row between" style="align-items:flex-start;gap:10px"><div style="min-width:0"><div class="display" style="font-size:22px">🤖 ' + h(c.name) + '</div>' +
+      '<div class="small muted">Calls ' + h(fmt12(c.callFrom)) + '–' + h(fmt12(c.callTo)) + ', 7 days · presentations ' + h(c.days.map(d => DAY_SHORT[d]).join(', ')) + ' ' + h(fmt12(c.time)) + '</div></div>' + mode + '</div>' +
+      (missing.length ? '<div class="flag amber" style="margin-top:10px">Not connected yet: ' + h(missing.join(', ')) + '</div>' : '') +
+      (c.keys.voice && c.keys.phone && !(c.agent && c.phone) ? '<div class="flag amber" style="margin-top:10px">Voice not set up yet: ⚙️ Settings → Set up the voice</div>' : '') +
+      '<div class="bullbtns" style="margin-top:12px"><button class="btn" id="apAdd">➕ Add someone</button>' + (r.admin ? '<button class="btn ghost" id="apSet">⚙️ Settings</button>' : '') + '</div></div>' +
+    '<div class="chips scroll" id="apF">' + AP_GROUPS.map(g => '<button class="chip' + (g[0] === f ? ' on' : '') + '" data-f="' + g[0] + '">' + g[1] + ' · ' + r.items.filter(AP_IN[g[0]]).length + '</button>').join('') + '</div>' +
+    (list.length ? '<div class="list">' + list.map(apRow).join('') + '</div>'
+      : empty(f === 'need' ? '🙌' : '🤖', f === 'need' ? 'Nobody needs you right now. ' + h(c.name) + ' is handling everyone.' : 'Nobody here yet.')) +
+    '<p class="hint">' + h(c.name) + ' rings new applicants from Teamtailor within minutes (9am to 8pm), asks the 6 questions and books them into a presentation. If they don\'t answer, it WhatsApps them. After ' + h(c.tries) + ' calls, or any "no" on the questions, they come to Jess and Rubal under 👋 Needs you.</p>';
+  const page = paint('Applicants', html, quiet, true);
+  page.querySelectorAll('#apF .chip').forEach(b => { b.onclick = () => { S.apFilter = b.dataset.f; drawRobot(S.robot); }; });
+  page.querySelectorAll('.item[data-ap]').forEach(b => { b.onclick = () => nav('ap', { id: b.dataset.ap }, true); });
+  page.querySelector('#apAdd').onclick = apAddSheet;
+  const st = page.querySelector('#apSet'); if (st) st.onclick = () => apSettingsSheet(r);
+}
+function viewAp(id) {
+  const vid = S.viewId, cached = S.robot && S.robot.items.filter(a => a.id === id)[0];
+  if (S.apFull && S.apFull.id === id) drawAp(S.apFull); else if (cached) drawAp(cached, false, true); else paint('Applicant', skeleton(3), false, true);
+  call('robotGet', { id: id }).then(a => { S.apFull = a; if (S.viewId === vid) drawAp(a, true); }).catch(e => { if (S.viewId === vid) toast(e.message); });
+}
+function apUpdated(a) {
+  S.apFull = a;
+  if (S.robot) { const i = S.robot.items.findIndex(x => x.id === a.id); if (i >= 0) S.robot.items[i] = a; else S.robot.items.unshift(a); }
+}
+function drawAp(a, quiet, light) {
+  const ans = a.answers || {}, slots = (S.robot && S.robot.slots) || [];
+  const yn = v => v === 'yes' ? '✅ Yes' : v === 'no' ? '❌ No' : v === 'unsure' ? '🤔 Not sure' : v || '–';
+  const line = x => x.d === 'note' ? '<div class="bub note">' + h(x.t) + ' <span>' + h(fmtTs(x.at)) + '</span></div>'
+    : '<div class="bub ' + x.d + '">' + h(x.t).replace(/\n/g, '<br>') + '<span>' + (x.d === 'out' ? h(x.by || robotName()) + ' · ' : '') + (x.ch === 'wa' ? 'WhatsApp · ' : x.ch === 'sms' ? 'Text · ' : '') + h(fmtTs(x.at)) + '</span></div>';
+  const calls = (a.calls || []).filter(k => k.res && k.res !== 'calling');
+  const busyNow = a.status === 'calling';
+  const html = '<div class="card"><div class="row" style="flex-wrap:nowrap;gap:12px"><span class="av lg">' + h(initials(a.full_name)) + '</span><div style="min-width:0">' +
+      '<div class="display" style="font-size:22px">' + h(a.full_name) + '</div><div class="pills" style="margin-top:4px">' + apPill(a) + (a.paused_by ? '<span class="pill">✋ ' + h(a.paused_by) + ' has them</span>' : '') + '</div></div></div>' +
+      (a.flag ? '<div class="flag ' + (a.status === 'person' ? 'red' : 'amber') + '" style="margin-top:10px">' + h(a.flag) + '</div>' : '') +
+      (a.slot_label && ['booked', 'no_show', 'attended'].indexOf(a.status) >= 0 ? '<div class="flag green" style="margin-top:10px">📅 Presentation: ' + h(a.slot_label) + (a.confirmed_at ? ' · confirmed ✅' : '') + '</div>' : '') +
+      (a.closed_reason ? '<p class="hint">' + h(a.closed_reason) + '</p>' : '') +
+      (a.mobile ? '<div class="bullbtns" style="margin-top:12px"><a class="btn ghost" href="tel:' + h(a.mobile) + '">' + icon('phone', 16) + ' Call</a><a class="btn wa" href="' + h(waUrl(a.mobile, '')) + '" target="_blank" rel="noopener">' + icon('chat', 16) + ' WhatsApp</a></div>' : '') +
+      '<dl class="kv" style="margin-top:12px">' + apKv('Mobile', a.mobile ? fmtPhone(a.mobile) : '–') + (a.email ? apKv('Email', a.email) : '') + apKv('Came from', a.source === 'teamtailor' ? 'Teamtailor' + (a.job ? ' · ' + a.job : '') : a.source === 'manual' ? 'Added by hand' : 'Contacted the office number') +
+        apKv('Calls', (a.tries || 0) + (a.next_at ? ' · next ' + fmtTs(a.next_at) : '') + (a.nocall ? ' · asked not to be called' : '')) + (a.wa ? apKv('WhatsApp', a.wa === 'yes' ? 'Yes' : 'No (texts)') : '') + '</dl></div>' +
+    '<div class="section-h"><b>Their answers</b></div><div class="card"><dl class="kv">' + AP_ASK.map(q => apKv(q[1], q[0] === 'days' || q[0] === 'want' || q[0] === 'why' ? (ans[q[0]] || '–') : yn(ans[q[0]]))).join('') + '</dl></div>' +
+    (light ? '' : '<div class="section-h"><b>What the team can do</b></div><div class="card"><div class="bullbtns">' +
+      (a.paused_by ? '<button class="btn" data-act="resume">🤖 Hand back to ' + h(robotName()) + '</button>' : '<button class="btn ghost" data-act="pause">✋ Take over</button>') +
+      (a.mobile && ['attended', 'stopped'].indexOf(a.status) < 0 ? '<button class="btn ghost" data-act="callnow"' + (busyNow ? ' disabled' : '') + '>📞 ' + h(robotName()) + ', call now</button>' : '') +
+      '</div><label class="q">Book a presentation</label><div class="row" style="gap:8px;flex-wrap:nowrap"><select id="apSlot">' + slots.map(s => '<option value="' + h(s.id) + '"' + (s.id === a.slot ? ' selected' : '') + '>' + h(s.short) + '</option>').join('') + '</select>' +
+      '<button class="btn sm" id="apBook">Book</button></div>' +
+      '<label class="q">Message them (from the office number)</label><textarea id="apMsg" class="short" placeholder="Goes by WhatsApp, or text if they\'re not on it"></textarea>' +
+      '<div class="bullbtns"><button class="btn" id="apSend">Send</button><button class="btn ghost" id="apNote">📝 Save as a note</button></div>' +
+      (['closed', 'stopped'].indexOf(a.status) >= 0 ? '<button class="btn ghost block" data-act="reopen" style="margin-top:10px">↩️ Reopen</button>'
+        : '<label class="q">Close it</label><div class="chips" id="apClose">' + ['Not interested', 'Not suitable', 'Wrong number', 'Duplicate'].map(x => '<button class="chip" data-r="' + h(x) + '">' + h(x) + '</button>').join('') + '</div>') +
+      '</div>') +
+    (calls.length ? '<div class="section-h"><b>Calls</b></div>' + calls.slice().reverse().map(k => '<div class="card tight"><b>' + h(fmtTs(k.at)) + '</b> · ' + h(k.res) + (k.secs ? ' · ' + Math.round(k.secs / 6) / 10 + ' min' : '') +
+      (k.sum ? '<p class="small" style="margin:6px 0 0">' + h(k.sum) + '</p>' : '') + (k.tr ? '<details style="margin-top:6px"><summary class="small muted">What was said</summary><div class="small" style="white-space:pre-wrap;margin-top:6px">' + h(k.tr) + '</div></details>' : '') + '</div>').join('') : '') +
+    (a.thread ? '<div class="section-h"><b>Messages and notes</b></div><div class="chat">' + (a.thread.length ? a.thread.map(line).join('') : '<p class="hint">Nothing yet.</p>') + '</div>' : '');
+  const page = paint(a.first_name || 'Applicant', html, quiet, true);
+  const act = (payload, btn, msg) => {
+    if (btn) busy(btn, true, '…');
+    call('robotAct', Object.assign({ id: a.id }, payload)).then(x => { apUpdated(x); toast(msg); if (S.view === 'ap') drawAp(x, true); })
+      .catch(e => { if (btn) busy(btn, false); toast(e.message); });
+  };
+  page.querySelectorAll('[data-act]').forEach(b => { b.onclick = () => act({ act: b.dataset.act }, b, { pause: 'You have them: ' + robotName() + ' won\'t contact them', resume: 'Handed back to ' + robotName(), callnow: robotName() + ' will call within a minute', reopen: 'Reopened' }[b.dataset.act]); });
+  const bk = page.querySelector('#apBook'); if (bk) bk.onclick = () => act({ act: 'book', slot: page.querySelector('#apSlot').value }, bk, 'Booked, and they\'ve been sent the details');
+  const sd = page.querySelector('#apSend'); if (sd) sd.onclick = () => act({ act: 'send', text: page.querySelector('#apMsg').value }, sd, 'Sent');
+  const nt = page.querySelector('#apNote'); if (nt) nt.onclick = () => act({ act: 'note', text: page.querySelector('#apMsg').value }, nt, 'Note saved');
+  page.querySelectorAll('#apClose .chip').forEach(b => { b.onclick = () => act({ act: 'close', reason: b.dataset.r }, b, 'Closed'); });
+}
+function apKv(k, v) { return '<dt>' + h(k) + '</dt><dd>' + h(v) + '</dd>'; }
+function apAddSheet() {
+  closeSheet(true);
+  const back = document.createElement('div');
+  back.className = 'sheet-back';
+  back.innerHTML = '<div class="sheet" role="dialog" aria-label="Add someone"><div class="grab"></div><div class="sheet-h"><div><div class="label muted">' + h(robotName()) + '</div><div class="display">Add someone</div></div></div>' +
+    '<p class="hint">' + h(robotName()) + ' calls them within a minute (9am to 8pm). In Test mode, only people added here are contacted: add yourself to try it.</p>' +
+    '<label class="q">Full name</label><input type="text" id="aaName" autocomplete="off"><label class="q">Mobile</label><input type="tel" id="aaMob" placeholder="07…"><label class="q">Email (optional)</label><input type="email" id="aaEm">' +
+    '<div id="aaErr"></div><button class="btn block" id="aaGo" style="margin-top:14px">Add and call them</button><button class="btn ghost block" id="aaNo" style="margin-top:8px">Cancel</button></div>';
+  document.body.appendChild(back); document.body.style.overflow = 'hidden';
+  back.onclick = e => { if (e.target === back) closeSheet(); };
+  back.querySelector('#aaNo').onclick = () => closeSheet();
+  const go = back.querySelector('#aaGo');
+  go.onclick = () => {
+    busy(go, true, 'Adding…');
+    call('robotAddOne', { full_name: back.querySelector('#aaName').value, mobile: back.querySelector('#aaMob').value, email: back.querySelector('#aaEm').value }).then(a => {
+      apUpdated(a); closeSheet(); toast(a.existed ? 'Already on the list' : 'Added: ' + robotName() + ' will call them'); nav('ap', { id: a.id }, true);
+    }).catch(e => { busy(go, false); showErr(back.querySelector('#aaErr'), e.message); });
+  };
+}
+function apSettingsSheet(r) {
+  const c = r.cfg;
+  closeSheet(true);
+  const back = document.createElement('div');
+  back.className = 'sheet-back';
+  const tick = ok => (ok ? '✅' : '❌');
+  back.innerHTML = '<div class="sheet" role="dialog" aria-label="Robot settings"><div class="grab"></div><div class="sheet-h"><div><div class="label muted">Office robot</div><div class="display">Settings</div></div></div><div id="rs">' +
+    '<label class="q">Switched</label>' + chips('mode', [['off', 'Off'], ['test', 'Test'], ['live', 'Live']], c.mode) +
+    '<p class="hint">Off: nothing. Test: only people you add by hand are called and messaged (try it on your own phone first). Live: every new Teamtailor applicant too.</p>' +
+    '<label class="q">Its name</label><input type="text" id="rsName" value="' + h(c.name) + '">' +
+    '<label class="q">Speaks for</label>' + chips('company', ['JUSS', 'LINK'], c.company) +
+    '<label class="q">Presentation days</label><div class="chips" data-name="days" data-multi="1">' + [1, 2, 3, 4, 5, 6, 0].map(d => '<button type="button" class="chip' + (c.days.indexOf(d) >= 0 ? ' on' : '') + '" data-v="' + d + '">' + DAY_SHORT[d] + '</button>').join('') + '</div>' +
+    '<div class="row" style="gap:8px"><div class="grow"><label class="q">Starts</label><input type="time" id="rsTime" value="' + h(c.time) + '"></div><div class="grow"><label class="q">Ends about</label><input type="time" id="rsEnds" value="' + h(c.ends) + '"></div></div>' +
+    '<label class="q">Places per presentation</label><input type="text" inputmode="numeric" id="rsCap" value="' + h(c.cap) + '">' +
+    '<div class="row" style="gap:8px"><div class="grow"><label class="q">Calls from</label><input type="time" id="rsFrom" value="' + h(c.callFrom) + '"></div><div class="grow"><label class="q">Calls until</label><input type="time" id="rsTo" value="' + h(c.callTo) + '"></div></div>' +
+    '<label class="q">Calls before Jess and Rubal take over</label><input type="text" inputmode="numeric" id="rsTries" value="' + h(c.tries) + '">' +
+    '<label class="q">The robot\'s phone number</label><input type="tel" id="rsNum" value="' + h(c.number) + '" placeholder="+44 7…">' +
+    '<button class="toggle' + (c.wa ? ' on' : '') + '" id="rsWa" type="button" style="margin-top:10px">' + (c.wa ? '✅' : '⬜') + ' WhatsApp approved by Meta on this number</button>' +
+    '<details style="margin-top:10px"><summary class="small muted">WhatsApp messages approved by Meta (IDs starting HX, from Twilio)</summary>' +
+      AP_TPL.map(k => '<label class="q">' + h(k[1]) + '</label><input type="text" data-tpl="' + k[0] + '" value="' + h((c.tpl || {})[k[0]] || '') + '" placeholder="HX…">').join('') + '</details>' +
+    '<label class="q">Teamtailor jobs it handles (job numbers, blank = all)</label><input type="text" id="rsJobs" value="' + h(c.ttJobs) + '">' +
+    '<label class="q">Voice (ElevenLabs voice ID, blank = default)</label><input type="text" id="rsVoice" value="' + h(c.voiceId) + '">' +
+    '<div class="achk" style="margin-top:12px"><div>' + tick(c.keys.phone) + ' Twilio (calls, WhatsApp, texts)</div><div>' + tick(c.keys.voice) + ' ElevenLabs (the voice)</div><div>' + tick(c.keys.ai) + ' Anthropic (reads WhatsApp replies)</div><div>' + tick(c.keys.teamtailor) + ' Teamtailor (new applicants)</div><div>' + tick(c.agent && c.phone) + ' Voice set up on the number</div></div>' +
+    '<div id="rsErr"></div><button class="btn block" id="rsSave" style="margin-top:14px">Save</button>' +
+    '<button class="btn ghost block" id="rsVoiceGo" style="margin-top:8px">🎙️ Set up the voice (after saving)</button><button class="btn ghost block" id="rsNo" style="margin-top:8px">Close</button></div></div>';
+  document.body.appendChild(back); document.body.style.overflow = 'hidden';
+  const sh = back.querySelector('#rs');
+  bindChips(sh, () => {});
+  const wa = back.querySelector('#rsWa'); let waOn = !!c.wa;
+  wa.onclick = () => { waOn = !waOn; wa.classList.toggle('on', waOn); wa.textContent = (waOn ? '✅' : '⬜') + ' WhatsApp approved by Meta on this number'; };
+  back.onclick = e => { if (e.target === back) closeSheet(); };
+  back.querySelector('#rsNo').onclick = () => closeSheet();
+  const save = back.querySelector('#rsSave');
+  save.onclick = () => {
+    const days = chipVals(sh, 'days').map(Number);
+    const cfg = { mode: chipVal(sh, 'mode'), name: back.querySelector('#rsName').value, company: chipVal(sh, 'company'), days: days, time: back.querySelector('#rsTime').value, ends: back.querySelector('#rsEnds').value,
+      cap: back.querySelector('#rsCap').value, callFrom: back.querySelector('#rsFrom').value, callTo: back.querySelector('#rsTo').value, tries: back.querySelector('#rsTries').value,
+      number: back.querySelector('#rsNum').value, wa: waOn, ttJobs: back.querySelector('#rsJobs').value, voiceId: back.querySelector('#rsVoice').value,
+      tpl: Object.fromEntries(Array.from(back.querySelectorAll('[data-tpl]')).map(i => [i.dataset.tpl, i.value.trim()])) };
+    busy(save, true, 'Saving…');
+    call('robotSettings', { cfg: cfg }).then(nc => { busy(save, false); if (S.robot) S.robot.cfg = nc; if (S.me.robot) { S.me.robot.name = nc.name; S.me.robot.mode = nc.mode; } toast('Saved'); closeSheet(); viewRobot(); })
+      .catch(e => { busy(save, false); showErr(back.querySelector('#rsErr'), e.message); });
+  };
+  const vg = back.querySelector('#rsVoiceGo');
+  vg.onclick = () => {
+    busy(vg, true, 'Setting up the voice…');
+    call('robotSetupVoice').then(x => { busy(vg, false); toast('Voice ready: ' + (x.done.join(', ') || 'up to date')); closeSheet(); viewRobot(); })
+      .catch(e => { busy(vg, false); showErr(back.querySelector('#rsErr'), e.message); });
+  };
 }
 
 function viewSlideQR() {

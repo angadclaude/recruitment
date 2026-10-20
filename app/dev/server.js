@@ -7,6 +7,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { load } = require('./gas');
+const { robotRequest } = require('../../server/robot');
 
 const PORT = Number(process.argv[2] || 8787);
 const SRC = path.join(__dirname, '..', 'src');
@@ -82,6 +83,11 @@ ready.then(gas => http.createServer(async (req, res) => {
     if (u.pathname === '/exec' || u.pathname === '/') {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       return res.end(render(u.searchParams));
+    }
+    // The office robot's webhooks and timer, exactly as on Vercel (api/robot.js), handed to this back end's Code.gs
+    if (u.pathname === '/api/robot' || u.pathname === '/api/robot-tick') {
+      if (u.pathname === '/api/robot-tick') req.url = '/api/robot?h=tick';
+      return robotRequest(req, res, { call: (fn, ...args) => gas.run(fn, args), base: `http://localhost:${PORT}` });
     }
     if (u.pathname === '/dev/delay' && req.method === 'POST') { DELAY = (await body(req)).ms || 0; res.writeHead(200, { 'content-type': 'application/json' }); return res.end('{}'); }
     if (u.pathname === '/api' && req.method === 'POST') {

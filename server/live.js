@@ -4,7 +4,10 @@
 //   RELAY_URL, RELAY_SECRET           Apps Script web app that sends the emails from Gmail (Code.gs relayMail)
 //   ONESIGNAL_API_KEY                 phone alerts (the REST API key; the App ID is a normal setting)
 //   CRON_SECRET                       Vercel sends it to /api/cron
-//   REHEARSAL=1                       test copy: emails only to MAIL_ALLOW, no phone alerts
+//   REHEARSAL=1                       test copy: emails only to MAIL_ALLOW, no phone alerts, and the office robot only
+//                                     calls or messages ROBOT_ALLOW (+44… numbers, comma separated)
+//   ELEVENLABS_API_KEY, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, ANTHROPIC_API_KEY, TEAMTAILOR_API_KEY   the office robot
+//   (ELEVENLABS_WEBHOOK_SECRET is optional: "Set up the voice" keeps the call-results key itself)
 'use strict';
 const path = require('path');
 const { Runtime } = require('./runtime');
@@ -13,6 +16,19 @@ const { postgresAdapter } = require('./db');
 const TRIGGERS = ['weeklyProgressEmails', 'saturdayDeadlineEmails', 'mondayPayReportEmail', 'dailyMaintenance', 'keepWarm'];
 const REHEARSAL = process.env.REHEARSAL === '1';
 const MAIL_ALLOW = String(process.env.MAIL_ALLOW || 'angad@linkmarketing.org.uk').toLowerCase().split(/[,\s]+/).filter(Boolean);
+const ROBOT_ALLOW = String(process.env.ROBOT_ALLOW || '').split(/[,\s]+/).filter(Boolean);
+const ROBOT_KEYS = ['ELEVENLABS_API_KEY', 'ELEVENLABS_WEBHOOK_SECRET', 'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'ANTHROPIC_API_KEY', 'TEAMTAILOR_API_KEY'];
+
+/** A test copy (REHEARSAL) never calls or messages anyone outside ROBOT_ALLOW, and never writes to Teamtailor. */
+function rehearsalBlocks(r, method) {
+  if (!REHEARSAL) return null;
+  let to = '';
+  if (method === 'POST' && /api\.twilio\.com\/.*\/Messages\.json$/.test(r.url)) to = String((r.payload && r.payload.To) || '').replace(/^whatsapp:/, '');
+  else if (method === 'POST' && /api\.elevenlabs\.io\/v1\/convai\/twilio\/outbound-call$/.test(r.url)) { try { to = JSON.parse(r.payload).to_number; } catch (e) { to = '?'; } }
+  else if (method === 'PATCH' && /api\.teamtailor\.com\//.test(r.url)) return { code: 200, text: '{"rehearsal":"not sent"}' };
+  else return null;
+  return ROBOT_ALLOW.includes(to) ? null : { code: 200, text: JSON.stringify({ sid: 'rehearsal-not-sent', success: false, message: 'rehearsal: ' + to + ' is not in ROBOT_ALLOW' }) };
+}
 
 let RT, DB, RELAY;
 
@@ -21,6 +37,8 @@ async function http(reqs) {
   return Promise.all(reqs.map(async r => {
     const method = String(r.method || 'get').toUpperCase();
     if (REHEARSAL && method === 'POST' && /onesignal\.com\/.*notifications/.test(r.url)) return { code: 200, text: '{"id":"rehearsal-not-sent"}' };
+    const blocked = rehearsalBlocks(r, method);
+    if (blocked) return blocked;
     const headers = Object.assign({}, r.headers || {});
     if (r.contentType) headers['content-type'] = r.contentType;
     const body = r.payload === undefined || method === 'GET' ? undefined : typeof r.payload === 'string' ? r.payload : new URLSearchParams(r.payload).toString();
@@ -141,10 +159,11 @@ async function start() {
   const rt = new Runtime({
     db: DB, http, mail: RELAY, secret: k => (k === 'ONESIGNAL_API_KEY' ? alertKey() : ''),
     codePath: path.join(__dirname, '..', 'app', 'src', 'Code.gs'),
-    env: { PUBLIC_URL: process.env.PUBLIC_URL || '', OWNER_EMAIL: process.env.OWNER_EMAIL || 'angad@linkmarketing.org.uk', TRIGGERS },
+    env: Object.assign({ PUBLIC_URL: process.env.PUBLIC_URL || '', OWNER_EMAIL: process.env.OWNER_EMAIL || 'angad@linkmarketing.org.uk', TRIGGERS },
+      ...ROBOT_KEYS.filter(k => process.env[k]).map(k => ({ [k]: process.env[k] }))),
   });
   await rt.start();
   return (RT = rt);
 }
 
-module.exports = { runtime, relay: () => RELAY, db: () => DB, TRIGGERS, REHEARSAL, _test: { viaGmail, relay } };
+module.exports = { runtime, relay: () => RELAY, db: () => DB, TRIGGERS, REHEARSAL, _test: { viaGmail, relay, rehearsalBlocks } };

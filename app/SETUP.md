@@ -268,6 +268,40 @@ Some bookers recruit under other names: a team member ("Daniel Thompson"), their
 ## Not on WhatsApp?
 Every WhatsApp button has **Not on WhatsApp? 📱 Text · ✉️ Email** under it: the same message, sent from your own phone's texts or email. Once someone texts or emails a candidate, the app remembers **📵 Not on WhatsApp**, so the next person (e.g. the booker sending Day 1 details) gets a **Text** button instead.
 
+## 🤖 The office robot (Slough): calls first, then WhatsApp
+A new applicant gets a **call from the office number within a minute or two** (9am to 8pm, 7 days). The robot (its name is a setting; "Ava" until Angad picks one) says it's an AI assistant for JUSS Marketing and that the call is recorded, asks the 6 questions and **books them into a presentation** (Mon–Fri 10:00). Then:
+- **Booked:** a WhatsApp (or a text if they're not on WhatsApp) from the same number with the day, time, address and "business smart casual". Reminders the evening before (18:00) and the morning of (08:00); they reply YES to confirm. If they don't check in, "sorry we missed you, another day?".
+- **No answer:** a short voicemail, and one WhatsApp: "shall we do it here instead?". They can answer the questions by message and pick a day. Tries again 2 hours later, then the next day. After **3 calls** they go to **Jess and Rubal** (👋 Needs you).
+- **Any "no"** (under 18, can't be self-employed, can't get to Slough, fewer than 4 days, not sure about a visa) goes to Jess and Rubal with an alert. **The robot never turns anyone down.** Booking them by hand, or **Hand back**, tells it a person has said yes.
+- **They check in with the QR as normal:** linked to the robot's booking, counted as **Office Recruitment** (no booker, no incentive). Jess and Rubal get "🙌 just checked in".
+- **They ring the number back:** the robot answers, knows who they are and their booking, and can move it. Anyone else gets "you've reached JUSS Marketing in Slough" and their message goes to Jess and Rubal.
+- **STOP** stops everything (START turns it back on). Chats, answers and call transcripts are wiped after 12 weeks and everything is deleted after 6 months, like the candidates. The voice keeps recordings 12 weeks too.
+
+**Where:** account menu (your initials) → **🤖 Applicants**, or the button on Today once it's on. Admins and the recruitment team (Jess, Rubal, Fiza) see it; only admins change the settings. Each person shows their answers, every call (summary and what was said), the whole chat, and buttons: **✋ Take over** (the robot stops contacting them), **Hand back**, **Call now**, **Book**, **Message them** (from the office number), **Close**.
+
+**Off, Test, Live** (⚙️ Settings): Off does nothing. **Test** only calls and messages people added by hand (**➕ Add someone**: add yourself first). **Live** also takes every new Teamtailor applicant (only the job numbers in the setting, if any) and tags them "Contacted by … (robot)" in Teamtailor so the team doesn't call them too.
+
+### Setting it up (Angad, once, on a computer)
+1. **Twilio** (twilio.com): sign up with your work email, add a card (upgrade), then **Phone Numbers → Regulatory Compliance → Bundles**: JUSS Marketing's details and ID. Approval takes a few days.
+2. **The number:** to move 07311 027272 in, **Phone Numbers → Port & Host → Port in a number** with a bill for that SIM from the last 3 months. Moving it ends the SIM, and the WhatsApp app on that phone stops: export any chats you want first (chat → ⋮ → More → Export chat). Until it arrives you can test on a spare Twilio UK mobile number (**Buy a number**, UK, Mobile, Voice + SMS, about £2 a month).
+3. **WhatsApp:** **Messaging → Senders → WhatsApp senders → Create new sender** → the number → **Continue with Facebook** → JUSS Marketing's business portfolio, display name **JUSS Marketing**. Meta checks the business (days, sometimes weeks). Then set the sender's **webhook for incoming messages** to `https://jl-recruitment.vercel.app/api/robot?h=msg` (POST).
+4. **Job ads:** add to the Hirematic / Teamtailor ads: *"We'll contact you about your application by phone, text or WhatsApp."* (WhatsApp needs that permission first.)
+5. **ElevenLabs** (elevenlabs.io): the **Pro** plan. **Profile → API Keys → Create**.
+6. **Anthropic** (console.anthropic.com): an API key, with a monthly spending limit (**Settings → Limits**). It reads the WhatsApp / text replies; without it the robot still works on simple yes / no / number replies.
+7. **Teamtailor:** a Company Admin → **Settings → Integrations → API keys → + New API Key** → **Admin**, tick **Read** and **Write**.
+8. **Vercel** → jl-recruitment → **Settings → Environment Variables** → add each key as **Production** (never in chat): `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `ELEVENLABS_API_KEY`, `ANTHROPIC_API_KEY`, `TEAMTAILOR_API_KEY` → **Deployments → ⋯ → Redeploy**.
+9. **In the app:** 🤖 Applicants → ⚙️ Settings: the robot's number (+44…), its name, presentation days and times → **Save** → **🎙️ Set up the voice** (it creates the voice, connects the number and the webhooks). Settings shows ✅ for each service.
+10. **Test:** set **Test**, **➕ Add someone** = yourself. Your phone rings within a minute. Try answering, not answering (you get the WhatsApp / text), replying, changing the day.
+11. **WhatsApp messages outside a chat** (Meta has to approve the wording first; until then those go as texts). In Twilio: **Messaging → Content Template Builder → Create**, category **Utility**, then paste each one's ID (`HX…`) into Settings:
+    - `missed`: *Hi {{1}}, it's the AI assistant at JUSS Marketing. I just tried to call about your Brand Ambassador application. Reply here to finish it by message, or reply CALL ME and I'll ring you back.*
+    - `booked`: *Hi {{1}}, you're booked in for your presentation at JUSS Marketing on {{2}}: 2nd Floor East, Automotive House, Grays Place, Slough SL2 5AF (2 minutes from Slough station). Please come business smart casual. Reply here if you need to change the day.*
+    - `remind`: *Hi {{1}}, a reminder of your presentation at JUSS Marketing on {{2}}, at Automotive House, Grays Place, Slough. Reply YES to confirm, or let us know if you need another day.*
+    - `noshow`: *Hi {{1}}, sorry we missed you at your presentation on {{2}}. Would another day suit you? Reply here and we'll find a time.*
+    - `nudge`: *Hi {{1}}, thanks for chatting with JUSS Marketing about the Brand Ambassador opportunity. Reply here to finish your application and pick a presentation day.*
+12. **Live** when you're happy. The test copy (preview, `REHEARSAL=1`) only ever calls or messages the numbers in `ROBOT_ALLOW`.
+
+**Costs (about 200 applicants a week):** voice about £150 a month (ElevenLabs Pro includes 1,238 minutes, then about 6p a minute), phone line about 2p a minute, texts about 4p each, WhatsApp about 2p each, the AI a few pounds. Roughly **£250–£400 a month**.
+
 ## Rules built in (top of `Code.gs`)
 - **Net attended:** Mon–Fri, **rated by the presenter**, 18+, eligible to work self-employed, not seen in the last **6 months**, not removed by admin. Target 5.
 - **Check-ins outside 07:00–17:00 still go through**, but admins see an amber "outside office hours" flag. Combined with "presenter must rate them", nobody can be checked in from home for the incentive.

@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 const crypto = require('crypto');
+const { robotFake, net: robotNet } = require('../../server/fakenet');
 
 function load(opts) {
   const state = { offsetMs: 0, outbox: [], pushes: [], props: {}, cache: {}, sheets: {}, triggers: [] };
@@ -91,6 +92,10 @@ function load(opts) {
       getUuid: () => crypto.randomUUID(),
       DigestAlgorithm: { SHA_256: 'sha256' },
       computeDigest: (alg, s) => Array.from(crypto.createHash(alg).update(String(s), 'utf8').digest()).map(b => (b > 127 ? b - 256 : b)),
+      MacAlgorithm: { HMAC_SHA_1: 'sha1', HMAC_SHA_256: 'sha256' },
+      computeHmacSignature: (alg, s, key) => Array.from(crypto.createHmac(alg, String(key)).update(String(s), 'utf8').digest()).map(b => (b > 127 ? b - 256 : b)),
+      computeHmacSha256Signature: (s, key) => Array.from(crypto.createHmac('sha256', String(key)).update(String(s), 'utf8').digest()).map(b => (b > 127 ? b - 256 : b)),
+      base64Encode: v => (typeof v === 'string' ? Buffer.from(v, 'utf8') : Buffer.from(v.map(b => b & 0xff))).toString('base64'),
     },
     MailApp: { sendEmail: o => { state.outbox.push(Object.assign({ at: new Date().toISOString() }, o)); }, getRemainingDailyQuota: () => 1500 - state.outbox.length },
     // The script owner's Gmail: globalThis.__sendAs = its "Send mail as" addresses (none until a test adds them)
@@ -102,6 +107,8 @@ function load(opts) {
     // Looking a user up (GET …/users/by/external_id/<id>): __pushNever → 404 (no record), __pushOff → no subscription, else one iPhone.
     UrlFetchApp: {
       fetch: (url, o) => {
+        const robot = robotFake(ctx, Object.assign({ url: url }, o || {}));  // the office robot's services
+        if (robot) return { getResponseCode: () => robot.code, getContentText: () => robot.text };
         const look = /\/users\/by\/external_id\/([^/?]+)$/.exec(url);
         if (look) {
           const id = decodeURIComponent(look[1]);
@@ -128,6 +135,7 @@ function load(opts) {
     HtmlService: {},
   };
   vm.createContext(ctx);
+  robotNet(ctx);  // the office robot's pretend services (__net)
   // Controllable clock (for testing deadlines / week rollover).
   vm.runInContext(`
     (function () {

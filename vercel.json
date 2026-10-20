@@ -7,7 +7,9 @@
   "fluid": false,
   "functions": {
     "api/rpc.js": { "maxDuration": 60, "includeFiles": "{app/src/Code.gs,server/**,hub/lib/core.js}" },
-    "api/cron.js": { "maxDuration": 300, "includeFiles": "{app/src/Code.gs,server/**,hub/lib/core.js}" }
+    "api/cron.js": { "maxDuration": 300, "includeFiles": "{app/src/Code.gs,server/**,hub/lib/core.js}" },
+    "api/robot.js": { "maxDuration": 60, "includeFiles": "{app/src/Code.gs,server/**,hub/lib/core.js}" },
+    "api/robot-tick.js": { "maxDuration": 60, "includeFiles": "{app/src/Code.gs,server/**,hub/lib/core.js,api/robot.js}" }
   },
-  "crons": [{ "path": "/api/cron", "schedule": "*/5 * * * *" }]
+  "crons": [{ "path": "/api/cron", "schedule": "*/5 * * * *" }, { "path": "/api/robot-tick", "schedule": "* * * * *" }]
 }

@@ -7,6 +7,7 @@ const { workerData, parentPort, receiveMessageOnPort } = require('worker_threads
 const vm = require('vm');
 const fs = require('fs');
 const crypto = require('crypto');
+const { robotFake, net: robotNet } = require('./fakenet');
 
 const { sab, ioPort, codePath, env, testMode } = workerData;
 const flag = new Int32Array(sab);
@@ -158,7 +159,8 @@ const book = {
 };
 
 // ───── The rest of the Google services Code.gs uses ─────
-const ENV_PROPS = ['ONESIGNAL_API_KEY'];  // secrets live in Vercel's settings, never in the database
+// Secrets live in Vercel's settings, never in the database: the phone-alert key and the office robot's service keys
+const ENV_PROPS = ['ONESIGNAL_API_KEY', 'ELEVENLABS_API_KEY', 'ELEVENLABS_WEBHOOK_SECRET', 'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'ANTHROPIC_API_KEY', 'TEAMTAILOR_API_KEY'];
 /** A secret: from Vercel's settings, else asked for the first time it's needed (the phone-alert key comes from Google). */
 function secret(k) {
   if (env[k]) return env[k];
@@ -172,6 +174,8 @@ function fmtDate(d, tz, f) {
   return f.replace('yyyy', parts.year).replace('MM', parts.month).replace('dd', parts.day).replace('HH', parts.hour).replace('mm', parts.minute);
 }
 const response = r => ({ getResponseCode: () => r.code, getContentText: () => r.text });
+/** Bytes as Apps Script gives them (-128…127). */
+const signed = buf => Array.from(buf).map(b => (b > 127 ? b - 256 : b));
 
 const ctx = {
   console,
@@ -203,6 +207,10 @@ const ctx = {
     getUuid: () => crypto.randomUUID(),
     DigestAlgorithm: { SHA_256: 'sha256' },
     computeDigest: (alg, s) => Array.from(crypto.createHash(alg).update(String(s), 'utf8').digest()).map(b => (b > 127 ? b - 256 : b)),
+    MacAlgorithm: { HMAC_SHA_1: 'sha1', HMAC_SHA_256: 'sha256' },
+    computeHmacSignature: (alg, s, key) => signed(crypto.createHmac(alg, String(key)).update(String(s), 'utf8').digest()),
+    computeHmacSha256Signature: (s, key) => signed(crypto.createHmac('sha256', String(key)).update(String(s), 'utf8').digest()),
+    base64Encode: v => (typeof v === 'string' ? Buffer.from(v, 'utf8') : Buffer.from(v.map(b => b & 0xff))).toString('base64'),
   },
   MailApp: {
     sendEmail: o => { io('mail.send', { via: 'mail', msg: o }); },
@@ -245,6 +253,8 @@ const ctx = {
 // Tests only: the fake OneSignal from app/dev/gas.js. __pushOff = no phone subscribed, __pushNever = no OneSignal record.
 const TEST = { pushes: [] };
 function fakeFetch(o) {
+  const robot = robotFake(ctx, o);  // the office robot's services (Twilio, ElevenLabs, Anthropic, Teamtailor)
+  if (robot) return robot;
   const look = /\/users\/by\/external_id\/([^/?]+)$/.exec(o.url);
   if (look) {
     const id = decodeURIComponent(look[1]);
@@ -259,6 +269,7 @@ function fakeFetch(o) {
 }
 
 vm.createContext(ctx);
+if (testMode) robotNet(ctx);  // tests: the office robot's pretend services (__net)
 // A clock tests can move (deadlines, week rollover). Live: offset 0.
 vm.runInContext(`
   (function () {
