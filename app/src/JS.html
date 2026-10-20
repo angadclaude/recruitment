@@ -1163,7 +1163,7 @@ function nav(view, params, push) {
 function hist(kind, st) { try { kind === 'push' ? history.pushState(st, '') : history.replaceState(st, ''); S.hist = kind === 'push' ? (S.hist || 0) + 1 : (S.hist || 0); } catch (e) { /* not allowed in this frame */ } }
 function back() { if (S.hist > 0 && history.state && ['cand', 'user', 'slideqr', 'bulletin', 'alerts', 'academy'].indexOf(history.state.v) >= 0) { S.hist--; history.back(); } else nav(S.tab); }
 function go(tab) { nav(tab, {}, false); }
-function titleOf(v) { return { today: 'Today', mine: 'My candidates', all: 'All candidates', pay: 'Recruitment incentive', team: 'Team', slideqr: 'Slide QR codes', user: 'Team', bulletin: 'Bulletin', alerts: 'Alerts check', chase: 'Chase', academy: 'Day 1' }[v] || ''; }
+function titleOf(v) { return { today: 'Today', mine: 'My candidates', all: 'All candidates', pay: 'Appts Attended', team: 'Team', slideqr: 'Slide QR codes', user: 'Team', bulletin: 'Bulletin', alerts: 'Alerts check', chase: 'Chase', academy: 'Day 1' }[v] || ''; }
 
 function render(quiet) {
   const v = S.view;
@@ -1200,7 +1200,7 @@ function tabs() {
   if (isAdmin() || isBooker()) t.push(['chase', 'Chase']);
   if (isAdmin()) t.push(['academy', 'Day 1']);
   if (isAdmin()) t.push(['all', 'All']);
-  t.push(['pay', 'Incentive']);
+  t.push(['pay', 'Appts Attended']);  // was "Incentive" (Angad, 20 Oct)
   if (isAdmin() && !isBooker()) t.push(['team', 'Team']);  // an admin who also books: Team is in the menu (7 tabs don't fit a phone)
   return t;
 }
@@ -1662,7 +1662,7 @@ function viewPay(quiet) {
       (p.unassigned.length ? '<div class="section-h">No confirmed booker <span>' + p.unassigned.length + '</span></div><div class="list">' + p.unassigned.map(x => '<button class="item" data-id="' + h(x.id) + '"><span class="av">?</span><div class="main"><div class="name">' + h(x.name) + '</div><div class="sub">Typed "' + h(x.typed || '—') + '" · tap to assign</div></div><span class="chev">›</span></button>').join('') + '</div>' : '') +
       (isAdmin() ? presenterFunnel(d.items || []) : '');
   }
-  const page = paint('Recruitment incentive', weekNav() + body, quiet);
+  const page = paint('Appts Attended', weekNav() + body, quiet);
   bindItems(page); bindWeekNav();
   const pp = document.getElementById('payPdf');
   if (pp) pp.onclick = () => { const x = want(S.week); if (x) savePdf(payPdf(S.week, x), payPdfName(S.week) + '.pdf'); };
@@ -2050,7 +2050,7 @@ function msgRebook(c) {
     'Your place is still there: let\'s get you *rebooked*. Which day works for you? 📅\n\n' +
     '– ' + S.me.user.name.split(' ')[0] + ', ' + brandOf(c);
 }
-function paintTabs() { const tb = document.getElementById('tabbar'); if (tb && S.me) setHtml(tb, tabs().map(t => '<button data-tab="' + t[0] + '" class="' + (S.tab === t[0] ? 'on' : '') + '">' + icon(t[0]) + (t[0] === 'chase' && S.chaseN ? '<i class="tbadge">' + chaseBadge() + '</i>' : '') + '<span>' + t[1] + '</span></button>').join('')); }
+function paintTabs() { const tb = document.getElementById('tabbar'); if (tb && S.me) setHtml(tb, tabs().map(t => '<button data-tab="' + t[0] + '" class="' + (S.tab === t[0] ? 'on' : '') + '">' + icon(t[0]) + (t[0] === 'chase' && S.chaseN ? '<i class="tbadge">' + chaseBadge() + '</i>' : '') + '<span' + (t[1].length > 10 ? ' class="tl"' : '') + '>' + t[1] + '</span></button>').join('')); }
 /** Make `from` look like `to`, keeping every node that's already right (and its taps / listeners). Rows match by data-id. */
 function morph(from, to, inner) {
   if (!inner) {  // the page itself keeps its own id / classes; only what's inside it changes

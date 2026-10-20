@@ -259,6 +259,8 @@ details.carry .list { margin-top: 8px; }
   transition: background .25s, color .25s, transform .1s; }
 .tabbar button.on { background: #fff; color: var(--brand-ink); font-weight: 800; box-shadow: 0 8px 20px -8px rgba(var(--glow), .8); }
 .tabbar button.on svg { stroke-width: 2.4; }
+/* A two-word label ("Appts Attended") goes onto two lines when the tab is narrow, a touch smaller so each word fits */
+.tabbar button span.tl { font-size: 10px; line-height: 1.05; text-align: center; }
 
 /* Day / week switcher */
 .seg-nav { display: flex; align-items: center; gap: 8px; margin: 2px 2px 12px; }

@@ -811,7 +811,7 @@ async function fillEval(p) {
   await ap.waitForSelector('#nudgeAll');
   ok(await ap.textContent('#abTitle') === 'Chase' && await ap.$('.tabbar button.on[data-tab=chase]') &&
     JSON.stringify(await ap.$$eval('.tabbar button', b => b.map(x => x.dataset.tab))) === '["today","chase","academy","all","pay","team"]',
-    'admin tab bar: Today · Chase · Day 1 · All · Incentive · Team, and the alert lands on Chase');
+    'admin tab bar: Today · Chase · Day 1 · All · Appts Attended · Team, and the alert lands on Chase');
   ok(await ap.textContent('.tabbar button[data-tab=chase] .tbadge') === badgeOf(nowP.length, carryP.length) && new RegExp('^' + thisP.length + ' (person|people) to chase this week').test(await ap.innerText('.card .display')) &&
     /This week · ending/i.test(await ap.innerText('.seg-nav')),
     'Chase opens on this week (ending 18 Oct): ' + thisP.length + ' to chase this week, badge "' + badgeOf(nowP.length, carryP.length) + '" (badge and headline agree)');
@@ -860,7 +860,7 @@ async function fillEval(p) {
   ok(fizaPipe.length && fizaPipe.every(c => c.booker_id === fiza.id && BL.includes(c.leak)), 'a booker\'s Chase list is their own people only');
   ok(await fcp.$('.tabbar button.on[data-tab=chase]') && JSON.stringify(await fcp.$$eval('.tabbar button', b => b.map(x => x.dataset.tab))) === '["mine","chase","pay"]' &&
     new RegExp('^' + fThis.length + ' to chase this week').test(await fcp.innerText('.card .display')) && await fcp.textContent('.tabbar button[data-tab=chase] .tbadge') === badgeOf(fNow.length, fCarry.length),
-    'Fiza taps it → her Chase tab: "' + fThis.length + ' to chase this week" (tabs: Mine · Chase · Incentive)');
+    'Fiza taps it → her Chase tab: "' + fThis.length + ' to chase this week" (tabs: Mine · Chase · Appts Attended)');
   ok(/📞 Log the call · \d+/i.test(await fcp.innerText('#page')) && await fcp.$('.ccard .quick [data-out]'), 'grouped by what to do, with Call / WhatsApp / Log outcome on each');
   await shot(fcp, '26-chase-booker', true);
   await fcp.click('.ccard .quick [data-out]'); await fcp.waitForSelector('.sheet #sosave');
@@ -927,8 +927,8 @@ async function fillEval(p) {
   const daySizes = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY'].map(d => Number((new RegExp('BT /F2 ([\\d.]+) Tf [\\d.]+ [\\d.]+ Td \\(' + d + '\\) Tj').exec(ipRaw) || [])[1]));
   ok(daySizes[0] >= 6.5 && daySizes[0] < 8 && daySizes.every(z => z === daySizes[0]), 'the day names all fit their columns at one size (' + daySizes[0] + 'pt): WEDNESDAY no longer runs into THURSDAY');
   try { require('child_process').execFileSync('pdftoppm', ['-png', '-r', '70', '-singlefile', ipPath, `${SHOTS}/14c-incentive`]); } catch (e) { /* no renderer here */ }
-  ok(await ap.$eval('.tabbar button[data-tab=pay]', b => b.textContent.trim()) === 'Incentive' && await ap.textContent('#abTitle') === 'Recruitment incentive' &&
-    !/\bpay\b/i.test(await ap.$eval('#page', e => e.innerText)), 'says "Recruitment incentive" (tab: Incentive), never "Pay"');
+  ok(await ap.$eval('.tabbar button[data-tab=pay]', b => b.textContent.trim()) === 'Appts Attended' && await ap.textContent('#abTitle') === 'Appts Attended' &&
+    !/\bpay\b/i.test(await ap.$eval('#page', e => e.innerText)), 'the tab and its page say "Appts Attended" (was Incentive), never "Pay"');
   ok(!pay.rows.some(r => /Angad|Jess|Satpal|Rubal/.test(r.name)) && !(await ap.$$eval('.payrow .name', e => e.map(x => x.textContent))).some(n => /Angad|Jess|Satpal|Rubal/.test(n)),
     'incentive board: bookers only, no admins on it');
   const presTxt = await ap.innerText('#page');
@@ -1346,7 +1346,7 @@ async function fillEval(p) {
   ok(!(await jbp.$('.hero .ring')) && /booked/i.test(await jbp.$eval('.hero', e => e.innerText)) && !/more to hit|target/i.test(await jbp.$eval('.hero', e => e.innerText)),
     'admin\'s "Mine": her numbers, no incentive ring or target');
   const tb6 = await jbp.$$eval('.tabbar button', b => b.map(x => { const r = x.getBoundingClientRect(), s = x.querySelector('span'); return { t: x.dataset.tab, fits: s.scrollWidth <= r.width + 1 && r.right <= innerWidth }; }));
-  ok(tb6.map(x => x.t).join() === 'today,mine,chase,academy,all,pay' && tb6.every(x => x.fits), 'an admin who also books: Today · Mine · Chase · Day 1 · All · Incentive, every label fits on a phone');
+  ok(tb6.map(x => x.t).join() === 'today,mine,chase,academy,all,pay' && tb6.every(x => x.fits), 'an admin who also books: Today · Mine · Chase · Day 1 · All · Appts Attended (on two lines), every label fits on a phone');
   await jbp.click('#abMe'); await jbp.click('#mTeam'); await jbp.waitForSelector('#slideqr');
   ok(await jbp.textContent('#abTitle') === 'Team', '…and Team is under their initials (7 tabs don\'t fit a phone)');
   await shot(jbp, '31-team-from-menu');
