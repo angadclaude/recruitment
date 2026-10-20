@@ -889,6 +889,18 @@ async function fillEval(p) {
   await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button');
   await ap.click('.tabbar button[data-tab=pay]'); await ap.waitForSelector('.payrow');
   await shot(ap, '14-admin-pay', true);
+  // Admins: the week's incentive as a PDF, every appointment per BA and whether it counts
+  const [ipd] = await Promise.all([ap.waitForEvent('download'), ap.click('#payPdf')]);
+  const ipPath = `${SHOTS}/14c-incentive.pdf`; await ipd.saveAs(ipPath);
+  const ipRaw = fs.readFileSync(ipPath, 'latin1'), fzP = prow('Fiza Iqbal');
+  const fzAt = ipRaw.search(/\(\d+\. Fiza Iqbal {2}(LINK|JUSS)\)/), moAt = ipRaw.search(/\(\d+\. Mo Aden {2}(LINK|JUSS)\)/);
+  const withAppts = pay.rows.filter(r => r.attended), netAll = withAppts.reduce((n, r) => n + r.net, 0), exAll = withAppts.reduce((n, r) => n + r.excluded.length, 0);
+  const countsYes = (ipRaw.match(/0\.05 0\.5 0\.3 rg BT \/F2 [\d.]+ Tf [\d.]+ [\d.]+ Td \(Yes\) Tj/g) || []).length, countsNo = (ipRaw.match(/\(No: /g) || []).length;
+  ok(ipd.suggestedFilename() === 'Incentive w-e 18.10.2026.pdf' && /\/Title \(Incentive w-e 18\.10\.2026\)/.test(ipRaw) && /Recruitment incentive · week ending Sunday 18 October 2026/.test(ipRaw) &&
+    fzAt > 0 && moAt > fzAt && ipRaw.includes('(Net ' + fzP.net + '/' + pay.target + ') Tj') && /\(No: Not rated in the room\) Tj/.test(ipRaw) && /No: Repeat \\\(last 6 months\\\)/.test(ipRaw) &&
+    countsYes === netAll && countsNo === exAll && !/\(\d+\. (Angad|Jess|Satpal|Rubal) /.test(ipRaw),
+    '📄 Incentive PDF ("Incentive w-e 18.10.2026.pdf"): every appointment per BA in leaderboard order (Fiza "Net ' + fzP.net + '/' + pay.target + '" before Mo); ' + countsYes + ' count (= the net total), ' + countsNo + ' don\'t, each with why (not rated in the room, repeat, …); no admins');
+  try { require('child_process').execFileSync('pdftoppm', ['-png', '-r', '70', '-singlefile', ipPath, `${SHOTS}/14c-incentive`]); } catch (e) { /* no renderer here */ }
   ok(await ap.$eval('.tabbar button[data-tab=pay]', b => b.textContent.trim()) === 'Incentive' && await ap.textContent('#abTitle') === 'Recruitment incentive' &&
     !/\bpay\b/i.test(await ap.$eval('#page', e => e.innerText)), 'says "Recruitment incentive" (tab: Incentive), never "Pay"');
   ok(!pay.rows.some(r => /Angad|Jess|Satpal|Rubal/.test(r.name)) && !(await ap.$$eval('.payrow .name', e => e.map(x => x.textContent))).some(n => /Angad|Jess|Satpal|Rubal/.test(n)),
