@@ -568,9 +568,10 @@ async function fillEval(p) {
   const wtxt = await wp.innerText('body');
   ok(/Monday 19 October/.test(wtxt) && /Day 1 is in 7 days/.test(wtxt) && /Pre-Coaching Module/.test(wtxt) && /Practical Learning Day/.test(wtxt), 'welcome page: date, countdown, pre-coaching, Week 1 plan');
   ok(/forms\.office\.com/.test(await wp.getAttribute('a:has-text("Open the Pre-Coaching Module")', 'href')) && (await wp.getAttribute('a:has-text("Google Maps")', 'href')) === 'https://maps.app.goo.gl/f4pkh222EHHTyQSM9', 'LINK welcome page: Pre-Coaching Module button + LINK Google Maps listing');
-  const lGuide = await wp.innerText('.wl-week .wl-guide');
-  ok(!(await wp.$('.wl-poster, img[src*="poster-"]')) && /Week 1 guide/i.test(lGuide) && /LINK Induction Day/.test(lGuide) && /Master Sales Techniques/.test(lGuide) && /Earn & Grow/.test(lGuide) && (await wp.$$('.wl-week .wk')).length === 4,
-    'LINK welcome page: the poster\'s Week 1 guide is in the Week 1 card, above the 4 days; no poster repeating it (Angad, 20 Oct)');
+  const lTags = await wp.$$eval('.wl-week .wk', ds => ds.map(d => [...d.querySelectorAll('.wk-g span')].map(s => s.textContent)));
+  ok(!(await wp.$('.wl-poster, img[src*="poster-"], .wl-guide')) && lTags.length === 4 && /Industry & product knowledge/.test(lTags[0]) && /Self-employment fundamentals/.test(lTags[0]) &&
+    /Master sales techniques/.test(lTags[1]) && lTags[2].length === 0 && /Earn & grow/.test(lTags[3]),
+    'LINK welcome page: the poster\'s Week 1 guide is folded into the game plan as tags under each day; no poster or separate list repeating it (Angad, 20 Oct)');
   const og = await (await fetch(wurl.replace(PUBLIC, APP))).text();
   ok(og.includes('og:image" content="' + PUBLIC + 'img/og-link.jpg"'), 'WhatsApp link preview shows the LINK poster card (og:image)');
   await wp.click('#conf');
@@ -633,7 +634,7 @@ async function fillEval(p) {
   ok(await coOf(jp) === 'JUSS' && (await jp.$$('.sl .slc')).length === 6, 'JUSS welcome page: JUSS colours + Sales Skill Ladder');
   ok(/Thursday onwards/.test(await jp.innerText('body')), 'JUSS welcome page uses the JUSS schedule');
   ok((await jp.getAttribute('a:has-text("Google Maps")', 'href')) === 'https://maps.app.goo.gl/zeP4MjS2hMJzB9V9A' && !(await jp.$('a:has-text("Pre-Coaching Module")')), 'JUSS welcome page: JUSS Google Maps listing, no pre-coaching button');
-  ok(!(await jp.$('.wl-poster, img[src*="poster-"]')) && /JUSS Induction Day/.test(await jp.innerText('.wl-week .wl-guide')), 'JUSS welcome page: the JUSS Week 1 guide in the Week 1 card, no poster');
+  ok(!(await jp.$('.wl-poster, img[src*="poster-"], .wl-guide')) && (await jp.$$('.wl-week .wk-g span')).length === 5, 'JUSS welcome page: the Week 1 guide as tags in the game plan, no poster');
   const jog = await (await fetch(jwurl.replace(PUBLIC, APP))).text();
   ok(jog.includes('og:image" content="' + PUBLIC + 'img/og-juss.jpg"'), 'JUSS WhatsApp link preview shows the JUSS poster card');
   // Not on WhatsApp: same message by text or email, and the app remembers it for the next message
@@ -1158,9 +1159,26 @@ async function fillEval(p) {
   // …and the light page and cards stay light, their dark text dark (Angad, 20 Oct: "still coming through as a dark background")
   const keptDark = (prevHtml.match(/<span class="jks"[^>]*><span class="jkd"/g) || []).length;
   const plainBg = (prevHtml.match(/background:#(?:ffffff|EDF5F5|DDF2F3);(?!background-image)/g) || []).length;
-  ok(/u \+ \.body \.jks\{background:#000;mix-blend-mode:multiply\}u \+ \.body \.jkd\{background:#fff;mix-blend-mode:difference\}/.test(prevHtml) && keptDark >= 25 && plainBg === 0 &&
-    /background:#EDF5F5;background-image:linear-gradient\(#EDF5F5,#EDF5F5\)/.test(prevHtml) && /✅<\/td><td[^>]*><span class="jks"/.test(prevHtml) && /<span class="jkd"[^>]*>Hi Adham, you’re coming on board/.test(prevHtml),
-    'Gmail dark theme: every light background is set so Gmail leaves it light, and the dark text is kept dark (' + keptDark + ' places); emojis stay outside');
+  ok(/u \+ \.body \.jks\{background:#fff;mix-blend-mode:difference\}u \+ \.body \.jkd\{background:#fff;mix-blend-mode:difference\}/.test(prevHtml) && keptDark >= 25 && plainBg === 0 &&
+    /background:#EDF5F5;background-image:linear-gradient\(#EDF5F5,#EDF5F5\)/.test(prevHtml) && /✅<\/td><td[^>]*><span class="jks"/.test(prevHtml) && /<span class="jkd"[^>]*>Hi Adham, you’re coming on board/.test(prevHtml) &&
+    !/border:\d+px solid/.test(prevHtml) && /📅<\/td><td[^>]*><span class="jls"/.test(prevHtml) && /🏢<\/td><td[^>]*><span class="jks"/.test(prevHtml) && /💰<\/td><td[^>]*><span class="jls"/.test(prevHtml) &&
+    !/rgba\(255,255,255,\.16\)/.test(prevHtml),
+    'Gmail dark theme: every light background is set so Gmail leaves it light, the dark text is kept dark with nothing behind it (' + keptDark + ' places: no grey boxes), ' +
+    'outlines are frames not borders (no black outlines), the Day 4 pills are solid (not pale lilac), and 📅 / 🏢 sit beside their text, not above it');
+  // In Gmail (light theme: no recolouring), the dark-text trick is invisible: the page behind shows through and the text keeps its colour
+  await ep.setContent(prevHtml.replace(/<body class="body" style="([^"]*)">/, '<body style="margin:0"><u></u><div class="body" style="$1">').split(PUBLIC).join(APP), { waitUntil: 'load' });
+  const gmailLight = await ep.evaluate(() => getComputedStyle(document.querySelector('.jks')).mixBlendMode);
+  // [0] the intro on the page's colour, [1] "Quick one" on white: with the trick vs without it, pixel by pixel
+  const blended = [await ep.locator('.jks').nth(0).screenshot(), await ep.locator('.jks').nth(1).screenshot()];
+  await ep.addStyleTag({ content: '.jks,.jkd{mix-blend-mode:normal!important;background:transparent!important}' });
+  const plain = [await ep.locator('.jks').nth(0).screenshot(), await ep.locator('.jks').nth(1).screenshot()];
+  const pxDiff = (a, b) => ep.evaluate(async ([a, b]) => {
+    const load = async s => { const im = new Image(); im.src = 'data:image/png;base64,' + s; await im.decode(); const c = document.createElement('canvas'); c.width = im.width; c.height = im.height;
+      const x = c.getContext('2d'); x.drawImage(im, 0, 0); return x.getImageData(0, 0, im.width, im.height).data; };
+    const p = await load(a), q = await load(b); let m = 0; for (let i = 0; i < p.length; i++) m = Math.max(m, Math.abs(p[i] - q[i])); return p.length === q.length ? m : 999;
+  }, [a.toString('base64'), b.toString('base64')]);
+  const dOnPage = await pxDiff(blended[0], plain[0]), dOnWhite = await pxDiff(blended[1], plain[1]);
+  ok(gmailLight === 'difference' && dOnWhite <= 3 && dOnPage <= 24, 'in Gmail\'s light theme the dark-text trick shows no box: on white no pixel changes (' + dOnWhite + '), on the page colour the text is a shade darker at most (' + dOnPage + ')');
   await ep.close();
   await ap.locator('.sheet').screenshot({ path: SHOTS + '/34-welcome-email.png' });
   const mbOnb = (await getJson('/dev/mail')).length;

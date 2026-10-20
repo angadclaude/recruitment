@@ -671,11 +671,12 @@ const WEEK1 = {
     ['💰', 'Thursday onwards', 'Sales Days', '10:30am – 8:30pm', '1st day on badge! Your coach is side by side with you. Apply what you\'ve learnt and bag your incentives'],
   ],
 };
-// The poster's "Week 1 guide", now inside the Week 1 card instead of the poster (Angad, 20 Oct: "we don't need to repeat the same
-// information twice"). The poster's other parts are on the page already: the schedule above it, the address and the
-// Pre-Coaching Module in their own boxes.
-const WEEK1_GUIDE = co => [co + ' Induction Day', 'Extensive Product Training & Sales Coaching', 'Master Sales Techniques',
-  'Industry & Product Knowledge, Self-Employment Fundamentals & Earnings', 'Earn & Grow'];
+// The poster's "Week 1 guide", folded into the game plan as tags under the day each one belongs to, so the page shows it
+// once and keeps the game plan's look (Angad, 20 Oct: "merge the poster into that so it's not a repeat"). The poster's
+// other parts are on the page already: the schedule is the game plan, the address and the Pre-Coaching Module have
+// their own boxes.
+const WEEK1_TAGS = [['Industry & product knowledge', 'Self-employment fundamentals & earnings'],
+  ['Extensive product training', 'Master sales techniques'], [], ['Earn & grow']];
 // Each company's office + its own Google Maps listing (share links from Angad).
 const OFFICES = {
   LINK: { address: '2nd Floor East, Automotive House, Grays Place, Slough SL2 5AF', maps: 'https://maps.app.goo.gl/f4pkh222EHHTyQSM9' },
@@ -794,7 +795,8 @@ function renderWelcome(w, keepScroll) {
     'DTSTAMP:' + ymd + 'T090000', 'DTSTART:' + ymd + 'T133000', 'DTEND:' + ymd + 'T180000', 'SUMMARY:' + title,
     'LOCATION:' + w.address.replace(/,/g, '\\,'), 'DESCRIPTION:Bring photo ID + your right-to-work share code.', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
   const steps = WEEK1[co].map((r, i) => '<div class="wk"><div class="wk-ic">' + r[0] + '</div><div class="wk-b"><span class="wk-d">' + h(mon ? r[1] : 'Day ' + (i + 1) + (i === 3 && co === 'JUSS' ? ' onwards' : '')) +
-    '</span><div class="wk-n">' + h(r[2]) + '</div><div class="wk-t">⏰ ' + h(r[3]) + '</div><div class="wk-x">' + h(r[4]) + '</div></div></div>').join('');
+    '</span><div class="wk-n">' + h(r[2]) + '</div><div class="wk-t">⏰ ' + h(r[3]) + '</div><div class="wk-x">' + h(r[4]) + '</div>' +
+    (WEEK1_TAGS[i].length ? '<div class="wk-g">' + WEEK1_TAGS[i].map(g => '<span>' + h(g) + '</span>').join('') + '</div>' : '') + '</div></div>').join('');
   const sec = (icon, title) => '<section class="evsec"><div class="evsec-h"><span>' + icon + '</span>' + title + '</div>';
 
   $app.innerHTML = '<div class="wl wl-' + co + '">' +
@@ -812,8 +814,7 @@ function renderWelcome(w, keepScroll) {
       '<a class="btn block evsubmit" href="' + h(PRE_COACHING[co]) + '" target="_blank" rel="noopener">📝 Open the Pre-Coaching Module</a></div></section>' : '') +
     sec('🎒', 'Bring with you') + '<div class="wl-bring"><div><span>🪪</span>Photo ID</div><div><span>🔑</span>Your right-to-work share code</div></div></section>' +
 
-    sec('🗓️', 'Your Week 1 game plan') + '<div class="qcard wl-week"><div class="wl-guide"><b>Week 1 guide</b><ul>' + WEEK1_GUIDE(co).map(g => '<li>' + h(g) + '</li>').join('') + '</ul></div>' +
-    '<div class="wl-steps">' + steps + '</div></div></section>' +
+    sec('🗓️', 'Your Week 1 game plan') + '<div class="qcard wl-week"><div class="wl-steps">' + steps + '</div></div></section>' +
 
     sec('🚀', 'Where this can take you') + salesLadderHtml() + bdpHtml() + '</section>' +
 
