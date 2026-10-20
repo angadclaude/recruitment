@@ -334,6 +334,7 @@ details.carry .list { margin-top: 8px; }
 .ccard { background: #fff; border: 1px solid var(--line); border-radius: 20px; box-shadow: var(--shadow); overflow: hidden; }
 .ccard .swipe { border-radius: 0; box-shadow: none; }
 .ccard .item { border: 0; border-radius: 0; box-shadow: none; }
+.ccard.walkout { border-color: #F2C4C4; } .ccard.walkout, .ccard.walkout .item { background: #FDECEC; }
 .ccard .item:active { transform: none; background: var(--bg); }
 .ccard .quick { margin: 0; padding: 0 12px 12px; }
 /* One-tap actions on a card (rate in the room, log outcome) */
@@ -342,6 +343,7 @@ details.carry .list { margin-top: 8px; }
   background: #fff; font: 700 13px/1 -apple-system, BlinkMacSystemFont, sans-serif; color: var(--ink); cursor: pointer; text-decoration: none; transition: transform .1s, background .2s; }
 .quick button:active, .quick a:active { transform: scale(.95); }
 .quick .q-G { color: var(--green); } .quick .q-A { color: var(--amber); } .quick .q-R { color: var(--red); }
+.quick .q-W { color: var(--muted); flex: 1.25; padding: 6px 3px; gap: 3px; font-size: 12px; white-space: nowrap; letter-spacing: -.01em; }
 .quick .q-G::before, .quick .q-A::before, .quick .q-R::before { content: ''; width: 9px; height: 9px; border-radius: 50%; background: currentColor; }
 .quick .q-go { background: var(--grad); border-color: transparent; color: #fff; flex: 1.4; box-shadow: 0 8px 16px -10px rgba(var(--glow), .8); }
 .quick .q-wa { color: #179A4B; }
@@ -354,6 +356,7 @@ details.carry .list { margin-top: 8px; }
 .av.xl { width: 92px; height: 92px; font-size: 32px; box-shadow: 0 0 0 5px #fff, 0 0 0 7px var(--line), 0 14px 30px -10px rgba(0,0,0,.35); }
 .rag-G { background: linear-gradient(135deg, #2FBF6B, #128045); } .rag-A { background: linear-gradient(135deg, #F7B733, #DB8A00); }
 .rag-R { background: linear-gradient(135deg, #F06262, #C12B2B); } .rag-X { background: linear-gradient(135deg, #C9C6CF, #9E9BA6); }
+.rag-W { background: linear-gradient(135deg, #6E6A78, #3F3C47); }
 .av.co-LINK { background: linear-gradient(135deg, #FF8A3D, #CF3A10); } .av.co-JUSS { background: linear-gradient(135deg, #EDA03A, #34B1C0); }
 
 /* Swipe actions */
@@ -520,6 +523,8 @@ details.carry .list { margin-top: 8px; }
 .rag button.G.on { background: linear-gradient(135deg, #2FBF6B, #128045); border-color: transparent; color: #fff; animation: pop .22s; }
 .rag button.A.on { background: linear-gradient(135deg, #F7B733, #DB8A00); border-color: transparent; color: #fff; animation: pop .22s; }
 .rag button.R.on { background: linear-gradient(135deg, #F06262, #C12B2B); border-color: transparent; color: #fff; animation: pop .22s; }
+.rag button.W { grid-column: 1 / -1; padding: 11px 0; color: var(--muted); }
+.rag button.W.on { background: linear-gradient(135deg, #6E6A78, #3F3C47); border-color: transparent; color: #fff; animation: pop .22s; }
 .wa-grid { display: grid; gap: 8px; }
 /* The recruitment team's send buttons: LINK and JUSS in the companies' colours, one tap each */
 .cosend { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }

@@ -216,6 +216,11 @@ async function fillEval(p) {
   await loginUi(pp, 'nathan@example.com');
   await pp.waitForSelector('text=Jasraj Bhuller');
   ok(!(await pp.$('#qr')) && !(await pp.$('#ev')), 'presenter has no QR / "open evaluations" buttons to press');
+  // Under 18 (Young Person) and Tier 4 (Ishita): no rating needed, so no rating buttons, and not in "N of M rated"
+  const nqRow = async c => (await pp.$('.quick[data-for="' + c.id + '"]')) ? 'buttons' : await pp.innerText('.item[data-id="' + c.id + '"] .pills');
+  const prTxt = await pp.innerText('.section-h:has-text("In the room")');
+  ok(/No rating needed/.test(await nqRow(kid)) && /No rating needed/.test(await nqRow(ishita)) && /0 of 5 rated/.test(prTxt) && await pp.$('.quick[data-for="' + adham.id + '"] .q-G'),
+    'presenter\'s Today: under 18 and Tier 4 show "No rating needed" (no buttons); everyone else has Green / Amber / Red ("' + prTxt.replace(/\n/g, ' ') + '")');
   await shot(pp, '03-presenter-today', true);
   await pp.click('.item:has-text("Jasraj Bhuller")');
   await pp.waitForSelector('#savenotes');
@@ -246,13 +251,13 @@ async function fillEval(p) {
   const nope = await post('/api', { action: 'markSent', token: nathan, id: jasId, kind: 'offer' });
   ok(!nope.ok && /No access/.test(nope.error), 'server: nobody can send or log messages for someone else\'s candidate');
   // One tap on the Today list: Green / Amber / Red = in the room, and notes another presenter just wrote are kept
-  await api(nathan, 'saveNotes', { id: ishita.id, rag: '', stars: 0, tags: ['Quiet'], notes: 'Sat at the back' });
+  await api(nathan, 'saveNotes', { id: jag.id, rag: '', stars: 0, tags: ['Quiet'], notes: 'Sat at the back' });
   await pp.goBack(); await pp.waitForSelector('.kpis');
-  await pp.click('.quick[data-for="' + ishita.id + '"] .q-R');
+  await pp.click('.quick[data-for="' + jag.id + '"] .q-R');
   await pp.waitForFunction(() => !JSON.parse(localStorage.getItem('lr_outbox') || '[]').length);
-  const ishNow = await api(admin, 'getCandidate', { id: ishita.id });
-  ok(ishNow.rag === 'R' && ishNow.in_room === 'TRUE' && ishNow.notes === 'Sat at the back' && ishNow.tags === 'Quiet', 'presenter taps Red on the list → in the room; notes + tags already written are kept');
-  ok(!(await pp.$('.quick[data-for="' + ishita.id + '"]')), 'rated card drops its Green / Amber / Red buttons');
+  const jagNow = await api(admin, 'getCandidate', { id: jag.id });
+  ok(jagNow.rag === 'R' && jagNow.in_room === 'TRUE' && jagNow.notes === 'Sat at the back' && jagNow.tags === 'Quiet', 'presenter taps Red on the list → in the room; notes + tags already written are kept');
+  ok(!(await pp.$('.quick[data-for="' + jag.id + '"]')), 'rated card drops its Green / Amber / Red buttons');
   // After the presentation: only Jess / Rubal (and admins) see the thank-you list
   ok(!(await pp.$('#thanksAll')) && /name, who booked them and the room rating only/.test(await pp.innerText('#page')) && !(await pp.$('.act.call')),
     'presenter\'s Today: no thank-you list, no call / WhatsApp on anyone else\'s card, "🔒 name, who booked them and the room rating only"');
@@ -912,18 +917,21 @@ async function fillEval(p) {
   const ipd = await pdfDl(ap, '#payPdf');
   const ipPath = `${SHOTS}/14c-incentive.pdf`; await ipd.saveAs(ipPath);
   const ipRaw = fs.readFileSync(ipPath, 'latin1');
-  const inR = c => c.in_room === true || c.in_room === 'TRUE', wkDays = ['2026-10-12', '2026-10-13', '2026-10-14', '2026-10-15', '2026-10-16'];
-  const attW = (await api(admin, 'listWeek', { weekEnding: '2026-10-18' })).items.filter(c => inR(c) && wkDays.includes(c.attended_date));
+  // Attended = rated in the room, or a non-qualifier (often not rated); the non qualifiers = those that don't count (as on the poster)
+  const inR = c => c.in_room === true || c.in_room === 'TRUE', cnt = c => inR(c) || !!c.non_qual, wkDays = ['2026-10-12', '2026-10-13', '2026-10-14', '2026-10-15', '2026-10-16'];
+  const attW = (await api(admin, 'listWeek', { weekEnding: '2026-10-18' })).items.filter(c => cnt(c) && wkDays.includes(c.attended_date));
   const big = n => new RegExp('BT /F2 12 Tf [\\d.]+ [\\d.]+ Td \\(' + n + '\\) Tj').test(ipRaw);
   const hitN = pay.rows.filter(r => r.net >= pay.target).length, greensP = (ipRaw.match(/0\.47 0\.66 0\.36 rg/g) || []).length;
   ok(ipd.suggestedFilename() === 'Appointments Total w-e 18.10.2026.pdf' && /\/Title \(Appointments Total w-e 18\.10\.2026\)/.test(ipRaw) && /Appointments total · week ending Sunday 18 October 2026/.test(ipRaw) &&
     /📄 Appointments total w\/e /.test(await ap.textContent('#payPdf')) &&
     ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', '12/10/2026', '16/10/2026', 'APPTS', 'QUALIFIERS', 'Appointments Attended'].every(t => ipRaw.includes('(' + t + ') Tj')) &&
     pay.rows.every(r => ipRaw.includes('(' + r.name + ') Tj')) && big(attW.length) && wkDays.every(x => big(attW.filter(c => c.attended_date === x).length)) &&
-    new RegExp('0\\.83 0\\.18 0\\.16 rg BT /F2 12 Tf [\\d.]+ [\\d.]+ Td \\(' + attW.filter(c => c.non_qual).length + '\\) Tj').test(ipRaw) && greensP === hitN + 1 &&
+    new RegExp('0\\.83 0\\.18 0\\.16 rg BT /F2 12 Tf [\\d.]+ [\\d.]+ Td \\(' + attW.filter(c => c.pay_reason).length + '\\) Tj').test(ipRaw) && greensP === hitN + 1 &&
     !/\(\d+\. /.test(ipRaw) && !/\(No: /.test(ipRaw),
     '📄 "Appointments total" PDF ("Appointments Total w-e 18.10.2026.pdf") is one grid like the old sheet: every BA, Mon-Fri with dates, ' + attW.length + ' appointments attended (each day adds up), ' +
-    attW.filter(c => c.non_qual).length + ' non-qualifiers in red, ' + hitN + ' hit the incentive (green); no per-person detail');
+    attW.filter(c => c.pay_reason).length + ' non-qualifiers in red, ' + hitN + ' hit the incentive (green); no per-person detail');
+  const nqWhy = /\(Non qualifiers: ([^)]*)\) Tj/.exec(ipRaw);
+  ok(nqWhy && /\d+ not eligible/.test(nqWhy[1]) && /\d+ repeat/.test(nqWhy[1]), 'under the grid, what the non qualifiers are: "Non qualifiers: ' + (nqWhy ? nqWhy[1] : '?') + '"');
   const daySizes = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY'].map(d => Number((new RegExp('BT /F2 ([\\d.]+) Tf [\\d.]+ [\\d.]+ Td \\(' + d + '\\) Tj').exec(ipRaw) || [])[1]));
   ok(daySizes[0] >= 6.5 && daySizes[0] < 8 && daySizes.every(z => z === daySizes[0]), 'the day names all fit their columns at one size (' + daySizes[0] + 'pt): WEDNESDAY no longer runs into THURSDAY');
   try { require('child_process').execFileSync('pdftoppm', ['-png', '-r', '70', '-singlefile', ipPath, `${SHOTS}/14c-incentive`]); } catch (e) { /* no renderer here */ }
@@ -943,10 +951,10 @@ async function fillEval(p) {
   await ap.click('#bullDaily');
   await ap.waitForSelector('#bimg[data-info]', { timeout: 15000 });
   const bInfo = async () => JSON.parse(await ap.getAttribute('#bimg', 'data-info'));
-  const monday = (await api(admin, 'listWeek', { weekEnding: '2026-10-18' })).items.filter(c => c.attended_date === '2026-10-12' && (c.in_room === true || c.in_room === 'TRUE'));
+  const monday = (await api(admin, 'listWeek', { weekEnding: '2026-10-18' })).items.filter(c => c.attended_date === '2026-10-12' && (c.in_room === true || c.in_room === 'TRUE' || c.non_qual));
   let bi = await bInfo();
   ok(bi.kind === 'daily' && bi.attended === monday.length && bi.nonQual === monday.filter(c => c.pay_reason).length && bi.nonQual > 0,
-    'daily bulletin: ' + bi.attended + ' attended, ' + bi.nonQual + ' non-qualifiers (rated only, same rules as the incentive)');
+    'daily bulletin: ' + bi.attended + ' attended, ' + bi.nonQual + ' non-qualifiers (rated in the room or a non-qualifier, same rules as the incentive)');
   const expRows = pay.rows.filter(r => r.net > 0).sort((a, b) => b.net - a.net).map(r => r.name.split(' ')[0] + ' ' + r.net);
   ok(JSON.stringify(bi.rows.map(r => r.replace(/^\S+ /, '').replace(/ BAR$/, ''))) === JSON.stringify(expRows) && /^🥇 /.test(bi.rows[0]), 'top performers match the incentive, gold for #1: ' + bi.rows.join(' · '));
   ok(await ap.$eval('#bimg', i => i.complete && i.naturalWidth === 1536 && i.naturalHeight === 2304), 'poster image made on the phone (1536×2304)');
@@ -1050,6 +1058,9 @@ async function fillEval(p) {
     'older sends filled in once from the Log: Adham\'s Day 1 details went ' + adFill[2].length + ' times (' + adFill[2].join(', ') + ') → "' + adFill[0].offer_by + ' · ' + adFill[0].offer_via + '" (the latest), then never again');
   ok(await ap.textContent('#abTitle') === 'Day 1' && await ap.$('.tabbar button.on[data-tab=academy]') && /Monday 19 October · TOMORROW/i.test(d1Txt) && new RegExp(monStarters.length + ' expected · ' + nConf + ' confirmed').test(d1Txt),
     'tapping it opens the Day 1 tab: "Monday 19 October · TOMORROW · ' + monStarters.length + ' expected · ' + nConf + ' confirmed"');
+  const d1Nav = await ap.innerText('.d1nav');
+  ok(/Next week · ending/i.test(d1Nav) && /25 Oct/.test(d1Nav) && await ap.$('#d1prev') && await ap.$('#d1next'),
+    'the Day 1 tab goes week by week like All: on Sunday it opens on the week ahead ("' + d1Nav.replace(/\n/g, ' ') + '", ‹ ›)');
   ok(/📅 Tuesday/.test(await ap.textContent('[data-d1="next_day"][data-id="' + jasId + '"]')) && await ap.$('.trow[data-cand="' + jasId + '"] a.btn[data-rem1]'),
     'before the day too: each Monday starter has "📅 Tuesday" under 💬 Remind (some are booked for Tuesday instead)');
   const jasD1Row = await ap.innerText('.trow[data-cand="' + jasId + '"]');
@@ -1279,17 +1290,18 @@ async function fillEval(p) {
   ok(tue.academy_date === '2026-10-20' && !tue.day1_status && !(await api(admin, 'academyList', {})).items.some(c => c.id === adham.id && c.academy_date === '2026-10-19'),
     'the second tap moves Adham\'s Day 1 to Tue 20 Oct: on Tuesday\'s list to tick there, off Monday\'s (and its PDF)');
   await shot(ap, '28b-day1-moved-to-tuesday', true);
-  // One New Starts List for the week: Monday's and Tuesday's 📄 give the same PDF, each person with their start day
+  // One New Starts List for the week (one 📄 for the week, under ‹ ›), each person with their start day
   const wkPdf = async x => {
     const d = await pdfDl(ap, '[data-pdf="' + x + '"]');
     const pth = `${SHOTS}/31-week-starts-${x}.pdf`; await d.saveAs(pth);
     return { name: d.suggestedFilename(), raw: fs.readFileSync(pth, 'latin1'), pth: pth };
   };
-  const pMon = await wkPdf('2026-10-19'), pTue = await wkPdf('2026-10-20');
+  ok((await ap.$$('[data-pdf]')).length === 1 && !(await ap.$('[data-pdf="2026-10-20"]')), 'one 📄 New Starts List for the week (not one per day)');
+  const pMon = await wkPdf('2026-10-19');
   const facts = p => [p.name, /Monday 19 & Tuesday 20 October 2026/.test(p.raw), /2 expected \\\(Mon 19 Oct: 1 · Tue 20 Oct: 1\\\)/.test(p.raw),
     /\(Starts\) Tj/.test(p.raw), /\(Mon 19 Oct\) Tj/.test(p.raw), /\(Tue 20 Oct\) Tj/.test(p.raw), p.raw.indexOf('(Jasraj Bhuller)') > 0 && p.raw.indexOf('(Jasraj Bhuller)') < p.raw.indexOf('(Adham Soliman)')].join('|');
-  ok(facts(pMon) === 'New Starts List 19.10.2026.pdf|true|true|true|true|true|true' && facts(pTue) === facts(pMon),
-    'Monday\'s and Tuesday\'s 📄 give the same New Starts List for the week: "Monday 19 & Tuesday 20 October 2026", "2 expected (Mon 19 Oct: 1 · Tue 20 Oct: 1)", a Starts column (Jasraj Mon 19 Oct, then Adham Tue 20 Oct)');
+  ok(facts(pMon) === 'New Starts List 19.10.2026.pdf|true|true|true|true|true|true',
+    'the week\'s 📄 New Starts List has Monday\'s and Tuesday\'s starters: "Monday 19 & Tuesday 20 October 2026", "2 expected (Mon 19 Oct: 1 · Tue 20 Oct: 1)", a Starts column (Jasraj Mon 19 Oct, then Adham Tue 20 Oct)');
   try { require('child_process').execFileSync('pdftoppm', ['-png', '-r', '70', '-singlefile', pMon.pth, `${SHOTS}/31-week-starts`]); } catch (e) { /* no renderer here */ }
   const monB = '[data-d1="prev_day"][data-id="' + adham.id + '"]';
   await ap.waitForSelector(monB);
@@ -1741,6 +1753,110 @@ async function fillEval(p) {
   ok(!nextWk.nudged.length && !nextWk.recently.length, 'a nudge for a later week only covers that week (nothing booked for Fiza then: nobody nudged)');
   await api(admin, 'saveOutcome', { id: ali.id, outcome: 'Declined', outcome_notes: 'not for him' });
   ok(!(await api(admin, 'chaseList', {})).items.some(c => c.id === ali.id), 'log a final answer (Declined) → off Chase');
+
+  // ── Walk out (Angad, 20 Oct): the presenter's fourth option. Non-qualifiers in the stats, rated or not ──
+  console.log('walk out');
+  const wally = await ci({ full_name: 'Wally Walker', mobile: '07700900881', email: 'wally@example.com', booker_id: fiza.id });
+  const nadia = await ci({ full_name: 'Nadia Novisa', mobile: '07700900882', email: 'nadia@example.com', booker_id: fiza.id, rtw: 'Skilled Worker / Health & Care visa' });
+  const rita = await ci({ full_name: 'Rita Rated', mobile: '07700900883', email: 'rita@example.com', booker_id: fiza.id });
+  await api(nathan, 'saveNotes', { id: rita.id, rag: 'G', stars: 3, tags: [], notes: '' });
+  const wo = await browser.newContext(PHONE), wop = await wo.newPage();
+  await loginUi(wop, 'nathan@example.com');
+  await wop.waitForSelector('.quick[data-for="' + wally.id + '"] .q-W');
+  ok(JSON.stringify(await wop.$$eval('.quick[data-for="' + wally.id + '"] button', b => b.map(x => x.textContent.trim()))) === '["Green","Amber","Red","🚶 Walk out"]' &&
+    await wop.$eval('.quick[data-for="' + wally.id + '"] .q-W', b => b.scrollWidth <= b.clientWidth + 1 && b.getBoundingClientRect().height < 44),
+    'presenter\'s Today list: Green · Amber · Red · 🚶 Walk out on each person still to rate (on one line, fits a phone)');
+  await shot(wop, '04b-presenter-walk-out');
+  await wop.click('.quick[data-for="' + wally.id + '"] .q-W');
+  await wop.waitForFunction(() => !JSON.parse(localStorage.getItem('lr_outbox') || '[]').length);
+  const wNow = await api(admin, 'getCandidate', { id: wally.id });
+  ok(wNow.rag === 'W' && wNow.in_room === 'TRUE' && !wNow.pay_reason && wNow.flags.some(f => f.level === 'red' && /Walked out of the presentation: no call, messages or BA Academy booking/.test(f.text)),
+    'one tap "🚶 Walk out" → saved: came (in the room) and still counts for the incentive; red flag "Walked out of the presentation: no call, messages or BA Academy booking"');
+  ok(!(await wop.$('.quick[data-for="' + nadia.id + '"]')) && /No rating needed/.test(await wop.innerText('.item[data-id="' + nadia.id + '"]')), 'Nadia (no right to work): no rating needed');
+  await wop.click('.item[data-id="' + wally.id + '"]'); await wop.waitForSelector('#pres .rag');
+  ok(await wop.$('#pres .rag button.W.on') && (await wop.$$('#pres .rag button')).length === 4, 'their page: the rating has Green / Amber / Red / 🚶 Walk out (Walk out on)');
+  await wop.evaluate(() => document.querySelector('#pres .rag').scrollIntoView({ block: 'center' }));
+  await wop.screenshot({ path: SHOTS + '/04c-rating-walk-out.png' });
+  await wo.close();
+  const chaseNow2 = (await api(admin, 'chaseList', {})).items;
+  const fzPay = (await api(admin, 'payReport', {})).rows.find(r => r.booker_id === fiza.id);
+  ok(!chaseNow2.some(c => c.id === wally.id || c.id === nadia.id) && !fzPay.excluded.some(x => x.id === wally.id) && fzPay.excluded.some(x => x.id === nadia.id && /Not eligible/.test(x.why)),
+    'a walk out needs no call (not on Chase) but counts for Fiza\'s incentive (nobody\'s fault); the non-qualifier doesn\'t');
+  // Their booker sees them, but can't reach them: no number, no call / WhatsApp / outcome, and the server refuses it too
+  const refused = async (tok, a, x) => { try { await api(tok, a, x); return ''; } catch (e) { return e.message; } };
+  const wFz = await api(fizaTok, 'getCandidate', { id: wally.id });
+  ok(!wFz.mobile && !wFz.email && (await api(admin, 'getCandidate', { id: wally.id })).mobile === '07700900881', 'their booker (Fiza) gets no mobile or email for a walk out; admins still do');
+  ok(/walked out/.test(await refused(fizaTok, 'saveOutcome', { id: wally.id, outcome: 'Academy booked', academy_date: '2026-11-02', outcome_notes: '' })) &&
+    /walked out/.test(await refused(fizaTok, 'saveOutcome', { id: wally.id, outcome: 'Declined', outcome_notes: '' })) &&
+    /walked out/.test(await refused(fizaTok, 'markSent', { id: wally.id, kind: 'noanswer', via: 'whatsapp' })) &&
+    /walked out/.test(await refused(admin, 'saveOutcome', { id: wally.id, outcome: 'Academy booked', academy_date: '2026-11-02', outcome_notes: '' })),
+    'a walk out can\'t be booked onto the BA Academy (not even by an admin), and their booker can\'t log an outcome or send a message');
+  const wb = await browser.newContext(PHONE), wbp = await wb.newPage();
+  // Fiza (test booker), signed in with her session (her code requests for the day are used up by now)
+  await wbp.goto(APP + 'index.html'); await wbp.evaluate(t => localStorage.setItem('lr_tok', JSON.stringify(t)), fizaTok);
+  await wbp.goto(APP + 'index.html?c=' + wally.id); await wbp.waitForSelector('.profile h1');
+  const wbTxt = await wbp.innerText('#page');
+  const wbHas = await wbp.evaluate(() => ['.profile .actions', '#saveout', '#wacard', 'a[href^="tel:"], a[href*="wa.me"], a[href^="sms:"]'].filter(s => document.querySelector(s)));
+  ok(!wbHas.length && /Walked out of the presentation/.test(wbTxt) && /Not needed: they walked out/.test(wbTxt) && /Hidden: walked out/.test(wbTxt),
+    'Fiza\'s phone: she sees Wally, "🚶 Walked out", but no Call / WhatsApp / Email, no outcome to log, no messages' + (wbHas.length ? ' (found: ' + wbHas.join(', ') + ')' : ''));
+  await shot(wbp, '41-walk-out-booker', true);
+  await wb.close();
+  await api(admin, 'saveOutcome', { id: wally.id, outcome: 'Declined', outcome_notes: 'walked out' });
+  ok((await api(admin, 'getCandidate', { id: wally.id })).outcome === 'Declined', 'an admin can still log a final answer (anything but booked)');
+  await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button[data-tab=all]');
+  await ap.click('.tabbar button[data-tab=all]'); await ap.waitForSelector('#flt .chip[data-f=walk]');
+  ok(/Walk outs 1/.test(await ap.textContent('#flt .chip[data-f=walk]')) && await ap.$('.ccard.walkout .item[data-id="' + wally.id + '"]') &&
+    await ap.$eval('.ccard.walkout', e => getComputedStyle(e).backgroundColor) === 'rgb(253, 236, 236)' && await ap.$('.ccard.walkout .item[data-id="' + nadia.id + '"]') &&
+    !(await ap.$('.ccard.walkout .item[data-id="' + rita.id + '"]')),
+    'All tab: a "Walk outs" filter; the walk out and the non-qualifier stand out in light red (not Rita)');
+  const wpd = await pdfDl(ap, '#weekPdf'), wpPath = `${SHOTS}/42-week-walk-out.pdf`; await wpd.saveAs(wpPath);
+  const wpRaw = fs.readFileSync(wpPath, 'latin1');
+  ok(/\(Walk out: do not book/.test(wpRaw) && (wpRaw.match(/0\.99 0\.88 0\.88 rg/g) || []).length === 2 && /1 walk out/.test(wpRaw),
+    'the week\'s Appointments PDF: the whole row in light red for the walk out ("Walk out: do not book") and the non-qualifier; "1 walk out" in the day\'s line');
+  try { require('child_process').execFileSync('pdftoppm', ['-png', '-r', '70', '-singlefile', wpPath, `${SHOTS}/42-week-walk-out`]); } catch (e) { /* no renderer here */ }
+  // The poster: Nadia (not eligible, never rated: the team spoke to her) now counts as attended and as a non-qualifier
+  await ap.click('.tabbar button[data-tab=today]'); await ap.waitForSelector('#bullDaily');
+  await ap.click('#bullDaily'); await ap.waitForSelector('#bimg[data-info]', { timeout: 15000 });
+  const tueAll = (await api(admin, 'listWeek', {})).items.filter(c => c.attended_date === '2026-10-27');
+  const tueCnt = tueAll.filter(c => c.in_room === 'TRUE' || c.non_qual);
+  const bw = await bInfo();
+  ok(tueCnt.some(c => c.id === nadia.id && c.in_room !== 'TRUE') && tueCnt.some(c => c.id === wally.id && !c.pay_reason) && bw.attended === tueCnt.length &&
+    bw.nonQual === tueCnt.filter(c => c.pay_reason).length && bw.nonQual >= 1 && !/not rated by the presenter/.test(await ap.innerText('#page')) && bw.walkOuts === 1,
+    'daily stats poster: the unrated non-qualifier (Nadia) is in "attended" (' + bw.attended + ', with the walk out) and "non qualifiers" (' + bw.nonQual + '), and isn\'t "not rated"; then "🚶 WALK OUTS ' + bw.walkOuts + '"');
+  await saveImg('15c-bulletin-walk-outs.jpg');
+  // The Appointments total grid: the same, and what the non qualifiers are
+  await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button[data-tab=pay]');
+  await ap.click('.tabbar button[data-tab=pay]'); await ap.waitForSelector('#payPdf');
+  const gd = await pdfDl(ap, '#payPdf'), gPath = `${SHOTS}/14e-grid-walkout.pdf`; await gd.saveAs(gPath);
+  const gRaw = fs.readFileSync(gPath, 'latin1');
+  const wkAtt = (await api(admin, 'listWeek', {})).items.filter(c => (c.in_room === 'TRUE' || c.non_qual) && !['0', '6'].includes(String(new Date(c.attended_date + 'T00:00:00Z').getUTCDay())));
+  ok(new RegExp('BT /F2 12 Tf [\\d.]+ [\\d.]+ Td \\(' + wkAtt.length + '\\) Tj').test(gRaw) && new RegExp('0\\.83 0\\.18 0\\.16 rg BT /F2 12 Tf [\\d.]+ [\\d.]+ Td \\(' + wkAtt.filter(c => c.pay_reason).length + '\\) Tj').test(gRaw) &&
+    /\(Non qualifiers: 1 not eligible\.\) Tj/.test(gRaw) && /\(WALK\) Tj/.test(gRaw) && /\(OUTS\) Tj/.test(gRaw) &&
+    (gRaw.match(/0\.83 0\.18 0\.16 rg BT \/F2 12 Tf [\d.]+ [\d.]+ Td \(1\) Tj/g) || []).length === 2,
+    'Appointments total PDF: ' + wkAtt.length + ' attended (Nadia and the walk out included), ' + wkAtt.filter(c => c.pay_reason).length + ' non qualifier in red, then a WALK OUTS column (1), and under the grid "Non qualifiers: 1 not eligible."');
+  try { require('child_process').execFileSync('pdftoppm', ['-png', '-r', '70', '-singlefile', gPath, `${SHOTS}/14e-grid-walkout`]); } catch (e) { /* no renderer here */ }
+
+  // ── Day 1 tab, week by week (Angad, 20 Oct: "week ending wise similar to All tab") ──
+  const d1Week = await api(admin, 'academyList', { weekEnding: '2026-10-25' });
+  ok(d1Week.weekEnding === '2026-10-25' && d1Week.items.length && d1Week.items.every(c => c.academy_date >= '2026-10-19' && c.academy_date <= '2026-10-25') && d1Week.items.some(c => c.id === jasId) && !d1Week.pending,
+    'server: one week of Day 1 starters when asked (w/e 25 Oct: ' + d1Week.items.map(c => c.first_name).join(', ') + ')');
+  await api(admin, 'markDay1', { id: adham.id, status: 'no_show' });
+  await ap.goto(APP + 'index.html?c=academy'); await ap.waitForSelector('.d1nav');
+  const behindTxt = await ap.innerText('.d1behind');
+  ok(/Still to sort from an earlier week · \d+/.test(behindTxt) && /Adham · no-show/.test(behindTxt) && !/Last week/.test(await ap.innerText('.d1nav')),
+    'Tuesday after: the tab has moved on from last week; a no-show from an earlier week stays in sight: "' + behindTxt.split('\n')[0] + ' … Adham · no-show"');
+  await shot(ap, '27b-day1-week-ahead', true);
+  await ap.click('.d1behind .nm:has-text("Adham")');
+  await ap.waitForFunction(() => /Last week · ending/i.test(document.querySelector('.d1nav').innerText));
+  ok(/25 Oct/.test(await ap.innerText('.d1nav')) && /Monday 19 October/i.test(await ap.innerText('#page')) && await ap.$('.trow[data-cand="' + adham.id + '"] .quick [data-out]'),
+    'tap Adham → that week (Last week · ending Sun 25 Oct) with his Rebook buttons');
+  await ap.click('#d1prev');
+  await ap.waitForFunction(() => /Week ending/i.test(document.querySelector('.d1nav').innerText) && !document.querySelector('#page .item.sk'));
+  ok(/18 Oct/.test(await ap.innerText('.d1nav')) && !(await ap.$('.trow[data-cand="' + adham.id + '"]')), '‹ goes back a week (Week ending Sun 18 Oct, fetched on its own)');
+  await ap.click('#d1next'); await ap.click('#d1next'); await ap.click('#d1next');
+  await ap.waitForFunction(() => !/Last week/i.test(document.querySelector('.d1nav').innerText));
+  ok(/Next week · ending/i.test(await ap.innerText('.d1nav')) || /Week ending/i.test(await ap.innerText('.d1nav')), '› goes forward again');
+  await api(admin, 'markDay1', { id: adham.id, status: 'arrived' });
 
   // ── One login for every LINK × JUSS app (link-juss.vercel.app): Supabase only, hidden until Angad launches it ──
   const hubOff = await post('/api', { action: 'loginInfo' });
