@@ -259,6 +259,8 @@ details.carry .list { margin-top: 8px; }
   transition: background .25s, color .25s, transform .1s; }
 .tabbar button.on { background: #fff; color: var(--brand-ink); font-weight: 800; box-shadow: 0 8px 20px -8px rgba(var(--glow), .8); }
 .tabbar button.on svg { stroke-width: 2.4; }
+/* A two-word label ("Appts Attended") goes onto two lines when the tab is narrow, a touch smaller so each word fits */
+.tabbar button span.tl { font-size: 10px; line-height: 1.05; text-align: center; }
 
 /* Day / week switcher */
 .seg-nav { display: flex; align-items: center; gap: 8px; margin: 2px 2px 12px; }
@@ -443,6 +445,10 @@ details.carry .list { margin-top: 8px; }
 .sheet-h .av { box-shadow: none; }
 .sheet-h .display { font-size: 26px; }
 .sheet.closing { animation: sheetDown .22s ease forwards; }
+/* PDF preview before sharing: the pages as they'll print, then Share / Save */
+.pdfprev .sheet-h .display { font-size: 20px; overflow-wrap: anywhere; }
+.pdfpages canvas { display: block; width: 100%; height: auto; margin: 0 0 12px; border-radius: 6px; box-shadow: 0 2px 14px rgba(0,0,0,.18); background: #fff; }
+.pdfbtns { position: sticky; bottom: 0; padding-top: 8px; background: var(--bg); }
 .trow { display: flex; align-items: center; gap: 12px; padding: 11px 12px; background: #fff; border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow); }
 .trow .main { flex: 1; min-width: 0; }
 .trow .name { font-weight: 800; }
