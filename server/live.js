@@ -9,6 +9,7 @@
 const path = require('path');
 const { Runtime } = require('./runtime');
 const { postgresAdapter } = require('./db');
+const { emailSafe } = require('./email');
 
 const TRIGGERS = ['weeklyProgressEmails', 'saturdayDeadlineEmails', 'mondayPayReportEmail', 'dailyMaintenance', 'keepWarm'];
 const REHEARSAL = process.env.REHEARSAL === '1';
@@ -81,6 +82,7 @@ function relay(db) {
   // (the Gmail route is tried again every 10 minutes, so it starts by itself once allowed).
   let gmailBlockedUntil = 0;
   async function relayMail(m) {
+    m = emailSafe(m);  // emojis written so Google can't garble them (server/email.js)
     const g = viaGmail(m);
     if (g && Date.now() >= gmailBlockedUntil) {
       try { return await call('relayMail', { mail: g }); } catch (e) {

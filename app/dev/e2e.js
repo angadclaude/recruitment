@@ -568,7 +568,11 @@ async function fillEval(p) {
   const wtxt = await wp.innerText('body');
   ok(/Monday 19 October/.test(wtxt) && /Day 1 is in 7 days/.test(wtxt) && /Pre-Coaching Module/.test(wtxt) && /Practical Learning Day/.test(wtxt), 'welcome page: date, countdown, pre-coaching, Week 1 plan');
   ok(/forms\.office\.com/.test(await wp.getAttribute('a:has-text("Open the Pre-Coaching Module")', 'href')) && (await wp.getAttribute('a:has-text("Google Maps")', 'href')) === 'https://maps.app.goo.gl/f4pkh222EHHTyQSM9', 'LINK welcome page: Pre-Coaching Module button + LINK Google Maps listing');
-  ok(await wp.$eval('.wl-poster img', i => i.complete && i.naturalWidth > 0 && /poster-link/.test(i.src)), 'LINK welcome page shows the LINK Week 1 poster (your screenshot)');
+  const lTags = await wp.$$eval('.wl-week .wk', ds => ds.map(d => [...d.querySelectorAll('.wk-g span')].map(s => s.textContent)));
+  ok(!(await wp.$('.wl-poster, img[src*="poster-"], .wl-guide')) && lTags.length === 4 && /Industry & product knowledge/.test(lTags[0]) && /Self-employment fundamentals/.test(lTags[0]) &&
+    /Master sales techniques/.test(lTags[1]) && lTags[2].length === 0 && /Earn & grow/.test(lTags[3]) &&
+    (await wp.$$eval('.wl-week .wk-ic', es => es.map(e => e.textContent).join('').replace(/️/g, ''))) === '🗓🏢👣💰',
+    'LINK welcome page: the poster\'s Week 1 guide is folded into the game plan as tags under each day; no poster or separate list repeating it; 🏢 Sales Coaching, 👣 Practical Learning Day (Angad, 20 Oct)');
   const og = await (await fetch(wurl.replace(PUBLIC, APP))).text();
   ok(og.includes('og:image" content="' + PUBLIC + 'img/og-link.jpg"'), 'WhatsApp link preview shows the LINK poster card (og:image)');
   await wp.click('#conf');
@@ -631,7 +635,7 @@ async function fillEval(p) {
   ok(await coOf(jp) === 'JUSS' && (await jp.$$('.sl .slc')).length === 6, 'JUSS welcome page: JUSS colours + Sales Skill Ladder');
   ok(/Thursday onwards/.test(await jp.innerText('body')), 'JUSS welcome page uses the JUSS schedule');
   ok((await jp.getAttribute('a:has-text("Google Maps")', 'href')) === 'https://maps.app.goo.gl/zeP4MjS2hMJzB9V9A' && !(await jp.$('a:has-text("Pre-Coaching Module")')), 'JUSS welcome page: JUSS Google Maps listing, no pre-coaching button');
-  ok(await jp.$eval('.wl-poster img', i => i.complete && i.naturalWidth > 0 && /poster-juss/.test(i.src)), 'JUSS welcome page shows the JUSS Week 1 poster (your screenshot)');
+  ok(!(await jp.$('.wl-poster, img[src*="poster-"], .wl-guide')) && (await jp.$$('.wl-week .wk-g span')).length === 5, 'JUSS welcome page: the Week 1 guide as tags in the game plan, no poster');
   const jog = await (await fetch(jwurl.replace(PUBLIC, APP))).text();
   ok(jog.includes('og:image" content="' + PUBLIC + 'img/og-juss.jpg"'), 'JUSS WhatsApp link preview shows the JUSS poster card');
   // Not on WhatsApp: same message by text or email, and the app remembers it for the next message
@@ -1117,9 +1121,9 @@ async function fillEval(p) {
   await ap.waitForFunction(() => document.querySelector('#obgo') && !document.querySelector('#obgo').disabled);
   const prevHtml = await ap.$eval('.obframe', f => f.srcdoc);
   ok(await ap.textContent('#obsubj') === 'JUSS Marketing - Your Brand Ambassador Journey Begins!' && /Hi Adham,/.test(prevHtml) && /Monday 19th October @ 1:30 PM/.test(prevHtml) &&
-    /fieldiqdownload/.test(prevHtml) && /Hello Fresh/.test(prevHtml) && /077823 77774/.test(prevHtml) && /You're in, Adham 🎉/.test(prevHtml) && /Tuesday 20th October/.test(prevHtml) &&
+    /fieldiqdownload/.test(prevHtml) && /Hello Fresh/.test(prevHtml) && /077823 77774/.test(prevHtml) && /You're in, Adham(<\/span>)* 🎉/.test(prevHtml) && /Tuesday 20th October/.test(prevHtml) &&
     /1:30pm – 6:00pm/.test(prevHtml) && /1:00pm – 6:00pm/.test(prevHtml) && /img\/logo-juss\.png/.test(prevHtml) && /See my Week 1 plan \+ CONFIRM/.test(prevHtml) && /<b>Rubal Oshan<\/b>/.test(prevHtml) &&
-    /Read your <b>JUSS HF Playbook<\/b>/.test(prevHtml) && /href="https:\/\/juss-hf-playbook\.vercel\.app\/"[^>]*>📘 Open my JUSS HF Playbook/.test(prevHtml),
+    /Read your <b>JUSS HF Playbook<\/b>/.test(prevHtml) && /href="https:\/\/juss-hf-playbook\.vercel\.app\/"[^>]*>📘 (<span[^>]*>)*Open my JUSS HF Playbook/.test(prevHtml),
     'preview: Rubal\'s JUSS email in the congratulations-page look ("You\'re in, Adham 🎉", JUSS logo, Day 1 / Day 2 cards, FieldIQ, JUSS HF Playbook, Week 1 plan + CONFIRM, Hello Fresh, JUSS number, signed Rubal: it\'s from her address)');
   ok(/reply <b>GOT IT<\/b> to this email so we know it reached you/.test(prevHtml), 'the email asks them to reply GOT IT (the strongest "not spam" signal, and Rubal knows it arrived)');
   // The whole email as the candidate sees it (images from this dev server instead of the live site)
@@ -1127,36 +1131,109 @@ async function fillEval(p) {
   const ep = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
   await ep.setContent(prevHtml.split(PUBLIC).join(APP), { waitUntil: 'load' });
   ok(await ep.evaluate(() => [...document.images].every(i => i.complete && i.naturalWidth > 0) && document.documentElement.scrollWidth <= innerWidth),
-    'the email renders on a phone: logo + Week 1 poster load, nothing wider than the screen');
-  await ep.screenshot({ path: SHOTS + '/35-welcome-email-full.png', fullPage: true }); await ep.close();
+    'the email renders on a phone: the logo loads, nothing wider than the screen');
+  // Week 1 day by day, like the Sales Skill Ladder (Angad, 20 Oct): a card a day with its level meter, number, date, time and what
+  // happens; the first day on badge is the dark card; no poster picture any more
+  const dayCards = await ep.evaluate(() => [...document.querySelectorAll('td')].filter(td => /^0[1-4]$/.test((td.querySelector('span') || {}).textContent || '') && td.style.width === '58px').length);
+  ok(/Day 1 · Monday 19th October/.test(prevHtml) && /Day 2 · Tuesday 20th October/.test(prevHtml) && /Day 3 · Wednesday 21st October/.test(prevHtml) && /Day 4 onwards · Thursday 22nd October/.test(prevHtml) &&
+    ['Induction Day', 'Sales Coaching', 'Practical Learning Day', 'Sales Days', '1st day on badge!', '10:30am – 8:30pm'].every(t => prevHtml.includes(t)) && dayCards === 4 &&
+    !/poster-juss\.jpg/.test(prevHtml) && /Google Maps/.test(prevHtml) && /Add to calendar/.test(prevHtml),
+    'Week 1 in the email, day by day like the Sales Skill Ladder: 4 dated cards (Induction → Sales Coaching → Practical Learning → 1st day on badge), Day 1 with the address, Maps and calendar; no poster picture');
+  await ep.screenshot({ path: SHOTS + '/35-welcome-email-full.png', fullPage: true });
+  // Google garbled emojis like 🎉 📅 🔥 into "������" (20 Oct): the HTML goes to Google as plain ASCII (&#…;), looking the same
+  const { asciiHtml, emailSafe } = require('../../server/email.js');
+  const safeHtml = asciiHtml(prevHtml), textBefore = await ep.evaluate(() => document.body.innerText);
+  await ep.setContent(safeHtml.split(PUBLIC).join(APP), { waitUntil: 'load' });
+  const textAfter = await ep.evaluate(() => document.body.innerText);
+  const gm = emailSafe({ via: 'gmail', to: 'x@example.com', subject: 'Hi 🎉', body: 'b 🎉', opts: { htmlBody: '<b>🎉 Day 1 ✅</b>', name: 'n' } });
+  const mm = emailSafe({ via: 'mail', msg: { to: 'x@example.com', subject: 's', htmlBody: '<p>📅 Mon</p>' } });
+  ok(/^[\x00-\x7E]*$/.test(safeHtml) && /&#127881;/.test(safeHtml) && textAfter === textBefore && /🎉/.test(textAfter) &&
+    gm.opts.htmlBody === '<b>&#127881; Day 1 &#9989;</b>' && gm.subject === 'Hi 🎉' && gm.body === 'b 🎉' && mm.msg.htmlBody === '<p>&#128197; Mon</p>',
+    'emails go to Google with emojis written as &#…; (plain ASCII), so 🎉 📅 🔥 can\'t arrive as "������"; on screen it reads exactly the same');
+  // Gmail's dark theme turned the white header text and button labels dark: kept white (Gmail-only CSS), the logo box keeps its shape
+  const keptWhite = (prevHtml.match(/<span class="jls"[^>]*><span class="jld"/g) || []).length;
+  ok(/<body class="body"/.test(prevHtml) && /u \+ \.body \.jls\{background:#000;mix-blend-mode:screen\}/.test(prevHtml) && /<span class="jld"[^>]*>You're in, Adham<\/span><\/span> 🎉/.test(prevHtml) &&
+    />📲 <span class="jls"/.test(prevHtml) &&
+    keptWhite >= 6 && /<img src="[^"]*logo-juss\.png"[^>]*width="90" height="56"/.test(prevHtml) && /background-image:linear-gradient\(#ffffff,#ffffff\)/.test(prevHtml) &&
+    await ep.evaluate(() => getComputedStyle(document.querySelector('.jls')).mixBlendMode === 'normal'),
+    'Gmail dark theme: header text and button labels stay white (' + keptWhite + ' places, Gmail-only CSS, nothing changes elsewhere); the logo box keeps its size even before the image loads');
+  // …and the light page and cards stay light, their dark text dark (Angad, 20 Oct: "still coming through as a dark background")
+  const keptDark = (prevHtml.match(/<span class="jks"[^>]*><span class="jkd"/g) || []).length;
+  const plainBg = (prevHtml.match(/background:#(?:ffffff|EDF5F5|DDF2F3);(?!background-image)/g) || []).length;
+  ok(/u \+ \.body \.jks\{background:#fff;mix-blend-mode:difference\}u \+ \.body \.jkd\{background:#fff;mix-blend-mode:difference\}/.test(prevHtml) && keptDark >= 25 && plainBg === 0 &&
+    /background:#EDF5F5;background-image:linear-gradient\(#EDF5F5,#EDF5F5\)/.test(prevHtml) && /✅<\/td><td[^>]*><span class="jks"/.test(prevHtml) && /<span class="jkd"[^>]*>Hi Adham, you’re coming on board/.test(prevHtml) &&
+    !/border:\d+px solid/.test(prevHtml) && /📅<\/td><td[^>]*><span class="jls"/.test(prevHtml) && /🏢<\/td><td[^>]*><span class="jks"[^>]*><span class="jkd"[^>]*>Sales Coaching/.test(prevHtml) && /👣<\/td><td[^>]*><span class="jks"[^>]*><span class="jkd"[^>]*>Practical Learning Day/.test(prevHtml) && /💰<\/td><td[^>]*><span class="jls"/.test(prevHtml) &&
+    !/rgba\(255,255,255,\.16\)/.test(prevHtml),
+    'Gmail dark theme: every light background is set so Gmail leaves it light, the dark text is kept dark with nothing behind it (' + keptDark + ' places: no grey boxes), ' +
+    'outlines are frames not borders (no black outlines), the Day 4 pills are solid (not pale lilac), and 📅 / 🏢 sit beside their text, not above it; ' +
+    '🏢 is Sales Coaching and 👣 the Practical Learning Day (Angad, 20 Oct)');
+  // In Gmail (light theme: no recolouring), the dark-text trick is invisible: the page behind shows through and the text keeps its colour
+  await ep.setContent(prevHtml.replace(/<body class="body" style="([^"]*)">/, '<body style="margin:0"><u></u><div class="body" style="$1">').split(PUBLIC).join(APP), { waitUntil: 'load' });
+  const gmailLight = await ep.evaluate(() => getComputedStyle(document.querySelector('.jks')).mixBlendMode);
+  // [0] the intro on the page's colour, [1] "Quick one" on white: with the trick vs without it, pixel by pixel
+  const blended = [await ep.locator('.jks').nth(0).screenshot(), await ep.locator('.jks').nth(1).screenshot()];
+  await ep.addStyleTag({ content: '.jks,.jkd{mix-blend-mode:normal!important;background:transparent!important}' });
+  const plain = [await ep.locator('.jks').nth(0).screenshot(), await ep.locator('.jks').nth(1).screenshot()];
+  const pxDiff = (a, b) => ep.evaluate(async ([a, b]) => {
+    const load = async s => { const im = new Image(); im.src = 'data:image/png;base64,' + s; await im.decode(); const c = document.createElement('canvas'); c.width = im.width; c.height = im.height;
+      const x = c.getContext('2d'); x.drawImage(im, 0, 0); return x.getImageData(0, 0, im.width, im.height).data; };
+    const p = await load(a), q = await load(b); let m = 0; for (let i = 0; i < p.length; i++) m = Math.max(m, Math.abs(p[i] - q[i])); return p.length === q.length ? m : 999;
+  }, [a.toString('base64'), b.toString('base64')]);
+  const dOnPage = await pxDiff(blended[0], plain[0]), dOnWhite = await pxDiff(blended[1], plain[1]);
+  ok(gmailLight === 'difference' && dOnWhite <= 3 && dOnPage <= 24, 'in Gmail\'s light theme the dark-text trick shows no box: on white no pixel changes (' + dOnWhite + '), on the page colour the text is a shade darker at most (' + dOnPage + ')');
+  await ep.close();
   await ap.locator('.sheet').screenshot({ path: SHOTS + '/34-welcome-email.png' });
   const mbOnb = (await getJson('/dev/mail')).length;
   await ap.click('#obgo'); await ap.waitForSelector('#onb .pill.green:has-text("Onboarded")');
   const wm = (await getJson('/dev/mail')).slice(mbOnb).find(m => m.to === 'adham@example.com');
   ok(wm && wm.via === 'gmail' && wm.subject === 'JUSS Marketing - Your Brand Ambassador Journey Begins!' && wm.from === 'rubal@jussmarketing.co.uk' && wm.name === 'Rubal Oshan | JUSS Marketing' &&
-    wm.bcc === 'rubal@jussmarketing.co.uk' && !wm.replyTo && /FieldIQ/.test(wm.body) && /juss-hf-playbook\.vercel\.app/.test(wm.body) && /reply GOT IT/.test(wm.body),
+    wm.bcc === 'rubal@jussmarketing.co.uk' && !wm.replyTo && /FieldIQ/.test(wm.body) && /juss-hf-playbook\.vercel\.app/.test(wm.body) && /reply GOT IT/.test(wm.body) &&
+    /YOUR WEEK 1\nDay 1 · Monday 19th October: Induction Day, 1:30pm – 6:00pm/.test(wm.body),
     'sent from rubal@jussmarketing.co.uk as "Rubal Oshan | JUSS Marketing" (replies go to Rubal, who gets a copy), even though Angad pressed Send');
   ok((await api(admin, 'getCandidate', { id: adham.id })).onboard_email_by === 'Angad Oshan', 'saved: welcome email sent (who, when)');
   const huHref = await ap.getAttribute('#obwa', 'href'), hu = decodeURIComponent(huHref.split(/\?text=|[?&]body=/)[1] || '');
   ok(/^sms:\+447700900300/.test(huHref) && /^Hi Adham 👋 It's Angad from JUSS Marketing\./.test(hu) && /emailed your starter pack to adham@example\.com/.test(hu) && /JUSS HF Playbook/.test(hu) &&
-    /It's from rubal@jussmarketing\.co\.uk\. Can't see it\? Check Spam or Promotions and tap Not spam/.test(hu) && /reply GOT IT/.test(hu),
+    /It's from rubal@jussmarketing\.co\.uk\. Can't see it\? Check Spam or Promotions and tap Not spam/.test(hu) && /reply GOT IT/.test(hu) &&
+    /FieldIQ \(download before Day 1\): https:\/\/www\.tfo\.group\/fieldiqdownload/.test(hu),
     'once sent: a one-tap heads-up (by text: Adham isn\'t on WhatsApp) "just emailed your starter pack… from rubal@… check Spam / Promotions, tap Not spam… reply GOT IT"');
   ok(!/not set up yet/i.test(await ap.innerText('#onb')), 'after a send the card no longer says "not set up yet"');
   await ap.locator('#onb').screenshot({ path: SHOTS + '/36-onboarded.png' });
   const lp = await api(admin, 'onboardPreview', { id: jasId });
   ok(lp.from === 'Jess Grace <jess@linkmarketing.org.uk>' && !lp.notReady && /<b>Jess Grace<\/b>/.test(lp.html) && /Read your <b>Link FR Playbook<\/b>/.test(lp.html) &&
-    /href="https:\/\/link-fr-playbook\.vercel\.app\/"[^>]*>📘 Open my Link FR Playbook/.test(lp.html) && /3\. Read your Link FR Playbook: https:\/\/link-fr-playbook\.vercel\.app\//.test(lp.text),
+    /href="https:\/\/link-fr-playbook\.vercel\.app\/"[^>]*>📘 (<span[^>]*>)*Open my Link FR Playbook/.test(lp.html) && /3\. Read your Link FR Playbook: https:\/\/link-fr-playbook\.vercel\.app\//.test(lp.text),
     'LINK starter → from Jess (jess@linkmarketing.org.uk), signed Jess, with the Link FR Playbook as step 3 (after FieldIQ and the Pre-Coaching Module)');
-  const jessPrev = await api(await loginApi('jess@linkmarketing.org.uk'), 'onboardPreview', { id: adham.id });
+  const jessT = await loginApi('jess@linkmarketing.org.uk');  // one sign-in for all of these (codes per person are limited)
+  const jessPrev = await api(jessT, 'onboardPreview', { id: adham.id });
   ok(jessPrev.from === 'Jess Grace <jess@linkmarketing.org.uk>' && /<b>Jess Grace<\/b>/.test(jessPrev.html) && /^JUSS Marketing - /.test(jessPrev.subject),
     'Jess or Rubal can send either brand: Jess sending a JUSS starter\'s email → from her address, signed by her');
   // Signed under the other company: "In association with …" (Angad, 20 Oct); under her own, just the company
-  const signOf = h => (/<b>[^<]+<\/b><br><span[^>]*>([^<]+)<\/span><\/td><\/tr>/.exec(h) || [])[1];
+  const signOf = h => (/<b>[^<]+<\/b>(?:<\/span>)*<\/div><div[^>]*>(?:<span[^>]*>)*([^<]+)</.exec(h) || [])[1];
   ok(signOf(jessPrev.html) === 'In association with JUSS Marketing' && /Jess Grace\nIn association with JUSS Marketing$/.test(jessPrev.text) &&
     signOf(lp.html) === 'Link Marketing' && signOf(prevHtml) === 'JUSS Marketing',
     'Jess signing a JUSS email: "Jess Grace · In association with JUSS Marketing"; her own LINK email and Rubal\'s JUSS one: just the company');
-  ok(lp.subject === 'Link Marketing - Your Brand Ambassador Journey Begins!' && /NDCS/.test(lp.html) && /Pre-Coaching Module/.test(lp.html) && /073110 27272/.test(lp.html) && /Day 3 onwards/.test(lp.html) && /img\/logo-link\.png/.test(lp.html) && /Link Magazine/.test(lp.html),
-    'LINK version: NDCS, the pre-coaching module, Day 3 timings, Link Magazine, LINK numbers');
+  ok(lp.subject === 'Link Marketing - Your Brand Ambassador Journey Begins!' && /NDCS/.test(lp.html) && /Pre-Coaching Module/.test(lp.html) && /073110 27272/.test(lp.html) && /Day 3 · Wednesday 21st October/.test(lp.html) && /Practical Learning Day/.test(lp.html) && /Sales Days</.test(lp.html) && /Day 4 onwards · Thursday 22nd October/.test(lp.html) && /img\/logo-link\.png/.test(lp.html) && /Link Magazine/.test(lp.html),
+    'LINK version: NDCS, the pre-coaching module, Day 3 timings, "Day 4 onwards" Sales Days like JUSS (Angad, 20 Oct), Link Magazine, LINK numbers');
+  // Jess and Rubal, each sending as LINK and as JUSS (Angad, 20 Oct): the email carries that company's look throughout, from
+  // the sender's own address, and the starter's own details (name, Day 1, their welcome link, in the same company)
+  const rubT = await loginApi('rubal@jussmarketing.co.uk');
+  const adTok = (/[?&]t=([^&]+)/.exec((await api(admin, 'getCandidate', { id: adham.id })).welcome_url) || [])[1];
+  const LOOK = { LINK: ['logo-link.png', '#F15A24', 'Link Marketing', 'link-fr-playbook', 'maps.app.goo.gl/2wmckhXokt3KhCyE9'], JUSS: ['logo-juss.png', '#2BA9B8', 'JUSS Marketing', 'juss-hf-playbook', 'maps.app.goo.gl/n2wTFyzScHLr1Voy9'] };
+  const combos = [[jessT, 'Jess Grace', 'jess@linkmarketing.org.uk', 'LINK', 'Link Marketing'], [jessT, 'Jess Grace', 'jess@linkmarketing.org.uk', 'JUSS', 'In association with JUSS Marketing'],
+    [rubT, 'Rubal Oshan', 'rubal@jussmarketing.co.uk', 'JUSS', 'JUSS Marketing'], [rubT, 'Rubal Oshan', 'rubal@jussmarketing.co.uk', 'LINK', 'In association with Link Marketing']];
+  const comboOut = [];
+  for (const [tok, nm, em, co, sign] of combos) {
+    const p = await api(tok, 'onboardPreview', { id: adham.id, co }), L = LOOK[co], other = LOOK[co === 'LINK' ? 'JUSS' : 'LINK'];
+    const good = p.co === co && p.subject === L[2] + ' - Your Brand Ambassador Journey Begins!' && p.from === nm + ' <' + em + '>' && signOf(p.html) === sign &&
+      p.html.includes('img/logo-' + co.toLowerCase() + '.png') && !p.html.includes(other[0]) && p.html.includes(L[1]) && !p.html.includes(other[1]) && p.html.includes(L[3]) && p.html.includes(L[4]) &&
+      /You're in, Adham/.test(p.html) && /Day 1 · Monday 19th October/.test(p.html) && !!adTok && p.html.includes('welcome-' + co.toLowerCase() + '.html?t=' + adTok);
+    comboOut.push(nm.split(' ')[0] + ' as ' + co + (good ? ' ✓' : ' ✗'));
+  }
+  ok(comboOut.every(x => /✓$/.test(x)), 'each sender × company carries that company\'s look (logo, colours, Playbook, Maps, signature) and Adham\'s own details and welcome link: ' + comboOut.join(' · '));
+  // A Tuesday starter: every date follows their own Day 1
+  const tueM = JSON.parse((await post('/dev/eval', { js: "JSON.stringify(onboardEmail({ full_name: 'Tia Tuesday', email: 'tia@example.com', academy_date: '2026-10-27', welcome_token: 'tok123', company: 'LINK' }, { name: 'Jess Grace', email: 'jess@linkmarketing.org.uk' }, 'LINK'))" })).out);
+  ok(/You're in, Tia/.test(tueM.html) && /Day 1 · Tuesday 27th October/.test(tueM.html) && /Day 4 onwards · Friday 30th October/.test(tueM.html) && /done before Tuesday/.test(tueM.html) && /Tuesday 27th October · 1:30 PM/.test(tueM.html) &&
+    /welcome-link\.html\?t=tok123&n=Tia&d=2026-10-27/.test(tueM.html.replace(/&amp;/g, '&')) && tueM.to === 'tia@example.com',
+    'a Tuesday starter\'s email: Day 1 Tuesday 27th → Day 4 Friday 30th, "done before Tuesday", their own welcome link with their name and date');
   await ap.goto(APP + 'index.html?c=academy'); await ap.waitForSelector('.onbq');
   const onbq = await ap.innerText('.onbq');
   ok(/To onboard · 1/.test(onbq) && /Jasraj/.test(onbq) && !/Adham/.test(onbq) && /Onboarded/.test(await ap.innerText('.trow[data-cand="' + adham.id + '"]')),

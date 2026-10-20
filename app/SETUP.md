@@ -237,9 +237,10 @@ The app sends through the script owner's Gmail, so that Gmail has to be allowed 
 5. **Deploy → Manage deployments → ✏️ → New version** (as for any code change). The app picks it up within 10 minutes.
 
 ### Keeping welcome emails out of spam
-- **In the app (already on):** the email asks them to reply **GOT IT** (a reply is the strongest "not spam" signal, and you know it arrived). Once it's sent, tap **💬 Heads-up** on the card: a WhatsApp (or text) saying *"just emailed your starter pack from rubal@…, check Spam / Promotions, tap Not spam, reply GOT IT"*.
+- **In the app (already on):** the email asks them to reply **GOT IT** (a reply is the strongest "not spam" signal, and you know it arrived). Once it's sent, tap **💬 Heads-up** on the card: a WhatsApp (or text) saying *"just emailed your starter pack from rubal@…, check Spam / Promotions, tap Not spam, reply GOT IT"*, with the **FieldIQ download link** in it, so the one must-do before Day 1 never depends on the email.
+- **Emojis (fixed 20 Oct):** Google garbled emojis like 🎉 📅 🔥 into "������", which looks like spam. Every email's HTML now goes to Google as plain ASCII (`server/email.js`), so they arrive intact.
 - **DKIM on both domains (free, about 15 minutes each, Google Admin + whoever runs your DNS).** Checked 14 Oct 2026 from real emails: SPF ✅ and DMARC ✅ (policy *quarantine*) on both, but:
-  - `jussmarketing.co.uk`: DKIM **fails** (Rubal's and Satpal's emails, from Outlook and iPhone). The key in DNS doesn't match Google's.
+  - `jussmarketing.co.uk`: DKIM **fails** (Rubal's and Satpal's emails, from Outlook and iPhone). Found 20 Oct: DNS has **two** `google._domainkey` TXT records that differ by one character (`GlW7i9` vs `GIw7i9`, a typing slip), so receivers can't tell which key is real. Delete both and add the one Google Admin generates (below).
   - `linkmarketing.org.uk`: DKIM is Google's default, **not your domain's**.
   - So DMARC passes on SPF alone. Any forwarded email (old Hotmail / uni address forwarding to Gmail) fails it and gets quarantined: **spam**.
   - Fix, per domain: admin.google.com → Apps → Google Workspace → Gmail → **Authenticate email** → pick the domain → **Generate new record** (2048-bit) → add it at your DNS host as a TXT record named `google._domainkey` → wait an hour → **Start authentication**. Check: send an email to a Gmail address → ⋮ → **Show original** → DKIM: `PASS` with your domain.

@@ -749,7 +749,8 @@ table.t td { padding: 9px 4px; border-bottom: 1px solid var(--line); vertical-al
 .wl-bring span { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 13px; background: var(--tint); font-size: 22px; margin-bottom: 8px; }
 /* Week 1: a timeline, Day 1 at the top, first day on badge at the bottom */
 .wl-week { position: relative; padding: 8px 16px; }
-.wl-week::before { content: ''; position: absolute; left: 37px; top: 32px; bottom: 40px; width: 3px; border-radius: 3px; background: linear-gradient(var(--tint), var(--b2)); }
+.wl-steps { position: relative; }
+.wl-steps::before { content: ''; position: absolute; left: 21px; top: 24px; bottom: 32px; width: 3px; border-radius: 3px; background: linear-gradient(var(--tint), var(--b2)); }
 .wl-week .wk { position: relative; display: flex; gap: 14px; padding: 10px 0; border: 0; }
 .wk-ic { flex: none; width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; font-size: 22px; background: var(--tint); z-index: 1; box-shadow: 0 0 0 4px #fff; }
 .wk:last-child .wk-ic { background: var(--grad); box-shadow: 0 0 0 4px #fff, 0 8px 18px -6px rgba(var(--glow), .7); }
@@ -758,11 +759,13 @@ table.t td { padding: 9px 4px; border-bottom: 1px solid var(--line); vertical-al
 .wk-n { font-size: 17px; font-weight: 800; margin-top: 6px; letter-spacing: -.2px; }
 .wk-t { font-size: 13px; font-weight: 800; color: var(--brand-ink); margin-top: 1px; }
 .wk-x { font-size: 14px; color: var(--muted); margin-top: 3px; line-height: 1.4; }
+/* The poster's Week 1 guide, as tags under the day each point belongs to (the poster itself is gone) */
+.wk-g { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.wk-g span { font-size: 12px; font-weight: 700; line-height: 1.2; color: var(--brand-ink); background: var(--tint); border-radius: 99px; padding: 5px 10px; }
 .wl-cta { position: fixed; left: 0; right: 0; bottom: 0; padding: 14px 16px calc(14px + env(safe-area-inset-bottom)); background: linear-gradient(transparent, var(--bg) 35%); z-index: 8; }
 .wl-cta > * { max-width: 688px; margin: 0 auto; }
 .wl-btn { font-size: 18px; padding: 18px; border-radius: 20px; animation: glow 2.4s ease-in-out infinite; }
 .wl-done { background: linear-gradient(135deg, #2FBF6B, #128045); color: #fff; text-align: center; font-weight: 800; padding: 17px; border-radius: 20px; font-size: 17px; box-shadow: 0 14px 28px -12px rgba(18,128,69,.8); animation: pop .35s ease; }
-.wl-poster { padding: 8px; } .wl-poster img { width: 100%; border-radius: 14px; display: block; }
 .confetti { position: fixed; top: -40px; font-size: 28px; z-index: 40; animation: fall 2.2s ease-in forwards; pointer-events: none; }
 
 /* ══════════ Motion ══════════ */
