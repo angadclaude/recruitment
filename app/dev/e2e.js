@@ -889,17 +889,22 @@ async function fillEval(p) {
   await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button');
   await ap.click('.tabbar button[data-tab=pay]'); await ap.waitForSelector('.payrow');
   await shot(ap, '14-admin-pay', true);
-  // Admins: the week's incentive as a PDF, every appointment per BA and whether it counts
+  // Admins: the week's incentive as one grid (like Angad's old sheet): a row per BA, how many attended each day Mon-Fri,
+  // the total and the non-qualifiers, "Appointments Attended" along the bottom
   const [ipd] = await Promise.all([ap.waitForEvent('download'), ap.click('#payPdf')]);
   const ipPath = `${SHOTS}/14c-incentive.pdf`; await ipd.saveAs(ipPath);
-  const ipRaw = fs.readFileSync(ipPath, 'latin1'), fzP = prow('Fiza Iqbal');
-  const fzAt = ipRaw.search(/\(\d+\. Fiza Iqbal {2}(LINK|JUSS)\)/), moAt = ipRaw.search(/\(\d+\. Mo Aden {2}(LINK|JUSS)\)/);
-  const withAppts = pay.rows.filter(r => r.attended), netAll = withAppts.reduce((n, r) => n + r.net, 0), exAll = withAppts.reduce((n, r) => n + r.excluded.length, 0);
-  const countsYes = (ipRaw.match(/0\.05 0\.5 0\.3 rg BT \/F2 [\d.]+ Tf [\d.]+ [\d.]+ Td \(Yes\) Tj/g) || []).length, countsNo = (ipRaw.match(/\(No: /g) || []).length;
+  const ipRaw = fs.readFileSync(ipPath, 'latin1');
+  const inR = c => c.in_room === true || c.in_room === 'TRUE', wkDays = ['2026-10-12', '2026-10-13', '2026-10-14', '2026-10-15', '2026-10-16'];
+  const attW = (await api(admin, 'listWeek', { weekEnding: '2026-10-18' })).items.filter(c => inR(c) && wkDays.includes(c.attended_date));
+  const big = n => new RegExp('BT /F2 12 Tf [\\d.]+ [\\d.]+ Td \\(' + n + '\\) Tj').test(ipRaw);
+  const hitN = pay.rows.filter(r => r.net >= pay.target).length, greensP = (ipRaw.match(/0\.47 0\.66 0\.36 rg/g) || []).length;
   ok(ipd.suggestedFilename() === 'Incentive w-e 18.10.2026.pdf' && /\/Title \(Incentive w-e 18\.10\.2026\)/.test(ipRaw) && /Recruitment incentive · week ending Sunday 18 October 2026/.test(ipRaw) &&
-    fzAt > 0 && moAt > fzAt && ipRaw.includes('(Net ' + fzP.net + '/' + pay.target + ') Tj') && /\(No: Not rated in the room\) Tj/.test(ipRaw) && /No: Repeat \\\(last 6 months\\\)/.test(ipRaw) &&
-    countsYes === netAll && countsNo === exAll && !/\(\d+\. (Angad|Jess|Satpal|Rubal) /.test(ipRaw),
-    '📄 Incentive PDF ("Incentive w-e 18.10.2026.pdf"): every appointment per BA in leaderboard order (Fiza "Net ' + fzP.net + '/' + pay.target + '" before Mo); ' + countsYes + ' count (= the net total), ' + countsNo + ' don\'t, each with why (not rated in the room, repeat, …); no admins');
+    ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', '12/10/2026', '16/10/2026', 'APPTS', 'QUALIFIERS', 'Appointments Attended'].every(t => ipRaw.includes('(' + t + ') Tj')) &&
+    pay.rows.every(r => ipRaw.includes('(' + r.name + ') Tj')) && big(attW.length) && wkDays.every(x => big(attW.filter(c => c.attended_date === x).length)) &&
+    new RegExp('0\\.83 0\\.18 0\\.16 rg BT /F2 12 Tf [\\d.]+ [\\d.]+ Td \\(' + attW.filter(c => c.non_qual).length + '\\) Tj').test(ipRaw) && greensP === hitN + 1 &&
+    !/\(\d+\. /.test(ipRaw) && !/\(No: /.test(ipRaw),
+    '📄 Incentive PDF ("Incentive w-e 18.10.2026.pdf") is one grid like the old sheet: every BA, Mon-Fri with dates, ' + attW.length + ' appointments attended (each day adds up), ' +
+    attW.filter(c => c.non_qual).length + ' non-qualifiers in red, ' + hitN + ' hit the incentive (green); no per-person detail');
   try { require('child_process').execFileSync('pdftoppm', ['-png', '-r', '70', '-singlefile', ipPath, `${SHOTS}/14c-incentive`]); } catch (e) { /* no renderer here */ }
   ok(await ap.$eval('.tabbar button[data-tab=pay]', b => b.textContent.trim()) === 'Incentive' && await ap.textContent('#abTitle') === 'Recruitment incentive' &&
     !/\bpay\b/i.test(await ap.$eval('#page', e => e.innerText)), 'says "Recruitment incentive" (tab: Incentive), never "Pay"');
