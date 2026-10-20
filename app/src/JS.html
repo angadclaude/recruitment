@@ -1446,7 +1446,7 @@ function quickRow(c, kind) {
 function item(c, showStatus, kind) {
   const q = kind ? quickRow(c, kind) : '';
   // Someone else's candidate (presenter rating the room): name + rating only, no call / WhatsApp. A walk out: no call either.
-  const cls = 'ccard' + (q ? ' has-quick' : '') + (c.rag === 'W' ? ' walkout' : '');  // a walk out stands out in light red (Angad, 20 Oct)
+  const cls = 'ccard' + (q ? ' has-quick' : '') + (c.rag === 'W' || c.non_qual ? ' walkout' : '');  // a walk out or non-qualifier stands out in light red (Angad, 20 Oct)
   if (c.limited || walkLocked(c)) return '<div class="' + cls + '">' + itemBtn(c, showStatus, kind === 'rate') + q + '</div>';
   return '<div class="' + cls + '"><div class="swipe"><div class="acts"><a class="act call" href="tel:' + h(c.mobile) + '">' + icon('phone', 20) + '<span>Call</span></a>' +
     '<a class="act wa" href="' + h(waFor(c)) + '" target="_blank" rel="noopener">' + icon('chat', 20) + '<span>' + chanName(c) + '</span></a></div>' + itemBtn(c, showStatus, kind === 'rate') + '</div>' + q + '</div>';
@@ -1818,7 +1818,7 @@ function bulletinNumbers(items, day, prevItems) {
   const noBooker = list => list.filter(c => !c.pay_reason && !c.booker_name).length;
   return {
     day: day, weekday: D(day).getUTCDay(), target: (S.me && S.me.payTarget) || 5,
-    attended: today.length, nonQual: today.filter(c => c.pay_reason).length,
+    attended: today.length, nonQual: today.filter(c => c.pay_reason).length, walkOuts: today.filter(c => c.rag === 'W').length,
     unrated: items.filter(c => c.attended_date === day && !counted(c)).length,
     noBooker: noBooker(today), weekNoBooker: noBooker(inWeek),
     today: tally(today), week: tally(inWeek), weekAttended: inWeek.length,
@@ -1878,7 +1878,7 @@ function viewBulletin() {
   const draw = () => {
     const opts = Object.assign({}, BULL_DEFAULTS, store.get('bullOpts') || {}, { tagline: S.bull.tagline });
     const data = kind === 'daily'
-      ? { day: day, weekday: n.weekday, target: n.target, attended: n.attended, nonQual: n.nonQual, weekTotal: n.weekday === 5 ? n.weekAttended : null,
+      ? { day: day, weekday: n.weekday, target: n.target, attended: n.attended, nonQual: n.nonQual, walkOuts: n.walkOuts, weekTotal: n.weekday === 5 ? n.weekAttended : null,
           rows: JLBulletin.dailyRows(n.today.map(r => Object.assign({}, r, { bar: !!barSet()[r.key] }))) }
       : { target: n.target, rows: JLBulletin.weeklyRows(n.week, n.target), msgs: S.bull.msgs };
     return JLBulletin.load('').then(assets => new Promise(res => {
@@ -1892,7 +1892,7 @@ function viewBulletin() {
         if (S.bullUrl) URL.revokeObjectURL(S.bullUrl);
         S.bullUrl = URL.createObjectURL(blob);
         img.src = S.bullUrl;
-        img.dataset.info = JSON.stringify({ kind: kind, attended: data.attended, nonQual: data.nonQual, weekTotal: data.weekTotal, rows: data.rows.map(r => r.medal + ' ' + r.name + ' ' + r.n + (r.bar ? ' BAR' : '')) });
+        img.dataset.info = JSON.stringify({ kind: kind, attended: data.attended, nonQual: data.nonQual, walkOuts: data.walkOuts, weekTotal: data.weekTotal, rows: data.rows.map(r => r.medal + ' ' + r.name + ' ' + r.n + (r.bar ? ' BAR' : '')) });
         document.getElementById('bload').hidden = true;
         document.getElementById('bshare').disabled = false;
         sv.href = S.bullUrl; sv.download = name; sv.hidden = false;
@@ -2732,8 +2732,8 @@ function weekPdf(we, list) {
   };
   const row = (c, i) => {
     const yy = y - 13, k = outcomeKind(c), ev = c.eval_at ? 'Yes' : c.non_qual || c.rag === 'W' ? '-' : 'No';
-    // A walk out: the whole row in light red, so nobody books them (Angad, 20 Oct)
-    if (k === 'walk') o.push('0.99 0.88 0.88 rg ' + M + ' ' + (y - RH).toFixed(2) + ' ' + TW + ' ' + RH + ' re f');
+    // A walk out or a non-qualifier: the whole row in light red, so it's clear nobody books them (Angad, 20 Oct)
+    if (k === 'walk' || k === 'nq') o.push('0.99 0.88 0.88 rg ' + M + ' ' + (y - RH).toFixed(2) + ' ' + TW + ' ' + RH + ' re f');
     txt(colX[0], yy, String(i + 1), 8, false, 'grey');
     txt(colX[1], yy, String(c.created_at || '').slice(11, 16), 8.5);
     const nm = shrink(c.full_name, 2, 9, 7, true), oc = shrink(outcomeText(c), 7, 8, 6.5);
@@ -2742,7 +2742,7 @@ function weekPdf(we, list) {
     txt(colX[4], yy, fit(c.mobile, 4, 8.5), 8.5);
     txt(colX[5], yy, fit(c.booker_name || (c.booker_typed ? c.booker_typed + '?' : '-'), 5, 8.5), 8.5);
     txt(colX[6], yy, ev, 8.5, ev === 'No', ev === 'No' ? 'amber' : '');
-    txt(colX[7], yy, oc[0], oc[1], k === 'walk', { booked: 'green', none: 'amber', nq: 'red', walk: 'red' }[k] || '');
+    txt(colX[7], yy, oc[0], oc[1], k === 'walk' || k === 'nq', { booked: 'green', none: 'amber', nq: 'red', walk: 'red' }[k] || '');
     o.push('0.85 0.84 0.82 RG 0.5 w ' + M + ' ' + (y - RH).toFixed(2) + ' m ' + (M + TW) + ' ' + (y - RH).toFixed(2) + ' l S');
     y -= RH;
   };
@@ -2791,7 +2791,8 @@ function payPdfName(we) { return 'Appointments Total w-e ' + we.slice(8, 10) + '
 function payPdf(we, d) {
   const W = 595.28, H = 841.89, M = 36, TW = 523, RH = 17, HEAD = 34, FOOT = 26, BOTTOM = 70, p = d.pay, items = d.items || [];
   const mon = addDays(we, -6), days = [0, 1, 2, 3, 4].map(n => addDays(mon, n));
-  const cols = [['BA NAME', 140], ['MC', 36]].concat(days.map(x => [DAYS_LONG[D(x).getUTCDay()].toUpperCase(), 51.4])).concat([['APPTS TOTAL', 45], ['NON QUALIFIERS', 45]]);
+  // Walk outs after the non qualifiers (Angad, 20 Oct): they count in the total and for the incentive, but stand out
+  const cols = [['BA NAME', 122], ['MC', 32]].concat(days.map(x => [DAYS_LONG[D(x).getUTCDay()].toUpperCase(), 49])).concat([['APPTS TOTAL', 42], ['NON QUALIFIERS', 42], ['WALK OUTS', 40]]);
   const colL = []; cols.reduce((x, c) => { colL.push(x); return x + c[1]; }, M);
   const mid = i => colL[i] + cols[i][1] / 2;
   // Attended = rated in the room by the presenter (a walk out too), or a non-qualifier (same as the bulletin), Monday to
@@ -2802,7 +2803,7 @@ function payPdf(we, d) {
   const line = (id, name, co, group) => {
     const l = att.filter(c => (c.booker_id || '') === id);
     return { name: name, co: co, group: group, per: days.map(x => l.filter(c => c.attended_date === x).length), total: l.length,
-      nq: l.filter(c => c.pay_reason).length, hit: id && netOf[id] !== undefined && netOf[id] >= p.target };
+      nq: l.filter(c => c.pay_reason).length, wo: l.filter(c => c.rag === 'W').length, hit: id && netOf[id] !== undefined && netOf[id] >= p.target };
   };
   const bookers = p.rows.map(r => line(r.booker_id, r.name, r.company, r.company === 'JUSS' ? 0 : r.company === 'LINK' ? 1 : 2));
   // People booked by admins (no incentive) and check-ins with no confirmed booker: on the grid too, so every day adds up
@@ -2811,6 +2812,7 @@ function payPdf(we, d) {
   const rows = bookers.concat(Object.keys(others).map(k => others[k])).sort((a, b) => a.group - b.group || a.name.localeCompare(b.name));
   if (att.some(c => !c.booker_id)) rows.push(line('', 'No booker yet', '', 4));
   const sumDay = days.map((x, i) => rows.reduce((n, r) => n + r.per[i], 0)), total = rows.reduce((n, r) => n + r.total, 0), nqAll = rows.reduce((n, r) => n + r.nq, 0);
+  const woAll = rows.reduce((n, r) => n + r.wo, 0);
   const INK = { grey: '0.42 0.42 0.47', red: '0.83 0.18 0.16', JUSS: '0.1 0.35 0.72', LINK: '0.82 0.4 0.08' };
   const GREEN = '0.47 0.66 0.36';
   const pages = [];
@@ -2840,7 +2842,8 @@ function payPdf(we, d) {
     while (dz > 5.5 && days.some((x, i) => pdfTextW(cols[i + 2][0], dz, true) > cols[i + 2][1] - 3)) dz -= 0.25;
     days.forEach((x, i) => { ctr(i + 2, y - 13, cols[i + 2][0], dz, true); ctr(i + 2, y - 27, x.slice(8, 10) + '/' + x.slice(5, 7) + '/' + x.slice(0, 4), 7.5); });
     ctr(7, y - 13, 'APPTS', 8, true); ctr(7, y - 24, 'TOTAL', 8, true);
-    ctr(8, y - 13, 'NON', 8, true, 'red'); ctr(8, y - 24, 'QUALIFIERS', 6.5, true, 'red');
+    ctr(8, y - 13, 'NON', 8, true, 'red'); ctr(8, y - 24, 'QUALIFIERS', 6.2, true, 'red');
+    ctr(9, y - 13, 'WALK', 8, true, 'red'); ctr(9, y - 24, 'OUTS', 8, true, 'red');
     hline(y); y -= HEAD; hline(y);
   };
   const closeTable = () => vlines(tableTop, y);
@@ -2854,15 +2857,18 @@ function payPdf(we, d) {
     r.per.forEach((n, i) => { if (n) ctr(i + 2, yy, String(n), 9.5); });
     ctr(7, yy, String(r.total), 9.5, true, r.total ? '' : 'grey');
     if (r.nq) ctr(8, yy, String(r.nq), 9.5, true, 'red');
+    if (r.wo) ctr(9, yy, String(r.wo), 9.5, true, 'red');
     y -= RH; hline(y);
   });
   if (y - FOOT < BOTTOM) { closeTable(); newPage(false); }
   // Bottom line: everyone who attended each day, the week's total (green, like the old sheet) and the non-qualifiers
   o.push(GREEN + ' rg ' + colL[7].toFixed(2) + ' ' + (y - FOOT).toFixed(2) + ' ' + cols[7][1] + ' ' + FOOT + ' re f');
-  txt(colL[0] + 5, y - 16, 'Appointments Attended', 10.5, true);
+  let az = 10.5; while (az > 7 && pdfTextW('Appointments Attended', az, true) > cols[0][1] - 10) az -= 0.25;  // fits the name column
+  txt(colL[0] + 5, y - 16, 'Appointments Attended', az, true);
   sumDay.forEach((n, i) => ctr(i + 2, y - 17, String(n), 12, true));
   ctr(7, y - 17, String(total), 12, true);
   ctr(8, y - 17, String(nqAll), 12, true, 'red');
+  ctr(9, y - 17, String(woAll), 12, true, 'red');
   y -= FOOT; hline(y); closeTable();
   // What the non qualifiers are, and what isn't on the grid, so nobody wonders why a check-in is missing
   const why = [['not eligible', c => c.non_qual], ['repeat', c => /^Repeat/.test(c.pay_reason || '')], ['removed by admin', c => /^Removed/.test(c.pay_reason || '')]]

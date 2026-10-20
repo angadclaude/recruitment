@@ -248,8 +248,10 @@
     } else y += 8;
 
     // Row 1: today we achieved · top performers
+    // Walk outs: a strip straight under the two bubbles, after the non-qualifiers (Angad, 20 Oct)
+    const walk = d.walkOuts != null, WALK_H = 62;
     const rows = d.rows, avail = FOOT - 14 - y - 14, row2Min = 330;
-    const need1 = Math.max(d.weekTotal != null ? 440 : 400, 120 + rows.length * 54);
+    const need1 = Math.max((d.weekTotal != null ? 440 : 400) + (walk ? WALK_H : 0), 120 + rows.length * 54);
     let h1 = Math.max(need1, avail - 400), h2 = avail - h1;
     if (h2 > 400) { h1 += (h2 - 400) / 2; h2 = avail - h1; }
     if (h2 < row2Min) { h1 = Math.max(120 + rows.length * 50, avail - row2Min); h2 = avail - h1; }
@@ -257,7 +259,7 @@
     panel(lx, y, lw, h1, TEAL);
     ribbon(lx + 26, y + 16, lw - 52, 66, grad(0, y + 16, 0, y + 82, ['#25a5b8', TEAL]));
     text('TODAY WE ACHIEVED', lx + lw / 2, y + 66, { size: 42, weight: 700, align: 'center', color: '#fff', maxW: lw - 90 });
-    const ovTop = y + 112, ovH = Math.min(h1 - 140 - (d.weekTotal != null ? 70 : 0), 330), ovW = 196;
+    const ovTop = y + 112, ovH = Math.min(h1 - 140 - (d.weekTotal != null ? 70 : 0) - (walk ? WALK_H : 0), 330), ovW = 196;
     [[lx + 20, d.attended, 'FIRST APPOINTMENTS', 'ATTENDED', TEAL, '#25a5b8', true], [lx + lw - 20 - ovW, d.nonQual, 'NON', 'QUALIFIERS', '#ef6a2b', ORANGE, false]].forEach(v => {
       const ox = v[0], cx = ox + ovW / 2, cy = ovTop + ovH / 2;
       X.save(); X.beginPath(); X.ellipse(cx, cy, ovW / 2, ovH / 2, 0, 0, 7); X.fillStyle = '#fff'; X.fill(); X.clip();
@@ -268,6 +270,16 @@
       text(v[3], cx, ovTop + ovH * 0.74 + 28, { size: 22, weight: 700, align: 'center', maxW: ovW - 60 });
       badge(cx, ovTop + 6, 30, v[6] ? '#2eaa4a' : RED, v[6]);
     });
+    if (walk) {
+      const py = ovTop + ovH + 12, ph = WALK_H - 14, a = 'WALK OUTS', n = String(d.walkOuts), fs = 28;
+      rr(lx + 18, py, lw - 36, ph, 14); X.fillStyle = '#fdecec'; X.fill(); X.lineWidth = 2; X.strokeStyle = RED; X.stroke();
+      const aw = measure(a, fs, 700), nw = measure(n, fs, 700) + 24, tot = 42 + aw + 14 + nw;
+      let sx = lx + lw / 2 - tot / 2;
+      emoji('🚶', sx + 16, py + ph / 2, 30); sx += 42;
+      text(a, sx, py + ph / 2 + 10, { size: fs, weight: 700, color: NAVY }); sx += aw + 14;
+      rr(sx, py + ph / 2 - fs * 0.6, nw, fs * 1.2, 8); X.fillStyle = RED; X.fill();
+      text(n, sx + nw / 2, py + ph / 2 + 10, { size: fs, weight: 700, align: 'center', color: '#fff' });
+    }
     if (d.weekTotal != null) {
       const py = y + h1 - 70;
       rr(lx + 18, py, lw - 36, 54, 14); X.fillStyle = grad(0, py, 0, py + 54, ['#25a5b8', TEAL]); X.fill();
