@@ -889,9 +889,27 @@ async function fillEval(p) {
   await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button');
   await ap.click('.tabbar button[data-tab=pay]'); await ap.waitForSelector('.payrow');
   await shot(ap, '14-admin-pay', true);
+  // Every PDF button shows the PDF first (a preview, page by page), then "📤 Share / Save" hands it over (a download here)
+  const pdfDl = async (page, sel) => {
+    await page.click(sel); await page.waitForSelector('.pdfprev #pdfgo');
+    const [d] = await Promise.all([page.waitForEvent('download'), page.click('#pdfgo')]);
+    await page.waitForFunction(() => !document.querySelector('.pdfprev'));
+    return d;
+  };
   // Admins: the week's incentive as one grid (like Angad's old sheet): a row per BA, how many attended each day Mon-Fri,
   // the total and the non-qualifiers, "Appointments Attended" along the bottom
-  const [ipd] = await Promise.all([ap.waitForEvent('download'), ap.click('#payPdf')]);
+  await ap.click('#payPdf'); await ap.waitForSelector('.pdfprev .pdfpages canvas');
+  const prevInfo = await ap.evaluate(() => {
+    const cvs = [...document.querySelectorAll('.pdfprev .pdfpages canvas')], g = cvs[0].getContext('2d'), px = g.getImageData(0, 0, cvs[0].width, cvs[0].height).data;
+    let ink = 0, green = 0;
+    for (let i = 0; i < px.length; i += 4) { if (px[i] < 200 || px[i + 1] < 200 || px[i + 2] < 200) ink++; if (Math.abs(px[i] - 120) < 6 && Math.abs(px[i + 1] - 168) < 6 && Math.abs(px[i + 2] - 92) < 6) green++; }
+    return { pages: cvs.length, label: document.querySelector('.pdfprev .label').textContent, title: document.querySelector('.pdfprev .display').textContent, ink: ink / (px.length / 4), green: green };
+  });
+  ok(prevInfo.pages === 1 && /Preview · 1 page/.test(prevInfo.label) && prevInfo.title === 'Appointments Total w-e 18.10.2026' && prevInfo.ink > 0.02 && prevInfo.green > 50,
+    '📄 opens a preview first: the PDF on screen ("' + prevInfo.title + '", ' + prevInfo.label + ', drawn with its grid and the green total: ink ' + prevInfo.ink.toFixed(3) + ', green ' + prevInfo.green + 'px), then 📤 Share / Save');
+  await shot(ap, '14d-pdf-preview');
+  await ap.click('#pdfx'); await ap.waitForFunction(() => !document.querySelector('.pdfprev'));
+  const ipd = await pdfDl(ap, '#payPdf');
   const ipPath = `${SHOTS}/14c-incentive.pdf`; await ipd.saveAs(ipPath);
   const ipRaw = fs.readFileSync(ipPath, 'latin1');
   const inR = c => c.in_room === true || c.in_room === 'TRUE', wkDays = ['2026-10-12', '2026-10-13', '2026-10-14', '2026-10-15', '2026-10-16'];
@@ -962,7 +980,11 @@ async function fillEval(p) {
   await ap.click('.tabbar button[data-tab=all]'); await ap.waitForSelector('#weekPdf');
   ok((await ap.textContent('#weekPdf')).trim() === '📄 Appointments w/e Sun 18 Oct (PDF)', 'All tab (admins): "📄 Appointments w/e Sun 18 Oct (PDF)" for the week on screen');
   await ap.click('#flt .chip[data-f=late]'); await ap.waitForSelector('#flt .chip.on[data-f=late]');
-  const [wdl] = await Promise.all([ap.waitForEvent('download'), ap.click('#weekPdf')]);
+  await ap.click('#weekPdf'); await ap.waitForSelector('.pdfprev .pdfpages canvas');
+  const wPrev = await ap.evaluate(() => ({ pages: document.querySelectorAll('.pdfprev .pdfpages canvas').length, title: document.querySelector('.pdfprev .display').textContent }));
+  ok(wPrev.pages >= 1 && wPrev.title === 'Appointments w-e 18.10.2026', 'the All tab\'s appointments PDF opens the same preview ("' + wPrev.title + '", ' + wPrev.pages + ' page' + (wPrev.pages === 1 ? '' : 's') + ')');
+  await ap.click('#pdfx'); await ap.waitForFunction(() => !document.querySelector('.pdfprev'));
+  const wdl = await pdfDl(ap, '#weekPdf');
   const wPath = `${SHOTS}/17-week-appointments.pdf`; await wdl.saveAs(wPath);
   await ap.click('#flt .chip[data-f=all]');
   const wRaw = fs.readFileSync(wPath, 'latin1'), wHas = s => wRaw.includes('(' + s.replace(/[\\()]/g, '\\$&') + ') Tj');
@@ -1186,7 +1208,7 @@ async function fillEval(p) {
     'Adham replies "Yes" on WhatsApp → one tap → confirmed in the app too ("2 expected · 2 confirmed"), no page change');
   let noYes = null; try { await api(nathan, 'markConfirmed', { id: adham.id }); } catch (e) { noYes = e.message; }
   ok(/No access/.test(noYes), 'only admins or their booker can mark someone confirmed');
-  const [pdl] = await Promise.all([jrp.waitForEvent('download'), jrp.click('[data-pdf="2026-10-19"]')]);
+  const pdl = await pdfDl(jrp, '[data-pdf="2026-10-19"]');
   const pdfPath = `${SHOTS}/30-day1-signin.pdf`; await pdl.saveAs(pdfPath);
   const pdfRaw = fs.readFileSync(pdfPath, 'latin1');
   ok(pdl.suggestedFilename() === 'New Starts List 19.10.2026.pdf' && /^%PDF-1\.4/.test(pdfRaw) && /%%EOF\s*$/.test(pdfRaw) && /\/Title \(New Starts List 19\.10\.2026\)/.test(pdfRaw),
@@ -1220,7 +1242,7 @@ async function fillEval(p) {
   const monRows = (await ap.$$eval('.trow[data-cand]', els => els.map(e => ({ id: e.dataset.cand, green: e.classList.contains('arrived') })))).filter(x => monIds.includes(x.id));
   ok(monRows.find(x => x.id === jasId).green && !monRows.find(x => x.id === adham.id).green && monRows[monRows.length - 1].id === adham.id,
     'arrived rows turn light green (Jasraj); the no-show drops to the bottom of the day (Adham)');
-  const [pdl2] = await Promise.all([ap.waitForEvent('download'), ap.click('[data-pdf="2026-10-19"]')]);
+  const pdl2 = await pdfDl(ap, '[data-pdf="2026-10-19"]');
   const pdf2 = `${SHOTS}/30-day1-ticked.pdf`; await pdl2.saveAs(pdf2);
   const raw2 = fs.readFileSync(pdf2, 'latin1');
   ok(raw2.indexOf('(Jasraj Bhuller)') > 0 && raw2.indexOf('(Jasraj Bhuller)') < raw2.indexOf('(Adham Soliman)') && /\(No-show\) Tj/.test(raw2) && /0\.88 0\.96 0\.9 rg/.test(raw2) &&
@@ -1257,7 +1279,7 @@ async function fillEval(p) {
   await shot(ap, '28b-day1-moved-to-tuesday', true);
   // One New Starts List for the week: Monday's and Tuesday's 📄 give the same PDF, each person with their start day
   const wkPdf = async x => {
-    const [d] = await Promise.all([ap.waitForEvent('download'), ap.click('[data-pdf="' + x + '"]')]);
+    const d = await pdfDl(ap, '[data-pdf="' + x + '"]');
     const pth = `${SHOTS}/31-week-starts-${x}.pdf`; await d.saveAs(pth);
     return { name: d.suggestedFilename(), raw: fs.readFileSync(pth, 'latin1'), pth: pth };
   };

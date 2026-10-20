@@ -1,4 +1,4 @@
-window.APP_VERSION = '42c14917';
+window.APP_VERSION = '27316075';
 
 (function () {
 'use strict';
@@ -2574,7 +2574,38 @@ function pdfFile(streams, title) {
     'trailer\n<< /Size ' + (objs.length + 1) + ' /Root 1 0 R /Info ' + objs.length + ' 0 R >>\nstartxref\n' + xref + '\n%%EOF\n';
   const bytes = new Uint8Array(out.length);
   for (let i = 0; i < out.length; i++) bytes[i] = out.charCodeAt(i) & 255;
+  bytes.pages = streams;  // the drawing commands, page by page: savePdf shows them as a preview first
   return bytes;
+}
+/** One page of our own PDF drawing commands (the handful pdfFile pages use: colours, lines, boxes, Helvetica text) drawn
+ *  on a canvas, for the preview before sharing (Angad, 20 Oct: the phone's Share sheet only shows a file icon). */
+function drawPdfPage(cv, stream) {
+  const W = 595.28, H = 841.89, k = cv.width / W, g = cv.getContext('2d');
+  g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height);
+  const toks = stream.match(/\((?:\\.|[^\\)])*\)|[^\s()]+/g) || [];
+  const rgb = a => 'rgb(' + a.map(v => Math.round(Number(v) * 255)).join(',') + ')';
+  let st = [], path = [], font = 'F1', size = 10, tx = 0, ty = 0;
+  const run = draw => { g.beginPath(); path.forEach(p => { if (p[0] === 're') g.rect(p[1] * k, (H - p[2] - p[4]) * k, p[3] * k, p[4] * k); else if (p[0] === 'm') g.moveTo(p[1] * k, (H - p[2]) * k); else g.lineTo(p[1] * k, (H - p[2]) * k); }); draw(); path = []; };
+  toks.forEach(t => {
+    switch (t) {
+      case 'rg': g.fillStyle = rgb(st.slice(-3)); break;
+      case 'RG': g.strokeStyle = rgb(st.slice(-3)); break;
+      case 'w': g.lineWidth = Math.max(0.5, Number(st[st.length - 1]) * k); break;
+      case 're': path.push(['re'].concat(st.slice(-4).map(Number))); break;
+      case 'm': case 'l': path.push([t].concat(st.slice(-2).map(Number))); break;
+      case 'f': run(() => g.fill()); break;
+      case 'S': run(() => g.stroke()); break;
+      case 'Tf': font = String(st[st.length - 2]); size = Number(st[st.length - 1]); break;
+      case 'Td': tx = Number(st[st.length - 2]); ty = Number(st[st.length - 1]); break;
+      case 'Tj':
+        g.font = (font === '/F2' ? 'bold ' : '') + (size * k) + 'px Helvetica, Arial, sans-serif';
+        g.fillText(String(st[st.length - 1]).slice(1, -1).replace(/\\(.)/g, '$1'), tx * k, (H - ty) * k);
+        break;
+      case 'BT': case 'ET': break;
+      default: st.push(t); return;
+    }
+    st = [];
+  });
 }
 
 // ───── The week's appointments as a PDF (All tab, admins): everyone who checked in, day by day, with their evaluation
@@ -2789,7 +2820,31 @@ function payPdf(we, d) {
 }
 
 /** Phone: the share sheet (Print, Save to Files, WhatsApp, AirDrop). Computer: a download. */
+/** A PDF button: the PDF on screen first (every page), then "Share / Save" sends it to the phone's Share sheet. */
 function savePdf(bytes, name) {
+  if (!bytes.pages || !bytes.pages.length) return sharePdf(bytes, name);
+  closeSheet(true);
+  const back = document.createElement('div');
+  back.className = 'sheet-back';
+  back.innerHTML = '<div class="sheet pdfprev" role="dialog" aria-label="PDF preview"><div class="grab"></div>' +
+    '<div class="sheet-h"><div style="min-width:0"><div class="label muted">Preview · ' + bytes.pages.length + ' page' + (bytes.pages.length === 1 ? '' : 's') + '</div><div class="display">' + h(name.replace(/\.pdf$/i, '')) + '</div></div></div>' +
+    '<div class="pdfpages"></div>' +
+    '<div class="bullbtns pdfbtns"><button class="btn" id="pdfgo">📤 Share / Save</button><button class="btn ghost" id="pdfx">Close</button></div></div>';
+  document.body.appendChild(back);
+  document.body.style.overflow = 'hidden';
+  const box = back.querySelector('.pdfpages'), dpr = Math.min(2, window.devicePixelRatio || 1), wpx = Math.max(280, box.clientWidth || 340);
+  bytes.pages.forEach(stream => {
+    const cv = document.createElement('canvas');
+    cv.width = Math.round(wpx * dpr); cv.height = Math.round(cv.width * 841.89 / 595.28);
+    box.appendChild(cv);
+    try { drawPdfPage(cv, stream); } catch (e) { console.error('preview', e); }
+  });
+  back.onclick = e => { if (e.target === back) closeSheet(); };
+  back.querySelector('#pdfx').onclick = () => closeSheet();
+  back.querySelector('#pdfgo').onclick = () => { sharePdf(bytes, name); closeSheet(); };  // the tap itself opens the Share sheet
+}
+/** The PDF to the phone's Share sheet (save to Files, WhatsApp, email…), or a download where there isn't one. */
+function sharePdf(bytes, name) {
   const blob = new Blob([bytes], { type: 'application/pdf' });
   let file = null; try { file = new File([blob], name, { type: 'application/pdf' }); } catch (e) { /* old browser */ }
   if (file && navigator.canShare && navigator.canShare({ files: [file] })) { navigator.share({ files: [file], title: name }).catch(() => {}); return; }
