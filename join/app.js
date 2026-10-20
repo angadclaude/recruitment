@@ -1,4 +1,4 @@
-window.APP_VERSION = '360e597a';
+window.APP_VERSION = '66ec8f64';
 
 (function () {
 'use strict';
@@ -1650,7 +1650,8 @@ function viewPay(quiet) {
     const hit = rows.filter(r => r.net >= p.target).length;
     const late = rows.reduce((n, r) => n + r.late, 0), missing = rows.reduce((n, r) => n + r.missing, 0);
     body = (isAdmin() ? '<div class="hero">' + FX + '<div class="label">Team this week</div>' + kpis([[rows.reduce((n, r) => n + r.net, 0), 'Net'], [hit + '/' + rows.filter(r => r.attended).length, 'Hit ' + p.target],
-      [late, 'Late', late > 0], [missing, 'No outcome', missing > 0]]) + '</div>' : '') +
+      [late, 'Late', late > 0], [missing, 'No outcome', missing > 0]]) + '</div>' +
+      '<button class="btn ghost block" id="payPdf" style="margin:12px 0">📄 Incentive w/e ' + h(fmt(S.week)) + ': every appointment per BA (PDF)</button>' : '') +
       '<div class="list">' + (rows.length ? rows.map((r, i) => '<div class="payrow" data-i="' + i + '"><div class="rank' + (i < 3 && r.net ? ' top' + (i + 1) : '') + '">' + (i + 1) + '</div>' +
         '<div class="main"><div class="name">' + h(r.name) + ' <span class="co ' + h(r.company) + '">' + h(r.company) + '</span></div>' +
         '<div class="bar' + (r.net >= p.target ? ' done' : '') + '"><i style="width:' + Math.min(100, r.net / p.target * 100) + '%"></i></div>' +
@@ -1664,6 +1665,8 @@ function viewPay(quiet) {
   }
   const page = paint('Recruitment incentive', weekNav() + body, quiet);
   bindItems(page); bindWeekNav();
+  const pp = document.getElementById('payPdf');
+  if (pp) pp.onclick = () => { const x = want(S.week); if (x) savePdf(payPdf(S.week, x), payPdfName(S.week) + '.pdf'); };
   page.querySelectorAll('.payrow').forEach(r => { r.onclick = () => { const x = r.querySelector('.excl'); x.hidden = !x.hidden; }; });
 }
 
@@ -2683,6 +2686,106 @@ function weekPdf(we, list) {
     return p.join('\n');
   });
   return pdfFile(streams, weekPdfName(we));
+}
+
+// ───── The week's recruitment incentive as a PDF (Incentive tab, admins): every appointment per BA, whether it counts
+// and why not, in leaderboard order (Angad, 20 Oct). Same numbers as the tab (payReport). ─────
+/** "Incentive w-e 25.10.2026": the title and file name. */
+function payPdfName(we) { return 'Incentive w-e ' + we.slice(8, 10) + '.' + we.slice(5, 7) + '.' + we.slice(0, 4); }
+/** payExclusion()'s reason, short enough for the Counts column. */
+function payWhyShort(w) {
+  return String(w || '').replace(/^Not rated by the presenter.*/, 'Not rated in the room').replace(/^Repeat attendee.*/, 'Repeat (last 6 months)')
+    .replace(/^Weekend appointment$/, 'Weekend').replace(/^Removed by admin: /, 'Removed: ');
+}
+function payPdf(we, d) {
+  const W = 595.28, H = 841.89, M = 36, RH = 19, BOTTOM = 48, TW = 523, p = d.pay, items = d.items || [];
+  const cols = [['#', 18], ['Day', 62], ['Time', 30], ['Name', 120], ['Eval', 28], ['Outcome', 165], ['Counts', 100]];
+  const colX = []; cols.reduce((x, c) => { colX.push(x + 4); return x + c[1]; }, M);
+  const why = {}; p.rows.forEach(r => r.excluded.forEach(x => { why[x.id] = x.why; }));
+  const booked = p.rows.filter(r => r.attended > 0), idle = p.rows.filter(r => !r.attended);
+  const mine = r => items.filter(c => c.booker_id === r.booker_id).sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')));
+  const sum = k => booked.reduce((n, r) => n + r[k], 0), hit = booked.filter(r => r.net >= p.target).length;
+  const fit = (s, i, size, bold) => pdfFit(s, cols[i][1] - 7, size, bold);
+  const shrink = (s, i, size, min, bold) => { let z = size; while (z > min && pdfTextW(s, z, bold) > cols[i][1] - 7) z -= 0.5; return [fit(s, i, z, bold), z]; };
+  const INK = { grey: '0.42 0.42 0.47', green: '0.05 0.5 0.3', amber: '0.75 0.38 0.02', red: '0.75 0.15 0.15' };
+  const pages = [];
+  let o, y;
+  const txt = (x, yy, s, size, bold, ink) => o.push((INK[ink] || '0.13 0.13 0.17') + ' rg BT /' + (bold ? 'F2' : 'F1') + ' ' + size + ' Tf ' + x.toFixed(2) + ' ' + yy.toFixed(2) + ' Td (' + pdfStr(s) + ') Tj ET');
+  const right = (yy, s, size, bold, ink) => txt(M + TW - pdfTextW(s, size, bold), yy, s, size, bold, ink);
+  const newPage = () => {
+    o = []; pages.push(o);
+    o.push('0.95 0.42 0.11 rg 0 ' + (H - 10).toFixed(2) + ' ' + (W / 2).toFixed(2) + ' 10 re f', '0.05 0.6 0.6 rg ' + (W / 2).toFixed(2) + ' ' + (H - 10).toFixed(2) + ' ' + (W / 2).toFixed(2) + ' 10 re f');
+    y = H - 34;
+  };
+  const room = need => { if (y - need >= BOTTOM) return false; newPage(); return true; };
+  const colHead = () => {
+    o.push('0.94 0.93 0.91 rg ' + M + ' ' + (y - 17).toFixed(2) + ' ' + TW + ' 17 re f');
+    cols.forEach((c, i) => txt(colX[i], y - 12, c[0], 8, true));
+    y -= 17;
+  };
+  // One BA: "1. Fiza Iqbal LINK ... Net 3/5", then what they did, then every appointment
+  const baHead = (r, i, cont) => {
+    y -= 12;
+    txt(M, y - 12, (i + 1) + '. ' + r.name + '  ' + (r.company || '') + (cont ? ' (continued)' : ''), 12, true);
+    right(y - 12, (r.net >= p.target ? 'HIT  ' : '') + 'Net ' + r.net + '/' + p.target, 12, true, r.net >= p.target ? 'green' : '');
+    if (!cont) txt(M, y - 25, r.attended + ' appointment' + (r.attended === 1 ? '' : 's') + '  ·  ' + r.excluded.length + ' don\'t count  ·  ' + r.outcomes + ' outcome' + (r.outcomes === 1 ? '' : 's') + ' logged' +
+      (r.late ? '  ·  ' + r.late + ' late' : '') + (r.missing ? '  ·  ' + r.missing + ' no outcome yet' : ''), 8.5, false, r.missing ? 'amber' : 'grey');
+    y -= cont ? 20 : 32;
+  };
+  const row = (c, i) => {
+    const yy = y - 13, k = outcomeKind(c), ev = c.non_qual ? '-' : c.eval_at ? 'Yes' : 'No', no = why[c.id];
+    txt(colX[0], yy, String(i + 1), 8, false, 'grey');
+    txt(colX[1], yy, fmt(c.attended_date), 8.5);
+    txt(colX[2], yy, String(c.created_at || '').slice(11, 16), 8.5);
+    const nm = shrink(c.full_name, 3, 9, 7, true), oc = shrink(outcomeText(c), 5, 8, 6.5), ct = shrink(no ? 'No: ' + payWhyShort(no) : 'Yes', 6, 8.5, 6.5, !no);
+    txt(colX[3], yy, nm[0], nm[1], true);
+    txt(colX[4], yy, ev, 8.5, ev === 'No', ev === 'No' ? 'amber' : '');
+    txt(colX[5], yy, oc[0], oc[1], false, { booked: 'green', none: 'amber', nq: 'red' }[k] || '');
+    txt(colX[6], yy, ct[0], ct[1], !no, no ? 'red' : 'green');
+    o.push('0.85 0.84 0.82 RG 0.5 w ' + M + ' ' + (y - RH).toFixed(2) + ' m ' + (M + TW) + ' ' + (y - RH).toFixed(2) + ' l S');
+    y -= RH;
+  };
+
+  newPage();
+  txt(M, H - 50, 'Recruitment incentive · week ending ' + fmtLong(we) + ' ' + we.slice(0, 4), 18, true);
+  txt(M, H - 67, 'Every appointment per BA, and whether it counts (net ' + p.target + ' attended, Mon-Fri)  |  LINK Marketing & JUSS Marketing', 9.5);
+  txt(M, H - 82, 'Printed ' + fmt(S.me.today) + ' ' + londonNow().slice(11) + ' by ' + S.me.user.name + '. Outcomes due ' + fmtTs(p.deadline) + '; numbers as in the app at that moment.', 8.5, false, 'grey');
+  y = H - 94;
+  const boxes = [[sum('net'), 'Net attended', 'green'], [hit + '/' + booked.length, 'BAs on ' + p.target + '+'], [sum('attended'), 'Appointments'],
+    [sum('attended') - sum('net'), 'Don\'t count'], [sum('late'), 'Late outcomes', sum('late') ? 'amber' : ''], [sum('missing'), 'No outcome yet', sum('missing') ? 'amber' : '']];
+  const bw = (TW - 5 * 6) / 6;
+  boxes.forEach((b, i) => {
+    const x = M + i * (bw + 6);
+    o.push('0.97 0.96 0.94 rg ' + x.toFixed(2) + ' ' + (y - 52).toFixed(2) + ' ' + bw.toFixed(2) + ' 52 re f');
+    txt(x + 7, y - 23, String(b[0]), 17, true, b[2]);
+    txt(x + 7, y - 36, pdfFit(b[1], bw - 12, 7.5), 7.5, false, 'grey');
+  });
+  y -= 66;
+  txt(M, y, 'Leaderboard: ' + (booked.length ? booked.map(r => r.name.split(' ')[0] + ' ' + r.net).join('  ·  ') : 'nobody booked anyone this week'), 8.5, false, 'grey');
+  y -= 4;
+  booked.forEach((r, i) => {
+    const l = mine(r);
+    room(44 + 17 + RH);
+    baHead(r, i, false); colHead();
+    l.forEach((c, j) => { if (room(RH)) { baHead(r, i, true); colHead(); } row(c, j); });
+  });
+  // Who else: BAs with no appointments, check-ins with no confirmed booker (they count once someone's assigned)
+  const notes = [];
+  if (idle.length) notes.push(['No appointments this week: ', idle.map(r => r.name).join(', ')]);
+  if (p.unassigned.length) notes.push(['No confirmed booker (not counted until assigned in the app): ', p.unassigned.map(x => x.name + (x.typed ? ' ("' + x.typed + '")' : '')).join(', ')]);
+  notes.forEach(n => {
+    const words = (n[0] + n[1]).split(' '), lines = [];
+    words.forEach(w => { const l = lines.length ? lines[lines.length - 1] : null; if (l !== null && pdfTextW(l + ' ' + w, 8.5) <= TW) lines[lines.length - 1] = l + ' ' + w; else lines.push(w); });
+    room(14 + lines.length * 12); y -= 14;
+    lines.forEach(l => { txt(M, y, l, 8.5, false, 'grey'); y -= 12; });
+  });
+  const streams = pages.map((pg, i) => {
+    o = pg;
+    txt(M, 24, 'Personal data: keep it safe, share it only inside LINK / JUSS, and delete it when you\'re done.', 8, false, 'grey');
+    txt(W - M - 52, 24, 'Page ' + (i + 1) + ' of ' + pages.length, 8, false, 'grey');
+    return pg.join('\n');
+  });
+  return pdfFile(streams, payPdfName(we));
 }
 
 /** Phone: the share sheet (Print, Save to Files, WhatsApp, AirDrop). Computer: a download. */
