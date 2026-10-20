@@ -898,12 +898,13 @@ async function fillEval(p) {
   const attW = (await api(admin, 'listWeek', { weekEnding: '2026-10-18' })).items.filter(c => inR(c) && wkDays.includes(c.attended_date));
   const big = n => new RegExp('BT /F2 12 Tf [\\d.]+ [\\d.]+ Td \\(' + n + '\\) Tj').test(ipRaw);
   const hitN = pay.rows.filter(r => r.net >= pay.target).length, greensP = (ipRaw.match(/0\.47 0\.66 0\.36 rg/g) || []).length;
-  ok(ipd.suggestedFilename() === 'Incentive w-e 18.10.2026.pdf' && /\/Title \(Incentive w-e 18\.10\.2026\)/.test(ipRaw) && /Recruitment incentive · week ending Sunday 18 October 2026/.test(ipRaw) &&
+  ok(ipd.suggestedFilename() === 'Appointments Total w-e 18.10.2026.pdf' && /\/Title \(Appointments Total w-e 18\.10\.2026\)/.test(ipRaw) && /Appointments total · week ending Sunday 18 October 2026/.test(ipRaw) &&
+    /📄 Appointments total w\/e /.test(await ap.textContent('#payPdf')) &&
     ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', '12/10/2026', '16/10/2026', 'APPTS', 'QUALIFIERS', 'Appointments Attended'].every(t => ipRaw.includes('(' + t + ') Tj')) &&
     pay.rows.every(r => ipRaw.includes('(' + r.name + ') Tj')) && big(attW.length) && wkDays.every(x => big(attW.filter(c => c.attended_date === x).length)) &&
     new RegExp('0\\.83 0\\.18 0\\.16 rg BT /F2 12 Tf [\\d.]+ [\\d.]+ Td \\(' + attW.filter(c => c.non_qual).length + '\\) Tj').test(ipRaw) && greensP === hitN + 1 &&
     !/\(\d+\. /.test(ipRaw) && !/\(No: /.test(ipRaw),
-    '📄 Incentive PDF ("Incentive w-e 18.10.2026.pdf") is one grid like the old sheet: every BA, Mon-Fri with dates, ' + attW.length + ' appointments attended (each day adds up), ' +
+    '📄 "Appointments total" PDF ("Appointments Total w-e 18.10.2026.pdf") is one grid like the old sheet: every BA, Mon-Fri with dates, ' + attW.length + ' appointments attended (each day adds up), ' +
     attW.filter(c => c.non_qual).length + ' non-qualifiers in red, ' + hitN + ' hit the incentive (green); no per-person detail');
   try { require('child_process').execFileSync('pdftoppm', ['-png', '-r', '70', '-singlefile', ipPath, `${SHOTS}/14c-incentive`]); } catch (e) { /* no renderer here */ }
   ok(await ap.$eval('.tabbar button[data-tab=pay]', b => b.textContent.trim()) === 'Incentive' && await ap.textContent('#abTitle') === 'Recruitment incentive' &&
