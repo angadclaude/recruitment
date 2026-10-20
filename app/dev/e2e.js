@@ -1133,7 +1133,7 @@ async function fillEval(p) {
   ok(await ep.evaluate(() => [...document.images].every(i => i.complete && i.naturalWidth > 0) && document.documentElement.scrollWidth <= innerWidth),
     'the email renders on a phone: the logo loads, nothing wider than the screen');
   // Week 1 day by day, like the Sales Skill Ladder (Angad, 20 Oct): a card a day with its level meter, number, date, time and what
-  // happens; the first day on badge is the dark card; no poster picture any more
+  // happens; the first day on badge is framed in the brand's gradient (white like the rest); no poster picture any more
   const dayCards = await ep.evaluate(() => [...document.querySelectorAll('td')].filter(td => /^0[1-4]$/.test((td.querySelector('span') || {}).textContent || '') && td.style.width === '58px').length);
   ok(/Day 1 · Monday 19th October/.test(prevHtml) && /Day 2 · Tuesday 20th October/.test(prevHtml) && /Day 3 · Wednesday 21st October/.test(prevHtml) && /Day 4 onwards · Thursday 22nd October/.test(prevHtml) &&
     ['Induction Day', 'Sales Coaching', 'Practical Learning Day', 'Sales Days', '1st day on badge!', '10:30am – 8:30pm'].every(t => prevHtml.includes(t)) && dayCards === 4 &&
@@ -1162,10 +1162,10 @@ async function fillEval(p) {
   const plainBg = (prevHtml.match(/background:#(?:ffffff|EDF5F5|DDF2F3);(?!background-image)/g) || []).length;
   ok(/u \+ \.body \.jks\{background:#fff;mix-blend-mode:difference\}u \+ \.body \.jkd\{background:#fff;mix-blend-mode:difference\}/.test(prevHtml) && keptDark >= 25 && plainBg === 0 &&
     /background:#EDF5F5;background-image:linear-gradient\(#EDF5F5,#EDF5F5\)/.test(prevHtml) && /✅<\/td><td[^>]*><span class="jks"/.test(prevHtml) && /<span class="jkd"[^>]*>Hi Adham, you’re coming on board/.test(prevHtml) &&
-    !/border:\d+px solid/.test(prevHtml) && /📅<\/td><td[^>]*><span class="jls"/.test(prevHtml) && /🏢<\/td><td[^>]*><span class="jks"[^>]*><span class="jkd"[^>]*>Sales Coaching/.test(prevHtml) && /👣<\/td><td[^>]*><span class="jks"[^>]*><span class="jkd"[^>]*>Practical Learning Day/.test(prevHtml) && /💰<\/td><td[^>]*><span class="jls"/.test(prevHtml) &&
+    !/border:\d+px solid/.test(prevHtml) && /📅<\/td><td[^>]*><span class="jls"/.test(prevHtml) && /🏢<\/td><td[^>]*><span class="jks"[^>]*><span class="jkd"[^>]*>Sales Coaching/.test(prevHtml) && /👣<\/td><td[^>]*><span class="jks"[^>]*><span class="jkd"[^>]*>Practical Learning Day/.test(prevHtml) && /💰<\/td><td[^>]*><span class="jks"[^>]*><span class="jkd"[^>]*>Sales Days/.test(prevHtml) &&
     !/rgba\(255,255,255,\.16\)/.test(prevHtml),
     'Gmail dark theme: every light background is set so Gmail leaves it light, the dark text is kept dark with nothing behind it (' + keptDark + ' places: no grey boxes), ' +
-    'outlines are frames not borders (no black outlines), the Day 4 pills are solid (not pale lilac), and 📅 / 🏢 sit beside their text, not above it; ' +
+    'outlines are frames not borders (no black outlines), no see-through pills, and 📅 / 🏢 sit beside their text, not above it; ' +
     '🏢 is Sales Coaching and 👣 the Practical Learning Day (Angad, 20 Oct)');
   // In Gmail (light theme: no recolouring), the dark-text trick is invisible: the page behind shows through and the text keeps its colour
   await ep.setContent(prevHtml.replace(/<body class="body" style="([^"]*)">/, '<body style="margin:0"><u></u><div class="body" style="$1">').split(PUBLIC).join(APP), { waitUntil: 'load' });
@@ -1181,6 +1181,20 @@ async function fillEval(p) {
   }, [a.toString('base64'), b.toString('base64')]);
   const dOnPage = await pxDiff(blended[0], plain[0]), dOnWhite = await pxDiff(blended[1], plain[1]);
   ok(gmailLight === 'difference' && dOnWhite <= 3 && dOnPage <= 24, 'in Gmail\'s light theme the dark-text trick shows no box: on white no pixel changes (' + dOnWhite + '), on the page colour the text is a shade darker at most (' + dOnPage + ')');
+  // iPhone Mail can open it in "quirks" mode, where a table forgets the colour, size and weight around it: Day 4's title and
+  // words went dark on its dark card and the day titles thin (Angad's phone, 20 Oct). Every day is a white card now, text in a
+  // table sets its own colour, size and weight, and dates and times aren't turned into underlined links
+  await ep.setContent(prevHtml.replace(/^<!doctype html>/i, '').split(PUBLIC).join(APP), { waitUntil: 'load' });
+  const qk = await ep.evaluate(() => {
+    const cell = t => [...document.querySelectorAll('td')].find(td => td.textContent.trim() === t);
+    const st = el => { const s = getComputedStyle(el); return s.color + ' ' + s.fontSize + ' ' + s.fontWeight; };
+    const desc = [...document.querySelectorAll('div')].find(d => d.textContent.trim().startsWith('1st day on badge!'));
+    return { mode: document.compatMode, title: st(cell('Sales Days').querySelector('.jkd')), coaching: st(cell('Sales Coaching').querySelector('.jkd')), desc: st(desc.querySelector('.jkd')) };
+  });
+  ok(qk.mode === 'BackCompat' && qk.title === 'rgb(34, 34, 43) 20px 900' && qk.coaching === qk.title && qk.desc === 'rgb(58, 57, 66) 15px 400' &&
+    prevHtml.split('radial-gradient(130% 160% at 85% 0%').length === 2 && /<meta name="format-detection" content="date=no,address=no,email=no">/.test(prevHtml) &&
+    /a\[x-apple-data-detectors\]\{color:inherit!important;text-decoration:none!important/.test(prevHtml),
+    'iPhone Mail (quirks mode): Day 4 is a white card like the others, its title dark, 20px, heavy (' + qk.title + ') and its words dark (' + qk.desc + '); dates and times not underlined as links');
   await ep.close();
   await ap.locator('.sheet').screenshot({ path: SHOTS + '/34-welcome-email.png' });
   const mbOnb = (await getJson('/dev/mail')).length;
