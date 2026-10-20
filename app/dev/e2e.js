@@ -1806,12 +1806,13 @@ async function fillEval(p) {
   await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button[data-tab=all]');
   await ap.click('.tabbar button[data-tab=all]'); await ap.waitForSelector('#flt .chip[data-f=walk]');
   ok(/Walk outs 1/.test(await ap.textContent('#flt .chip[data-f=walk]')) && await ap.$('.ccard.walkout .item[data-id="' + wally.id + '"]') &&
-    await ap.$eval('.ccard.walkout', e => getComputedStyle(e).backgroundColor) === 'rgb(253, 236, 236)',
-    'All tab: a "Walk outs" filter, and the walk out stands out in light red');
+    await ap.$eval('.ccard.walkout', e => getComputedStyle(e).backgroundColor) === 'rgb(253, 236, 236)' && await ap.$('.ccard.walkout .item[data-id="' + nadia.id + '"]') &&
+    !(await ap.$('.ccard.walkout .item[data-id="' + rita.id + '"]')),
+    'All tab: a "Walk outs" filter; the walk out and the non-qualifier stand out in light red (not Rita)');
   const wpd = await pdfDl(ap, '#weekPdf'), wpPath = `${SHOTS}/42-week-walk-out.pdf`; await wpd.saveAs(wpPath);
   const wpRaw = fs.readFileSync(wpPath, 'latin1');
-  ok(/\(Walk out: do not book/.test(wpRaw) && /0\.99 0\.88 0\.88 rg/.test(wpRaw) && /1 walk out/.test(wpRaw),
-    'the week\'s Appointments PDF: the walk out\'s row in light red, "Walk out: do not book", and "1 walk out" in the day\'s line');
+  ok(/\(Walk out: do not book/.test(wpRaw) && (wpRaw.match(/0\.99 0\.88 0\.88 rg/g) || []).length === 2 && /1 walk out/.test(wpRaw),
+    'the week\'s Appointments PDF: the whole row in light red for the walk out ("Walk out: do not book") and the non-qualifier; "1 walk out" in the day\'s line');
   try { require('child_process').execFileSync('pdftoppm', ['-png', '-r', '70', '-singlefile', wpPath, `${SHOTS}/42-week-walk-out`]); } catch (e) { /* no renderer here */ }
   // The poster: Nadia (not eligible, never rated: the team spoke to her) now counts as attended and as a non-qualifier
   await ap.click('.tabbar button[data-tab=today]'); await ap.waitForSelector('#bullDaily');
@@ -1820,8 +1821,9 @@ async function fillEval(p) {
   const tueCnt = tueAll.filter(c => c.in_room === 'TRUE' || c.non_qual);
   const bw = await bInfo();
   ok(tueCnt.some(c => c.id === nadia.id && c.in_room !== 'TRUE') && tueCnt.some(c => c.id === wally.id && !c.pay_reason) && bw.attended === tueCnt.length &&
-    bw.nonQual === tueCnt.filter(c => c.pay_reason).length && bw.nonQual >= 1 && !/not rated by the presenter/.test(await ap.innerText('#page')),
-    'daily stats poster: the unrated non-qualifier (Nadia) is in "attended" (' + bw.attended + ', with the walk out) and "non qualifiers" (' + bw.nonQual + '), and isn\'t "not rated"');
+    bw.nonQual === tueCnt.filter(c => c.pay_reason).length && bw.nonQual >= 1 && !/not rated by the presenter/.test(await ap.innerText('#page')) && bw.walkOuts === 1,
+    'daily stats poster: the unrated non-qualifier (Nadia) is in "attended" (' + bw.attended + ', with the walk out) and "non qualifiers" (' + bw.nonQual + '), and isn\'t "not rated"; then "🚶 WALK OUTS ' + bw.walkOuts + '"');
+  await saveImg('15c-bulletin-walk-outs.jpg');
   // The Appointments total grid: the same, and what the non qualifiers are
   await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button[data-tab=pay]');
   await ap.click('.tabbar button[data-tab=pay]'); await ap.waitForSelector('#payPdf');
@@ -1829,8 +1831,10 @@ async function fillEval(p) {
   const gRaw = fs.readFileSync(gPath, 'latin1');
   const wkAtt = (await api(admin, 'listWeek', {})).items.filter(c => (c.in_room === 'TRUE' || c.non_qual) && !['0', '6'].includes(String(new Date(c.attended_date + 'T00:00:00Z').getUTCDay())));
   ok(new RegExp('BT /F2 12 Tf [\\d.]+ [\\d.]+ Td \\(' + wkAtt.length + '\\) Tj').test(gRaw) && new RegExp('0\\.83 0\\.18 0\\.16 rg BT /F2 12 Tf [\\d.]+ [\\d.]+ Td \\(' + wkAtt.filter(c => c.pay_reason).length + '\\) Tj').test(gRaw) &&
-    /\(Non qualifiers: 1 not eligible\.\) Tj/.test(gRaw),
-    'Appointments total PDF: ' + wkAtt.length + ' attended (Nadia and the walk out included), ' + wkAtt.filter(c => c.pay_reason).length + ' non qualifier in red, and under the grid "Non qualifiers: 1 not eligible."');
+    /\(Non qualifiers: 1 not eligible\.\) Tj/.test(gRaw) && /\(WALK\) Tj/.test(gRaw) && /\(OUTS\) Tj/.test(gRaw) &&
+    (gRaw.match(/0\.83 0\.18 0\.16 rg BT \/F2 12 Tf [\d.]+ [\d.]+ Td \(1\) Tj/g) || []).length === 2,
+    'Appointments total PDF: ' + wkAtt.length + ' attended (Nadia and the walk out included), ' + wkAtt.filter(c => c.pay_reason).length + ' non qualifier in red, then a WALK OUTS column (1), and under the grid "Non qualifiers: 1 not eligible."');
+  try { require('child_process').execFileSync('pdftoppm', ['-png', '-r', '70', '-singlefile', gPath, `${SHOTS}/14e-grid-walkout`]); } catch (e) { /* no renderer here */ }
 
   // ── Day 1 tab, week by week (Angad, 20 Oct: "week ending wise similar to All tab") ──
   const d1Week = await api(admin, 'academyList', { weekEnding: '2026-10-25' });
