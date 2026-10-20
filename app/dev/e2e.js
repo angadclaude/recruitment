@@ -570,8 +570,9 @@ async function fillEval(p) {
   ok(/forms\.office\.com/.test(await wp.getAttribute('a:has-text("Open the Pre-Coaching Module")', 'href')) && (await wp.getAttribute('a:has-text("Google Maps")', 'href')) === 'https://maps.app.goo.gl/f4pkh222EHHTyQSM9', 'LINK welcome page: Pre-Coaching Module button + LINK Google Maps listing');
   const lTags = await wp.$$eval('.wl-week .wk', ds => ds.map(d => [...d.querySelectorAll('.wk-g span')].map(s => s.textContent)));
   ok(!(await wp.$('.wl-poster, img[src*="poster-"], .wl-guide')) && lTags.length === 4 && /Industry & product knowledge/.test(lTags[0]) && /Self-employment fundamentals/.test(lTags[0]) &&
-    /Master sales techniques/.test(lTags[1]) && lTags[2].length === 0 && /Earn & grow/.test(lTags[3]),
-    'LINK welcome page: the poster\'s Week 1 guide is folded into the game plan as tags under each day; no poster or separate list repeating it (Angad, 20 Oct)');
+    /Master sales techniques/.test(lTags[1]) && lTags[2].length === 0 && /Earn & grow/.test(lTags[3]) &&
+    (await wp.$$eval('.wl-week .wk-ic', es => es.map(e => e.textContent).join('').replace(/️/g, ''))) === '🗓🏢👣💰',
+    'LINK welcome page: the poster\'s Week 1 guide is folded into the game plan as tags under each day; no poster or separate list repeating it; 🏢 Sales Coaching, 👣 Practical Learning Day (Angad, 20 Oct)');
   const og = await (await fetch(wurl.replace(PUBLIC, APP))).text();
   ok(og.includes('og:image" content="' + PUBLIC + 'img/og-link.jpg"'), 'WhatsApp link preview shows the LINK poster card (og:image)');
   await wp.click('#conf');
@@ -1161,10 +1162,11 @@ async function fillEval(p) {
   const plainBg = (prevHtml.match(/background:#(?:ffffff|EDF5F5|DDF2F3);(?!background-image)/g) || []).length;
   ok(/u \+ \.body \.jks\{background:#fff;mix-blend-mode:difference\}u \+ \.body \.jkd\{background:#fff;mix-blend-mode:difference\}/.test(prevHtml) && keptDark >= 25 && plainBg === 0 &&
     /background:#EDF5F5;background-image:linear-gradient\(#EDF5F5,#EDF5F5\)/.test(prevHtml) && /✅<\/td><td[^>]*><span class="jks"/.test(prevHtml) && /<span class="jkd"[^>]*>Hi Adham, you’re coming on board/.test(prevHtml) &&
-    !/border:\d+px solid/.test(prevHtml) && /📅<\/td><td[^>]*><span class="jls"/.test(prevHtml) && /🏢<\/td><td[^>]*><span class="jks"/.test(prevHtml) && /💰<\/td><td[^>]*><span class="jls"/.test(prevHtml) &&
+    !/border:\d+px solid/.test(prevHtml) && /📅<\/td><td[^>]*><span class="jls"/.test(prevHtml) && /🏢<\/td><td[^>]*><span class="jks"[^>]*><span class="jkd"[^>]*>Sales Coaching/.test(prevHtml) && /👣<\/td><td[^>]*><span class="jks"[^>]*><span class="jkd"[^>]*>Practical Learning Day/.test(prevHtml) && /💰<\/td><td[^>]*><span class="jls"/.test(prevHtml) &&
     !/rgba\(255,255,255,\.16\)/.test(prevHtml),
     'Gmail dark theme: every light background is set so Gmail leaves it light, the dark text is kept dark with nothing behind it (' + keptDark + ' places: no grey boxes), ' +
-    'outlines are frames not borders (no black outlines), the Day 4 pills are solid (not pale lilac), and 📅 / 🏢 sit beside their text, not above it');
+    'outlines are frames not borders (no black outlines), the Day 4 pills are solid (not pale lilac), and 📅 / 🏢 sit beside their text, not above it; ' +
+    '🏢 is Sales Coaching and 👣 the Practical Learning Day (Angad, 20 Oct)');
   // In Gmail (light theme: no recolouring), the dark-text trick is invisible: the page behind shows through and the text keeps its colour
   await ep.setContent(prevHtml.replace(/<body class="body" style="([^"]*)">/, '<body style="margin:0"><u></u><div class="body" style="$1">').split(PUBLIC).join(APP), { waitUntil: 'load' });
   const gmailLight = await ep.evaluate(() => getComputedStyle(document.querySelector('.jks')).mixBlendMode);
@@ -1209,8 +1211,8 @@ async function fillEval(p) {
   ok(signOf(jessPrev.html) === 'In association with JUSS Marketing' && /Jess Grace\nIn association with JUSS Marketing$/.test(jessPrev.text) &&
     signOf(lp.html) === 'Link Marketing' && signOf(prevHtml) === 'JUSS Marketing',
     'Jess signing a JUSS email: "Jess Grace · In association with JUSS Marketing"; her own LINK email and Rubal\'s JUSS one: just the company');
-  ok(lp.subject === 'Link Marketing - Your Brand Ambassador Journey Begins!' && /NDCS/.test(lp.html) && /Pre-Coaching Module/.test(lp.html) && /073110 27272/.test(lp.html) && /Day 3 · Wednesday 21st October/.test(lp.html) && /Practical Learning Day/.test(lp.html) && /Sales Day</.test(lp.html) && /img\/logo-link\.png/.test(lp.html) && /Link Magazine/.test(lp.html),
-    'LINK version: NDCS, the pre-coaching module, Day 3 timings, Link Magazine, LINK numbers');
+  ok(lp.subject === 'Link Marketing - Your Brand Ambassador Journey Begins!' && /NDCS/.test(lp.html) && /Pre-Coaching Module/.test(lp.html) && /073110 27272/.test(lp.html) && /Day 3 · Wednesday 21st October/.test(lp.html) && /Practical Learning Day/.test(lp.html) && /Sales Days</.test(lp.html) && /Day 4 onwards · Thursday 22nd October/.test(lp.html) && /img\/logo-link\.png/.test(lp.html) && /Link Magazine/.test(lp.html),
+    'LINK version: NDCS, the pre-coaching module, Day 3 timings, "Day 4 onwards" Sales Days like JUSS (Angad, 20 Oct), Link Magazine, LINK numbers');
   // Jess and Rubal, each sending as LINK and as JUSS (Angad, 20 Oct): the email carries that company's look throughout, from
   // the sender's own address, and the starter's own details (name, Day 1, their welcome link, in the same company)
   const rubT = await loginApi('rubal@jussmarketing.co.uk');
@@ -1229,7 +1231,7 @@ async function fillEval(p) {
   ok(comboOut.every(x => /✓$/.test(x)), 'each sender × company carries that company\'s look (logo, colours, Playbook, Maps, signature) and Adham\'s own details and welcome link: ' + comboOut.join(' · '));
   // A Tuesday starter: every date follows their own Day 1
   const tueM = JSON.parse((await post('/dev/eval', { js: "JSON.stringify(onboardEmail({ full_name: 'Tia Tuesday', email: 'tia@example.com', academy_date: '2026-10-27', welcome_token: 'tok123', company: 'LINK' }, { name: 'Jess Grace', email: 'jess@linkmarketing.org.uk' }, 'LINK'))" })).out);
-  ok(/You're in, Tia/.test(tueM.html) && /Day 1 · Tuesday 27th October/.test(tueM.html) && /Day 4 · Friday 30th October/.test(tueM.html) && /done before Tuesday/.test(tueM.html) && /Tuesday 27th October · 1:30 PM/.test(tueM.html) &&
+  ok(/You're in, Tia/.test(tueM.html) && /Day 1 · Tuesday 27th October/.test(tueM.html) && /Day 4 onwards · Friday 30th October/.test(tueM.html) && /done before Tuesday/.test(tueM.html) && /Tuesday 27th October · 1:30 PM/.test(tueM.html) &&
     /welcome-link\.html\?t=tok123&n=Tia&d=2026-10-27/.test(tueM.html.replace(/&amp;/g, '&')) && tueM.to === 'tia@example.com',
     'a Tuesday starter\'s email: Day 1 Tuesday 27th → Day 4 Friday 30th, "done before Tuesday", their own welcome link with their name and date');
   await ap.goto(APP + 'index.html?c=academy'); await ap.waitForSelector('.onbq');

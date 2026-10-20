@@ -85,9 +85,9 @@ const ONBOARD = {
     // Week 1, day by day (same as the welcome page's WEEK1 in JS.html): [emoji, what, time, about]
     week1: [
       ['🗓️', 'Induction Day', '1:30pm – 6:00pm', 'Meet the team and learn more about the industry. Expected finish between 5:30 and 6:00 PM.'],
-      ['👣', 'Sales Coaching', '1:00pm – 6:00pm', 'Deep dive into office-based sales coaching. Expected finish between 5:30 and 6:00 PM.'],
-      ['🏢', 'Practical Learning Day', '10:00am – 8:30pm', 'Meet your 1-on-1 coach & mentor and shadow them.'],
-      ['💰', 'Sales Day', '10:30am – 8:30pm', '1st day on badge! Your coach is side by side with you. Apply what you’ve learnt and bag your incentives.'],
+      ['🏢', 'Sales Coaching', '1:00pm – 6:00pm', 'Deep dive into office-based sales coaching. Expected finish between 5:30 and 6:00 PM.'],
+      ['👣', 'Practical Learning Day', '10:00am – 8:30pm', 'Meet your 1-on-1 coach & mentor and shadow them.'],
+      ['💰', 'Sales Days', '10:30am – 8:30pm', '1st day on badge! Your coach is side by side with you. Apply what you’ve learnt and bag your incentives.'],
     ],
   },
   JUSS: {
@@ -97,8 +97,8 @@ const ONBOARD = {
     from: 'rubal@jussmarketing.co.uk',
     week1: [
       ['🗓️', 'Induction Day', '1:30pm – 6:00pm', 'Meet the team and learn more about the industry. Expected finish between 5:30 and 6:00 PM.'],
-      ['👣', 'Sales Coaching', '1:00pm – 6:00pm', 'Deep dive into in-house sales coaching. Expected finish between 5:30 and 6:00 PM.'],
-      ['🏢', 'Practical Learning Day', '10:00am – 8:30pm', 'Meet your 1-on-1 coach & mentor and shadow them.'],
+      ['🏢', 'Sales Coaching', '1:00pm – 6:00pm', 'Deep dive into in-house sales coaching. Expected finish between 5:30 and 6:00 PM.'],
+      ['👣', 'Practical Learning Day', '10:00am – 8:30pm', 'Meet your 1-on-1 coach & mentor and shadow them.'],
       ['💰', 'Sales Days', '10:30am – 8:30pm', '1st day on badge! Your coach is side by side with you. Apply what you’ve learnt and bag your incentives.'],
     ],
   },
@@ -1997,7 +1997,8 @@ function onboardEmail(c, u, pick) {
   const pre = '<div style="display:none;max-height:0;overflow:hidden;opacity:0">You\'re in, ' + esc(first) + ' 🎉 Day 1: ' + esc(longDate(d1)) + ' @ 1:30 PM. Download FieldIQ and read your ' + esc(o.playbook[0]) + ' before you come in.</div>';
 
   // Week 1: a card a day, stepping up to the first day on badge (the dark one, like Mastery on the ladder)
-  const W = o.week1, dayName = i => 'Day ' + (i + 1) + (i === W.length - 1 && co === 'JUSS' ? ' onwards' : '') + ' · ' + longDate(addDays(d1, i));
+  // Day 4 onwards for both companies (Angad, 20 Oct: LINK "should be Thursday onwards like on JUSS")
+  const W = o.week1, dayName = i => 'Day ' + (i + 1) + (i === W.length - 1 ? ' onwards' : '') + ' · ' + longDate(addDays(d1, i));
   const day1More = '<div style="margin-top:12px">' + iconRow('📍', esc(CONFIG.OFFICE_ADDRESS) + '<br><span style="color:#6E6C78;font-size:13px">2 mins from Slough station</span>') + '</div>' +
     '<div style="margin-top:4px">' + btn('🗺️ Google Maps', o.maps, true) + btn('📅 Add to calendar', gcal) + '</div>';
   const dayCard = (r, i) => {

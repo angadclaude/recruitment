@@ -1,4 +1,4 @@
-window.APP_VERSION = '710b0234';
+window.APP_VERSION = 'bc679cb7';
 
 (function () {
 'use strict';
@@ -661,14 +661,14 @@ function renderDone(mode, canEdit) {
 const WEEK1 = {
   LINK: [
     ['🗓️', 'Monday', 'Induction Day', '1:30pm – 6:00pm', 'Meet the team and learn more about the industry'],
-    ['👣', 'Tuesday', 'Sales Coaching', '1:00pm – 6:00pm', 'Deep dive into office-based sales coaching'],
-    ['🏢', 'Wednesday', 'Practical Learning Day', '10:00am – 8:30pm', 'Meet your 1-on-1 coach & mentor and shadow them'],
-    ['💰', 'Thursday', 'Sales Day', '10:30am – 8:30pm', '1st day on badge! Your coach is side by side with you. Apply what you\'ve learnt and bag your incentives'],
+    ['🏢', 'Tuesday', 'Sales Coaching', '1:00pm – 6:00pm', 'Deep dive into office-based sales coaching'],
+    ['👣', 'Wednesday', 'Practical Learning Day', '10:00am – 8:30pm', 'Meet your 1-on-1 coach & mentor and shadow them'],
+    ['💰', 'Thursday onwards', 'Sales Days', '10:30am – 8:30pm', '1st day on badge! Your coach is side by side with you. Apply what you\'ve learnt and bag your incentives'],
   ],
   JUSS: [
     ['🗓️', 'Monday', 'Induction Day', '1:30pm – 6:00pm', 'Meet the team and learn more about the industry'],
-    ['👣', 'Tuesday', 'Sales Coaching', '1:00pm – 6:00pm', 'Deep dive into in-house sales coaching'],
-    ['🏢', 'Wednesday', 'Practical Learning Day', '10:00am – 8:30pm', 'Meet your 1-on-1 coach & mentor and shadow them'],
+    ['🏢', 'Tuesday', 'Sales Coaching', '1:00pm – 6:00pm', 'Deep dive into in-house sales coaching'],
+    ['👣', 'Wednesday', 'Practical Learning Day', '10:00am – 8:30pm', 'Meet your 1-on-1 coach & mentor and shadow them'],
     ['💰', 'Thursday onwards', 'Sales Days', '10:30am – 8:30pm', '1st day on badge! Your coach is side by side with you. Apply what you\'ve learnt and bag your incentives'],
   ],
 };
@@ -795,7 +795,7 @@ function renderWelcome(w, keepScroll) {
   const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//LINK x JUSS//Recruitment//EN', 'BEGIN:VEVENT', 'UID:' + BOOT.k + '@recruit',
     'DTSTAMP:' + ymd + 'T090000', 'DTSTART:' + ymd + 'T133000', 'DTEND:' + ymd + 'T180000', 'SUMMARY:' + title,
     'LOCATION:' + w.address.replace(/,/g, '\\,'), 'DESCRIPTION:Bring photo ID + your right-to-work share code.', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
-  const steps = WEEK1[co].map((r, i) => '<div class="wk"><div class="wk-ic">' + r[0] + '</div><div class="wk-b"><span class="wk-d">' + h(mon ? r[1] : 'Day ' + (i + 1) + (i === 3 && co === 'JUSS' ? ' onwards' : '')) +
+  const steps = WEEK1[co].map((r, i) => '<div class="wk"><div class="wk-ic">' + r[0] + '</div><div class="wk-b"><span class="wk-d">' + h(mon ? r[1] : 'Day ' + (i + 1) + (i === 3 ? ' onwards' : '')) +
     '</span><div class="wk-n">' + h(r[2]) + '</div><div class="wk-t">⏰ ' + h(r[3]) + '</div><div class="wk-x">' + h(r[4]) + '</div>' +
     (WEEK1_TAGS[i].length ? '<div class="wk-g">' + WEEK1_TAGS[i].map(g => '<span>' + h(g) + '</span>').join('') + '</div>' : '') + '</div></div>').join('');
   const sec = (icon, title) => '<section class="evsec"><div class="evsec-h"><span>' + icon + '</span>' + title + '</div>';
