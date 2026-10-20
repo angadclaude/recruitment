@@ -1,4 +1,4 @@
-window.APP_VERSION = 'f04bddac';
+window.APP_VERSION = 'f8363af0';
 
 (function () {
 'use strict';
@@ -1651,7 +1651,7 @@ function viewPay(quiet) {
     const late = rows.reduce((n, r) => n + r.late, 0), missing = rows.reduce((n, r) => n + r.missing, 0);
     body = (isAdmin() ? '<div class="hero">' + FX + '<div class="label">Team this week</div>' + kpis([[rows.reduce((n, r) => n + r.net, 0), 'Net'], [hit + '/' + rows.filter(r => r.attended).length, 'Hit ' + p.target],
       [late, 'Late', late > 0], [missing, 'No outcome', missing > 0]]) + '</div>' +
-      '<button class="btn ghost block" id="payPdf" style="margin:12px 0">📄 Incentive w/e ' + h(fmt(S.week)) + ': appointments per BA per day (PDF)</button>' : '') +
+      '<button class="btn ghost block" id="payPdf" style="margin:12px 0">📄 Appointments total w/e ' + h(fmt(S.week)) + ': per BA per day (PDF)</button>' : '') +
       '<div class="list">' + (rows.length ? rows.map((r, i) => '<div class="payrow" data-i="' + i + '"><div class="rank' + (i < 3 && r.net ? ' top' + (i + 1) : '') + '">' + (i + 1) + '</div>' +
         '<div class="main"><div class="name">' + h(r.name) + ' <span class="co ' + h(r.company) + '">' + h(r.company) + '</span></div>' +
         '<div class="bar' + (r.net >= p.target ? ' done' : '') + '"><i style="width:' + Math.min(100, r.net / p.target * 100) + '%"></i></div>' +
@@ -2272,7 +2272,10 @@ function drawAcademy(r, quiet) {
     // Booked for Tuesday instead of Monday: "📅 Tuesday" on a Monday starter ("📅 Monday" on a Tuesday one, to undo),
     // before the day or on it: their Day 1 moves there
     const mv = d1Move(c, today);
-    const mvBtn = mv ? '<button class="btn sm ghost" data-d1="' + mv.st + '" data-day="' + mv.day + '" data-id="' + h(c.id) + '">📅 ' + mv.day + '</button>' : '';
+    // "Move to Tue?" (the first of the two taps) stays put if the list refreshes in the background before the second
+    const sure = mv && S.d1Sure && S.d1Sure.id === c.id && Date.now() < S.d1Sure.until;
+    const mvBtn = mv ? '<button class="btn sm ' + (sure ? 'ghost sure' : 'ghost') + '" data-d1="' + mv.st + '" data-day="' + mv.day + '" data-id="' + h(c.id) + '">' +
+      (sure ? 'Move to ' + mv.day.slice(0, 3) + '?' : '📅 ' + mv.day) + '</button>' : '';
     const act = started
       ? '<div class="d1btns"><button class="btn sm ' + (c.day1_status === 'arrived' ? 'green' : 'ghost') + '" data-d1="arrived" data-id="' + h(c.id) + '">Arrived</button>' +
         '<button class="btn sm ' + (c.day1_status === 'no_show' ? 'red' : 'ghost') + '" data-d1="no_show" data-id="' + h(c.id) + '">No-show</button>' + mvBtn + '</div>'
@@ -2329,12 +2332,16 @@ function drawAcademy(r, quiet) {
     b.onclick = () => {
       const c = r.items.filter(x => x.id === b.dataset.id)[0]; if (!c) return;
       const move = b.dataset.d1 === 'next_day' || b.dataset.d1 === 'prev_day';
-      // Moving their Day 1 is a bigger change than a tick: the first tap asks, the second (within 4 s) does it
-      if (move && !b.classList.contains('sure')) {
+      // Moving their Day 1 is a bigger change than a tick: the first tap asks, the second (within 4 s) does it. Kept in
+      // S.d1Sure, not just on the button, so a background refresh of the list between the two taps doesn't undo the first.
+      const asked = S.d1Sure && S.d1Sure.id === c.id && Date.now() < S.d1Sure.until;
+      if (move && !asked) {
+        const mine = S.d1Sure = { id: c.id, until: Date.now() + 4000 };
         b.classList.add('sure'); b.textContent = 'Move to ' + b.dataset.day.slice(0, 3) + '?';
-        setTimeout(() => { if (b.isConnected && b.classList.contains('sure')) { b.classList.remove('sure'); b.textContent = '📅 ' + b.dataset.day; } }, 4000);
+        setTimeout(() => { if (S.d1Sure === mine) { S.d1Sure = null; if (S.view === 'academy' && S.academy) drawAcademy(S.academy, true); } }, 4000);
         return;
       }
+      if (move) S.d1Sure = null;
       const st = move ? b.dataset.d1 : c.day1_status === b.dataset.d1 ? '' : b.dataset.d1;  // tap again to clear
       busy(b, true, '…');
       call('markDay1', { id: c.id, status: st }).then(nc => {
@@ -2688,11 +2695,11 @@ function weekPdf(we, list) {
   return pdfFile(streams, weekPdfName(we));
 }
 
-// ───── The week's recruitment incentive as a PDF (Incentive tab, admins): one grid like Angad's old sheet (20 Oct):
+// ───── "Appointments total": the week as a PDF (Incentive tab, admins), one grid like Angad's old sheet (20 Oct):
 // a row per BA (JUSS, then LINK, then admins who booked), Monday-Friday with the dates, how many attended each day, the
 // total and the non-qualifiers, "Appointments Attended" along the bottom. The detail per person is in the All tab's PDF. ─────
-/** "Incentive w-e 25.10.2026": the title and file name. */
-function payPdfName(we) { return 'Incentive w-e ' + we.slice(8, 10) + '.' + we.slice(5, 7) + '.' + we.slice(0, 4); }
+/** "Appointments Total w-e 25.10.2026": the title and file name (Angad: "appointments total", not "incentive"). */
+function payPdfName(we) { return 'Appointments Total w-e ' + we.slice(8, 10) + '.' + we.slice(5, 7) + '.' + we.slice(0, 4); }
 function payPdf(we, d) {
   const W = 595.28, H = 841.89, M = 36, TW = 523, RH = 17, HEAD = 34, FOOT = 26, BOTTOM = 70, p = d.pay, items = d.items || [];
   const mon = addDays(we, -6), days = [0, 1, 2, 3, 4].map(n => addDays(mon, n));
@@ -2729,7 +2736,7 @@ function payPdf(we, d) {
     o.push('0.95 0.42 0.11 rg 0 ' + (H - 10).toFixed(2) + ' ' + (W / 2).toFixed(2) + ' 10 re f', '0.05 0.6 0.6 rg ' + (W / 2).toFixed(2) + ' ' + (H - 10).toFixed(2) + ' ' + (W / 2).toFixed(2) + ' 10 re f');
     y = H - 34;
     if (first) {
-      txt(M, H - 50, 'Recruitment incentive · week ending ' + fmtLong(we) + ' ' + we.slice(0, 4), 17, true);
+      txt(M, H - 50, 'Appointments total · week ending ' + fmtLong(we) + ' ' + we.slice(0, 4), 17, true);
       txt(M, H - 66, 'Appointments attended per BA per day (rated in the room, Mon-Fri)  |  green total = hit the incentive (net ' + p.target + ')', 9);
       txt(M, H - 80, 'Printed ' + fmt(S.me.today) + ' ' + londonNow().slice(11) + ' by ' + S.me.user.name + '. Outcomes due ' + fmtTs(p.deadline) + '.  LINK Marketing & JUSS Marketing', 8, false, 'grey');
       y = H - 92;
