@@ -1914,6 +1914,8 @@ function onboardStep(req, u) {
  *  chunky buttons). Table layout + inline styles so it holds up in Gmail, Outlook and Apple Mail (Outlook desktop: solid colours). */
 function onboardEmail(c, u, pick) {
   const co = brandCo(c, pick), o = ONBOARD[co], first = c.full_name.split(' ')[0];
+  // Signed under the other company (Jess sending a JUSS email, Rubal a LINK one): "In association with …" (Angad, 20 Oct)
+  const signCo = homeCo(u.email) && homeCo(u.email) !== co ? 'In association with ' + o.brand : o.brand;
   // After launch the playbook button goes through the hub: they sign in with this email and land in their own playbook
   const pbUrl = hubOn() ? hubLink(co === 'JUSS' ? 'hf' : 'fr', '/') : o.playbook[1];
   const T = co === 'JUSS'
@@ -1984,7 +1986,7 @@ function onboardEmail(c, u, pick) {
       (o.website ? btn('✨ ' + esc(o.website[0]), o.website[1]) : '') + '</div>') +
     // Sign-off
     '<tr><td style="padding:24px 6px 0;' + F + 'font-size:15px;line-height:1.55;color:#22222B">Any questions' + (co === 'JUSS' ? ' regarding anything' : '') + ', just reply to this email or call <b>' + esc(o.phone) + '</b>.<br><br>' +
-      'I’ll be in the office to meet you when you arrive. Excited to work with you! 🔥<br><br>Thanks,<br>Kind Regards,<br><b>' + esc(u.name) + '</b><br><span style="color:' + T.ink + ';font-weight:700">' + esc(o.brand) + '</span></td></tr>' +
+      'I’ll be in the office to meet you when you arrive. Excited to work with you! 🔥<br><br>Thanks,<br>Kind Regards,<br><b>' + esc(u.name) + '</b><br><span style="color:' + T.ink + ';font-weight:700">' + esc(signCo) + '</span></td></tr>' +
     '</table></td></tr></table></body></html>';
   const text = 'Hi ' + first + ',\n\nWelcome to the ' + o.brand + ' team, and Congratulations on being selected to join us!\n\n' +
     'Product training and sales coaching begins ' + longDate(d1) + ' @ 1:30 PM.\n\n' +
@@ -1997,7 +1999,7 @@ function onboardEmail(c, u, pick) {
     '\nBRING: notepad and pen, photo ID, your right-to-work share code\n' +
     (c.welcome_token ? '\nYour Week 1 plan + CONFIRM: ' + welcomeUrl(c) + '\n' : '') +
     '\nGet ready: ' + o.client[0] + ' ' + o.client[1] + ' · ' + o.magazine[0] + ' ' + o.magazine[1] + (o.website ? ' · ' + o.website[1] : '') + '\n' +
-    '\nAny questions, just reply to this email or call ' + o.phone + '.\nI’ll be in the office to meet you when you arrive. Excited to work with you!\n\nThanks,\nKind Regards,\n' + u.name + '\n' + o.brand;
+    '\nAny questions, just reply to this email or call ' + o.phone + '.\nI’ll be in the office to meet you when you arrive. Excited to work with you!\n\nThanks,\nKind Regards,\n' + u.name + '\n' + signCo;
   return { to: c.email, subject: o.brand + ' - Your Brand Ambassador Journey Begins!', html: html, text: text };
 }
 function onboardPreview(req, u) {
@@ -2045,6 +2047,8 @@ function welcomeSender(c, u, pick) {
   const team = thanksTeam(), k = brandCo(c, pick);
   return { name: team[k].name || (k === 'JUSS' ? 'Rubal Oshan' : 'Jess Grace'), email: ONBOARD[k].from };
 }
+/** The company someone works for, from their email address ('' if it's neither company's). */
+function homeCo(email) { const e = String(email || '').toLowerCase(); return /@jussmarketing\./.test(e) ? 'JUSS' : /@linkmarketing\./.test(e) ? 'LINK' : ''; }
 function scriptEmail() { try { return String(Session.getEffectiveUser().getEmail()).toLowerCase(); } catch (e) { return ''; } }
 /** Addresses this script's Gmail can send as: its own + its "Send mail as" addresses (checked every 10 minutes). */
 function sendableFrom() {
@@ -2052,11 +2056,12 @@ function sendableFrom() {
   if (hit) return JSON.parse(hit);
   let list = [];
   try { list = [scriptEmail()].concat(GmailApp.getAliases().map(x => String(x).toLowerCase())); } catch (e) { console.error(e); }
-  cache.put('send_as', JSON.stringify(list), 600);
+  // No "Send mail as" addresses can also mean Google was slow to answer (Vercel waits 3 s): ask again in a minute, not ten
+  cache.put('send_as', JSON.stringify(list), list.length > 1 ? 600 : 60);
   return list;
 }
 function welcomeNotReady(s) {
-  return sendableFrom().indexOf(s.email) >= 0 ? '' : 'Can\'t send as ' + s.email + ' yet. Angad: add it in Gmail → Settings → Accounts → "Send mail as" (SETUP.md, "Welcome emails"), then try again in 10 minutes.';
+  return sendableFrom().indexOf(s.email) >= 0 ? '' : 'Can\'t send as ' + s.email + ' yet. Angad: add it in Gmail → Settings → Accounts → "Send mail as" (SETUP.md, "Welcome emails"), then try again in a few minutes.';
 }
 /** For the admin cards: who each brand's welcome email comes from, and whether it's ready.
  *  mine: your own address, if you're on the recruitment team (then it always comes from you). */
