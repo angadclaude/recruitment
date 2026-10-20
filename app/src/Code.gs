@@ -1934,63 +1934,72 @@ function onboardEmail(c, u, pick) {
   // The app's look (Angad, 20 Oct: "more immersive, like we have the app"): the dark stage with the brand's glow on top,
   // light cards below, and Week 1 as cards that step up like the Sales Skill Ladder instead of the poster
   const S = co === 'JUSS'
-    ? { bg: '#EDF5F5', line: '#CFE4E6', tint: '#DDF2F3', ink: '#0F7C88', dark: '#0D2833', solid: '#2BA9B8',
+    ? { bg: '#EDF5F5', line: '#CFE4E6', tint: '#DDF2F3', dark: '#0D2833', solid: '#2BA9B8',
         stage: 'radial-gradient(55% 110% at 96% 0%,rgba(237,160,58,.55) 0%,rgba(237,160,58,0) 70%),radial-gradient(60% 130% at 66% 0%,rgba(52,177,192,.45) 0%,rgba(52,177,192,0) 70%),radial-gradient(130% 160% at 85% 0%,#1D5566 0%,#0D2833 55%,#071820 100%)',
         grad: 'linear-gradient(120deg,#E4613F 0%,#EDA03A 48%,#34B1C0 100%)' }
-    : { bg: '#F7F1EC', line: '#EEDED3', tint: '#FFEBE1', ink: '#C2410C', dark: '#17171D', solid: '#F15A24',
+    : { bg: '#F7F1EC', line: '#EEDED3', tint: '#FFEBE1', dark: '#17171D', solid: '#F15A24',
         stage: 'radial-gradient(60% 120% at 94% 0%,rgba(241,90,36,.62) 0%,rgba(241,90,36,0) 70%),radial-gradient(130% 160% at 85% 0%,#2C2C38 0%,#17171D 55%,#0F0F14 100%)',
         grad: 'linear-gradient(120deg,#FF8A3D 0%,#F15A24 48%,#CF3A10 100%)' };
   const F = "font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;";
   const D_ = "font-family:Impact,'Arial Black','Helvetica Neue',sans-serif;";
   const d1 = c.academy_date, img = CONFIG.PUBLIC_URL ? CONFIG.PUBLIC_URL + 'img/' : '';
+  // Their own welcome page, in the company this email is for (Jess sending a JUSS starter's email as LINK: the LINK page)
+  const wUrl = c.welcome_token ? welcomeUrl(Object.assign({}, c, { brand: co })) : '';
   const ymd = d1.replace(/-/g, ''), title = 'BA Academy Day 1 – ' + o.brand;
   const gcal = 'https://calendar.google.com/calendar/render?action=TEMPLATE&text=' + encodeURIComponent(title) + '&dates=' + ymd + 'T133000/' + ymd + 'T180000&ctz=Europe/London' +
     '&location=' + encodeURIComponent(CONFIG.OFFICE_ADDRESS) + '&details=' + encodeURIComponent('Induction 1:30pm. Bring a notepad and pen, photo ID and your right-to-work share code.');
-  // Gmail's dark theme (its own setting, not the phone's) turns white text on our colours dark (Angad, 20 Oct). Colours set as
-  // background-image aren't changed, and white text inside white() stays white: Gmail-only CSS (u + .body), nothing elsewhere.
-  // Light cards are left to Gmail: it darkens them and lightens their text together.
+  // Gmail's dark theme (its own setting, not the phone's: Angad's phone was light, his Gmail dark) recolours emails: white
+  // text on our colours went dark, and the light page and cards went dark. Every background is set as background-image
+  // (Gmail leaves those alone), white text sits in white() and dark text in dk(): Gmail-only CSS (u + .body) that undoes
+  // its recolouring, so the email looks the same in its light and dark themes. Nothing changes in other apps. Emojis stay
+  // outside both (inside, their colours would be flipped).
   const white = s => '<span class="jls" style="display:inline-block"><span class="jld" style="display:inline-block">' + s + '</span></span>';
-  // A label's leading emoji stays outside (inside, Gmail's trick washes its colours out)
-  const whiteLabel = s => { const m = /^([^\x00-\x7E]\S*) (.*)$/.exec(s); return m ? m[1] + ' ' + white(m[2]) : white(s); };
+  const dk = s => '<span class="jks" style="display:inline-block"><span class="jkd" style="display:inline-block">' + s + '</span></span>';
+  /** An emoji beside a line of dark text (side by side: a long line would push the emoji onto its own line). */
+  const iconRow = (emoji, s, size) => '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="width:' + (size || 26) + 'px;vertical-align:top;font-size:17px;line-height:1.5">' + emoji + '</td>' +
+    '<td style="vertical-align:top">' + dk(s) + '</td></tr></table>';
+  const split = (s, wrap) => { const m = /^([^\x00-\x7E]\S*) (.*)$/.exec(s); return m ? m[1] + ' ' + wrap(m[2]) : wrap(s); };
   const fill = col => 'background:' + col + ';background-image:linear-gradient(' + col + ',' + col + ');';
   const stageBg = 'background:' + S.dark + ';background-image:' + S.stage + ';';
   const gradBg = 'background:' + S.solid + ';background-image:' + S.grad + ';';
   const glass = 'background:#3A3A46;background-image:linear-gradient(rgba(255,255,255,.16),rgba(255,255,255,.16));';
   const btn = (label, url, solid) => '<a href="' + esc(url) + '" style="display:inline-block;margin:6px 6px 0 0;padding:12px 18px;border-radius:14px;' + F + 'font-weight:800;font-size:15px;text-decoration:none;' +
-    (solid ? gradBg + 'color:#ffffff;border:0;">' + whiteLabel(label) : 'background:#ffffff;color:#22222B;border:2px solid ' + S.line + ';">' + label) + '</a>';
-  const bigBtn = (label, url) => '<a href="' + esc(url) + '" style="display:block;margin:10px 0 0;padding:16px 18px;border-radius:16px;text-align:center;' + F + 'font-weight:800;font-size:16px;text-decoration:none;color:#ffffff;' + gradBg + '">' + whiteLabel(label) + '</a>';
+    (solid ? gradBg + 'color:#ffffff;border:0;">' + split(label, white) : fill('#ffffff') + 'color:#22222B;border:2px solid ' + S.line + ';">' + split(label, dk)) + '</a>';
+  const bigBtn = (label, url) => '<a href="' + esc(url) + '" style="display:block;margin:10px 0 0;padding:16px 18px;border-radius:16px;text-align:center;' + F + 'font-weight:800;font-size:16px;text-decoration:none;color:#ffffff;' + gradBg + '">' + split(label, white) + '</a>';
   const gap = h => '<tr><td style="height:' + h + 'px;line-height:' + h + 'px;font-size:0">&nbsp;</td></tr>';
   /** A section heading like the app's: emoji tile, label, one line under it. */
   const head = (emoji, label, sub) => '<tr><td style="padding:28px 2px 12px;' + F + '"><table role="presentation" cellpadding="0" cellspacing="0"><tr>' +
-    '<td style="width:40px;height:40px;border-radius:13px;background:' + S.tint + ';text-align:center;font-size:19px;line-height:40px">' + emoji + '</td>' +
-    '<td style="padding-left:12px;font-size:13px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#22222B">' + label +
-    (sub ? '<div style="font-size:14px;font-weight:500;letter-spacing:0;text-transform:none;color:#6E6C78;margin-top:2px">' + sub + '</div>' : '') + '</td></tr></table></td></tr>';
-  const card = inner => '<tr><td style="background:#ffffff;border:1px solid ' + S.line + ';border-radius:22px;padding:20px;' + F + 'font-size:15px;line-height:1.5;color:#22222B">' + inner + '</td></tr>';
+    '<td style="width:40px;height:40px;border-radius:13px;' + fill(S.tint) + 'text-align:center;font-size:19px;line-height:40px">' + emoji + '</td>' +
+    '<td style="padding-left:12px;font-size:13px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#22222B">' + dk(label) +
+    (sub ? '<div style="font-size:14px;font-weight:500;letter-spacing:0;text-transform:none;color:#6E6C78;margin-top:2px">' + dk(sub) + '</div>' : '') + '</td></tr></table></td></tr>';
+  const card = inner => '<tr><td style="' + fill('#ffffff') + 'border:1px solid ' + S.line + ';border-radius:22px;padding:20px;' + F + 'font-size:15px;line-height:1.5;color:#22222B">' + inner + '</td></tr>';
   /** The numbered tile (Business Development steps, the Week 1 cards): brand gradient, white number. */
   const tile = (n, size) => '<span style="display:inline-block;width:' + size + 'px;height:' + size + 'px;line-height:' + size + 'px;border-radius:' + Math.round(size / 3) + 'px;text-align:center;' + gradBg +
     'color:#ffffff;' + D_ + 'font-weight:400;font-size:' + Math.round(size * .46) + 'px">' + white(n) + '</span>';
   const pill = (emoji, t, dark) => '<span style="display:inline-block;padding:6px 12px;border-radius:999px;font-weight:800;font-size:14px;' +
-    (dark ? glass + 'color:#ffffff">' + emoji + ' ' + white(t) : 'background:' + S.tint + ';color:' + S.ink + '">' + emoji + ' ' + t) + '</span>';
+    (dark ? glass + 'color:#ffffff">' + emoji + ' ' + white(t) : fill(S.tint) + 'color:#22222B">' + emoji + ' ' + dk(t)) + '</span>';
+  /** The day's label, as the welcome page shows it: a dark pill. */
+  const dayPill = (t, dark) => '<span style="display:inline-block;padding:4px 11px;border-radius:999px;font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#ffffff;' +
+    (dark ? glass : fill(S.dark)) + '">' + white(t) + '</span>';
   /** The Skill Ladder's level meter: how far into the week this day is. */
   const meter = (lit, total, dark) => '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 14px"><tr>' +
     Array.from({ length: total }, (x, j) => '<td style="padding:0 ' + (j < total - 1 ? 4 : 0) + 'px 0 0"><div style="height:5px;border-radius:99px;font-size:0;line-height:0;' +
-      (j < lit ? gradBg : dark ? glass : 'background:' + S.tint + ';') + '">&nbsp;</div></td>').join('') + '</tr></table>';
-  const step = (n, t) => '<tr><td style="vertical-align:top;width:40px;padding:7px 0">' + tile(String(n), 30) + '</td><td style="padding:7px 0 7px 10px;' + F + 'font-size:15px;line-height:1.45">' + t + '</td></tr>';
-  const chip = (emoji, t) => '<span style="display:inline-block;margin:0 6px 8px 0;padding:9px 14px;border-radius:14px;background:' + S.tint + ';color:#22222B;font-weight:700;font-size:15px">' + emoji + ' ' + t + '</span>';
+      (j < lit ? gradBg : dark ? glass : fill(S.tint)) + '">&nbsp;</div></td>').join('') + '</tr></table>';
+  const step = (n, t) => '<tr><td style="vertical-align:top;width:40px;padding:7px 0">' + tile(String(n), 30) + '</td><td style="padding:7px 0 7px 10px;' + F + 'font-size:15px;line-height:1.45">' + dk(t) + '</td></tr>';
+  const chip = (emoji, t) => '<span style="display:inline-block;margin:0 6px 8px 0;padding:9px 14px;border-radius:14px;' + fill(S.tint) + 'color:#22222B;font-weight:700;font-size:15px">' + emoji + ' ' + dk(t) + '</span>';
   const pre = '<div style="display:none;max-height:0;overflow:hidden;opacity:0">You\'re in, ' + esc(first) + ' 🎉 Day 1: ' + esc(longDate(d1)) + ' @ 1:30 PM. Download FieldIQ and read your ' + esc(o.playbook[0]) + ' before you come in.</div>';
 
   // Week 1: a card a day, stepping up to the first day on badge (the dark one, like Mastery on the ladder)
   const W = o.week1, dayName = i => 'Day ' + (i + 1) + (i === W.length - 1 && co === 'JUSS' ? ' onwards' : '') + ' · ' + longDate(addDays(d1, i));
-  const day1More = '<div style="margin-top:12px">📍 ' + esc(CONFIG.OFFICE_ADDRESS) + '<br><span style="color:#6E6C78;font-size:13px">2 mins from Slough station</span></div>' +
+  const day1More = '<div style="margin-top:12px">' + iconRow('📍', esc(CONFIG.OFFICE_ADDRESS) + '<br><span style="color:#6E6C78;font-size:13px">2 mins from Slough station</span>') + '</div>' +
     '<div style="margin-top:4px">' + btn('🗺️ Google Maps', o.maps, true) + btn('📅 Add to calendar', gcal) + '</div>';
   const dayCard = (r, i) => {
-    const top = i === W.length - 1, t = s => (top ? white(s) : s);
+    const top = i === W.length - 1, t = s => (top ? white(s) : dk(s));
     return '<tr><td style="border-radius:22px;padding:18px 20px 20px;' + F + 'font-size:15px;line-height:1.5;' +
-      (top ? stageBg + 'color:#ffffff' : 'background:#ffffff;border:1px solid ' + S.line + ';color:#22222B') + '">' + meter(i + 1, W.length, top) +
+      (top ? stageBg + 'color:#ffffff' : fill('#ffffff') + 'border:1px solid ' + S.line + ';color:#22222B') + '">' + meter(i + 1, W.length, top) +
       '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="width:58px;vertical-align:middle">' + tile('0' + (i + 1), 46) + '</td>' +
-      '<td style="vertical-align:middle;padding-left:12px">' +
-        '<div style="font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;' + (top ? '' : 'color:' + S.ink) + '">' + t(esc(dayName(i))) + '</div>' +
-        '<div style="font-size:20px;font-weight:900;letter-spacing:-.01em;line-height:1.25;margin:3px 0 0">' + r[0] + ' ' + t(esc(r[1])) + '</div></td></tr>' +
+      '<td style="vertical-align:middle;padding-left:12px">' + dayPill(esc(dayName(i)), top) +
+        '<div style="font-size:20px;font-weight:900;letter-spacing:-.01em;line-height:1.25;margin:6px 0 0">' + r[0] + ' ' + t(esc(r[1])) + '</div></td></tr>' +
       '<tr><td colspan="2" style="padding-top:12px">' + pill('⏰', esc(r[2]), top) +
         '<div style="margin-top:10px;' + (top ? '' : 'color:#3A3942') + '">' + t(esc(r[3])) + '</div>' + (i === 0 ? day1More : '') +
       '</td></tr></table></td></tr>' + (top ? '' : gap(10));
@@ -1998,9 +2007,10 @@ function onboardEmail(c, u, pick) {
 
   const logoW = co === 'JUSS' ? 90 : 51;  // the logo's width at 56px high, so its box keeps its shape before the image loads
   const html = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light">' +
-    '<style>u + .body .jls{background:#000;mix-blend-mode:screen}u + .body .jld{background:#000;mix-blend-mode:difference}</style></head>' +
-    '<body class="body" style="margin:0;padding:0;background:' + S.bg + '">' + pre +
-    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:' + S.bg + '"><tr><td align="center" style="padding:18px 12px 30px">' +
+    '<style>u + .body .jls{background:#000;mix-blend-mode:screen}u + .body .jld{background:#000;mix-blend-mode:difference}' +
+    'u + .body .jks{background:#000;mix-blend-mode:multiply}u + .body .jkd{background:#fff;mix-blend-mode:difference}</style></head>' +
+    '<body class="body" style="margin:0;padding:0;' + fill(S.bg) + '">' + pre +
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="' + fill(S.bg) + '"><tr><td align="center" style="padding:18px 12px 30px">' +
     '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px">' +
     // Hero: the app's dark stage with the brand's light on it
     '<tr><td style="border-radius:28px;padding:24px 24px 28px;' + stageBg + F + 'color:#ffffff">' +
@@ -2011,11 +2021,16 @@ function onboardEmail(c, u, pick) {
       '<div style="font-size:17px;line-height:1.45;margin:0 0 18px">' + white('Welcome to the <b>' + esc(o.brand) + '</b> team, and <b>Congratulations</b> on being selected to join us!') + '</div>' +
       '<span style="display:inline-block;border-radius:999px;padding:10px 16px;font-weight:800;font-size:15px;' + gradBg + '">📅 ' + white(esc(longDate(d1)) + ' · 1:30 PM') + '</span>' +
     '</td></tr>' +
-    '<tr><td style="padding:22px 6px 0;' + F + 'font-size:15px;line-height:1.6;color:#3A3942">Hi ' + esc(first) + ', you’re coming on board at an exciting time as we continue to expand our business and head into a highly productive season. ' +
-      'We’re confident that with your enthusiasm and dedication, you’ll thrive in your new role as a <b>Brand Ambassador</b>. Product training and sales coaching begins <b>' + esc(longDate(d1)) + ' @ 1:30 PM</b>.</td></tr>' +
+    '<tr><td style="padding:22px 6px 0;' + F + 'font-size:15px;line-height:1.6;color:#3A3942">' + dk('Hi ' + esc(first) + ', you’re coming on board at an exciting time as we continue to expand our business and head into a highly productive season. ' +
+      'We’re confident that with your enthusiasm and dedication, you’ll thrive in your new role as a <b>Brand Ambassador</b>. Product training and sales coaching begins <b>' + esc(longDate(d1)) + ' @ 1:30 PM</b>.') + '</td></tr>' +
     // A reply is the strongest "this isn't spam" signal there is, and tells Jess / Rubal it arrived
-    '<tr><td style="padding:16px 0 0"><div style="border:2px dashed ' + S.solid + ';border-radius:16px;padding:12px 16px;background:#ffffff;' + F + 'font-size:15px;line-height:1.45;color:#22222B">' +
-      '✅ <b>Quick one:</b> reply <b>GOT IT</b> to this email so we know it reached you.</div></td></tr>' +
+    '<tr><td style="padding:16px 0 0"><div style="border:2px dashed ' + S.solid + ';border-radius:16px;padding:12px 16px;' + fill('#ffffff') + F + 'font-size:15px;line-height:1.45;color:#22222B">' +
+      iconRow('✅', '<b>Quick one:</b> reply <b>GOT IT</b> to this email so we know it reached you.') + '</div></td></tr>' +
+    // Their Week 1 plan + CONFIRM straight after (Angad, 20 Oct), then the week day by day
+    (wUrl ? '<tr><td style="padding:6px 0 0">' + bigBtn('👀 See my Week 1 plan + CONFIRM', wUrl) +
+      '<div style="' + F + 'font-size:13px;color:#6E6C78;text-align:center;margin-top:8px">' + dk('Your welcome page, with the Sales Skill Ladder. Tap <b>CONFIRM</b> so we know you’re coming.') + '</div></td></tr>' : '') +
+    head('🗓️', 'Your Week 1', 'From induction to your first day on badge') +
+    W.map(dayCard).join('') +
     // Before Day 1
     head('⚡', 'Before Day 1', 'Two minutes now saves you an hour on Day 1') +
     card('<table role="presentation" width="100%" cellpadding="0" cellspacing="0">' +
@@ -2024,38 +2039,33 @@ function onboardEmail(c, u, pick) {
       step(o.preCoaching ? 3 : 2, 'Read your <b>' + esc(o.playbook[0]) + '</b>, so you walk in on Day 1 already knowing how we work.') +
       '</table>' + bigBtn('📲 Download FieldIQ', ONBOARD.FIELDIQ_URL) + (o.preCoaching ? bigBtn('📝 Open the Pre-Coaching Module', o.preCoaching[1]) : '') +
       bigBtn('📘 Open my ' + esc(o.playbook[0]), pbUrl)) +
-    // Week 1, day by day
-    head('🗓️', 'Your Week 1', 'From induction to your first day on badge') +
-    W.map(dayCard).join('') +
-    (c.welcome_token ? '<tr><td style="padding:4px 0 0">' + bigBtn('👀 See my Week 1 plan + CONFIRM', welcomeUrl(c)) +
-      '<div style="' + F + 'font-size:13px;color:#6E6C78;text-align:center;margin-top:8px">Your welcome page, with the Sales Skill Ladder. Tap <b>CONFIRM</b> so we know you’re coming.</div></td></tr>' : '') +
     // Bring
     head('🎒', 'Bring with you') +
     card(chip('📝', 'Notepad &amp; pen') + chip('🪪', 'Photo ID') + chip('🔑', 'Your right-to-work share code')) +
     // Get ready
     head('📚', 'Get ready') +
-    card('<p style="margin:0">' + (co === 'JUSS' ? 'We highly recommend you read up on our client, <b>' + esc(o.client[0]) + '</b>, ahead of your training.' : 'Read up and do some research on our client, <b>' + esc(o.client[0]) + '</b>, before your product coaching.') +
-      ' And check out the team in our online magazine!</p><div style="margin-top:6px">' + btn('🌐 ' + esc(o.client[0]), o.client[1], true) + btn('📖 ' + esc(o.magazine[0]), o.magazine[1]) +
+    card('<p style="margin:0">' + dk((co === 'JUSS' ? 'We highly recommend you read up on our client, <b>' + esc(o.client[0]) + '</b>, ahead of your training.' : 'Read up and do some research on our client, <b>' + esc(o.client[0]) + '</b>, before your product coaching.') +
+      ' And check out the team in our online magazine!') + '</p><div style="margin-top:6px">' + btn('🌐 ' + esc(o.client[0]), o.client[1], true) + btn('📖 ' + esc(o.magazine[0]), o.magazine[1]) +
       (o.website ? btn('✨ ' + esc(o.website[0]), o.website[1]) : '') + '</div>') +
     // Sign-off, as a signature card
     gap(24) +
-    card('<p style="margin:0 0 16px">Any questions' + (co === 'JUSS' ? ' regarding anything' : '') + ', just reply to this email or call <b>' + esc(o.phone) + '</b>.<br>' +
-      'I’ll be in the office to meet you when you arrive. Excited to work with you! 🔥</p>' +
+    card('<div style="margin:0 0 16px">' + iconRow('💬', 'Any questions' + (co === 'JUSS' ? ' regarding anything' : '') + ', just reply to this email or call <b>' + esc(o.phone) + '</b>.') +
+      '<div style="height:8px;font-size:0;line-height:0">&nbsp;</div>' + iconRow('🔥', 'I’ll be in the office to meet you when you arrive. Excited to work with you!') + '</div>' +
       '<table role="presentation" cellpadding="0" cellspacing="0"><tr><td style="width:58px;vertical-align:middle">' + tile(initialsOf(u.name), 48) + '</td>' +
-      '<td style="padding-left:12px;vertical-align:middle;line-height:1.35"><div style="font-size:13px;color:#6E6C78">Thanks, Kind Regards,</div>' +
-      '<div style="font-size:17px"><b>' + esc(u.name) + '</b></div><div style="font-weight:700;color:' + S.ink + '">' + esc(signCo) + '</div></td></tr></table>') +
-    '<tr><td style="padding:18px 6px 0;' + F + 'font-size:12px;line-height:1.5;color:#8A8794;text-align:center">' + esc(o.brand) + ' · ' + esc(CONFIG.OFFICE_ADDRESS) + '</td></tr>' +
+      '<td style="padding-left:12px;vertical-align:middle;line-height:1.35"><div style="font-size:13px;color:#6E6C78">' + dk('Thanks, Kind Regards,') + '</div>' +
+      '<div style="font-size:17px">' + dk('<b>' + esc(u.name) + '</b>') + '</div><div style="font-weight:700">' + dk(esc(signCo)) + '</div></td></tr></table>') +
+    '<tr><td style="padding:18px 6px 0;' + F + 'font-size:12px;line-height:1.5;color:#8A8794;text-align:center">' + dk(esc(o.brand) + ' · ' + esc(CONFIG.OFFICE_ADDRESS)) + '</td></tr>' +
     '</table></td></tr></table></body></html>';
   const text = 'Hi ' + first + ',\n\nWelcome to the ' + o.brand + ' team, and Congratulations on being selected to join us!\n\n' +
     'Product training and sales coaching begins ' + longDate(d1) + ' @ 1:30 PM.\n\n' +
     'Quick one: reply GOT IT to this email so we know it reached you.\n\n' +
-    'BEFORE DAY 1\n1. Download FieldIQ and complete your vetting form before your first day: ' + ONBOARD.FIELDIQ_URL + '\n' +
+    (wUrl ? 'Your Week 1 plan + CONFIRM: ' + wUrl + '\n\n' : '') +
+    'YOUR WEEK 1\n' + W.map((r, i) => dayName(i) + ': ' + r[1] + ', ' + r[2] + '. ' + r[3]).join('\n') + '\n' +
+    'Address: ' + CONFIG.OFFICE_ADDRESS + ' · ' + o.maps + '\n' +
+    '\nBEFORE DAY 1\n1. Download FieldIQ and complete your vetting form before your first day: ' + ONBOARD.FIELDIQ_URL + '\n' +
     (o.preCoaching ? '2. Complete the Pre-Coaching Module (15-20 minutes): ' + o.preCoaching[1] + '\n' : '') +
     (o.preCoaching ? '3' : '2') + '. Read your ' + o.playbook[0] + ': ' + pbUrl + '\n' +
-    '\nYOUR WEEK 1\n' + W.map((r, i) => dayName(i) + ': ' + r[1] + ', ' + r[2] + '. ' + r[3]).join('\n') + '\n' +
-    'Address: ' + CONFIG.OFFICE_ADDRESS + ' · ' + o.maps + '\n' +
     '\nBRING: notepad and pen, photo ID, your right-to-work share code\n' +
-    (c.welcome_token ? '\nYour Week 1 plan + CONFIRM: ' + welcomeUrl(c) + '\n' : '') +
     '\nGet ready: ' + o.client[0] + ' ' + o.client[1] + ' · ' + o.magazine[0] + ' ' + o.magazine[1] + (o.website ? ' · ' + o.website[1] : '') + '\n' +
     '\nAny questions, just reply to this email or call ' + o.phone + '.\nI’ll be in the office to meet you when you arrive. Excited to work with you!\n\nThanks,\nKind Regards,\n' + u.name + '\n' + signCo;
   return { to: c.email, subject: o.brand + ' - Your Brand Ambassador Journey Begins!', html: html, text: text };

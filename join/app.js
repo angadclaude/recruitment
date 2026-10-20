@@ -1,4 +1,4 @@
-window.APP_VERSION = '3ba99809';
+window.APP_VERSION = '3dc88850';
 
 (function () {
 'use strict';
@@ -672,6 +672,11 @@ const WEEK1 = {
     ['💰', 'Thursday onwards', 'Sales Days', '10:30am – 8:30pm', '1st day on badge! Your coach is side by side with you. Apply what you\'ve learnt and bag your incentives'],
   ],
 };
+// The poster's "Week 1 guide", now inside the Week 1 card instead of the poster (Angad, 20 Oct: "we don't need to repeat the same
+// information twice"). The poster's other parts are on the page already: the schedule above it, the address and the
+// Pre-Coaching Module in their own boxes.
+const WEEK1_GUIDE = co => [co + ' Induction Day', 'Extensive Product Training & Sales Coaching', 'Master Sales Techniques',
+  'Industry & Product Knowledge, Self-Employment Fundamentals & Earnings', 'Earn & Grow'];
 // Each company's office + its own Google Maps listing (share links from Angad).
 const OFFICES = {
   LINK: { address: '2nd Floor East, Automotive House, Grays Place, Slough SL2 5AF', maps: 'https://maps.app.goo.gl/f4pkh222EHHTyQSM9' },
@@ -808,8 +813,8 @@ function renderWelcome(w, keepScroll) {
       '<a class="btn block evsubmit" href="' + h(PRE_COACHING[co]) + '" target="_blank" rel="noopener">📝 Open the Pre-Coaching Module</a></div></section>' : '') +
     sec('🎒', 'Bring with you') + '<div class="wl-bring"><div><span>🪪</span>Photo ID</div><div><span>🔑</span>Your right-to-work share code</div></div></section>' +
 
-    sec('🗓️', 'Your Week 1 game plan') + '<div class="qcard wl-week">' + steps + '</div>' +
-    '<div class="qcard wl-poster"><img src="img/poster-' + co.toLowerCase() + '.jpg" alt="' + h(brand) + ' Week 1 Coaching & Field Schedule" onerror="this.parentNode.hidden=true"></div></section>' +
+    sec('🗓️', 'Your Week 1 game plan') + '<div class="qcard wl-week"><div class="wl-guide"><b>Week 1 guide</b><ul>' + WEEK1_GUIDE(co).map(g => '<li>' + h(g) + '</li>').join('') + '</ul></div>' +
+    '<div class="wl-steps">' + steps + '</div></div></section>' +
 
     sec('🚀', 'Where this can take you') + salesLadderHtml() + bdpHtml() + '</section>' +
 
