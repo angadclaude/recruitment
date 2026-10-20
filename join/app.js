@@ -1,4 +1,4 @@
-window.APP_VERSION = '8e278898';
+window.APP_VERSION = '3ba99809';
 
 (function () {
 'use strict';
@@ -2456,12 +2456,14 @@ function day1Sheet(date) {
 const DATABYTE_URL = 'https://uk.databyte.live/onboarding/dashboard/list';
 /** The server's rule: booked by a booker → Personal; booked by the office (Jess, Rubal) or nobody → Office. */
 function recruitSource(c) { return c.recruit_source || 'Office Recruitment'; }
-/** After the email: a WhatsApp nudge so they find it (spam / Promotions) and reply GOT IT. */
+const FIELDIQ_URL = 'https://www.tfo.group/fieldiqdownload';  // same as ONBOARD.FIELDIQ_URL in Code.gs
+/** After the email: a WhatsApp nudge so they find it (spam / Promotions) and reply GOT IT. The FieldIQ link is in it too: the one
+ *  thing they must do before Day 1 never depends on the email getting through (Angad, 20 Oct: "it lands in the spam"). */
 function msgWelcomeHeadsUp(c, fr) {
   const co = brandCo(c);
   return 'Hi ' + c.first_name + ' 👋 It\'s ' + S.me.user.name.split(' ')[0] + ' from ' + brandOf(c) + '.\n\n' +
     'I\'ve just emailed your starter pack to ' + c.email + ' 📧\n' +
-    '📲 FieldIQ (download before Day 1)\n' + (co === 'LINK' ? '📝 Your Pre-Coaching Module\n' : '') +
+    '📲 FieldIQ (download before Day 1): ' + FIELDIQ_URL + '\n' + (co === 'LINK' ? '📝 Your Pre-Coaching Module\n' : '') +
     '📘 Your ' + (co === 'JUSS' ? 'JUSS HF' : 'Link FR') + ' Playbook\n🗓️ Your Week 1 plan\n\n' +
     'It\'s from ' + (fr ? fr.email : 'us') + '. Can\'t see it? Check *Spam* or *Promotions* and tap *Not spam*, so nothing else goes missing.\n\n' +
     'Please reply *GOT IT* once you have it ✅';

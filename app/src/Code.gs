@@ -1926,26 +1926,34 @@ function onboardEmail(c, u, pick) {
   const ymd = d1.replace(/-/g, ''), title = 'BA Academy Day 1 – ' + o.brand;
   const gcal = 'https://calendar.google.com/calendar/render?action=TEMPLATE&text=' + encodeURIComponent(title) + '&dates=' + ymd + 'T133000/' + ymd + 'T180000&ctz=Europe/London' +
     '&location=' + encodeURIComponent(CONFIG.OFFICE_ADDRESS) + '&details=' + encodeURIComponent('Induction 1:30pm. Bring a notepad and pen, photo ID and your right-to-work share code.');
+  // Gmail's dark theme (its own setting, not the phone's) turns white text on our colours dark (Angad, 20 Oct). Colours set as
+  // background-image aren't changed, and white text inside white() stays white: Gmail-only CSS (u + .body), nothing elsewhere.
+  const white = s => '<span class="jls" style="display:inline-block"><span class="jld" style="display:inline-block">' + s + '</span></span>';
+  // A label's leading emoji stays outside (inside, Gmail's trick washes its colours out)
+  const whiteLabel = s => { const m = /^([^\x00-\x7E]\S*) (.*)$/.exec(s); return m ? m[1] + ' ' + white(m[2]) : white(s); };
+  const fill = col => 'background:' + col + ';background-image:linear-gradient(' + col + ',' + col + ');';
   const btn = (label, url, solid) => '<a href="' + esc(url) + '" style="display:inline-block;margin:6px 6px 0 0;padding:12px 18px;border-radius:14px;font-weight:800;font-size:15px;text-decoration:none;' +
-    (solid ? 'background:' + T.btn + ';color:#ffffff;border:2px solid ' + T.btn + ';' : 'background:#ffffff;color:#22222B;border:2px solid #E7E3DE;') + '">' + label + '</a>';
-  const bigBtn = (label, url) => '<a href="' + esc(url) + '" style="display:block;margin:10px 0 0;padding:15px 18px;border-radius:16px;text-align:center;font-weight:800;font-size:16px;text-decoration:none;color:#ffffff;background:' + T.solid + ';background-image:' + T.hero + ';">' + label + '</a>';
+    (solid ? fill(T.btn) + 'color:#ffffff;border:2px solid ' + T.btn + ';">' + whiteLabel(label) : 'background:#ffffff;color:#22222B;border:2px solid #E7E3DE;">' + label) + '</a>';
+  const bigBtn = (label, url) => '<a href="' + esc(url) + '" style="display:block;margin:10px 0 0;padding:15px 18px;border-radius:16px;text-align:center;font-weight:800;font-size:16px;text-decoration:none;color:#ffffff;background:' + T.solid + ';background-image:' + T.hero + ';">' + whiteLabel(label) + '</a>';
   const head = (emoji, label) => '<tr><td style="padding:22px 4px 8px;' + F + 'font-size:13px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#22222B">' +
     '<span style="display:inline-block;width:34px;height:34px;line-height:34px;text-align:center;border-radius:11px;background:' + T.tint + ';margin-right:10px;font-size:17px;letter-spacing:0">' + emoji + '</span>' + label + '</td></tr>';
   const card = inner => '<tr><td style="background:#ffffff;border-radius:22px;padding:20px 20px 22px;' + F + 'font-size:15px;line-height:1.5;color:#22222B;box-shadow:0 6px 24px -14px rgba(0,0,0,.25)">' + inner + '</td></tr>';
   const pill = t => '<span style="display:inline-block;padding:7px 14px;border-radius:999px;background:' + T.tint + ';color:' + T.ink + ';font-weight:800;font-size:15px">' + t + '</span>';
   const big = t => '<div style="font-size:24px;font-weight:900;letter-spacing:-.01em;margin:0 0 10px">' + t + '</div>';
-  const step = (n, t) => '<tr><td style="vertical-align:top;width:34px;padding:8px 0"><span style="display:inline-block;width:26px;height:26px;line-height:26px;border-radius:50%;text-align:center;background:' + T.solid + ';color:#fff;font-weight:800;font-size:13px">' + n + '</span></td><td style="padding:8px 0;' + F + 'font-size:15px;line-height:1.45">' + t + '</td></tr>';
+  const step = (n, t) => '<tr><td style="vertical-align:top;width:34px;padding:8px 0"><span style="display:inline-block;width:26px;height:26px;line-height:26px;border-radius:50%;text-align:center;' + fill(T.solid) + 'color:#fff;font-weight:800;font-size:13px">' + white(n) + '</span></td><td style="padding:8px 0;' + F + 'font-size:15px;line-height:1.45">' + t + '</td></tr>';
   const pre = '<div style="display:none;max-height:0;overflow:hidden;opacity:0">You\'re in, ' + esc(first) + ' 🎉 Day 1: ' + esc(longDate(d1)) + ' @ 1:30 PM. Download FieldIQ and read your ' + esc(o.playbook[0]) + ' before you come in.</div>';
 
-  const html = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light"></head>' +
-    '<body style="margin:0;padding:0;background:#F5F1EC">' + pre +
+  const logoW = co === 'JUSS' ? 90 : 51;  // the logo's width at 56px high, so its box keeps its shape before the image loads
+  const html = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light">' +
+    '<style>u + .body .jls{background:#000;mix-blend-mode:screen}u + .body .jld{background:#000;mix-blend-mode:difference}</style></head>' +
+    '<body class="body" style="margin:0;padding:0;background:#F5F1EC">' + pre +
     '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F5F1EC"><tr><td align="center" style="padding:18px 12px 30px">' +
     '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px">' +
     // Hero: same as the congratulations page
     '<tr><td style="border-radius:26px;padding:26px 24px 26px;background:' + T.solid + ';background-image:' + T.hero + ';' + F + 'color:#ffffff">' +
-      (img ? '<div style="display:inline-block;background:#ffffff;border-radius:18px;padding:8px 12px;margin-bottom:14px"><img src="' + img + 'logo-' + co.toLowerCase() + '.png" alt="' + esc(o.brand) + '" height="56" style="display:block;height:56px;width:auto;border:0"></div>' : '') +
-      '<div style="font-size:34px;line-height:1.1;font-weight:900;letter-spacing:-.02em;margin:0 0 10px">You\'re in, ' + esc(first) + ' 🎉</div>' +
-      '<div style="font-size:17px;line-height:1.4;margin:0 0 16px">Welcome to the <b>' + esc(o.brand) + '</b> team, and <b>Congratulations</b> on being selected to join us!</div>' +
+      (img ? '<div style="display:inline-block;' + fill('#ffffff') + 'border-radius:18px;padding:8px 12px;margin-bottom:14px"><img src="' + img + 'logo-' + co.toLowerCase() + '.png" alt="' + esc(o.brand) + '" width="' + logoW + '" height="56" style="display:block;width:' + logoW + 'px;height:56px;border:0"></div>' : '') +
+      '<div style="font-size:34px;line-height:1.1;font-weight:900;letter-spacing:-.02em;margin:0 0 10px">' + white('You\'re in, ' + esc(first)) + ' 🎉</div>' +
+      '<div style="font-size:17px;line-height:1.4;margin:0 0 16px">' + white('Welcome to the <b>' + esc(o.brand) + '</b> team, and <b>Congratulations</b> on being selected to join us!') + '</div>' +
       '<span style="display:inline-block;background:#ffffff;color:#22222B;border-radius:999px;padding:9px 16px;font-weight:800;font-size:15px">📅 ' + esc(longDate(d1)) + ' · 1:30 PM</span>' +
     '</td></tr>' +
     '<tr><td style="padding:20px 6px 0;' + F + 'font-size:15px;line-height:1.55;color:#3A3942">Hi ' + esc(first) + ', you’re coming on board at an exciting time as we continue to expand our business and head into a highly productive season. ' +
