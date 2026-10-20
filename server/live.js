@@ -104,6 +104,8 @@ function relay(db) {
   }
   return {
     call,
+    /** The background ask to Google still running, if any (api/rpc.js keeps the server copy up until it's done). */
+    pending: () => infoAsk,
     quota: async () => { try { return (await getInfo()).quota; } catch (e) { console.error(e); return -1; } },
     aliases: async () => { try { return (await getInfo()).aliases; } catch (e) { console.error(e); return []; } },
     /** Send these outbox rows, 4 at a time. */

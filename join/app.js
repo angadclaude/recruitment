@@ -1,4 +1,4 @@
-window.APP_VERSION = '7a73ebd3';
+window.APP_VERSION = '6156f16d';
 
 (function () {
 'use strict';
@@ -2261,7 +2261,8 @@ function drawAcademy(r, quiet) {
     const started = c.academy_date <= today;
     const pills = (c.academy_confirmed_at ? '<span class="pill green">✅ Confirmed</span>' : '<span class="pill amber">⏳ Not confirmed</span>' +
         (c.day1_status ? '' : '<button class="pill yes" data-yes="' + h(c.id) + '">👍 They replied Yes</button>')) +
-      (c.offer_sent_at || started ? '' : '<span class="pill red">Day 1 text not sent</span>') +
+      // Not for someone who has confirmed: they had the details, however they were sent (20 Oct: Jasraj confirmed, still "not sent")
+      (c.offer_sent_at || c.academy_confirmed_at || started ? '' : '<span class="pill red">Day 1 text not sent</span>') +
       (remindedToday(c) && !c.day1_status ? '<span class="pill blue">📲 Reminded ' + h(String(c.day1_reminded_at).slice(11, 16)) + '</span>' : '') +
       (c.day1_status === 'arrived' ? '<span class="pill green">🎓 Arrived</span>' : c.day1_status === 'no_show' ? '<span class="pill red">❌ No-show</span>' : '') +
       (!admin || started ? '' : c.onboard_email_at ? '<span class="pill green">🚀 Onboarded</span>' : c.databyte_at ? '<span class="pill amber">🚀 Welcome email to send</span>' : '<span class="pill red">🚀 Not on Databyte</span>');

@@ -1,7 +1,7 @@
 // The app's API on Vercel: the same { action, token, … } requests and answers as Google's /exec (Code.gs api()).
 'use strict';
 const { waitUntil } = require('@vercel/functions');
-const { runtime, REHEARSAL } = require('../server/live');
+const { runtime, relay, REHEARSAL } = require('../server/live');
 
 // Until switch day the live address answers nothing (the data here is a rehearsal copy); test copies (REHEARSAL) do.
 let LIVE = false;
@@ -37,6 +37,11 @@ module.exports = async (req, res) => {
       if (process.env.VERCEL) waitUntil(work.catch(e => console.error('rpc late', body.action, e)));
       return res.end(JSON.stringify({ ok: false, retry: true, error: 'Lots of people are sending at once. Trying again…' }));
     }
+    // A background ask to Google started by this request (who can send as whom, today's quota): Vercel pauses the server
+    // copy as soon as the answer goes, so it froze mid-way and came back "aborted due to timeout" (6 times, 19-20 Oct).
+    // Keep the copy up until it's done; the phone already has its answer.
+    const asking = process.env.VERCEL && relay() && relay().pending();
+    if (asking) waitUntil(asking);
     res.end(JSON.stringify(out));
   } catch (e) {
     console.error('rpc', body.action, e);

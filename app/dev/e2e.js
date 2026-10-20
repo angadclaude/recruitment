@@ -314,7 +314,7 @@ async function fillEval(p) {
   await cp.click('.chips[data-name=q9_results_paid] .chip:has-text("Yes")');
   await cp.waitForSelector('.qcard[data-k=q9_results_paid] .qsub [name=q9_results_detail]');
   ok(/What was it\? One line is fine/.test(await cp.innerText('.qcard[data-k=q9_results_paid]')), 'Yes → "What was it? One line is fine" appears inside question 9 (one question, not a separate one)');
-  await cp.locator('.qcard[data-k=q9_results_paid]').screenshot({ path: SHOTS + '/05b-q9-one-question.png' });
+  await cp.locator('.qcard[data-k=q9_results_paid]').screenshot({ path: SHOTS + '/05b-q9-one-question.png', animations: 'disabled' });  // after its scroll-in fade
   const presChips = await cp.$$eval('.chips[data-name=q0_presenter] .chip', e => e.map(x => x.textContent));
   ok(await cp.textContent('.qcard[data-k=q0_presenter] .qn') === '01' && /Who ran today's presentation\?/.test(await cp.innerText('.qcard[data-k=q0_presenter]')) &&
     presChips.includes('Nathan') && presChips.slice(-2).join() === 'Someone else,Not sure' && !presChips.some(n => /Angad|Fiza|Mo\b/.test(n)),
@@ -1052,6 +1052,8 @@ async function fillEval(p) {
     'tapping it opens the Day 1 tab: "Monday 19 October · TOMORROW · ' + monStarters.length + ' expected · ' + nConf + ' confirmed"');
   ok(/📅 Tuesday/.test(await ap.textContent('[data-d1="next_day"][data-id="' + jasId + '"]')) && await ap.$('.trow[data-cand="' + jasId + '"] a.btn[data-rem1]'),
     'before the day too: each Monday starter has "📅 Tuesday" under 💬 Remind (some are booked for Tuesday instead)');
+  const jasD1Row = await ap.innerText('.trow[data-cand="' + jasId + '"]');
+  ok(/Confirmed/.test(jasD1Row) && !/Day 1 text not sent/.test(jasD1Row), 'someone who has confirmed never shows "Day 1 text not sent" (they had the details, however they were sent)');
   const remind = decodeURIComponent((await ap.$eval('.trow[data-cand="' + jasId + '"] a.btn', a => a.href)).split('?text=')[1]);
   ok(/^Hi Jasraj,\n\nHope you are well\.\n\nJust a quick reminder that you’re due to start your training tomorrow, Monday 19th October at 1:30 PM 🕜/.test(remind) &&
     /https:\/\/maps\.app\.goo\.gl\/f4pkh222EHHTyQSM9/.test(remind) && /Kind Regards\nAngad Oshan\nIn Association with Juss Marketing and Link Marketing$/.test(remind),
