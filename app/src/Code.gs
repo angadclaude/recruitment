@@ -1934,10 +1934,10 @@ function onboardEmail(c, u, pick) {
   // The app's look (Angad, 20 Oct: "more immersive, like we have the app"): the dark stage with the brand's glow on top,
   // light cards below, and Week 1 as cards that step up like the Sales Skill Ladder instead of the poster
   const S = co === 'JUSS'
-    ? { bg: '#EDF5F5', line: '#CFE4E6', tint: '#DDF2F3', dark: '#0D2833', solid: '#2BA9B8', glass: '#2D5462',
+    ? { bg: '#EDF5F5', line: '#CFE4E6', tint: '#DDF2F3', dark: '#0D2833', solid: '#2BA9B8',
         stage: 'radial-gradient(55% 110% at 96% 0%,rgba(237,160,58,.55) 0%,rgba(237,160,58,0) 70%),radial-gradient(60% 130% at 66% 0%,rgba(52,177,192,.45) 0%,rgba(52,177,192,0) 70%),radial-gradient(130% 160% at 85% 0%,#1D5566 0%,#0D2833 55%,#071820 100%)',
         grad: 'linear-gradient(120deg,#E4613F 0%,#EDA03A 48%,#34B1C0 100%)' }
-    : { bg: '#F7F1EC', line: '#EEDED3', tint: '#FFEBE1', dark: '#17171D', solid: '#F15A24', glass: '#4A4A55',
+    : { bg: '#F7F1EC', line: '#EEDED3', tint: '#FFEBE1', dark: '#17171D', solid: '#F15A24',
         stage: 'radial-gradient(60% 120% at 94% 0%,rgba(241,90,36,.62) 0%,rgba(241,90,36,0) 70%),radial-gradient(130% 160% at 85% 0%,#2C2C38 0%,#17171D 55%,#0F0F14 100%)',
         grad: 'linear-gradient(120deg,#FF8A3D 0%,#F15A24 48%,#CF3A10 100%)' };
   const F = "font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;";
@@ -1958,18 +1958,21 @@ function onboardEmail(c, u, pick) {
   // (Angad's phone, 20 Oct: "it's underlining everything"). If a Gmail can't blend, the worst case is a white box.
   const white = s => '<span class="jls" style="display:inline-block"><span class="jld" style="display:inline-block">' + s + '</span></span>';
   const dk = s => '<span class="jks" style="display:inline-block"><span class="jkd" style="display:block">' + s + '</span></span>';
+  // Text inside a table always gets its own colour, size and weight: iPhone Mail can open an email in "quirks" mode, where
+  // a table forgets the colour, size and weight around it (Angad's phone, 20 Oct: Day 4's title and words went dark on
+  // the dark card, and the day titles thin). TXT is the usual body text.
+  const TXT = F + 'font-size:15px;line-height:1.5;font-weight:400;color:#22222B;';
   /** An emoji beside a line of text (side by side: a long line would push the emoji onto its own line). */
-  const iconRow = (emoji, s, size, wrap) => '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="width:' + (size || 26) + 'px;vertical-align:top;font-size:17px;line-height:1.5">' + emoji + '</td>' +
-    '<td style="vertical-align:top">' + (wrap || dk)(s) + '</td></tr></table>';
-  /** A light card's outline: Gmail's dark theme turns a border black, so it's a 1px frame of background-image instead. */
-  const framed = (style, inner) => '<tr><td style="padding:1px;border-radius:23px;' + fill(S.line) + '"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>' +
-    '<td style="border-radius:22px;' + fill('#ffffff') + style + '">' + inner + '</td></tr></table></td></tr>';
+  const iconRow = (emoji, s, size, ts) => '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="width:' + (size || 26) + 'px;vertical-align:top;font-size:17px;line-height:1.5">' + emoji + '</td>' +
+    '<td style="vertical-align:top;' + (ts || TXT) + '">' + dk(s) + '</td></tr></table>';
+  /** A light card's outline: Gmail's dark theme turns a border black, so it's a frame of background-image instead
+   *  (1px of the brand's line colour; 2px of its gradient for the first day on badge). */
+  const framed = (style, inner, frame) => '<tr><td style="padding:' + (frame ? 2 : 1) + 'px;border-radius:23px;' + (frame || fill(S.line)) + '"><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>' +
+    '<td style="border-radius:' + (frame ? 21 : 22) + 'px;' + fill('#ffffff') + style + '">' + inner + '</td></tr></table></td></tr>';
   const split = (s, wrap) => { const m = /^([^\x00-\x7E]\S*) (.*)$/.exec(s); return m ? m[1] + ' ' + wrap(m[2]) : wrap(s); };
   const fill = col => 'background:' + col + ';background-image:linear-gradient(' + col + ',' + col + ');';
   const stageBg = 'background:' + S.dark + ';background-image:' + S.stage + ';';
   const gradBg = 'background:' + S.solid + ';background-image:' + S.grad + ';';
-  // The pills on the dark Day 4 card: solid (a see-through one let Gmail's dark theme turn it pale lilac behind white text)
-  const glass = fill(S.glass);
   const btn = (label, url, solid) => '<a href="' + esc(url) + '" style="display:inline-block;margin:6px 6px 0 0;padding:12px 18px;border-radius:14px;' + F + 'font-weight:800;font-size:15px;text-decoration:none;' +
     (solid ? gradBg + 'color:#ffffff;border:0;">' + split(label, white) : fill(S.tint) + 'color:#22222B;border:0;">' + split(label, dk)) + '</a>';
   const bigBtn = (label, url) => '<a href="' + esc(url) + '" style="display:block;margin:10px 0 0;padding:16px 18px;border-radius:16px;text-align:center;' + F + 'font-weight:800;font-size:16px;text-decoration:none;color:#ffffff;' + gradBg + '">' + split(label, white) + '</a>';
@@ -1983,40 +1986,44 @@ function onboardEmail(c, u, pick) {
   /** The numbered tile (Business Development steps, the Week 1 cards): brand gradient, white number. */
   const tile = (n, size) => '<span style="display:inline-block;width:' + size + 'px;height:' + size + 'px;line-height:' + size + 'px;border-radius:' + Math.round(size / 3) + 'px;text-align:center;' + gradBg +
     'color:#ffffff;' + D_ + 'font-weight:400;font-size:' + Math.round(size * .46) + 'px">' + white(n) + '</span>';
-  const pill = (emoji, t, dark) => '<span style="display:inline-block;padding:6px 12px;border-radius:999px;font-weight:800;font-size:14px;' +
-    (dark ? glass + 'color:#ffffff">' + emoji + ' ' + white(t) : fill(S.tint) + 'color:#22222B">' + emoji + ' ' + dk(t)) + '</span>';
+  const pill = (emoji, t) => '<span style="display:inline-block;padding:6px 12px;border-radius:999px;' + F + 'font-weight:800;font-size:14px;line-height:1.5;' +
+    fill(S.tint) + 'color:#22222B">' + emoji + ' ' + dk(t) + '</span>';
   /** The day's label, as the welcome page shows it: a dark pill. */
-  const dayPill = (t, dark) => '<span style="display:inline-block;padding:4px 11px;border-radius:999px;font-size:12px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#ffffff;' +
-    (dark ? glass : fill(S.dark)) + '">' + white(t) + '</span>';
+  const dayPill = t => '<span style="display:inline-block;padding:4px 11px;border-radius:999px;' + F + 'font-size:12px;line-height:1.5;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#ffffff;' +
+    fill(S.dark) + '">' + white(t) + '</span>';
   /** The Skill Ladder's level meter: how far into the week this day is. */
-  const meter = (lit, total, dark) => '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 14px"><tr>' +
+  const meter = (lit, total) => '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 14px"><tr>' +
     Array.from({ length: total }, (x, j) => '<td style="padding:0 ' + (j < total - 1 ? 4 : 0) + 'px 0 0"><div style="height:5px;border-radius:99px;font-size:0;line-height:0;' +
-      (j < lit ? gradBg : dark ? glass : fill(S.tint)) + '">&nbsp;</div></td>').join('') + '</tr></table>';
-  const step = (n, t) => '<tr><td style="vertical-align:top;width:40px;padding:7px 0">' + tile(String(n), 30) + '</td><td style="padding:7px 0 7px 10px;' + F + 'font-size:15px;line-height:1.45">' + dk(t) + '</td></tr>';
+      (j < lit ? gradBg : fill(S.tint)) + '">&nbsp;</div></td>').join('') + '</tr></table>';
+  const step = (n, t) => '<tr><td style="vertical-align:top;width:40px;padding:7px 0">' + tile(String(n), 30) + '</td><td style="padding:7px 0 7px 10px;' + TXT + 'line-height:1.45">' + dk(t) + '</td></tr>';
   const chip = (emoji, t) => '<span style="display:inline-block;margin:0 6px 8px 0;padding:9px 14px;border-radius:14px;' + fill(S.tint) + 'color:#22222B;font-weight:700;font-size:15px">' + emoji + ' ' + dk(t) + '</span>';
   const pre = '<div style="display:none;max-height:0;overflow:hidden;opacity:0">You\'re in, ' + esc(first) + ' 🎉 Day 1: ' + esc(longDate(d1)) + ' @ 1:30 PM. Download FieldIQ and read your ' + esc(o.playbook[0]) + ' before you come in.</div>';
 
-  // Week 1: a card a day, stepping up to the first day on badge (the dark one, like Mastery on the ladder)
+  // Week 1: a card a day, stepping up to the first day on badge (framed in the brand's gradient, like Mastery on the ladder).
+  // All four white: the dark Day 4 card was hard to read on iPhone Mail (Angad, 20 Oct: "do it in the same white background")
   // Day 4 onwards for both companies (Angad, 20 Oct: LINK "should be Thursday onwards like on JUSS")
   const W = o.week1, dayName = i => 'Day ' + (i + 1) + (i === W.length - 1 ? ' onwards' : '') + ' · ' + longDate(addDays(d1, i));
   const day1More = '<div style="margin-top:12px">' + iconRow('📍', esc(CONFIG.OFFICE_ADDRESS) + '<br><span style="color:#6E6C78;font-size:13px">2 mins from Slough station</span>') + '</div>' +
     '<div style="margin-top:4px">' + btn('🗺️ Google Maps', o.maps, true) + btn('📅 Add to calendar', gcal) + '</div>';
   const dayCard = (r, i) => {
-    const top = i === W.length - 1, t = s => (top ? white(s) : dk(s));
-    const style = 'padding:18px 20px 20px;' + F + 'font-size:15px;line-height:1.5;';
-    const inner = meter(i + 1, W.length, top) +
+    const last = i === W.length - 1;
+    const inner = meter(i + 1, W.length) +
       '<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td style="width:58px;vertical-align:middle">' + tile('0' + (i + 1), 46) + '</td>' +
-      '<td style="vertical-align:middle;padding-left:12px">' + dayPill(esc(dayName(i)), top) +
-        '<div style="font-size:20px;font-weight:900;letter-spacing:-.01em;line-height:1.25;margin:6px 0 0">' + iconRow(r[0], esc(r[1]), 30, t) + '</div></td></tr>' +
-      '<tr><td colspan="2" style="padding-top:12px">' + pill('⏰', esc(r[2]), top) +
-        '<div style="margin-top:10px;' + (top ? '' : 'color:#3A3942') + '">' + t(esc(r[3])) + '</div>' + (i === 0 ? day1More : '') +
+      '<td style="vertical-align:middle;padding-left:12px">' + dayPill(esc(dayName(i))) +
+        '<div style="margin:6px 0 0">' + iconRow(r[0], esc(r[1]), 30, F + 'font-size:20px;font-weight:900;letter-spacing:-.01em;line-height:1.25;color:#22222B;') + '</div></td></tr>' +
+      '<tr><td colspan="2" style="padding-top:12px">' + pill('⏰', esc(r[2])) +
+        '<div style="margin-top:10px;' + TXT + 'color:#3A3942">' + dk(esc(r[3])) + '</div>' + (i === 0 ? day1More : '') +
       '</td></tr></table>';
-    return top ? '<tr><td style="border-radius:22px;' + style + stageBg + 'color:#ffffff">' + inner + '</td></tr>' : framed(style + 'color:#22222B', inner) + gap(10);
+    return framed('padding:18px 20px 20px;' + TXT, inner, last ? gradBg : '') + (last ? '' : gap(10));
   };
 
   const logoW = co === 'JUSS' ? 90 : 51;  // the logo's width at 56px high, so its box keeps its shape before the image loads
+  // iPhone Mail underlined every date and time as a link (Angad's phone, 20 Oct): the meta asks it not to, and the CSS makes
+  // any it still finds look like the text around them (phone numbers stay tappable)
   const html = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light">' +
-    '<style>u + .body .jls{background:#000;mix-blend-mode:screen}u + .body .jld{background:#000;mix-blend-mode:difference}' +
+    '<meta name="format-detection" content="date=no,address=no,email=no">' +
+    '<style>a[x-apple-data-detectors]{color:inherit!important;text-decoration:none!important;font-size:inherit!important;font-family:inherit!important;font-weight:inherit!important;line-height:inherit!important}' +
+    'u + .body .jls{background:#000;mix-blend-mode:screen}u + .body .jld{background:#000;mix-blend-mode:difference}' +
     'u + .body .jks{background:#fff;mix-blend-mode:difference}u + .body .jkd{background:#fff;mix-blend-mode:difference}</style></head>' +
     '<body class="body" style="margin:0;padding:0;' + fill(S.bg) + '">' + pre +
     '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="' + fill(S.bg) + '"><tr><td align="center" style="padding:18px 12px 30px">' +
@@ -2064,7 +2071,7 @@ function onboardEmail(c, u, pick) {
     card('<div style="margin:0 0 16px">' + iconRow('💬', 'Any questions' + (co === 'JUSS' ? ' regarding anything' : '') + ', just reply to this email or call <b>' + esc(o.phone) + '</b>.') +
       '<div style="height:8px;font-size:0;line-height:0">&nbsp;</div>' + iconRow('🔥', 'I’ll be in the office to meet you when you arrive. Excited to work with you!') + '</div>' +
       '<table role="presentation" cellpadding="0" cellspacing="0"><tr><td style="width:58px;vertical-align:middle">' + tile(initialsOf(u.name), 48) + '</td>' +
-      '<td style="padding-left:12px;vertical-align:middle;line-height:1.35"><div style="font-size:13px;color:#6E6C78">' + dk('Thanks, Kind Regards,') + '</div>' +
+      '<td style="padding-left:12px;vertical-align:middle;' + TXT + 'line-height:1.35"><div style="font-size:13px;color:#6E6C78">' + dk('Thanks, Kind Regards,') + '</div>' +
       '<div style="font-size:17px">' + dk('<b>' + esc(u.name) + '</b>') + '</div><div style="font-weight:700">' + dk(esc(signCo)) + '</div></td></tr></table>') +
     '<tr><td style="padding:18px 6px 0;' + F + 'font-size:12px;line-height:1.5;color:#8A8794;text-align:center">' + dk(esc(o.brand) + ' · ' + esc(CONFIG.OFFICE_ADDRESS)) + '</td></tr>' +
     '</table></td></tr></table></body></html>';
