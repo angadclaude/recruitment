@@ -1,4 +1,4 @@
-window.APP_VERSION = '6156f16d';
+window.APP_VERSION = '788cdbee';
 
 (function () {
 'use strict';
@@ -945,7 +945,11 @@ function want(we) {
 function findCand(id) {
   for (const k of Object.keys(S.data)) { const c = S.data[k].items.filter(x => x.id === id)[0]; if (c) return c; }
   const ch = S.chase ? S.chase.items.filter(x => x.id === id)[0] : null;
-  return ch || (S.academy ? S.academy.items.filter(x => x.id === id)[0] || null : null);
+  if (ch) return ch;
+  // The Day 1 tab: the list, then any earlier week fetched on its own
+  const d1 = [S.academy].concat(Object.keys(S.d1Old || {}).map(k => S.d1Old[k])).filter(Boolean);
+  for (const w of d1) { const c = w.items.filter(x => x.id === id)[0]; if (c) return c; }
+  return null;
 }
 function chaseKeep(c) { if (S.chase) { const i = S.chase.items.findIndex(x => x.id === c.id); if (i >= 0) S.chase.items[i] = Object.assign({ leak: S.chase.items[i].leak }, c); } }
 const SENDING = {}, SENT_DONE = {};  // who sent what, still on its way to Google: see noteSent
@@ -964,7 +968,7 @@ function upsert(c) {
 
 /** Signed in (login code or the hub): keep the token, start fresh. */
 function signedIn(token) {
-  S.token = token; store.set('tok', token); store.del('cache'); store.del('codeSent'); S.data = {}; S.users = null; S.chase = null; S.chaseN = 0; S.chaseCarry = 0; S.academy = null; startStaff();
+  S.token = token; store.set('tok', token); store.del('cache'); store.del('codeSent'); S.data = {}; S.users = null; S.chase = null; S.chaseN = 0; S.chaseCarry = 0; S.academy = null; S.d1Old = null; S.d1Pick = null; startStaff();
 }
 function startStaff() {
   stopTimer();
@@ -1313,7 +1317,7 @@ function toggleMenu() {
   const mt = document.getElementById('mTeam'); if (mt) mt.onclick = () => { m.hidden = true; nav('team', {}, true); };
   document.getElementById('mLogout').onclick = () => {
     if (outbox().length && !navigator.onLine) { toast('Wait for signal first: you have changes that haven\'t synced'); return; }
-    store.del('outbox'); store.del('tok'); store.del('cache'); S.token = ''; S.me = null; S.data = {}; S.users = null; S.chase = null; S.chaseN = 0; S.chaseCarry = 0; S.academy = null; S.booted = false; S.tab = '';
+    store.del('outbox'); store.del('tok'); store.del('cache'); S.token = ''; S.me = null; S.data = {}; S.users = null; S.chase = null; S.chaseN = 0; S.chaseCarry = 0; S.academy = null; S.d1Old = null; S.d1Pick = null; S.booted = false; S.tab = '';
     if (PUSH.os) PUSH.os.logout().catch(() => {});
     startStaff();
   };
@@ -1396,6 +1400,7 @@ function statusPill(c) {
   if (c.outcome === 'Thinking it over' && c.callback_at) return '<span class="pill ' + (c.callback_at < londonNow() ? 'red' : 'blue') + '">🔁 Call back ' + h(fmtTs(c.callback_at)) + '</span>';
   if (c.outcome) return '<span class="pill blue">' + h(c.outcome) + (c.outcome_late ? ' · late' : '') + '</span>';
   if (c.non_qual) return '';  // nqPill says it: no evaluation, no call needed
+  if (c.rag === 'W') return '<span class="pill">🚶 Walked out</span>';  // left the presentation: no evaluation, no call needed
   if (c.eval_at) return '<span class="pill orange">📞 Call needed</span>';
   return '<span class="pill">Awaiting evaluation</span>';
 }
@@ -1408,9 +1413,10 @@ function waFor(c) {
   if (canThank()) return msgUrl(c, msgThanks(c));
   return msgUrl(c, '');
 }
-/** One-tap actions under a card: 'rate' (presenter: Green/Amber/Red = in the room) or 'call' (booker: call, WhatsApp, log outcome). */
+/** One-tap actions under a card: 'rate' (presenter: Green/Amber/Red = in the room, or Walk out) or 'call' (booker: call, WhatsApp, log outcome). */
 function quickRow(c, kind) {
-  if (kind === 'rate') return '<div class="quick" data-for="' + h(c.id) + '"><button type="button" class="q-G" data-rate="G">Green</button><button type="button" class="q-A" data-rate="A">Amber</button><button type="button" class="q-R" data-rate="R">Red</button></div>';
+  if (kind === 'rate') return '<div class="quick" data-for="' + h(c.id) + '"><button type="button" class="q-G" data-rate="G">Green</button><button type="button" class="q-A" data-rate="A">Amber</button><button type="button" class="q-R" data-rate="R">Red</button>' +
+    '<button type="button" class="q-W" data-rate="W">🚶 Walk out</button></div>';
   if (kind === 'call') return '<div class="quick" data-for="' + h(c.id) + '"><a href="tel:' + h(c.mobile) + '">' + icon('phone', 16) + 'Call</a>' +
     '<a class="q-wa" href="' + h(waFor(c)) + '" target="_blank" rel="noopener">' + icon('chat', 16) + chanName(c) + '</a><button type="button" class="q-go" data-out="1">Log outcome</button></div>';
   if (kind === 'noanswer' && canPickBrand()) {
@@ -1480,14 +1486,15 @@ function bindItems(root) {
     });
   });
 }
-/** Presenter taps Green/Amber/Red on the list: saved instantly, keeps their stars, tags and notes. */
+/** Presenter taps Green/Amber/Red (or Walk out) on the list: saved instantly, keeps their stars, tags and notes. */
 function quickRate(id, rag) {
   const c = findCand(id); if (!c) return;
   if (navigator.vibrate) navigator.vibrate(8);
   // only: ['rag'] = the Google code changes just the rating. The rest is this phone's copy, for Google code that predates "only".
   const payload = { id: c.id, in_room: true, rag: rag, only: ['rag'], stars: Number(c.stars) || 0, tags: c.tags ? String(c.tags).split(', ').filter(String) : [], notes: c.notes || '' };
   const local = Object.assign({}, c, { rag: rag, in_room: 'TRUE', presenter_id: S.me.user.id, presenter_name: S.me.user.name, notes_at: londonNow() });
-  queueSave('saveNotes', payload, local, { G: '🟢 Green', A: '🟠 Amber', R: '🔴 Red' }[rag] + ' · ' + c.first_name + ' is in the room ✓');
+  queueSave('saveNotes', payload, local, rag === 'W' ? '🚶 ' + c.first_name + ' walked out: no evaluation or call needed'
+    : { G: '🟢 Green', A: '🟠 Amber', R: '🔴 Red' }[rag] + ' · ' + c.first_name + ' is in the room ✓');
   render(true);
 }
 // Swipe a candidate left to reveal Call / WhatsApp
@@ -1557,7 +1564,7 @@ function viewToday(quiet) {
       (isAdmin() || canThank() ? thanksButton(items) : '') +
       (isAdmin() ? '<div class="bullbtns"><button class="btn" id="bullDaily">📣 ' + (isToday ? 'Today\'s' : DAYS[D(S.day).getUTCDay()]) + ' bulletin</button><button class="btn ghost" id="bullWeek">🏆 Week top 5</button></div>' : '') +
       (items.length ? '<div class="section-h"><b>In the room</b><span>' + rated + ' of ' + items.length + ' rated</span></div>' +
-        (isPresenter() ? '<p class="hint">Tap Green, Amber or Red to rate. Rating = they were in the room (that\'s what counts for the recruitment incentive). Tap a name for stars and notes.</p>' : '') +
+        (isPresenter() ? '<p class="hint">Tap Green, Amber or Red to rate. Rating = they were in the room (that\'s what counts for the recruitment incentive). Left before the end? Tap 🚶 Walk out. Tap a name for stars and notes.</p>' : '') +
         (items.some(c => c.limited) ? '<p class="hint">🔒 You see your own candidates in full. Everyone else\'s: name, who booked them and the room rating only.</p>' : '') +
         '<div class="list">' + items.map(c => item(c, false, isPresenter() && !c.in_room ? 'rate' : '')).join('') + '</div>'
         : empty('📷', 'No check-ins yet. They appear here live as people scan the check-in QR on your first slide.'));
@@ -1608,10 +1615,11 @@ function viewAll(quiet) {
   const d = want(S.week);
   const F = {
     all: ['All', () => true],
-    call: ['Needs outcome', c => !c.outcome && !c.non_qual],
+    call: ['Needs outcome', c => !c.outcome && !c.non_qual && c.rag !== 'W'],
     pending: ['Awaiting admin', c => c.admin_status === 'pending'],
     red: ['Red flags', c => c.flags.some(f => f.level === 'red')],
     nq: ['Non-qualifiers', c => !!c.non_qual],
+    walk: ['Walk outs', c => c.rag === 'W'],
     nobooker: ['No booker', c => !c.booker_id],
     late: ['Late', c => !!c.outcome_late],
   };
@@ -1658,7 +1666,7 @@ function viewPay(quiet) {
         '<div class="pills">' + (r.late ? '<span class="pill amber">' + r.late + ' late</span>' : '') + (r.missing ? '<span class="pill red">' + r.missing + ' no outcome</span>' : '') + '<span class="pill">' + r.attended + ' attended</span></div>' +
         '<div class="small muted excl" hidden>' + (r.excluded.length ? r.excluded.map(x => h(x.name) + ': ' + h(x.why)).join('<br>') : 'Nothing excluded') + '</div></div>' +
         '<div class="net"><b>' + r.net + '</b><span>/' + p.target + '</span></div></div>').join('') : empty('💷', 'No appointments this week.')) + '</div>' +
-      '<p class="hint">Net ' + p.target + ' attended, Mon–Fri, rated by the presenter. Doesn\'t count: under 18, not eligible to work self-employed, seen in the last 6 months, removed by admin. ' +
+      '<p class="hint">Net ' + p.target + ' attended, Mon–Fri, rated by the presenter. Doesn\'t count: under 18, not eligible to work self-employed, walked out, seen in the last 6 months, removed by admin. ' +
         (isAdmin() ? 'Admins don\'t earn the incentive, so people you book aren\'t on here. ' : '') + 'Tap a row for details. Outcomes due ' + fmtTs(p.deadline) + '.</p>' +
       (p.unassigned.length ? '<div class="section-h">No confirmed booker <span>' + p.unassigned.length + '</span></div><div class="list">' + p.unassigned.map(x => '<button class="item" data-id="' + h(x.id) + '"><span class="av">?</span><div class="main"><div class="name">' + h(x.name) + '</div><div class="sub">Typed "' + h(x.typed || '—') + '" · tap to assign</div></div><span class="chev">›</span></button>').join('') + '</div>' : '') +
       (isAdmin() ? presenterFunnel(d.items || []) : '');
@@ -1778,11 +1786,15 @@ const TAGLINE = 'Great energy today, team! Let\'s keep the momentum rolling!';
 const TAGLINE_FRI = 'Great energy today, team! Let\'s keep the momentum rolling over the weekend ready for a big week next week!!';
 function inRoom(c) { return c.in_room === true || c.in_room === 'TRUE'; }
 function joinAnd(a) { return a.length < 2 ? a.join('') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1]; }
-/** Poster numbers, on the same rules as the recruitment incentive: rated by the presenter, Mon–Fri, and only people who count. */
+/** Attended, for the stats: rated in the room by the presenter, or a non-qualifier. They came, and are often not rated (the
+ *  team speaks to them instead), so they went missing from the stats (Angad, 20 Oct). */
+function counted(c) { return inRoom(c) || !!c.non_qual; }
+/** Poster numbers, on the same rules as the recruitment incentive: rated by the presenter (or a non-qualifier), Mon–Fri,
+ *  and only people who count. */
 function bulletinNumbers(items, day, prevItems) {
   const we = weekEndingOf(day), week = [6, 5, 4, 3, 2].map(n => addDays(we, -n));
-  const att = items.filter(inRoom), today = att.filter(c => c.attended_date === day), inWeek = att.filter(c => week.indexOf(c.attended_date) >= 0);
-  const twoWeeks = inWeek.concat((prevItems || []).filter(inRoom));
+  const att = items.filter(counted), today = att.filter(c => c.attended_date === day), inWeek = att.filter(c => week.indexOf(c.attended_date) >= 0);
+  const twoWeeks = inWeek.concat((prevItems || []).filter(counted));
   // First names, unless two people on the team share one (then the full name)
   const firsts = {};
   (S.users || []).map(u => u.name).concat(items.map(c => c.booker_name)).forEach(n => { if (n) { const f = n.split(' ')[0].toLowerCase(); (firsts[f] = firsts[f] || {})[n] = 1; } });
@@ -1800,7 +1812,7 @@ function bulletinNumbers(items, day, prevItems) {
   return {
     day: day, weekday: D(day).getUTCDay(), target: (S.me && S.me.payTarget) || 5,
     attended: today.length, nonQual: today.filter(c => c.pay_reason).length,
-    unrated: items.filter(c => c.attended_date === day && !inRoom(c)).length,
+    unrated: items.filter(c => c.attended_date === day && !counted(c)).length,
     noBooker: noBooker(today), weekNoBooker: noBooker(inWeek),
     today: tally(today), week: tally(inWeek), weekAttended: inWeek.length,
     bars2w: tally(twoWeeks).filter(r => r.bars).sort((a, b) => b.bars - a.bars), twoWeeksKnown: !!prevItems,
@@ -2036,7 +2048,7 @@ const BOOKER_LEAKS = ['stale', 'log', 'callback'];
 function leakOf(c, today, days) {
   const from = addDays(today, -((days || 14) - 1));
   if (c.outcome === 'Academy booked') return '';
-  if (!(c.in_room === true || c.in_room === 'TRUE') || c.non_qual) return '';
+  if (!(c.in_room === true || c.in_room === 'TRUE') || c.non_qual || c.rag === 'W') return '';
   if (c.outcome === 'No answer' || c.outcome === 'Thinking it over') return c.attended_date < from && !(c.callback_at > londonNow()) ? 'stale' : 'callback';
   if (c.attended_date < from) return '';
   return c.outcome ? '' : 'log';
@@ -2252,10 +2264,33 @@ function d1Move(c, today) {
   const to = addDays(c.academy_date, st === 'next_day' ? 1 : -1);
   return to >= today ? { st: st, day: DAYS_LONG[D(to).getUTCDay()] } : null;
 }
+/** The Day 1 tab's week (its Sunday) until someone picks another with ‹ ›: this week while it still has a Day 1 to come
+ *  (today or later), else next week. So Monday and Tuesday show the starters arriving, and from then on the week ahead. */
+function d1DefaultWeek(r, today) {
+  const we = weekEndingOf(today);
+  return r.items.some(c => c.academy_date >= today && c.academy_date <= we) ? we : addDays(we, 7);
+}
+/** A week before what the Day 1 list holds (it starts at last week's Monday): fetched on its own when you go back to it. */
+function loadD1Week(we) {
+  S.d1Old = S.d1Old || {};
+  if (S.d1Old[we] || S.d1Asking === we) return;
+  S.d1Asking = we;
+  call('academyList', { weekEnding: we }).then(x => {
+    S.d1Old[we] = x; S.d1Asking = '';
+    if (S.view === 'academy' && S.academy && S.d1Pick && S.d1Pick.we === we && !document.querySelector('.sheet-back')) drawAcademy(S.academy, true);
+  }).catch(e => { S.d1Asking = ''; toast(e.message); });
+}
 function drawAcademy(r, quiet) {
-  const today = r.today || S.me.today, dates = [], admin = isAdmin();
-  r.items.forEach(c => { if (dates.indexOf(c.academy_date) < 0) dates.push(c.academy_date); });
-  const upcoming = dates.filter(x => x >= today), past = dates.filter(x => x < today).reverse();
+  const today = r.today || S.me.today, admin = isAdmin(), thisWe = weekEndingOf(today), from = r.from || addDays(today, -7);
+  // Week by week, like the All tab (Angad, 20 Oct): the week picked with ‹ › (until the day changes), else the default
+  if (!S.d1Pick || S.d1Pick.on !== today) S.d1Pick = { on: today, auto: true };
+  if (S.d1Pick.auto) S.d1Pick.we = d1DefaultWeek(r, today);
+  const we = S.d1Pick.we, mon = addDays(we, -6);
+  const wk = mon < from ? (S.d1Old || {})[we] : { items: r.items.filter(c => c.academy_date >= mon && c.academy_date <= we) };
+  if (!wk) loadD1Week(we);
+  const items = wk ? wk.items : [], pool = items.concat(r.items), dates = [];
+  items.forEach(c => { if (dates.indexOf(c.academy_date) < 0) dates.push(c.academy_date); });
+  dates.sort();
   const label = x => { const n = Math.round((D(x) - D(today)) / 86400000); return fmtLong(x) + (n === 0 ? ' · TODAY' : n === 1 ? ' · TOMORROW' : ''); };
   const row = c => {
     const started = c.academy_date <= today;
@@ -2286,52 +2321,63 @@ function drawAcademy(r, quiet) {
       (c.offer_sent_at ? '<div class="sub d1by">🎉 Day 1 details ' + offerBy(c) + '</div>' : '') + '<div class="pills">' + pills + '</div></div>' + act + q + '</div>';
   };
   const block = x => {
-    const l = d1Order(r.items.filter(c => c.academy_date === x)), conf = l.filter(c => c.academy_confirmed_at).length;
+    const l = d1Order(items.filter(c => c.academy_date === x)), conf = l.filter(c => c.academy_confirmed_at).length;
     const arr = l.filter(c => c.day1_status === 'arrived').length, ns = l.filter(c => c.day1_status === 'no_show').length;
     const toRemind = l.filter(c => !c.day1_status), rem = toRemind.filter(remindedToday).length;
     const counts = l.length + ' expected · ' + conf + ' confirmed' + (l.length - conf ? ' · ' + (l.length - conf) + ' not' : '') +
       (x <= today ? ' · ' + arr + ' arrived' + (ns ? ' · ' + ns + ' no-show' : '') + (x < today && toRemind.length ? ' · ' + toRemind.length + ' not ticked' : '') : '');
-    const tools = admin ? '<div class="bullbtns d1tools">' +
-      (x >= today && toRemind.length ? '<button class="btn ' + (rem < toRemind.length ? 'wa' : 'ghost') + '" data-remall="' + x + '">📲 Send reminders · ' + rem + '/' + toRemind.length + '</button>' : '') +
-      '<button class="btn ghost" data-pdf="' + x + '">📄 New Starts List (PDF)</button></div>' : '';
+    const tools = admin && x >= today && toRemind.length ? '<div class="bullbtns d1tools"><button class="btn ' + (rem < toRemind.length ? 'wa' : 'ghost') + '" data-remall="' + x + '">📲 Send reminders · ' + rem + '/' + toRemind.length + '</button></div>' : '';
     return '<div class="datehead">' + h(label(x)) + '</div><p class="hint" style="margin:-4px 4px 8px">' + h(counts) + '</p>' + tools + '<div class="list alist">' + l.map(row).join('') + '</div>';
   };
   const toOnb = admin ? r.items.filter(c => c.academy_date >= today && !c.onboard_email_at) : [];
   const pend = admin ? r.pending || [] : [];  // Academy bookings waiting on an admin (moved here from Chase)
+  // Left over from an earlier week (a no-show to rebook, a Day 1 nobody ticked): so it isn't lost when the tab moves on
+  const behind = r.items.filter(c => c.academy_date < mon && (c.day1_status === 'no_show' || (!c.day1_status && c.academy_date < today)));
+  const weekLbl = we === thisWe ? 'This week · ending' : we === addDays(thisWe, 7) ? 'Next week · ending' : we === addDays(thisWe, -7) ? 'Last week · ending' : 'Week ending';
+  const lastWe = weekEndingOf(r.items.reduce((m, c) => c.academy_date > m ? c.academy_date : m, today)), maxWe = lastWe > addDays(thisWe, 7) ? lastWe : addDays(thisWe, 7);
+  const weekNav1 = '<div class="seg-nav d1nav"><div class="lbl"><span>' + weekLbl + '</span><b>' + fmt(we) + '</b></div>' +
+    '<button class="iconbtn" id="d1prev" aria-label="Previous week"' + (we <= addDays(thisWe, -26 * 7) ? ' disabled' : '') + '>‹</button>' +
+    '<button class="iconbtn" id="d1next" aria-label="Next week"' + (we >= maxWe ? ' disabled' : '') + '>›</button></div>';
+  // One New Starts List for the week: Monday's and Tuesday's starters together, each with their start day
+  const weekTools = admin && items.length ? '<div class="bullbtns d1tools"><button class="btn ghost" data-pdf="' + mon + '">📄 New Starts List (PDF)</button></div>' : '';
   const page = paint('Day 1',
-    (r.items.length || pend.length ? '' : empty('🎓', 'Nobody booked onto the Academy yet.')) +
     (pend.length ? '<div class="card needs"><b>⚖️ Waiting on your decision · ' + pend.length + '</b><p class="small muted" style="margin:4px 0 2px">Booked onto the Academy, but marked RED or not suitable before. Tap a name to approve or decline.</p>' +
       pend.map(c => '<button class="nm" data-cand="' + h(c.id) + '">' + h(c.first_name) + ' · ' + h(fmt(c.academy_date)) + '</button>').join('') + '</div>' : '') +
     (toOnb.length ? '<div class="card needs onbq"><b>🚀 To onboard · ' + toOnb.length + '</b><p class="small muted" style="margin:4px 0 2px">Databyte, then the welcome email with FieldIQ. Tap a name.</p>' +
       toOnb.map(c => '<button class="nm" data-cand="' + h(c.id) + '">' + h(c.first_name) + (c.databyte_at ? ' · email' : '') + '</button>').join('') + '</div>' : '') +
-    upcoming.map(block).join('') +
-    (past.length ? '<div class="datehead" style="margin-top:22px">Last week</div>' + past.map(block).join('') : '') +
-    '<p class="hint">' + (admin ? '📲 Send reminders: the Day 1 reminder to every starter, signed by you (Jess / Rubal: you get a nudge at 10:00 on the day). 👍 When someone replies Yes, tap "They replied Yes". 📄 New Starts List: the sign-in sheet for the room. ' : '💬 Remind sends them the Day 1 reminder (time, address, Maps pin). 👍 When they reply Yes, tap "They replied Yes". ') +
-    'On Day 1, tap Arrived or No-show for everyone: that\'s your show-up rate. Booked for Tuesday instead of Monday? Tap 📅 Tuesday (twice), before the day or on it: they move to Tuesday\'s list (📅 Monday moves them back). The PDF shows the same ticks.</p>', quiet, !admin);
+    (behind.length ? '<div class="card needs d1behind"><b>↩️ Still to sort from an earlier week · ' + behind.length + '</b><p class="small muted" style="margin:4px 0 2px">A no-show to rebook, or nobody ticked Arrived / No-show. Tap a name to go to that week.</p>' +
+      behind.map(c => '<button class="nm" data-wk="' + weekEndingOf(c.academy_date) + '">' + h(c.first_name) + ' · ' + (c.day1_status === 'no_show' ? 'no-show' : 'not ticked') + '</button>').join('') + '</div>' : '') +
+    (pend.length || toOnb.length || behind.length ? '<div style="height:14px"></div>' : '') +
+    weekNav1 + weekTools +
+    (!wk ? skeleton(3) : dates.length ? dates.map(block).join('')
+      : empty('🎓', we === thisWe ? 'Nobody booked to start this week.' : we > thisWe ? 'Nobody booked to start that week yet.' : 'Nobody started that week.')) +
+    '<p class="hint">' + (admin ? '📲 Send reminders: the Day 1 reminder to every starter, signed by you (Jess / Rubal: you get a nudge at 10:00 on the day). 👍 When someone replies Yes, tap "They replied Yes". 📄 New Starts List: the week\'s sign-in sheet for the room. ' : '💬 Remind sends them the Day 1 reminder (time, address, Maps pin). 👍 When they reply Yes, tap "They replied Yes". ') +
+    'On Day 1, tap Arrived or No-show for everyone: that\'s your show-up rate. Booked for Tuesday instead of Monday? Tap 📅 Tuesday (twice), before the day or on it: they move to Tuesday\'s list (📅 Monday moves them back). The PDF shows the same ticks. ‹ › go week by week.</p>', quiet, !admin);
+  const go = w => { S.d1Pick = { on: today, auto: false, we: w }; drawAcademy(r, true); window.scrollTo(0, 0); };
+  page.querySelector('#d1prev').onclick = () => go(addDays(we, -7));
+  page.querySelector('#d1next').onclick = () => go(addDays(we, 7));
+  page.querySelectorAll('.nm[data-wk]').forEach(b => { b.onclick = () => go(b.dataset.wk); });
   page.querySelectorAll('.trow[data-cand] .main').forEach(el => { el.onclick = () => nav('cand', { id: el.parentNode.dataset.cand }, true); });
   page.querySelectorAll('.nm[data-cand]').forEach(b => { b.onclick = () => nav('cand', { id: b.dataset.cand }, true); });
   bindItems(page);  // the Day 1 details / rebook buttons
   // Sent the Day 1 details from here → the reminder button takes its place straight away
   page.querySelectorAll('[data-send]').forEach(a => a.addEventListener('click', () => {
-    const c = r.items.filter(x => x.id === a.closest('.quick').dataset.for)[0];
+    const c = pool.filter(x => x.id === a.closest('.quick').dataset.for)[0];
     if (c) { c.offer_sent_at = londonNow(); setTimeout(() => { if (S.view === 'academy') drawAcademy(r, true); }, 400); }
   }));
   page.querySelectorAll('[data-remall]').forEach(b => { b.onclick = () => day1Sheet(b.dataset.remall); });
-  // One New Starts List per week: Monday's and Tuesday's buttons give the same PDF, with everyone starting that week
-  page.querySelectorAll('[data-pdf]').forEach(b => {
-    b.onclick = () => { const mon = d1WeekStart(b.dataset.pdf); savePdf(day1Pdf(mon, r.items.filter(c => d1WeekStart(c.academy_date) === mon)), newStartsName(mon) + '.pdf'); };
-  });
-  page.querySelectorAll('[data-rem1]').forEach(a => a.addEventListener('click', () => markReminded(r.items.filter(x => x.id === a.dataset.rem1)[0], a.dataset.via)));
+  page.querySelectorAll('[data-pdf]').forEach(b => { b.onclick = () => savePdf(day1Pdf(mon, items), newStartsName(mon) + '.pdf'); });
+  page.querySelectorAll('[data-rem1]').forEach(a => a.addEventListener('click', () => markReminded(pool.filter(x => x.id === a.dataset.rem1)[0], a.dataset.via)));
   page.querySelectorAll('[data-yes]').forEach(b => {
     b.onclick = e => {
       e.stopPropagation();
-      const c = r.items.filter(x => x.id === b.dataset.yes)[0]; if (!c) return;
+      const c = pool.filter(x => x.id === b.dataset.yes)[0]; if (!c) return;
       saidYes(c, b).then(() => drawAcademy(r, true));
     };
   });
   page.querySelectorAll('[data-d1]').forEach(b => {
     b.onclick = () => {
-      const c = r.items.filter(x => x.id === b.dataset.id)[0]; if (!c) return;
+      const c = pool.filter(x => x.id === b.dataset.id)[0]; if (!c) return;
       const move = b.dataset.d1 === 'next_day' || b.dataset.d1 === 'prev_day';
       // Moving their Day 1 is a bigger change than a tick: the first tap asks, the second (within 4 s) does it. Kept in
       // S.d1Sure, not just on the button, so a background refresh of the list between the two taps doesn't undo the first.
@@ -2497,8 +2543,6 @@ function pdfStr(s) {
 }
 /** "New Starts List 19.10.2026": the Day 1 list's title and file name, for the week it's for (Angad, 18 Oct). */
 function newStartsName(date) { return 'New Starts List ' + date.slice(8, 10) + '.' + date.slice(5, 7) + '.' + date.slice(0, 4); }
-/** The Monday of a Day 1's week: one New Starts List per week, Monday and Tuesday starters together (Angad, 19 Oct). */
-function d1WeekStart(ymd) { return addDays(weekEndingOf(ymd), -6); }
 /** "Monday 19 October 2026", or "Monday 19 & Tuesday 20 October 2026" when some start on the Tuesday. */
 function d1Days(dates) {
   const d = dates.map(D), last = d[d.length - 1], sameMonth = d.every(x => x.getUTCMonth() === last.getUTCMonth());
@@ -2613,9 +2657,10 @@ function drawPdfPage(cv, stream) {
 // and outcome, and a summary on top (Angad, 19 Oct) ─────
 /** "Appointments w-e 25.10.2026": the title and file name, for the week ending that Sunday. */
 function weekPdfName(we) { return 'Appointments w-e ' + we.slice(8, 10) + '.' + we.slice(5, 7) + '.' + we.slice(0, 4); }
-/** booked / follow / no / none / nq: which summary box someone counts in. */
+/** booked / follow / no / none / nq / walk: which summary box someone counts in. */
 function outcomeKind(c) {
   if (c.non_qual) return 'nq';
+  if (c.rag === 'W' && !c.outcome) return 'walk';
   if (c.admin_status === 'rejected') return 'no';
   if (c.outcome === 'Academy booked') return 'booked';
   if (c.outcome === 'Thinking it over' || c.outcome === 'No answer') return 'follow';
@@ -2625,6 +2670,7 @@ function outcomeKind(c) {
 function outcomeText(c) {
   const late = c.outcome_late ? ' (late)' : '';
   if (c.non_qual) return 'Non-qualifier: ' + (/^Not eligible/.test(c.non_qual) ? 'not eligible to work' : /^Visa expired/.test(c.non_qual) ? 'visa expired' : c.non_qual.toLowerCase());
+  if (c.rag === 'W' && !c.outcome) return 'Walked out of the presentation';
   if (c.admin_status === 'rejected') return 'Academy booking rejected by admin';
   if (c.outcome === 'Academy booked') return 'Academy booked: ' + fmt(c.academy_date) + (c.admin_status === 'pending' ? ', awaiting admin' : c.academy_confirmed_at ? ', confirmed' : '') + late;
   if (c.outcome === 'Thinking it over' && c.callback_at) return 'Thinking it over: call back ' + fmtTs(c.callback_at) + late;
@@ -2677,7 +2723,7 @@ function weekPdf(we, list) {
     y -= 20;
   };
   const row = (c, i) => {
-    const yy = y - 13, k = outcomeKind(c), ev = c.non_qual ? '-' : c.eval_at ? 'Yes' : 'No';
+    const yy = y - 13, k = outcomeKind(c), ev = c.eval_at ? 'Yes' : c.non_qual || c.rag === 'W' ? '-' : 'No';
     txt(colX[0], yy, String(i + 1), 8, false, 'grey');
     txt(colX[1], yy, String(c.created_at || '').slice(11, 16), 8.5);
     const nm = shrink(c.full_name, 2, 9, 7, true), oc = shrink(outcomeText(c), 7, 8, 6.5);
@@ -2708,7 +2754,7 @@ function weekPdf(we, list) {
   });
   y -= 66;
   const late = items.filter(c => c.outcome_late).length, co = k => items.filter(c => c.company === k).length;
-  txt(M, y, 'Late outcomes ' + late + '  ·  Non-qualifiers ' + count(items, 'nq') + '  ·  LINK ' + co('LINK') + '  ·  JUSS ' + co('JUSS') +
+  txt(M, y, 'Late outcomes ' + late + '  ·  Non-qualifiers ' + count(items, 'nq') + '  ·  Walk outs ' + items.filter(c => c.rag === 'W').length + '  ·  LINK ' + co('LINK') + '  ·  JUSS ' + co('JUSS') +
     (days.length ? '  ·  ' + days.map(d => DAYS[D(d).getUTCDay()] + ' ' + items.filter(c => c.attended_date === d).length).join(', ') : ''), 8.5, false, 'grey');
   y -= 8;
   if (!items.length) { y -= 24; txt(M, y, 'Nobody checked in this week.', 11, false, 'grey'); }
@@ -2738,14 +2784,15 @@ function payPdf(we, d) {
   const cols = [['BA NAME', 140], ['MC', 36]].concat(days.map(x => [DAYS_LONG[D(x).getUTCDay()].toUpperCase(), 51.4])).concat([['APPTS TOTAL', 45], ['NON QUALIFIERS', 45]]);
   const colL = []; cols.reduce((x, c) => { colL.push(x); return x + c[1]; }, M);
   const mid = i => colL[i] + cols[i][1] / 2;
-  // Attended = rated in the room by the presenter (same as the bulletin and the incentive), Monday to Friday
-  const inRoom = c => c.in_room === true || c.in_room === 'TRUE';
-  const att = items.filter(c => inRoom(c) && days.indexOf(c.attended_date) >= 0);
+  // Attended = rated in the room by the presenter, or a non-qualifier (same as the bulletin), Monday to Friday. Non
+  // qualifiers = attended but don't count for the incentive (not eligible, walked out, repeat, removed by admin), as on the
+  // poster: so the total less the non qualifiers is the net the incentive goes on.
+  const att = items.filter(c => counted(c) && days.indexOf(c.attended_date) >= 0);
   const netOf = {}; p.rows.forEach(r => { netOf[r.booker_id] = r.net; });
   const line = (id, name, co, group) => {
     const l = att.filter(c => (c.booker_id || '') === id);
     return { name: name, co: co, group: group, per: days.map(x => l.filter(c => c.attended_date === x).length), total: l.length,
-      nq: l.filter(c => c.non_qual).length, hit: id && netOf[id] !== undefined && netOf[id] >= p.target };
+      nq: l.filter(c => c.pay_reason).length, hit: id && netOf[id] !== undefined && netOf[id] >= p.target };
   };
   const bookers = p.rows.map(r => line(r.booker_id, r.name, r.company, r.company === 'JUSS' ? 0 : r.company === 'LINK' ? 1 : 2));
   // People booked by admins (no incentive) and check-ins with no confirmed booker: on the grid too, so every day adds up
@@ -2769,7 +2816,7 @@ function payPdf(we, d) {
     y = H - 34;
     if (first) {
       txt(M, H - 50, 'Appointments total · week ending ' + fmtLong(we) + ' ' + we.slice(0, 4), 17, true);
-      txt(M, H - 66, 'Appointments attended per BA per day (rated in the room, Mon-Fri)  |  green total = hit the incentive (net ' + p.target + ')', 9);
+      txt(M, H - 66, 'Attended per BA per day, Mon-Fri (rated in the room, or a non-qualifier)  |  green = hit the incentive (net ' + p.target + ')', 9);
       txt(M, H - 80, 'Printed ' + fmt(S.me.today) + ' ' + londonNow().slice(11) + ' by ' + S.me.user.name + '. Outcomes due ' + fmtTs(p.deadline) + '.  LINK Marketing & JUSS Marketing', 8, false, 'grey');
       y = H - 92;
     }
@@ -2807,8 +2854,11 @@ function payPdf(we, d) {
   ctr(7, y - 17, String(total), 12, true);
   ctr(8, y - 17, String(nqAll), 12, true, 'red');
   y -= FOOT; hline(y); closeTable();
-  // What isn't on the grid, so nobody wonders why a check-in is missing
-  const notRated = items.filter(c => !inRoom(c)).length, weekend = items.filter(c => inRoom(c) && days.indexOf(c.attended_date) < 0).length;
+  // What the non qualifiers are, and what isn't on the grid, so nobody wonders why a check-in is missing
+  const why = [['not eligible', c => c.non_qual], ['walked out', c => !c.non_qual && c.rag === 'W'], ['repeat', c => /^Repeat/.test(c.pay_reason || '')], ['removed by admin', c => /^Removed/.test(c.pay_reason || '')]]
+    .map(x => [x[0], att.filter(c => c.pay_reason && x[1](c)).length]).filter(x => x[1]);
+  if (why.length) { txt(M, y - 16, 'Non qualifiers: ' + why.map(x => x[1] + ' ' + x[0]).join(', ') + '.', 8, false, 'grey'); y -= 12; }
+  const notRated = items.filter(c => !counted(c)).length, weekend = items.filter(c => counted(c) && days.indexOf(c.attended_date) < 0).length;
   const notes = [notRated ? notRated + ' checked in but not rated in the room' : '', weekend ? weekend + ' at the weekend' : ''].filter(String);
   if (notes.length) txt(M, y - 16, 'Not on the grid (they don\'t count): ' + notes.join(', ') + '. Every check-in, with outcomes: the All tab\'s PDF.', 8, false, 'grey');
   const streams = pages.map((pg, i) => {
@@ -3156,7 +3206,7 @@ function submitOutcome(c, payload, errEl) {
     callback_at: payload.outcome === 'Thinking it over' ? payload.callback_at : '',
     outcome_late: now > c.deadline ? 'TRUE' : '', academy_confirmed_at: acad === c.academy_date ? c.academy_confirmed_at : '',
     day1_status: acad === c.academy_date ? c.day1_status : '',
-    admin_status: acad && (c.rag === 'R' || c.repeat_block) && !isAdmin() && c.admin_status !== 'approved' ? 'pending' : (acad ? c.admin_status : (c.admin_status === 'pending' ? '' : c.admin_status)),
+    admin_status: acad && (c.rag === 'R' || c.rag === 'W' || c.repeat_block) && !isAdmin() && c.admin_status !== 'approved' ? 'pending' : (acad ? c.admin_status : (c.admin_status === 'pending' ? '' : c.admin_status)),
   });
   queueSave('saveOutcome', payload, local, local.outcome_late ? 'Saved — flagged late' : 'Outcome saved ✓');
   return true;
@@ -3303,7 +3353,9 @@ function presCard(c, canNotes) {
       '<label class="q">✨ Tell us something interesting about you</label>' +
       '<textarea id="interesting" maxlength="300" class="short" placeholder="Type their answer, e.g. plays semi-pro football">' + h(c.p_interesting) + '</textarea>' +
       '<label class="q">Rating</label><div class="rag"><button type="button" class="G' + (c.rag === 'G' ? ' on' : '') + '" data-r="G">Green</button>' +
-      '<button type="button" class="A' + (c.rag === 'A' ? ' on' : '') + '" data-r="A">Amber</button><button type="button" class="R' + (c.rag === 'R' ? ' on' : '') + '" data-r="R">Red</button></div>' +
+      '<button type="button" class="A' + (c.rag === 'A' ? ' on' : '') + '" data-r="A">Amber</button><button type="button" class="R' + (c.rag === 'R' ? ' on' : '') + '" data-r="R">Red</button>' +
+      // Left the presentation before the end (Angad, 20 Oct): no evaluation or call needed
+      '<button type="button" class="W' + (c.rag === 'W' ? ' on' : '') + '" data-r="W">🚶 Walk out</button></div>' +
       '<div class="stars">' + [1, 2, 3, 4, 5].map(n => '<button type="button" data-s="' + n + '" class="' + (Number(c.stars) >= n ? 'on' : '') + '" aria-label="' + n + ' star' + (n > 1 ? 's' : '') + '">★</button>').join('') + '</div>' +
       '<label class="q">Quick tags</label><div class="chips" data-name="tags" data-multi="1">' + TAGS.map(t => '<button type="button" class="chip' + ((c.tags || '').split(', ').indexOf(t) >= 0 ? ' on' : '') + '" data-v="' + h(t) + '">' + h(t) + '</button>').join('') + '</div>' +
       '<label class="q">Other notes</label><textarea id="notes" placeholder="Anything else, e.g. done sales in Turkey, holiday in December">' + h(c.notes) + '</textarea>' +
@@ -3314,7 +3366,7 @@ function presCard(c, canNotes) {
       ? '<div class="qa"><div class="qq">💬 Why work in sales?</div><div class="aa">' + (h(c.p_why_sales_note || c.p_why_sales) || '<span class="muted">—</span>') + '</div></div>' +
         '<div class="qa"><div class="qq">✨ Something interesting about them</div><div class="aa">' + (h(c.p_interesting) || '<span class="muted">—</span>') + '</div></div><hr>'
       : '') +
-      '<dl class="kv">' + kv('In the room', c.in_room ? 'Yes' : 'Not rated yet') + kv('Recommendation', { G: 'Green', A: 'Amber', R: 'Red' }[c.rag] || '') +
+      '<dl class="kv">' + kv('In the room', c.in_room ? 'Yes' : 'Not rated yet') + kv('Recommendation', { G: 'Green', A: 'Amber', R: 'Red', W: '🚶 Walked out' }[c.rag] || '') +
       kv('Stars', c.stars ? c.stars + ' / 5' : '') + kv('Tags', c.tags) + kv('Presenter', c.presenter_name) + '</dl>' +
       (c.notes ? '<p style="white-space:pre-wrap;margin-top:10px">' + h(c.notes) + '</p>' : '<p class="muted">No notes yet.</p>');
   }
@@ -3464,7 +3516,7 @@ function renderCandidate(c, quiet) {
 
   // Sections, in the order this person works through them
   const SEC = {
-    out: ['Outcome', '<b>Call outcome</b><span>' + (c.non_qual && !c.outcome ? 'not needed' : 'due ' + fmtTs(c.deadline)) + '</span>', out + (canOutcome ? waCard : '')],
+    out: ['Outcome', '<b>Call outcome</b><span>' + ((c.non_qual || c.rag === 'W') && !c.outcome ? 'not needed' : 'due ' + fmtTs(c.deadline)) + '</span>', out + (canOutcome ? waCard : '')],
     pres: ['Appt Feedback', '<b>Appt feedback</b>', pres + (canOutcome ? '' : waCard)],
     ev: ['Evaluation', '<b>Evaluation</b>' + (c.eval_at ? '<span>' + fmtTs(c.eval_at) + '</span>' : ''), '<div class="card">' + evalHtml + '</div>'],
     ci: ['Details', '<b>Check-in</b>', '<div class="card"><dl class="kv">' + kv('Mobile', c.mobile) + kv('Email', c.email) + kv('18 or over', c.over18) + kv('Right to work', c.rtw) +

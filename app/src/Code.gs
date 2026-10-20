@@ -15,6 +15,7 @@ const CONFIG = {
   OUTCOME_DEADLINE_TIME: '18:00', // outcomes logged after this are flagged LATE
   REPEAT_DAYS: 183,               // "seen before" window: 6 months
   REPEAT_COUNTS_FOR_PAY: false,   // a repeat attendee (within REPEAT_DAYS) does not count
+  WALKOUT_COUNTS_FOR_PAY: false,  // a walk out (left the presentation: the presenter's "Walk out") does not count either
   FULL_DETAILS_DAYS: 84,          // 12 weeks: full application details, then trimmed to the basics (name, contact, result)
   RETENTION_DAYS: 183,            // 6 months: everything deleted (= the repeat-candidate window). Matches the check-in notice.
   CHECKIN_FROM: '07:00',          // check-ins outside these times are flagged amber for admins (never blocked)
@@ -468,6 +469,7 @@ function flagsFor(c, isAdmin) {
   if (truthy(c.repeat_block)) red('Previously not suitable — do not progress (' + c.repeat_info + ')');
   else if (c.repeat_of) amber('Seen before: ' + c.repeat_info);
   if (c.rag === 'R') red('Presenter marked RED — admin decides');
+  if (c.rag === 'W') red('Walked out of the presentation — admin decides');
   if (c.q7_commute === 'No') red("Can't commute to Slough");
   if (c.q1_excitement && Number(c.q1_excitement) <= 6) amber('Excitement only ' + c.q1_excitement + '/10');
   if (c.q10_door && c.q10_door.indexOf('C)') === 0) amber('Door scenario: "maybe this isn\'t for me"');
@@ -490,14 +492,21 @@ function nonQualifier(c) {
   if (c.visa_expiry && c.visa_expiry < c.attended_date) return 'Visa expired ' + c.visa_expiry;
   return '';
 }
+/** Walk out: came, but left the presentation before the end. The presenter taps "Walk out" instead of Green / Amber / Red
+ *  (Angad, 20 Oct). In the room for the stats, but no evaluation or call needed, and no incentive (WALKOUT_COUNTS_FOR_PAY). */
+function walkedOut(c) { return c.rag === 'W'; }
+/** Nobody has to log an outcome for them: a non-qualifier or a walk out. */
+function noCallNeeded(c) { return !!nonQualifier(c) || walkedOut(c); }
 
 /** Why a candidate does NOT count towards the booker's net attended ('' = counts). */
 function payExclusion(c) {
+  // A non-qualifier first: they don't count, rated in the room or not (often they aren't: the team speaks to them instead)
+  const nq = nonQualifier(c);
+  if (nq) return nq;
   if (!truthy(c.in_room)) return 'Not rated by the presenter (not confirmed in the room)';
   const wd = weekday(c.attended_date);
   if (wd === 0 || wd === 6) return 'Weekend appointment';
-  const nq = nonQualifier(c);
-  if (nq) return nq;
+  if (walkedOut(c) && !CONFIG.WALKOUT_COUNTS_FOR_PAY) return 'Walked out of the presentation';
   if (c.repeat_of && !CONFIG.REPEAT_COUNTS_FOR_PAY) return 'Repeat attendee (seen in the last 6 months)';
   if (truthy(c.pay_excluded)) return 'Removed by admin: ' + (c.pay_excluded_reason || 'no reason given');
   return '';
@@ -961,9 +970,9 @@ function saveNotes(req, u) {
   return withLock(() => {
     const c = getC(req.id);
     if (!canSee(u, c)) throw new Error('No access');
-    // One tap on the list (Green / Amber / Red) sends only: ['rag'], so it never overwrites notes someone else just wrote.
+    // One tap on the list (Green / Amber / Red / Walk out) sends only: ['rag'], so it never overwrites notes someone else just wrote.
     const set = k => !Array.isArray(req.only) || req.only.indexOf(k) >= 0;
-    if (set('rag') && ['G', 'A', 'R', ''].indexOf(req.rag) >= 0) c.rag = req.rag;
+    if (set('rag') && ['G', 'A', 'R', 'W', ''].indexOf(req.rag) >= 0) c.rag = req.rag;
     if (set('stars')) { const s = Number(req.stars); c.stars = s >= 1 && s <= 5 ? String(s) : ''; }
     // Rating someone = they were in the room (no extra tap needed). Untick only if explicitly set false with no rating.
     c.in_room = (req.in_room || c.rag || c.stars) ? 'TRUE' : '';
@@ -1016,8 +1025,8 @@ function saveOutcome(req, u) {
       if (req.callback_at !== c.callback_at) c.callback_nudged = '';
       c.callback_at = req.callback_at; c.callback_by_id = u.id;
     } else if (req.outcome !== 'Thinking it over') { c.callback_at = ''; c.callback_by_id = ''; c.callback_nudged = ''; }
-    // RED from presenter (or a repeat block) → admin has the final say on an Academy booking.
-    if (req.outcome === 'Academy booked' && (c.rag === 'R' || truthy(c.repeat_block))) {
+    // RED or a walk out from the presenter (or a repeat block) → admin has the final say on an Academy booking.
+    if (req.outcome === 'Academy booked' && (c.rag === 'R' || walkedOut(c) || truthy(c.repeat_block))) {
       if (isAdmin(u)) { c.admin_status = 'approved'; c.admin_by = u.name; c.admin_at = nowStr(); }
       else if (c.admin_status !== 'approved') c.admin_status = 'pending';
     } else if (c.admin_status === 'pending') c.admin_status = '';
@@ -1031,7 +1040,7 @@ function saveOutcome(req, u) {
   log(u, 'outcome', c.id, c.outcome + (c.outcome_late ? ' LATE' : ''));
   if (res.alert) {
     notify(usersAll().filter(isAdmin), '🔴 Decision needed: ' + c.full_name,
-      c.booker_name + ' wants to book BA Academy, but the presenter marked RED or they were previously not suitable.', c.id);
+      c.booker_name + ' wants to book BA Academy, but ' + (walkedOut(c) ? 'they walked out of the presentation.' : 'the presenter marked RED or they were previously not suitable.'), c.id);
   }
   return shape(c, u);
 }
@@ -1189,7 +1198,7 @@ function payReport(req, u) {
     r.attended++;
     const why = payExclusion(c);
     if (why) r.excluded.push({ id: c.id, name: c.full_name, why: why }); else r.net++;
-    if (c.outcome) { r.outcomes++; if (truthy(c.outcome_late)) r.late++; } else if (!nonQualifier(c)) r.missing++;
+    if (c.outcome) { r.outcomes++; if (truthy(c.outcome_late)) r.late++; } else if (!noCallNeeded(c)) r.missing++;
   });
   let list = Object.keys(by).map(k => by[k]).filter(r => r.attended > 0 || r.active);
   if (!isAdmin(u)) list = list.filter(r => r.booker_id === u.id);
@@ -1554,7 +1563,7 @@ function weeklyProgressEmails() {
 /** Sat 14:00 (existing trigger) — outcomes were due Friday 18:00: chase anything still missing. They show as LATE. */
 function saturdayDeadlineEmails() {
   const we = weekEnding(todayStr());
-  const rows = readTable('Candidates').filter(c => c.week_ending === we && truthy(c.in_room) && !c.outcome && !nonQualifier(c));
+  const rows = readTable('Candidates').filter(c => c.week_ending === we && truthy(c.in_room) && !c.outcome && !noCallNeeded(c));
   usersAll().filter(b => truthy(b.active)).forEach(b => {
     const mine = rows.filter(c => c.booker_id === b.id);
     if (!mine.length) return;
@@ -1641,7 +1650,7 @@ const BOOKER_LEAKS = ['stale', 'log', 'callback'];
 function leakOf(c, today) {
   const from = addDays(today, -(CONFIG.CHASE_DAYS - 1));
   if (c.outcome === 'Academy booked') return '';
-  if (!truthy(c.in_room) || nonQualifier(c)) return '';
+  if (!truthy(c.in_room) || noCallNeeded(c)) return '';
   // No answer / Thinking it over never just drop off: after 2 weeks they're "stale" until someone logs a final answer
   // (Declined, Not suitable, Academy booked). A call-back time they asked for that's still to come keeps them as a call back.
   if (c.outcome === 'No answer' || c.outcome === 'Thinking it over') return c.attended_date < from && !(c.callback_at > nowStr()) ? 'stale' : 'callback';
@@ -1698,15 +1707,20 @@ function chaseOutcomes(req, u) {
   return out;
 }
 
-/** Everyone booked onto the BA Academy with Day 1 from a week ago onwards (no-shows still to rebook: 2 weeks): admins see
- *  everyone, bookers their own. Admins also get the bookings waiting on their decision (these used to be on Chase). */
+/** Everyone booked onto the BA Academy: admins see everyone, bookers their own. The Day 1 tab goes week by week, like the
+ *  All tab (Angad, 20 Oct): with no week asked for, last week's Monday onwards (last week, this week, every week ahead);
+ *  { weekEnding } = that week only (Mon–Sun), for going back further. Admins also get the bookings waiting on their
+ *  decision (these used to be on Chase). */
 function academyList(req, u) {
   try { backfillSends(); } catch (e) { console.error(e); }
-  const today = todayStr(), from = addDays(today, -7), longer = addDays(today, -(CONFIG.CHASE_DAYS - 1));
+  const today = todayStr(), longer = addDays(today, -(CONFIG.CHASE_DAYS - 1));
+  const we = /^\d{4}-\d\d-\d\d$/.test(req.weekEnding || '') ? weekEnding(req.weekEnding) : '';
+  const from = we ? addDays(we, -6) : addDays(weekEnding(today), -13);
   const booked = readTable('Candidates').filter(c => c.outcome === 'Academy booked' && c.admin_status !== 'rejected' && c.academy_date && fullAccess(u, c));
-  const rows = booked.filter(c => c.admin_status !== 'pending' && (c.academy_date >= from || (c.day1_status === 'no_show' && c.academy_date >= longer)));
-  const out = { today: today, items: rows.sort((a, b) => a.academy_date.localeCompare(b.academy_date) || a.full_name.localeCompare(b.full_name)).map(c => shape(c, u)) };
-  if (isAdmin(u)) out.pending = booked.filter(c => c.admin_status === 'pending' && c.academy_date >= longer).map(c => shape(c, u));
+  const rows = booked.filter(c => c.admin_status !== 'pending' && c.academy_date >= from && (!we || c.academy_date <= we));
+  const out = { today: today, from: from, items: rows.sort((a, b) => a.academy_date.localeCompare(b.academy_date) || a.full_name.localeCompare(b.full_name)).map(c => shape(c, u)) };
+  if (we) out.weekEnding = we;
+  else if (isAdmin(u)) out.pending = booked.filter(c => c.admin_status === 'pending' && c.academy_date >= longer).map(c => shape(c, u));
   return out;
 }
 /** Once: who sent the Day 1 details (and how each thank-you went) before those columns existed, from the Log
@@ -2075,7 +2089,7 @@ function digestFor(u, rows, today) {
   const came = mine.filter(c => c.attended_date === today && truthy(c.in_room));
   const evals = mine.filter(c => c.attended_date === today && c.eval_at);
   // Still to close: in the room this week, no outcome yet (evaluated ones first: they're the hottest)
-  const toClose = mine.filter(c => truthy(c.in_room) && !c.outcome && !nonQualifier(c)).sort((a, b) => (b.eval_at ? 1 : 0) - (a.eval_at ? 1 : 0));
+  const toClose = mine.filter(c => truthy(c.in_room) && !c.outcome && !noCallNeeded(c)).sort((a, b) => (b.eval_at ? 1 : 0) - (a.eval_at ? 1 : 0));
   const toSend = mine.filter(c => c.outcome === 'Academy booked' && c.welcome_token && !c.offer_sent_at && c.admin_status !== 'pending' && c.admin_status !== 'rejected');
   const toConfirm = mine.filter(c => c.outcome === 'Academy booked' && c.offer_sent_at && !c.academy_confirmed_at);
   if (!came.length && !evals.length && !toClose.length && !toSend.length) return null;  // nothing to say: no message
@@ -2099,7 +2113,7 @@ function weekStats(u, rows) {
   return {
     user: u, name: u.name, all: mine, booked: booked,
     notBooked: mine.filter(c => c.outcome && booked.indexOf(c) < 0),
-    open: mine.filter(c => !c.outcome && !nonQualifier(c)),
+    open: mine.filter(c => !c.outcome && !noCallNeeded(c)),
     sent: booked.filter(c => c.offer_sent_at), unsent: booked.filter(c => !c.offer_sent_at),
     net: rows.filter(c => c.booker_id === u.id && !payExclusion(c)).length,
   };
