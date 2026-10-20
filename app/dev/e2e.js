@@ -906,6 +906,8 @@ async function fillEval(p) {
     !/\(\d+\. /.test(ipRaw) && !/\(No: /.test(ipRaw),
     '📄 "Appointments total" PDF ("Appointments Total w-e 18.10.2026.pdf") is one grid like the old sheet: every BA, Mon-Fri with dates, ' + attW.length + ' appointments attended (each day adds up), ' +
     attW.filter(c => c.non_qual).length + ' non-qualifiers in red, ' + hitN + ' hit the incentive (green); no per-person detail');
+  const daySizes = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY'].map(d => Number((new RegExp('BT /F2 ([\\d.]+) Tf [\\d.]+ [\\d.]+ Td \\(' + d + '\\) Tj').exec(ipRaw) || [])[1]));
+  ok(daySizes[0] >= 6.5 && daySizes[0] < 8 && daySizes.every(z => z === daySizes[0]), 'the day names all fit their columns at one size (' + daySizes[0] + 'pt): WEDNESDAY no longer runs into THURSDAY');
   try { require('child_process').execFileSync('pdftoppm', ['-png', '-r', '70', '-singlefile', ipPath, `${SHOTS}/14c-incentive`]); } catch (e) { /* no renderer here */ }
   ok(await ap.$eval('.tabbar button[data-tab=pay]', b => b.textContent.trim()) === 'Incentive' && await ap.textContent('#abTitle') === 'Recruitment incentive' &&
     !/\bpay\b/i.test(await ap.$eval('#page', e => e.innerText)), 'says "Recruitment incentive" (tab: Incentive), never "Pay"');
