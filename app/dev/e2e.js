@@ -216,6 +216,11 @@ async function fillEval(p) {
   await loginUi(pp, 'nathan@example.com');
   await pp.waitForSelector('text=Jasraj Bhuller');
   ok(!(await pp.$('#qr')) && !(await pp.$('#ev')), 'presenter has no QR / "open evaluations" buttons to press');
+  // Under 18 (Young Person) and Tier 4 (Ishita): no rating needed, so no rating buttons, and not in "N of M rated"
+  const nqRow = async c => (await pp.$('.quick[data-for="' + c.id + '"]')) ? 'buttons' : await pp.innerText('.item[data-id="' + c.id + '"] .pills');
+  const prTxt = await pp.innerText('.section-h:has-text("In the room")');
+  ok(/No rating needed/.test(await nqRow(kid)) && /No rating needed/.test(await nqRow(ishita)) && /0 of 5 rated/.test(prTxt) && await pp.$('.quick[data-for="' + adham.id + '"] .q-G'),
+    'presenter\'s Today: under 18 and Tier 4 show "No rating needed" (no buttons); everyone else has Green / Amber / Red ("' + prTxt.replace(/\n/g, ' ') + '")');
   await shot(pp, '03-presenter-today', true);
   await pp.click('.item:has-text("Jasraj Bhuller")');
   await pp.waitForSelector('#savenotes');
@@ -246,13 +251,13 @@ async function fillEval(p) {
   const nope = await post('/api', { action: 'markSent', token: nathan, id: jasId, kind: 'offer' });
   ok(!nope.ok && /No access/.test(nope.error), 'server: nobody can send or log messages for someone else\'s candidate');
   // One tap on the Today list: Green / Amber / Red = in the room, and notes another presenter just wrote are kept
-  await api(nathan, 'saveNotes', { id: ishita.id, rag: '', stars: 0, tags: ['Quiet'], notes: 'Sat at the back' });
+  await api(nathan, 'saveNotes', { id: jag.id, rag: '', stars: 0, tags: ['Quiet'], notes: 'Sat at the back' });
   await pp.goBack(); await pp.waitForSelector('.kpis');
-  await pp.click('.quick[data-for="' + ishita.id + '"] .q-R');
+  await pp.click('.quick[data-for="' + jag.id + '"] .q-R');
   await pp.waitForFunction(() => !JSON.parse(localStorage.getItem('lr_outbox') || '[]').length);
-  const ishNow = await api(admin, 'getCandidate', { id: ishita.id });
-  ok(ishNow.rag === 'R' && ishNow.in_room === 'TRUE' && ishNow.notes === 'Sat at the back' && ishNow.tags === 'Quiet', 'presenter taps Red on the list → in the room; notes + tags already written are kept');
-  ok(!(await pp.$('.quick[data-for="' + ishita.id + '"]')), 'rated card drops its Green / Amber / Red buttons');
+  const jagNow = await api(admin, 'getCandidate', { id: jag.id });
+  ok(jagNow.rag === 'R' && jagNow.in_room === 'TRUE' && jagNow.notes === 'Sat at the back' && jagNow.tags === 'Quiet', 'presenter taps Red on the list → in the room; notes + tags already written are kept');
+  ok(!(await pp.$('.quick[data-for="' + jag.id + '"]')), 'rated card drops its Green / Amber / Red buttons');
   // After the presentation: only Jess / Rubal (and admins) see the thank-you list
   ok(!(await pp.$('#thanksAll')) && /name, who booked them and the room rating only/.test(await pp.innerText('#page')) && !(await pp.$('.act.call')),
     'presenter\'s Today: no thank-you list, no call / WhatsApp on anyone else\'s card, "🔒 name, who booked them and the room rating only"');
@@ -1765,8 +1770,9 @@ async function fillEval(p) {
   await wop.click('.quick[data-for="' + wally.id + '"] .q-W');
   await wop.waitForFunction(() => !JSON.parse(localStorage.getItem('lr_outbox') || '[]').length);
   const wNow = await api(admin, 'getCandidate', { id: wally.id });
-  ok(wNow.rag === 'W' && wNow.in_room === 'TRUE' && /Walked out/.test(wNow.pay_reason) && wNow.flags.some(f => f.level === 'red' && /Walked out/.test(f.text)),
-    'one tap "🚶 Walk out" → saved: came (in the room), doesn\'t count for the incentive ("' + wNow.pay_reason + '"), red flag "Walked out of the presentation"');
+  ok(wNow.rag === 'W' && wNow.in_room === 'TRUE' && !wNow.pay_reason && wNow.flags.some(f => f.level === 'red' && /Walked out of the presentation: no call, messages or BA Academy booking/.test(f.text)),
+    'one tap "🚶 Walk out" → saved: came (in the room) and still counts for the incentive; red flag "Walked out of the presentation: no call, messages or BA Academy booking"');
+  ok(!(await wop.$('.quick[data-for="' + nadia.id + '"]')) && /No rating needed/.test(await wop.innerText('.item[data-id="' + nadia.id + '"]')), 'Nadia (no right to work): no rating needed');
   await wop.click('.item[data-id="' + wally.id + '"]'); await wop.waitForSelector('#pres .rag');
   ok(await wop.$('#pres .rag button.W.on') && (await wop.$$('#pres .rag button')).length === 4, 'their page: the rating has Green / Amber / Red / 🚶 Walk out (Walk out on)');
   await wop.evaluate(() => document.querySelector('#pres .rag').scrollIntoView({ block: 'center' }));
@@ -1774,23 +1780,48 @@ async function fillEval(p) {
   await wo.close();
   const chaseNow2 = (await api(admin, 'chaseList', {})).items;
   const fzPay = (await api(admin, 'payReport', {})).rows.find(r => r.booker_id === fiza.id);
-  ok(!chaseNow2.some(c => c.id === wally.id || c.id === nadia.id) && fzPay.excluded.some(x => x.id === wally.id && /Walked out/.test(x.why)) && fzPay.excluded.some(x => x.id === nadia.id && /Not eligible/.test(x.why)),
-    'a walk out (like a non-qualifier) needs no call: not on Chase, and off Fiza\'s incentive ("Walked out of the presentation")');
-  const woBook = await api(fizaTok, 'saveOutcome', { id: wally.id, outcome: 'Academy booked', academy_date: '2026-11-02', outcome_notes: 'came back to us' });
-  ok(woBook.admin_status === 'pending', 'booking a walk out onto the Academy goes to an admin first (like a RED)');
-  await api(fizaTok, 'saveOutcome', { id: wally.id, outcome: 'Declined', outcome_notes: '' });
+  ok(!chaseNow2.some(c => c.id === wally.id || c.id === nadia.id) && !fzPay.excluded.some(x => x.id === wally.id) && fzPay.excluded.some(x => x.id === nadia.id && /Not eligible/.test(x.why)),
+    'a walk out needs no call (not on Chase) but counts for Fiza\'s incentive (nobody\'s fault); the non-qualifier doesn\'t');
+  // Their booker sees them, but can't reach them: no number, no call / WhatsApp / outcome, and the server refuses it too
+  const refused = async (tok, a, x) => { try { await api(tok, a, x); return ''; } catch (e) { return e.message; } };
+  const wFz = await api(fizaTok, 'getCandidate', { id: wally.id });
+  ok(!wFz.mobile && !wFz.email && (await api(admin, 'getCandidate', { id: wally.id })).mobile === '07700900881', 'their booker (Fiza) gets no mobile or email for a walk out; admins still do');
+  ok(/walked out/.test(await refused(fizaTok, 'saveOutcome', { id: wally.id, outcome: 'Academy booked', academy_date: '2026-11-02', outcome_notes: '' })) &&
+    /walked out/.test(await refused(fizaTok, 'saveOutcome', { id: wally.id, outcome: 'Declined', outcome_notes: '' })) &&
+    /walked out/.test(await refused(fizaTok, 'markSent', { id: wally.id, kind: 'noanswer', via: 'whatsapp' })) &&
+    /walked out/.test(await refused(admin, 'saveOutcome', { id: wally.id, outcome: 'Academy booked', academy_date: '2026-11-02', outcome_notes: '' })),
+    'a walk out can\'t be booked onto the BA Academy (not even by an admin), and their booker can\'t log an outcome or send a message');
+  const wb = await browser.newContext(PHONE), wbp = await wb.newPage();
+  // Fiza (test booker), signed in with her session (her code requests for the day are used up by now)
+  await wbp.goto(APP + 'index.html'); await wbp.evaluate(t => localStorage.setItem('lr_tok', JSON.stringify(t)), fizaTok);
+  await wbp.goto(APP + 'index.html?c=' + wally.id); await wbp.waitForSelector('.profile h1');
+  const wbTxt = await wbp.innerText('#page');
+  const wbHas = await wbp.evaluate(() => ['.profile .actions', '#saveout', '#wacard', 'a[href^="tel:"], a[href*="wa.me"], a[href^="sms:"]'].filter(s => document.querySelector(s)));
+  ok(!wbHas.length && /Walked out of the presentation/.test(wbTxt) && /Not needed: they walked out/.test(wbTxt) && /Hidden: walked out/.test(wbTxt),
+    'Fiza\'s phone: she sees Wally, "🚶 Walked out", but no Call / WhatsApp / Email, no outcome to log, no messages' + (wbHas.length ? ' (found: ' + wbHas.join(', ') + ')' : ''));
+  await shot(wbp, '41-walk-out-booker', true);
+  await wb.close();
+  await api(admin, 'saveOutcome', { id: wally.id, outcome: 'Declined', outcome_notes: 'walked out' });
+  ok((await api(admin, 'getCandidate', { id: wally.id })).outcome === 'Declined', 'an admin can still log a final answer (anything but booked)');
   await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button[data-tab=all]');
   await ap.click('.tabbar button[data-tab=all]'); await ap.waitForSelector('#flt .chip[data-f=walk]');
-  ok(/Walk outs 1/.test(await ap.textContent('#flt .chip[data-f=walk]')), 'All tab: a "Walk outs" filter');
+  ok(/Walk outs 1/.test(await ap.textContent('#flt .chip[data-f=walk]')) && await ap.$('.ccard.walkout .item[data-id="' + wally.id + '"]') &&
+    await ap.$eval('.ccard.walkout', e => getComputedStyle(e).backgroundColor) === 'rgb(253, 236, 236)',
+    'All tab: a "Walk outs" filter, and the walk out stands out in light red');
+  const wpd = await pdfDl(ap, '#weekPdf'), wpPath = `${SHOTS}/42-week-walk-out.pdf`; await wpd.saveAs(wpPath);
+  const wpRaw = fs.readFileSync(wpPath, 'latin1');
+  ok(/\(Walk out: do not book/.test(wpRaw) && /0\.99 0\.88 0\.88 rg/.test(wpRaw) && /1 walk out/.test(wpRaw),
+    'the week\'s Appointments PDF: the walk out\'s row in light red, "Walk out: do not book", and "1 walk out" in the day\'s line');
+  try { require('child_process').execFileSync('pdftoppm', ['-png', '-r', '70', '-singlefile', wpPath, `${SHOTS}/42-week-walk-out`]); } catch (e) { /* no renderer here */ }
   // The poster: Nadia (not eligible, never rated: the team spoke to her) now counts as attended and as a non-qualifier
   await ap.click('.tabbar button[data-tab=today]'); await ap.waitForSelector('#bullDaily');
   await ap.click('#bullDaily'); await ap.waitForSelector('#bimg[data-info]', { timeout: 15000 });
   const tueAll = (await api(admin, 'listWeek', {})).items.filter(c => c.attended_date === '2026-10-27');
   const tueCnt = tueAll.filter(c => c.in_room === 'TRUE' || c.non_qual);
   const bw = await bInfo();
-  ok(tueCnt.some(c => c.id === nadia.id && c.in_room !== 'TRUE') && bw.attended === tueCnt.length && bw.nonQual === tueCnt.filter(c => c.pay_reason).length && bw.nonQual >= 2 &&
-    !/not rated by the presenter/.test(await ap.innerText('#page')),
-    'daily stats poster: the unrated non-qualifier (Nadia) is in "attended" (' + bw.attended + ') and "non qualifiers" (' + bw.nonQual + ', with the walk out), and isn\'t "not rated"');
+  ok(tueCnt.some(c => c.id === nadia.id && c.in_room !== 'TRUE') && tueCnt.some(c => c.id === wally.id && !c.pay_reason) && bw.attended === tueCnt.length &&
+    bw.nonQual === tueCnt.filter(c => c.pay_reason).length && bw.nonQual >= 1 && !/not rated by the presenter/.test(await ap.innerText('#page')),
+    'daily stats poster: the unrated non-qualifier (Nadia) is in "attended" (' + bw.attended + ', with the walk out) and "non qualifiers" (' + bw.nonQual + '), and isn\'t "not rated"');
   // The Appointments total grid: the same, and what the non qualifiers are
   await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button[data-tab=pay]');
   await ap.click('.tabbar button[data-tab=pay]'); await ap.waitForSelector('#payPdf');
@@ -1798,8 +1829,8 @@ async function fillEval(p) {
   const gRaw = fs.readFileSync(gPath, 'latin1');
   const wkAtt = (await api(admin, 'listWeek', {})).items.filter(c => (c.in_room === 'TRUE' || c.non_qual) && !['0', '6'].includes(String(new Date(c.attended_date + 'T00:00:00Z').getUTCDay())));
   ok(new RegExp('BT /F2 12 Tf [\\d.]+ [\\d.]+ Td \\(' + wkAtt.length + '\\) Tj').test(gRaw) && new RegExp('0\\.83 0\\.18 0\\.16 rg BT /F2 12 Tf [\\d.]+ [\\d.]+ Td \\(' + wkAtt.filter(c => c.pay_reason).length + '\\) Tj').test(gRaw) &&
-    /\(Non qualifiers: 1 not eligible, 1 walked out\.\) Tj/.test(gRaw),
-    'Appointments total PDF: ' + wkAtt.length + ' attended (Nadia included), ' + wkAtt.filter(c => c.pay_reason).length + ' non qualifiers in red, and under the grid "Non qualifiers: 1 not eligible, 1 walked out."');
+    /\(Non qualifiers: 1 not eligible\.\) Tj/.test(gRaw),
+    'Appointments total PDF: ' + wkAtt.length + ' attended (Nadia and the walk out included), ' + wkAtt.filter(c => c.pay_reason).length + ' non qualifier in red, and under the grid "Non qualifiers: 1 not eligible."');
 
   // ── Day 1 tab, week by week (Angad, 20 Oct: "week ending wise similar to All tab") ──
   const d1Week = await api(admin, 'academyList', { weekEnding: '2026-10-25' });

@@ -15,7 +15,6 @@ const CONFIG = {
   OUTCOME_DEADLINE_TIME: '18:00', // outcomes logged after this are flagged LATE
   REPEAT_DAYS: 183,               // "seen before" window: 6 months
   REPEAT_COUNTS_FOR_PAY: false,   // a repeat attendee (within REPEAT_DAYS) does not count
-  WALKOUT_COUNTS_FOR_PAY: false,  // a walk out (left the presentation: the presenter's "Walk out") does not count either
   FULL_DETAILS_DAYS: 84,          // 12 weeks: full application details, then trimmed to the basics (name, contact, result)
   RETENTION_DAYS: 183,            // 6 months: everything deleted (= the repeat-candidate window). Matches the check-in notice.
   CHECKIN_FROM: '07:00',          // check-ins outside these times are flagged amber for admins (never blocked)
@@ -469,7 +468,7 @@ function flagsFor(c, isAdmin) {
   if (truthy(c.repeat_block)) red('Previously not suitable — do not progress (' + c.repeat_info + ')');
   else if (c.repeat_of) amber('Seen before: ' + c.repeat_info);
   if (c.rag === 'R') red('Presenter marked RED — admin decides');
-  if (c.rag === 'W') red('Walked out of the presentation — admin decides');
+  if (c.rag === 'W') red('Walked out of the presentation: no call, messages or BA Academy booking');
   if (c.q7_commute === 'No') red("Can't commute to Slough");
   if (c.q1_excitement && Number(c.q1_excitement) <= 6) amber('Excitement only ' + c.q1_excitement + '/10');
   if (c.q10_door && c.q10_door.indexOf('C)') === 0) amber('Door scenario: "maybe this isn\'t for me"');
@@ -493,8 +492,10 @@ function nonQualifier(c) {
   return '';
 }
 /** Walk out: came, but left the presentation before the end. The presenter taps "Walk out" instead of Green / Amber / Red
- *  (Angad, 20 Oct). In the room for the stats, but no evaluation or call needed, and no incentive (WALKOUT_COUNTS_FOR_PAY). */
+ *  (Angad, 20 Oct). They still count for the booker's incentive (they checked in and qualify: nobody's fault), but they're
+ *  never booked onto the BA Academy, and bookers can see them but not call, message or log an outcome for them. */
 function walkedOut(c) { return c.rag === 'W'; }
+const WALKED_OUT = 'They walked out of the presentation: no call, messages or BA Academy booking.';
 /** Nobody has to log an outcome for them: a non-qualifier or a walk out. */
 function noCallNeeded(c) { return !!nonQualifier(c) || walkedOut(c); }
 
@@ -506,7 +507,6 @@ function payExclusion(c) {
   if (!truthy(c.in_room)) return 'Not rated by the presenter (not confirmed in the room)';
   const wd = weekday(c.attended_date);
   if (wd === 0 || wd === 6) return 'Weekend appointment';
-  if (walkedOut(c) && !CONFIG.WALKOUT_COUNTS_FOR_PAY) return 'Walked out of the presentation';
   if (c.repeat_of && !CONFIG.REPEAT_COUNTS_FOR_PAY) return 'Repeat attendee (seen in the last 6 months)';
   if (truthy(c.pay_excluded)) return 'Removed by admin: ' + (c.pay_excluded_reason || 'no reason given');
   return '';
@@ -882,6 +882,8 @@ const ROOM_FIELDS = ['id', 'created_at', 'attended_date', 'week_ending', 'full_n
 function roomShape(c) {
   const o = { limited: true, flags: [], first_name: c.full_name.split(' ')[0], eval_at: c.eval_at ? 'yes' : '' };  // eval_at: for the day's count only
   ROOM_FIELDS.forEach(k => { o[k] = c[k]; });
+  // Under 18 / no right to work: the presenter doesn't need to rate them (Angad, 20 Oct). Not why, just that.
+  if (nonQualifier(c)) o.no_rating = true;
   return o;
 }
 function shape(c, u) {
@@ -898,6 +900,8 @@ function shape(c, u) {
   o.deadline = outcomeDeadline(c.attended_date);
   o.first_name = c.full_name.split(' ')[0];
   if (isAdmin(u)) o.recruit_source = recruitSourceOf(c);
+  // Walked out: their booker still sees them, but not how to reach them (Angad, 20 Oct: "not be able to call them")
+  if (walkedOut(c) && !isAdmin(u)) { o.mobile = ''; o.email = ''; }
   return o;
 }
 function getC(id) {
@@ -1008,6 +1012,8 @@ function saveOutcome(req, u) {
     c._wasPending = c.admin_status === 'pending';
     if (!(isAdmin(u) || c.booker_id === u.id)) throw new Error('Only the booker or admin can log the outcome.');
     if (OUTCOMES.indexOf(req.outcome) < 0) throw new Error('Choose an outcome.');
+    // A walk out is never booked onto the Academy, and their booker logs nothing (an admin can, anything but booked)
+    if (walkedOut(c) && (!isAdmin(u) || req.outcome === 'Academy booked')) throw new Error(WALKED_OUT);
     if (req.outcome === 'Academy booked') {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(req.academy_date || '')) throw new Error('Pick the BA Academy Day 1 date.');
     }
@@ -1025,8 +1031,8 @@ function saveOutcome(req, u) {
       if (req.callback_at !== c.callback_at) c.callback_nudged = '';
       c.callback_at = req.callback_at; c.callback_by_id = u.id;
     } else if (req.outcome !== 'Thinking it over') { c.callback_at = ''; c.callback_by_id = ''; c.callback_nudged = ''; }
-    // RED or a walk out from the presenter (or a repeat block) → admin has the final say on an Academy booking.
-    if (req.outcome === 'Academy booked' && (c.rag === 'R' || walkedOut(c) || truthy(c.repeat_block))) {
+    // RED from presenter (or a repeat block) → admin has the final say on an Academy booking.
+    if (req.outcome === 'Academy booked' && (c.rag === 'R' || truthy(c.repeat_block))) {
       if (isAdmin(u)) { c.admin_status = 'approved'; c.admin_by = u.name; c.admin_at = nowStr(); }
       else if (c.admin_status !== 'approved') c.admin_status = 'pending';
     } else if (c.admin_status === 'pending') c.admin_status = '';
@@ -1040,7 +1046,7 @@ function saveOutcome(req, u) {
   log(u, 'outcome', c.id, c.outcome + (c.outcome_late ? ' LATE' : ''));
   if (res.alert) {
     notify(usersAll().filter(isAdmin), '🔴 Decision needed: ' + c.full_name,
-      c.booker_name + ' wants to book BA Academy, but ' + (walkedOut(c) ? 'they walked out of the presentation.' : 'the presenter marked RED or they were previously not suitable.'), c.id);
+      c.booker_name + ' wants to book BA Academy, but the presenter marked RED or they were previously not suitable.', c.id);
   }
   return shape(c, u);
 }
@@ -1161,6 +1167,7 @@ function markSent(req, u) {
   return withLock(() => {
     const c = getC(req.id);
     if (!fullAccess(u, c)) throw new Error('No access');
+    if (walkedOut(c) && !isAdmin(u)) throw new Error(WALKED_OUT);
     // The company they chose as they sent it (thank-you or congratulations): everything after follows it
     if ((req.co === 'LINK' || req.co === 'JUSS') && onRecruitTeam(u)) c.brand = req.co;
     if (req.kind === 'thanks') {
@@ -1606,7 +1613,7 @@ function maybeThanksReminder() {
   const p = PropertiesService.getScriptProperties();
   if (p.getProperty('THANKS_REMINDED') === today) return;
   p.setProperty('THANKS_REMINDED', today);  // claim it first so an overlapping run can't send twice
-  const rows = readTable('Candidates').filter(c => c.attended_date === today && !c.thanks_sent_at);
+  const rows = readTable('Candidates').filter(c => c.attended_date === today && !c.thanks_sent_at && !walkedOut(c));  // no thank-you for a walk out
   const team = thanksTeam(), byUser = {};
   Object.keys(team).forEach(co => {
     const t = team[co]; if (!t.id) return;

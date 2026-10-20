@@ -1405,6 +1405,10 @@ function statusPill(c) {
 }
 /** Non-qualifier (under 18 / no right to work self-employed): set by their check-in answers. */
 function nqPill(c) { return c.non_qual ? '<span class="pill red">⛔ Non-qualifier</span>' : ''; }
+/** Under 18 / no right to work: the presenter doesn't rate them (Angad, 20 Oct). no_rating: someone else's candidate. */
+function noRating(c) { return !!(c.non_qual || c.no_rating); }
+/** Walked out (Angad, 20 Oct): their booker sees them, but can't call, message, log an outcome or book them. Admins can. */
+function walkLocked(c) { return c.rag === 'W' && !isAdmin(); }
 function avatar(c, cls) { return '<span class="av ' + (cls || '') + ' rag-' + (c.rag || 'X') + '">' + h(initials(c.full_name)) + '</span>'; }
 function waFor(c) {
   const offerReady = c.outcome === 'Academy booked' && c.admin_status !== 'pending' && c.admin_status !== 'rejected' && c.welcome_url;
@@ -1441,9 +1445,10 @@ function quickRow(c, kind) {
 }
 function item(c, showStatus, kind) {
   const q = kind ? quickRow(c, kind) : '';
-  // Someone else's candidate (presenter rating the room): name + rating only, no call / WhatsApp
-  if (c.limited) return '<div class="ccard' + (q ? ' has-quick' : '') + '">' + itemBtn(c, showStatus, kind === 'rate') + q + '</div>';
-  return '<div class="ccard' + (q ? ' has-quick' : '') + '"><div class="swipe"><div class="acts"><a class="act call" href="tel:' + h(c.mobile) + '">' + icon('phone', 20) + '<span>Call</span></a>' +
+  // Someone else's candidate (presenter rating the room): name + rating only, no call / WhatsApp. A walk out: no call either.
+  const cls = 'ccard' + (q ? ' has-quick' : '') + (c.rag === 'W' ? ' walkout' : '');  // a walk out stands out in light red (Angad, 20 Oct)
+  if (c.limited || walkLocked(c)) return '<div class="' + cls + '">' + itemBtn(c, showStatus, kind === 'rate') + q + '</div>';
+  return '<div class="' + cls + '"><div class="swipe"><div class="acts"><a class="act call" href="tel:' + h(c.mobile) + '">' + icon('phone', 20) + '<span>Call</span></a>' +
     '<a class="act wa" href="' + h(waFor(c)) + '" target="_blank" rel="noopener">' + icon('chat', 20) + '<span>' + chanName(c) + '</span></a></div>' + itemBtn(c, showStatus, kind === 'rate') + '</div>' + q + '</div>';
 }
 /** Presenters in the room: who booked someone else's appointment. '' from Google code that doesn't send it yet. */
@@ -1457,7 +1462,8 @@ function itemBtn(c, showStatus, rating) {
     '<div class="name">' + h(c.full_name) + (c.stars ? ' <span class="stars-sm">' + '★'.repeat(Number(c.stars)) + '</span>' : '') + '</div>' +
     '<div class="sub">' + (c.limited ? (bookedBy(c) ? bookedBy(c) + ' ' : '') + (c.company ? '<span class="co ' + h(c.company) + '">' + h(c.company) + '</span> ' : '') + '· in ' + h(String(c.created_at).slice(11, 16))
       : c.booker_name ? h(c.booker_name) + ' <span class="co ' + h(c.company) + '">' + h(c.company) + '</span>' : '<i>Booker not confirmed' + (c.booker_typed ? ': "' + h(c.booker_typed) + '"' : '') + '</i>') + '</div>' +
-    '<div class="pills">' + nqPill(c) + (showStatus ? statusPill(c) : '') + (c.in_room || rating ? '' : '<span class="pill">Not rated yet</span>') + (c._pending ? '<span class="pill">⏳ Syncing</span>' : '') + flagCounts(c) + '</div>' +
+    '<div class="pills">' + nqPill(c) + (showStatus ? statusPill(c) : '') + (c.in_room || rating || noRating(c) ? '' : '<span class="pill">Not rated yet</span>') +
+      (c.limited && c.no_rating && !c.in_room ? '<span class="pill">No rating needed</span>' : '') + (c._pending ? '<span class="pill">⏳ Syncing</span>' : '') + flagCounts(c) + '</div>' +
     '</div><span class="chev">›</span></button>';
 }
 function bindItems(root) {
@@ -1558,14 +1564,16 @@ function viewToday(quiet) {
   if (!d) body = '<div class="hero">' + FX + top + '</div>' + skeleton();
   else {
     const items = d.items.filter(c => c.attended_date === S.day).sort((a, b) => a.created_at.localeCompare(b.created_at));
-    const rated = items.filter(c => c.in_room).length, toCall = items.filter(c => !c.limited && c.eval_at && !c.outcome).length;
+    // Non-qualifiers aren't rated, so "N of M rated" leaves them out; a walk out is nobody's call
+    const toRate = items.filter(c => !noRating(c)), rated = toRate.filter(c => c.in_room).length;
+    const toCall = items.filter(c => !c.limited && c.eval_at && !c.outcome && c.rag !== 'W').length;
     body = '<div class="hero">' + FX + top + kpis([[items.length, 'Checked in'], [rated, 'Rated'], [items.filter(c => c.eval_at).length, 'Evaluated'], [toCall, 'To call', toCall > 0]]) + '</div>' +
       (isAdmin() || canThank() ? thanksButton(items) : '') +
       (isAdmin() ? '<div class="bullbtns"><button class="btn" id="bullDaily">📣 ' + (isToday ? 'Today\'s' : DAYS[D(S.day).getUTCDay()]) + ' bulletin</button><button class="btn ghost" id="bullWeek">🏆 Week top 5</button></div>' : '') +
-      (items.length ? '<div class="section-h"><b>In the room</b><span>' + rated + ' of ' + items.length + ' rated</span></div>' +
-        (isPresenter() ? '<p class="hint">Tap Green, Amber or Red to rate. Rating = they were in the room (that\'s what counts for the recruitment incentive). Left before the end? Tap 🚶 Walk out. Tap a name for stars and notes.</p>' : '') +
+      (items.length ? '<div class="section-h"><b>In the room</b><span>' + rated + ' of ' + toRate.length + ' rated</span></div>' +
+        (isPresenter() ? '<p class="hint">Tap Green, Amber or Red to rate. Rating = they were in the room (that\'s what counts for the recruitment incentive). Left before the end? Tap 🚶 Walk out. Under 18 or no right to work: no rating needed. Tap a name for stars and notes.</p>' : '') +
         (items.some(c => c.limited) ? '<p class="hint">🔒 You see your own candidates in full. Everyone else\'s: name, who booked them and the room rating only.</p>' : '') +
-        '<div class="list">' + items.map(c => item(c, false, isPresenter() && !c.in_room ? 'rate' : '')).join('') + '</div>'
+        '<div class="list">' + items.map(c => item(c, false, isPresenter() && !c.in_room && !noRating(c) ? 'rate' : '')).join('') + '</div>'
         : empty('📷', 'No check-ins yet. They appear here live as people scan the check-in QR on your first slide.'));
   }
   const page = paint('', body, quiet);
@@ -1589,8 +1597,8 @@ function viewMine(quiet) {
     const me = S.me.user.id;
     const items = d.items.filter(c => c.booker_id === me);
     const r = d.pay.rows.filter(x => x.booker_id === me)[0] || { net: 0, attended: 0, excluded: [], late: 0, missing: 0 };
-    const toCall = items.filter(c => c.eval_at && !c.outcome);
-    const noAnswer = items.filter(c => c.outcome === 'No answer');
+    const toCall = items.filter(c => c.eval_at && !c.outcome && c.rag !== 'W');  // a walk out is never called
+    const noAnswer = items.filter(c => c.outcome === 'No answer' && c.rag !== 'W');
     const toSend = items.filter(c => toCall.indexOf(c) < 0 && c.outcome === 'Academy booked' && c.welcome_url && !c.offer_sent_at && !c.academy_confirmed_at && c.admin_status !== 'pending' && c.admin_status !== 'rejected');
     const left = Math.max(0, d.pay.target - r.net);
     // Admins can book people but don't earn the recruitment incentive: their numbers, no target
@@ -1665,7 +1673,7 @@ function viewPay(quiet) {
         '<div class="pills">' + (r.late ? '<span class="pill amber">' + r.late + ' late</span>' : '') + (r.missing ? '<span class="pill red">' + r.missing + ' no outcome</span>' : '') + '<span class="pill">' + r.attended + ' attended</span></div>' +
         '<div class="small muted excl" hidden>' + (r.excluded.length ? r.excluded.map(x => h(x.name) + ': ' + h(x.why)).join('<br>') : 'Nothing excluded') + '</div></div>' +
         '<div class="net"><b>' + r.net + '</b><span>/' + p.target + '</span></div></div>').join('') : empty('💷', 'No appointments this week.')) + '</div>' +
-      '<p class="hint">Net ' + p.target + ' attended, Mon–Fri, rated by the presenter. Doesn\'t count: under 18, not eligible to work self-employed, walked out, seen in the last 6 months, removed by admin. ' +
+      '<p class="hint">Net ' + p.target + ' attended, Mon–Fri, rated by the presenter. Doesn\'t count: under 18, not eligible to work self-employed, seen in the last 6 months, removed by admin (a walk out still counts). ' +
         (isAdmin() ? 'Admins don\'t earn the incentive, so people you book aren\'t on here. ' : '') + 'Tap a row for details. Outcomes due ' + fmtTs(p.deadline) + '.</p>' +
       (p.unassigned.length ? '<div class="section-h">No confirmed booker <span>' + p.unassigned.length + '</span></div><div class="list">' + p.unassigned.map(x => '<button class="item" data-id="' + h(x.id) + '"><span class="av">?</span><div class="main"><div class="name">' + h(x.name) + '</div><div class="sub">Typed "' + h(x.typed || '—') + '" · tap to assign</div></div><span class="chev">›</span></button>').join('') + '</div>' : '') +
       (isAdmin() ? presenterFunnel(d.items || []) : '');
@@ -2659,7 +2667,7 @@ function weekPdfName(we) { return 'Appointments w-e ' + we.slice(8, 10) + '.' + 
 /** booked / follow / no / none / nq / walk: which summary box someone counts in. */
 function outcomeKind(c) {
   if (c.non_qual) return 'nq';
-  if (c.rag === 'W' && !c.outcome) return 'walk';
+  if (c.rag === 'W') return 'walk';
   if (c.admin_status === 'rejected') return 'no';
   if (c.outcome === 'Academy booked') return 'booked';
   if (c.outcome === 'Thinking it over' || c.outcome === 'No answer') return 'follow';
@@ -2669,7 +2677,7 @@ function outcomeKind(c) {
 function outcomeText(c) {
   const late = c.outcome_late ? ' (late)' : '';
   if (c.non_qual) return 'Non-qualifier: ' + (/^Not eligible/.test(c.non_qual) ? 'not eligible to work' : /^Visa expired/.test(c.non_qual) ? 'visa expired' : c.non_qual.toLowerCase());
-  if (c.rag === 'W' && !c.outcome) return 'Walked out of the presentation';
+  if (c.rag === 'W') return 'Walk out: do not book' + (c.outcome ? ' (' + c.outcome + ')' : '');
   if (c.admin_status === 'rejected') return 'Academy booking rejected by admin';
   if (c.outcome === 'Academy booked') return 'Academy booked: ' + fmt(c.academy_date) + (c.admin_status === 'pending' ? ', awaiting admin' : c.academy_confirmed_at ? ', confirmed' : '') + late;
   if (c.outcome === 'Thinking it over' && c.callback_at) return 'Thinking it over: call back ' + fmtTs(c.callback_at) + late;
@@ -2718,11 +2726,14 @@ function weekPdf(we, list) {
   const dayHead = (d, dl, cont) => {
     y -= 10;
     txt(M, y - 12, fmtLong(d) + (cont ? ' (continued)' : ''), 12, true);
-    if (!cont) txt(M + 190, y - 12, dl.length + ' checked in  ·  ' + evals(dl) + ' evaluated  ·  ' + count(dl, 'booked') + ' Academy booked  ·  ' + count(dl, 'none') + ' no outcome yet', 8.5, false, 'grey');
+    if (!cont) txt(M + 190, y - 12, dl.length + ' checked in  ·  ' + evals(dl) + ' evaluated  ·  ' + count(dl, 'booked') + ' Academy booked  ·  ' + count(dl, 'none') + ' no outcome yet' +
+      (count(dl, 'walk') ? '  ·  ' + count(dl, 'walk') + ' walk out' : ''), 8.5, false, 'grey');
     y -= 20;
   };
   const row = (c, i) => {
     const yy = y - 13, k = outcomeKind(c), ev = c.eval_at ? 'Yes' : c.non_qual || c.rag === 'W' ? '-' : 'No';
+    // A walk out: the whole row in light red, so nobody books them (Angad, 20 Oct)
+    if (k === 'walk') o.push('0.99 0.88 0.88 rg ' + M + ' ' + (y - RH).toFixed(2) + ' ' + TW + ' ' + RH + ' re f');
     txt(colX[0], yy, String(i + 1), 8, false, 'grey');
     txt(colX[1], yy, String(c.created_at || '').slice(11, 16), 8.5);
     const nm = shrink(c.full_name, 2, 9, 7, true), oc = shrink(outcomeText(c), 7, 8, 6.5);
@@ -2731,7 +2742,7 @@ function weekPdf(we, list) {
     txt(colX[4], yy, fit(c.mobile, 4, 8.5), 8.5);
     txt(colX[5], yy, fit(c.booker_name || (c.booker_typed ? c.booker_typed + '?' : '-'), 5, 8.5), 8.5);
     txt(colX[6], yy, ev, 8.5, ev === 'No', ev === 'No' ? 'amber' : '');
-    txt(colX[7], yy, oc[0], oc[1], false, { booked: 'green', none: 'amber', nq: 'red' }[k] || '');
+    txt(colX[7], yy, oc[0], oc[1], k === 'walk', { booked: 'green', none: 'amber', nq: 'red', walk: 'red' }[k] || '');
     o.push('0.85 0.84 0.82 RG 0.5 w ' + M + ' ' + (y - RH).toFixed(2) + ' m ' + (M + TW) + ' ' + (y - RH).toFixed(2) + ' l S');
     y -= RH;
   };
@@ -2783,9 +2794,9 @@ function payPdf(we, d) {
   const cols = [['BA NAME', 140], ['MC', 36]].concat(days.map(x => [DAYS_LONG[D(x).getUTCDay()].toUpperCase(), 51.4])).concat([['APPTS TOTAL', 45], ['NON QUALIFIERS', 45]]);
   const colL = []; cols.reduce((x, c) => { colL.push(x); return x + c[1]; }, M);
   const mid = i => colL[i] + cols[i][1] / 2;
-  // Attended = rated in the room by the presenter, or a non-qualifier (same as the bulletin), Monday to Friday. Non
-  // qualifiers = attended but don't count for the incentive (not eligible, walked out, repeat, removed by admin), as on the
-  // poster: so the total less the non qualifiers is the net the incentive goes on.
+  // Attended = rated in the room by the presenter (a walk out too), or a non-qualifier (same as the bulletin), Monday to
+  // Friday. Non qualifiers = attended but don't count for the incentive (not eligible, repeat, removed by admin), as on
+  // the poster: so the total less the non qualifiers is the net the incentive goes on.
   const att = items.filter(c => counted(c) && days.indexOf(c.attended_date) >= 0);
   const netOf = {}; p.rows.forEach(r => { netOf[r.booker_id] = r.net; });
   const line = (id, name, co, group) => {
@@ -2854,7 +2865,7 @@ function payPdf(we, d) {
   ctr(8, y - 17, String(nqAll), 12, true, 'red');
   y -= FOOT; hline(y); closeTable();
   // What the non qualifiers are, and what isn't on the grid, so nobody wonders why a check-in is missing
-  const why = [['not eligible', c => c.non_qual], ['walked out', c => !c.non_qual && c.rag === 'W'], ['repeat', c => /^Repeat/.test(c.pay_reason || '')], ['removed by admin', c => /^Removed/.test(c.pay_reason || '')]]
+  const why = [['not eligible', c => c.non_qual], ['repeat', c => /^Repeat/.test(c.pay_reason || '')], ['removed by admin', c => /^Removed/.test(c.pay_reason || '')]]
     .map(x => [x[0], att.filter(c => c.pay_reason && x[1](c)).length]).filter(x => x[1]);
   if (why.length) { txt(M, y - 16, 'Non qualifiers: ' + why.map(x => x[1] + ' ' + x[0]).join(', ') + '.', 8, false, 'grey'); y -= 12; }
   const notRated = items.filter(c => !counted(c)).length, weekend = items.filter(c => counted(c) && days.indexOf(c.attended_date) < 0).length;
@@ -3254,6 +3265,7 @@ function outcomeSheet(id, preset) {
 // ───── After the presentation: Jess (LINK) and Rubal (JUSS) thank every appointment, whoever booked them ─────
 /** Today's button: "send yours" for Jess / Rubal, "sent or not" for everyone else on Today. */
 function thanksButton(items) {
+  items = items.filter(c => c.rag !== 'W');  // no thank-you for a walk out
   if (!items.length) return '';
   const mine = items.filter(mineToThank), sentN = l => l.filter(c => c.thanks_sent_at).length;
   if (mine.length) return sentN(mine) < mine.length
@@ -3264,7 +3276,7 @@ function thanksButton(items) {
 }
 function thanksSheet() {
   const d = S.data[weekEndingOf(S.day)];
-  const all = d ? d.items.filter(c => c.attended_date === S.day).sort((a, b) => a.created_at.localeCompare(b.created_at)) : [];
+  const all = d ? d.items.filter(c => c.attended_date === S.day && c.rag !== 'W').sort((a, b) => a.created_at.localeCompare(b.created_at)) : [];  // no thank-you for a walk out
   const sender = canThank(), own = all.filter(mineToThank), other = all.filter(c => !mineToThank(c));
   const items = sender ? own.concat(other) : all;
   const otherCo = ['LINK', 'JUSS'].filter(co => myThanks().indexOf(co) < 0)[0];
@@ -3365,7 +3377,7 @@ function presCard(c, canNotes) {
       ? '<div class="qa"><div class="qq">💬 Why work in sales?</div><div class="aa">' + (h(c.p_why_sales_note || c.p_why_sales) || '<span class="muted">—</span>') + '</div></div>' +
         '<div class="qa"><div class="qq">✨ Something interesting about them</div><div class="aa">' + (h(c.p_interesting) || '<span class="muted">—</span>') + '</div></div><hr>'
       : '') +
-      '<dl class="kv">' + kv('In the room', c.in_room ? 'Yes' : 'Not rated yet') + kv('Recommendation', { G: 'Green', A: 'Amber', R: 'Red', W: '🚶 Walked out' }[c.rag] || '') +
+      '<dl class="kv">' + kv('In the room', c.in_room ? 'Yes' : noRating(c) ? 'No rating needed' : 'Not rated yet') + kv('Recommendation', { G: 'Green', A: 'Amber', R: 'Red', W: '🚶 Walked out' }[c.rag] || '') +
       kv('Stars', c.stars ? c.stars + ' / 5' : '') + kv('Tags', c.tags) + kv('Presenter', c.presenter_name) + '</dl>' +
       (c.notes ? '<p style="white-space:pre-wrap;margin-top:10px">' + h(c.notes) + '</p>' : '<p class="muted">No notes yet.</p>');
   }
@@ -3393,7 +3405,9 @@ function bindPres(c) {
 function renderCandidate(c, quiet) {
   S.candDirty = '';
   const canNotes = isPresenter();
-  const canOutcome = isAdmin() || c.booker_id === S.me.user.id;
+  // A walk out: their booker sees them, but no call, messages or outcome (admins can, but never book them)
+  const walk = c.rag === 'W', locked = walkLocked(c);
+  const canOutcome = (isAdmin() || c.booker_id === S.me.user.id) && !locked;
   // Someone else's candidate (a presenter rating the room): who + appointment feedback, nothing else
   if (c.limited) {
     const lim = '<div class="profile">' + FX + avatar(c, 'xl') + '<h1>' + h(c.full_name) + '</h1>' +
@@ -3435,9 +3449,9 @@ function renderCandidate(c, quiet) {
     (c.stars ? '<div class="stars-lg">' + '★'.repeat(Number(c.stars)) + '<span>' + '★'.repeat(5 - Number(c.stars)) + '</span></div>' : '') +
     (c.p_interesting ? '<div class="icebreak">💡 ' + h(c.p_interesting) + '</div>' : '') +
     '<div class="pills center-pills">' + nqPill(c) + statusPill(c) + (c._pending ? '<span class="pill">⏳ Syncing…</span>' : '') + '</div>' +
-    '<div class="actions"><a href="tel:' + h(c.mobile) + '">' + icon('phone') + '<span>Call</span></a>' +
+    (locked ? '' : '<div class="actions"><a href="tel:' + h(c.mobile) + '">' + icon('phone') + '<span>Call</span></a>' +
     '<a href="' + h(waMain) + '" target="_blank" rel="noopener">' + icon('chat') + '<span>' + chanName(c) + '</span></a>' +
-    '<a href="mailto:' + h(c.email) + '">' + icon('mail') + '<span>Email</span></a></div>' +
+    '<a href="mailto:' + h(c.email) + '">' + icon('mail') + '<span>Email</span></a></div>') +
     (flags.length || nqBan ? '<div class="flags">' + nqBan + flags.map(f => '<div class="flag ' + f.level + '">' + h(f.text) + '</div>').join('') + '</div>' : '') + '</div>';
 
   // In the room (presenter)
@@ -3457,9 +3471,10 @@ function renderCandidate(c, quiet) {
       (c.admin_status === 'rejected' ? '<div class="flag red">Rejected by ' + h(c.admin_by) + (c.admin_note ? ': ' + h(c.admin_note) : '') + '</div>' : '') +
       sentList(c);
     if (canOutcome) out += '<hr>';
-  } else if (!canOutcome) out += '<p class="muted">Not logged yet.</p>';
+  } else if (!canOutcome) out += '<p class="muted">' + (walk ? '🚶 Not needed: they walked out of the presentation. No call, messages or BA Academy booking.' : 'Not logged yet.') + '</p>';
   if (canOutcome) {
-    out += '<label class="q" style="margin-top:0">' + (c.outcome ? 'Update outcome' : 'How did the call go?') + '</label>' + chips('outcome', S.me.outcomes, c.outcome, true) +
+    out += '<label class="q" style="margin-top:0">' + (c.outcome ? 'Update outcome' : 'How did the call go?') + '</label>' +
+      chips('outcome', walk ? S.me.outcomes.filter(o => o !== 'Academy booked') : S.me.outcomes, c.outcome, true) +
       '<div id="acad"' + (c.outcome === 'Academy booked' ? '' : ' hidden') + '><label class="q">BA Academy Day 1 date</label><input type="date" id="adate" value="' + h(academyDefault) + '"></div>' +
       '<div id="cbk"' + (c.outcome === 'Thinking it over' ? '' : ' hidden') + '>' + cbPicker(c) + '</div>' +
       '<label class="q">Notes from the call</label><textarea id="onotes" placeholder="Anything the team should know">' + h(c.outcome_notes) + '</textarea>' +
@@ -3470,9 +3485,10 @@ function renderCandidate(c, quiet) {
 
   // WhatsApp, ready to send
   const wa = [];
-  if (canThank()) wa.push(sendButtons(c, 'thanks', '💬 Send thank-you message' + (c.non_qual ? ' (non-qualifier)' : ''), msgThanks(c)) +
+  // No thank-you for a walk out
+  if (canThank() && !walk) wa.push(sendButtons(c, 'thanks', '💬 Send thank-you message' + (c.non_qual ? ' (non-qualifier)' : ''), msgThanks(c)) +
     (c.thanks_sent_at ? '<p class="small muted center sentby" data-sent="thanks">✓ ' + cap1(sentBy(c.thanks_by, c.thanks_sent_at, c.thanks_via, c.thanks_co)) + '</p>' : ''));
-  const thanksFlag = canThank() ? '' : c.thanks_sent_at
+  const thanksFlag = canThank() || walk ? '' : c.thanks_sent_at
     ? '<div class="flag green">💬 Thank-you ' + sentBy(c.thanks_by, c.thanks_sent_at, c.thanks_via, c.thanks_co) + '</div>'
     : '<div class="flag amber">💬 Thank-you not sent yet · ' + h(thanksName(thanksCo(c))) + ' sends it</div>';
   if (canOutcome && offerReady && !c.welcome_url && c._pending) wa.push('<div class="flag amber"><span class="spinner sm inline"></span> Saving to Google… the 🎉 congratulations button appears here in a few seconds.</div>');
@@ -3481,8 +3497,8 @@ function renderCandidate(c, quiet) {
     (c.welcome_url ? '<a class="btn ghost sm" target="_blank" rel="noopener" href="' + h(welcomeLink(c)) + '">👀 Preview their welcome page</a>' : ''));
   if (canOutcome && c.outcome === 'No answer') wa.push(sendButtons(c, 'noanswer', '📞 Send "we tried calling you" message', msgNoAnswer(c)));
   if (canOutcome && c.outcome === 'Thinking it over') wa.push(sendButtons(c, 'thinking', '🔁 Send "speak soon" + call-back time', msgThinking(c)));
-  const noWa = c.no_whatsapp ? '<div class="flag amber">📵 Not on WhatsApp: message them by text (or email)</div>' : '';
-  const waCard = '<div class="card wa-grid" id="wacard">' + noWa + thanksFlag + wa.join('') + (wa.length ? '<p class="small muted center" style="margin:0">' + (canPickBrand() ? 'Tap <b>LINK</b> or <b>JUSS</b>: opens ' : 'Opens ') + ({ sms: 'your Messages app', email: 'your email' }[canPickBrand() ? chanOf(c) : c.no_whatsapp ? 'sms' : ''] || 'WhatsApp') +
+  const noWa = c.no_whatsapp && !walk ? '<div class="flag amber">📵 Not on WhatsApp: message them by text (or email)</div>' : '';
+  const waCard = walk && !wa.length ? '' : '<div class="card wa-grid" id="wacard">' + noWa + thanksFlag + wa.join('') + (wa.length ? '<p class="small muted center" style="margin:0">' + (canPickBrand() ? 'Tap <b>LINK</b> or <b>JUSS</b>: opens ' : 'Opens ') + ({ sms: 'your Messages app', email: 'your email' }[canPickBrand() ? chanOf(c) : c.no_whatsapp ? 'sms' : ''] || 'WhatsApp') +
     (canPickBrand() ? ' with that company\'s message ready, signed by you.' : ' with the message ready, then just tap send.') + '</p>' : '') + '</div>';
 
   // Admin
@@ -3518,7 +3534,7 @@ function renderCandidate(c, quiet) {
     out: ['Outcome', '<b>Call outcome</b><span>' + ((c.non_qual || c.rag === 'W') && !c.outcome ? 'not needed' : 'due ' + fmtTs(c.deadline)) + '</span>', out + (canOutcome ? waCard : '')],
     pres: ['Appt Feedback', '<b>Appt feedback</b>', pres + (canOutcome ? '' : waCard)],
     ev: ['Evaluation', '<b>Evaluation</b>' + (c.eval_at ? '<span>' + fmtTs(c.eval_at) + '</span>' : ''), '<div class="card">' + evalHtml + '</div>'],
-    ci: ['Details', '<b>Check-in</b>', '<div class="card"><dl class="kv">' + kv('Mobile', c.mobile) + kv('Email', c.email) + kv('18 or over', c.over18) + kv('Right to work', c.rtw) +
+    ci: ['Details', '<b>Check-in</b>', '<div class="card"><dl class="kv">' + kv('Mobile', locked ? '🔒 Hidden: walked out' : c.mobile) + kv('Email', c.email) + kv('18 or over', c.over18) + kv('Right to work', c.rtw) +
       kv('Visa expiry', c.visa_expiry ? fmt(c.visa_expiry) : '') + kv('Found us via', c.source) + kv('Typed booker', c.booker_typed) + kv('Checked in', fmtTs(c.created_at)) + '</dl></div>'],
     adm: ['Admin', '<b>Admin</b>', adm],
   };
