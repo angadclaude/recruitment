@@ -300,7 +300,7 @@ A new applicant gets a **call from the office number within a minute or two** (9
     - `nudge`: *Hi {{1}}, thanks for chatting with JUSS Marketing about the Brand Ambassador opportunity. Reply here to finish your application and pick a presentation day.*
 12. **Live** when you're happy. The test copy (preview, `REHEARSAL=1`) only ever calls or messages the numbers in `ROBOT_ALLOW`.
 
-**Costs (about 200 applicants a week):** voice about £150 a month (ElevenLabs Pro includes 1,238 minutes, then about 6p a minute), phone line about 2p a minute, texts about 4p each, WhatsApp about 2p each, the AI a few pounds. Roughly **£250–£400 a month**.
+**Costs (about 200 applicants a week):** voice about £150 a month (ElevenLabs Pro includes 1,238 minutes, then about 6p a minute), phone line about 2p a minute, texts about 4p each, WhatsApp about 2p each, and the AI that reads replies about £40–£60 a month on Anthropic's top model (`ROBOT_MODEL` in `Code.gs`; a smaller model would be under £2). Roughly **£300–£450 a month**.
 
 ## Rules built in (top of `Code.gs`)
 - **Net attended:** Mon–Fri, **rated by the presenter**, 18+, eligible to work self-employed, not seen in the last **6 months**, not removed by admin. Target 5.
