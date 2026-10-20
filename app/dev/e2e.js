@@ -1150,6 +1150,11 @@ async function fillEval(p) {
   const jessPrev = await api(await loginApi('jess@linkmarketing.org.uk'), 'onboardPreview', { id: adham.id });
   ok(jessPrev.from === 'Jess Grace <jess@linkmarketing.org.uk>' && /<b>Jess Grace<\/b>/.test(jessPrev.html) && /^JUSS Marketing - /.test(jessPrev.subject),
     'Jess or Rubal can send either brand: Jess sending a JUSS starter\'s email → from her address, signed by her');
+  // Signed under the other company: "In association with …" (Angad, 20 Oct); under her own, just the company
+  const signOf = h => (/<b>[^<]+<\/b><br><span[^>]*>([^<]+)<\/span><\/td><\/tr>/.exec(h) || [])[1];
+  ok(signOf(jessPrev.html) === 'In association with JUSS Marketing' && /Jess Grace\nIn association with JUSS Marketing$/.test(jessPrev.text) &&
+    signOf(lp.html) === 'Link Marketing' && signOf(prevHtml) === 'JUSS Marketing',
+    'Jess signing a JUSS email: "Jess Grace · In association with JUSS Marketing"; her own LINK email and Rubal\'s JUSS one: just the company');
   ok(lp.subject === 'Link Marketing - Your Brand Ambassador Journey Begins!' && /NDCS/.test(lp.html) && /Pre-Coaching Module/.test(lp.html) && /073110 27272/.test(lp.html) && /Day 3 onwards/.test(lp.html) && /img\/logo-link\.png/.test(lp.html) && /Link Magazine/.test(lp.html),
     'LINK version: NDCS, the pre-coaching module, Day 3 timings, Link Magazine, LINK numbers');
   await ap.goto(APP + 'index.html?c=academy'); await ap.waitForSelector('.onbq');
@@ -1173,6 +1178,8 @@ async function fillEval(p) {
   const zm = (await getJson('/dev/mail')).slice(mbZ).find(m => m.to === 'jasraj@example.com');
   ok(zm && zm.from === 'recruitment@jussmarketing.co.uk' && zm.name === 'Zara Iqbal | Link Marketing' && zm.bcc === 'recruitment@jussmarketing.co.uk' && zm.subject === 'Link Marketing - Your Brand Ambassador Journey Begins!' && /Link FR Playbook/.test(zm.body),
     'Fiza sends it as LINK → from recruitment@jussmarketing.co.uk as "Zara Iqbal | Link Marketing", she gets a copy');
+  ok(/Zara Iqbal\nIn association with Link Marketing$/.test(zm.body),
+    'a JUSS address sending a LINK email signs "In association with Link Marketing" (as Rubal would)');
 
   // ── Monday 10:00: Jess / Rubal get "N starters to remind" → Day 1 tab → Send reminders (one tap each) → print the sign-in sheet ──
   await setTime('2026-10-19T09:55:00+01:00');
