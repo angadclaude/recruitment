@@ -45,10 +45,12 @@
   function journey(d) {
     if (!d.stage) { $('journey').hidden = true; return; }
     // Angad's ladder: Stages 1 & 2 = Brand Ambassador (the playbook's Cycle of Development 1, then 2 "Becoming a Leader"), Stage 3 = Leader
-    const pb = d.person.company === 'JUSS' ? 'JUSS Playbook' : 'Link Org Playbook';
+    const juss = d.person.company === 'JUSS', pb = juss ? 'JUSS Playbook' : 'Link Org Playbook';
+    // LINK: Stage 3 opens inside the Link Org Playbook (21 Oct); JUSS: its own Leaders Playbook
+    const s3 = juss ? 'your Leaders Playbook' : 'Stage 3 in your Link Org Playbook';
     const steps = [
       { n: 2, dot: '1–2', t: 'Brand Ambassador', s: 'Stages 1 & 2 · your ' + pb + ' and Cycle of Development' },
-      { n: 3, dot: '3', t: 'Leader', s: d.stage >= 3 ? (d.waitingForLeaders ? 'Approved · your Leaders Playbook opens very soon' : 'Stage 3 · your Leaders Playbook is open') : 'Stage 3 · opens when an approver moves you on' },
+      { n: 3, dot: '3', t: 'Leader', s: d.stage >= 3 ? (d.waitingForLeaders ? 'Approved · ' + s3 + ' opens very soon' : 'Stage 3 · ' + s3 + ' is open') : 'Stage 3 · opens when an approver moves you on' },
     ];
     $('ladder').innerHTML = steps.map(x => '<li class="' + (x.n < d.stage ? 'done' : x.n === d.stage ? 'now' : 'next') + '"><div class="dot">' + (x.n < d.stage ? '✓' : x.dot) + '</div><div><b>' + esc(x.t) + '</b><span>' + esc(x.s) + '</span></div></li>').join('');
     $('journey').hidden = false;
@@ -67,7 +69,9 @@
     api('team').then(r => {
       if (!r.ok) { $('moveOn').hidden = true; return; }
       TEAM = r.people;
-      $('moveHint').textContent = 'Approve a ' + r.companies.join(' or ') + ' BA to Stage 3 · Leader and their Leaders Playbook opens on their phone.';
+      const co = r.companies.join();
+      $('moveHint').textContent = 'Approve a ' + r.companies.join(' or ') + ' BA to Stage 3 · Leader and ' +
+        (co === 'JUSS' ? 'their Leaders Playbook opens' : co === 'LINK' ? 'Stage 3 opens in their Link Org Playbook' : 'Stage 3 opens in their playbook') + ' on their phone.';
       $('moveOn').hidden = false; drawTeam();
     });
   }
@@ -78,7 +82,7 @@
     b.disabled = true; b.textContent = 'Moving on…';
     api('promote', { app: b.dataset.app, id: b.dataset.id }).then(r => {
       const m = $('moveMsg'); m.className = 'msg ' + (r.ok ? 'ok' : 'err'); m.hidden = false;
-      m.textContent = r.ok ? (r.already ? r.name + ' is already a Leader.' : r.name + ' is now a Leader 🎉 ' + (r.opened ? 'Their Leaders Playbook is open.' : 'Their Leaders Playbook opens as soon as it\'s live.')) : r.error;
+      m.textContent = r.ok ? (r.already ? r.name + ' is already a Leader.' : r.name + ' is now a Leader 🎉 ' + (r.opened ? 'Stage 3 is open for them.' : 'Stage 3 opens for them as soon as it can.')) : r.error;
       loadTeam();
     });
   });
