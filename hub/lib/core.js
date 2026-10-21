@@ -72,7 +72,7 @@ create table if not exists core.promotions (
 const APPS = {
   recruit: { name: 'Recruitment', blurb: 'Check-ins, outcomes, Chase, Day 1', url: 'https://jl-recruitment.vercel.app/', handoff: 'https://jl-recruitment.vercel.app/index.html', company: '' },
   fr: { name: 'Link Org Playbook', blurb: 'LINK · your BA playbook', url: 'https://link-fr-playbook.vercel.app/', handoff: 'https://link-fr-playbook.vercel.app/auth/hub', company: 'LINK' },
-  hf: { name: 'HelloFresh Playbook', blurb: 'JUSS · your BA playbook', url: 'https://juss-hf-playbook.vercel.app/', handoff: 'https://juss-hf-playbook.vercel.app/auth/hub', company: 'JUSS' },
+  hf: { name: 'JUSS Playbook', blurb: 'JUSS · your BA & Leader playbook', url: 'https://juss-hf-playbook.vercel.app/', handoff: 'https://juss-hf-playbook.vercel.app/auth/hub', company: 'JUSS' },
   leaders: { name: 'Leaders Playbook', blurb: 'LINK · for team leaders', url: 'https://link-leaders-playbook.vercel.app/', handoff: 'https://link-leaders-playbook.vercel.app/auth/hub', company: 'LINK' },
   // Being built in another session (18 Oct): schema jleaders, address to confirm. Promotions wait until it exists.
   jleaders: { name: 'Leaders Playbook', blurb: 'JUSS · for team leaders', url: 'https://juss-leaders-playbook.vercel.app/', handoff: 'https://juss-leaders-playbook.vercel.app/auth/hub', company: 'JUSS' },
@@ -142,7 +142,7 @@ function stageOf(acc, pending) {
 }
 
 /** Who someone is across the apps: a display name and their company (LINK / JUSS). JUSS people get the JUSS look
- *  everywhere (hub, HelloFresh Playbook); LINK people the LINK look (hub, FR / Leaders Playbook). */
+ *  everywhere (hub, JUSS Playbook); LINK people the LINK look (hub, FR / Leaders Playbook). */
 function profile(acc) {
   const name = (acc.recruit && acc.recruit.name) || (acc.fr && acc.fr.name) || (acc.leaders && acc.leaders.name) || (acc.hf && acc.hf.name) || '';
   const co = String((acc.recruit && acc.recruit.company) || '').toUpperCase();
@@ -151,7 +151,7 @@ function profile(acc) {
 }
 
 /**
- * New starter onboarded in the recruitment app → their playbook opens: LINK → FR Playbook, JUSS → HelloFresh Playbook.
+ * New starter onboarded in the recruitment app → their playbook opens: LINK → FR Playbook, JUSS → JUSS Playbook.
  * The account has no usable password (it can't be guessed or registered over); they sign in with their email through the hub.
  * Never touches an existing account. Recruitment itself is never unlocked this way: only admins add people there.
  */
@@ -350,7 +350,7 @@ async function redeemHandoff(q, code, app) {
 /** HelloFresh usernames that aren't emails: prove it's you once with the old username + password. */
 async function connectHf(q, person, username, password, bcrypt) {
   const u = (await q('select id::text, password_hash from hf.users where lower(username) = $1', [String(username || '').trim().toLowerCase()]))[0];
-  if (!u || !(await bcrypt.compare(String(password || ''), u.password_hash))) return { ok: false, error: 'That username and password don\'t match the HelloFresh Playbook.' };
+  if (!u || !(await bcrypt.compare(String(password || ''), u.password_hash))) return { ok: false, error: 'That username and password don\'t match the JUSS Playbook.' };
   const taken = (await q("select person_id::text from core.app_links where app = 'hf' and local_id = $1", [u.id]))[0];
   if (taken && taken.person_id !== person.id) return { ok: false, error: 'That HelloFresh account is already connected to another email. Ask Angad.' };
   await q("insert into core.app_links (person_id, app, local_id, how) values ($1::uuid, 'hf', $2, 'old password') on conflict (person_id, app) do update set local_id = excluded.local_id, linked_at = now(), how = excluded.how", [person.id, u.id]);

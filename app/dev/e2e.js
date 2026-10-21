@@ -1123,8 +1123,8 @@ async function fillEval(p) {
   ok(await ap.textContent('#obsubj') === 'JUSS Marketing - Your Brand Ambassador Journey Begins!' && /Hi Adham,/.test(prevHtml) && /Monday 19th October @ 1:30 PM/.test(prevHtml) &&
     /fieldiqdownload/.test(prevHtml) && /Hello Fresh/.test(prevHtml) && /077823 77774/.test(prevHtml) && /You're in, Adham(<\/span>)* 🎉/.test(prevHtml) && /Tuesday 20th October/.test(prevHtml) &&
     /1:30pm – 6:00pm/.test(prevHtml) && /1:00pm – 6:00pm/.test(prevHtml) && /img\/logo-juss\.png/.test(prevHtml) && /See my Week 1 plan \+ CONFIRM/.test(prevHtml) && /<b>Rubal Oshan<\/b>/.test(prevHtml) &&
-    /Read your <b>JUSS HF Playbook<\/b>/.test(prevHtml) && /href="https:\/\/juss-hf-playbook\.vercel\.app\/"[^>]*>📘 (<span[^>]*>)*Open my JUSS HF Playbook/.test(prevHtml),
-    'preview: Rubal\'s JUSS email in the congratulations-page look ("You\'re in, Adham 🎉", JUSS logo, Day 1 / Day 2 cards, FieldIQ, JUSS HF Playbook, Week 1 plan + CONFIRM, Hello Fresh, JUSS number, signed Rubal: it\'s from her address)');
+    /Read your <b>JUSS Playbook<\/b>/.test(prevHtml) && /href="https:\/\/juss-hf-playbook\.vercel\.app\/"[^>]*>📘 (<span[^>]*>)*Open my JUSS Playbook/.test(prevHtml),
+    'preview: Rubal\'s JUSS email in the congratulations-page look ("You\'re in, Adham 🎉", JUSS logo, Day 1 / Day 2 cards, FieldIQ, JUSS Playbook, Week 1 plan + CONFIRM, Hello Fresh, JUSS number, signed Rubal: it\'s from her address)');
   ok(/reply <b>GOT IT<\/b> to this email so we know it reached you/.test(prevHtml), 'the email asks them to reply GOT IT (the strongest "not spam" signal, and Rubal knows it arrived)');
   // The whole email as the candidate sees it (images from this dev server instead of the live site)
   fs.writeFileSync(`${SHOTS}/welcome-email-juss.html`, prevHtml);
@@ -1206,7 +1206,7 @@ async function fillEval(p) {
     'sent from rubal@jussmarketing.co.uk as "Rubal Oshan | JUSS Marketing" (replies go to Rubal, who gets a copy), even though Angad pressed Send');
   ok((await api(admin, 'getCandidate', { id: adham.id })).onboard_email_by === 'Angad Oshan', 'saved: welcome email sent (who, when)');
   const huHref = await ap.getAttribute('#obwa', 'href'), hu = decodeURIComponent(huHref.split(/\?text=|[?&]body=/)[1] || '');
-  ok(/^sms:\+447700900300/.test(huHref) && /^Hi Adham 👋 It's Angad from JUSS Marketing\./.test(hu) && /emailed your starter pack to adham@example\.com/.test(hu) && /JUSS HF Playbook/.test(hu) &&
+  ok(/^sms:\+447700900300/.test(huHref) && /^Hi Adham 👋 It's Angad from JUSS Marketing\./.test(hu) && /emailed your starter pack to adham@example\.com/.test(hu) && /JUSS Playbook/.test(hu) &&
     /It's from rubal@jussmarketing\.co\.uk\. Can't see it\? Check Spam or Promotions and tap Not spam/.test(hu) && /reply GOT IT/.test(hu) &&
     /FieldIQ \(download before Day 1\): https:\/\/www\.tfo\.group\/fieldiqdownload/.test(hu),
     'once sent: a one-tap heads-up (by text: Adham isn\'t on WhatsApp) "just emailed your starter pack… from rubal@… check Spam / Promotions, tap Not spam… reply GOT IT"');
@@ -1255,7 +1255,7 @@ async function fillEval(p) {
   // Fiza's welcome emails: from her own address, as whichever company she has chosen
   const zT2 = await loginApi('recruitment@jussmarketing.co.uk');
   const zPj = await api(zT2, 'onboardPreview', { id: jasId, co: 'JUSS' });
-  ok(zPj.from === 'Zara Iqbal <recruitment@jussmarketing.co.uk>' && /^JUSS Marketing - /.test(zPj.subject) && /<b>Zara Iqbal<\/b>/.test(zPj.html) && /JUSS HF Playbook/.test(zPj.html) &&
+  ok(zPj.from === 'Zara Iqbal <recruitment@jussmarketing.co.uk>' && /^JUSS Marketing - /.test(zPj.subject) && /<b>Zara Iqbal<\/b>/.test(zPj.html) && /JUSS Playbook/.test(zPj.html) &&
     /Can't send as recruitment@jussmarketing\.co\.uk yet/.test(zPj.notReady) && zPj.co === 'JUSS',
     'Fiza previewing Jasraj (LINK booker) as JUSS → JUSS email from recruitment@jussmarketing.co.uk, signed Fiza; flagged until Gmail can send as her address');
   ok((await api(admin, 'getCandidate', { id: jasId })).brand !== 'JUSS', 'a preview never changes anything');
@@ -2010,9 +2010,9 @@ async function fillEval(p) {
     const adHf = await hq('select username, password_hash, full_name, start_date, role from hf.users where username = $1', ['adham@example.com']);
     const adNow2 = await api(admin, 'getCandidate', { id: adham.id });
     ok(adHf.length === 1 && adHf[0].full_name === 'Adham Soliman' && adHf[0].password_hash === '!hub-login-only' && adHf[0].start_date === adNow2.academy_date && adHf[0].role === 'rep',
-      'onboarded (JUSS) → his HelloFresh Playbook opens by itself: email sign-in only, no password anyone could guess');
+      'onboarded (JUSS) → his JUSS Playbook opens by itself: email sign-in only, no password anyone could guess');
     ok(adWm && /https:\/\/link-juss\.vercel\.app\/\?app=hf&r=%2F/.test(adWm.body) && /href="https:\/\/link-juss\.vercel\.app\/\?app=hf&amp;r=%2F"|href="https:\/\/link-juss\.vercel\.app\/\?app=hf&r=%2F"/.test(adWm.htmlBody || ''),
-      'his welcome email\'s playbook button goes through the hub (JUSS look, HelloFresh Playbook)');
+      'his welcome email\'s playbook button goes through the hub (JUSS look, JUSS Playbook)');
     const jasWm = await welcome(jasId, 'jasraj@example.com');
     const jasFr = await hq('select username, password, display_name from public.users where username = $1', ['jasraj@example.com']);
     ok(jasFr.length === 1 && jasFr[0].display_name === 'Jasraj Bhuller' && jasFr[0].password === '!hub-login-only' && jasWm && /link-juss\.vercel\.app\/\?app=fr&r=%2F/.test(jasWm.body),
