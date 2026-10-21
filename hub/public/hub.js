@@ -7,7 +7,7 @@
   const params = new URLSearchParams(location.search);
   const want = params.get('app'), back = params.get('r') || '/';
   const ICON = { recruit: '🗂️', fr: '📘', hf: '🥗', leaders: '🏆', jleaders: '🏆' };
-  const NAMES = { recruit: 'Recruitment', fr: 'Fund Raising Playbook', hf: 'HelloFresh Playbook', leaders: 'Leaders Playbook', jleaders: 'Leaders Playbook' };
+  const NAMES = { recruit: 'Recruitment', fr: 'Fund Raising Playbook', hf: 'JUSS Playbook', leaders: 'Leaders Playbook', jleaders: 'Leaders Playbook' };
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   let email = '';
 
@@ -18,7 +18,7 @@
   const greet = () => { const h = new Date().getHours(); return h < 12 ? 'Good morning,' : h < 18 ? 'Good afternoon,' : 'Good evening,'; };
   const goUrl = app => '/api/go?app=' + encodeURIComponent(app) + '&r=' + encodeURIComponent(app === want ? back : '/');
 
-  // One brand at a time: JUSS people (and anyone arriving from the HelloFresh Playbook) see only JUSS, LINK people only LINK.
+  // One brand at a time: JUSS people (and anyone arriving from the JUSS Playbook) see only JUSS, LINK people only LINK.
   // Before we know who you are and where you came from: both logos.
   const APP_BRAND = { fr: 'LINK', leaders: 'LINK', hf: 'JUSS', jleaders: 'JUSS' };
   const BRAND_NAME = { LINK: 'LINK Marketing', JUSS: 'JUSS Marketing' };
@@ -45,7 +45,7 @@
   function journey(d) {
     if (!d.stage) { $('journey').hidden = true; return; }
     // Angad's ladder: Stages 1 & 2 = Brand Ambassador (the playbook's Cycle of Development 1, then 2 "Becoming a Leader"), Stage 3 = Leader
-    const pb = d.person.company === 'JUSS' ? 'HelloFresh Playbook' : 'Fund Raising Playbook';
+    const pb = d.person.company === 'JUSS' ? 'JUSS Playbook' : 'Fund Raising Playbook';
     const steps = [
       { n: 2, dot: '1–2', t: 'Brand Ambassador', s: 'Stages 1 & 2 · your ' + pb + ' and Cycle of Development' },
       { n: 3, dot: '3', t: 'Leader', s: d.stage >= 3 ? (d.waitingForLeaders ? 'Approved · your Leaders Playbook opens very soon' : 'Stage 3 · your Leaders Playbook is open') : 'Stage 3 · opens when an approver moves you on' },

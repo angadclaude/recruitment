@@ -101,7 +101,7 @@ const ok = (c, m) => { console.log((c ? '  ✓ ' : '  ✗ ') + m); if (!c) fails
   const ul = await core.unlockPlaybook(q, { email: 'New.Link@Example.com', name: 'nina link', company: 'LINK' });
   ok(ul.ok && ul.app === 'fr' && ul.created, 'LINK new starter onboarded → FR Playbook account opened automatically');
   const uj = await core.unlockPlaybook(q, { email: 'new.juss@example.com', name: 'jay juss', company: 'JUSS', startDate: '2026-10-19' });
-  ok(uj.ok && uj.app === 'hf' && uj.created, 'JUSS new starter onboarded → HelloFresh Playbook account opened automatically');
+  ok(uj.ok && uj.app === 'hf' && uj.created, 'JUSS new starter onboarded → JUSS Playbook account opened automatically');
   ok((await core.unlockPlaybook(q, { email: 'new.link@example.com', name: 'Nina Link', company: 'LINK' })).existed &&
     (await q("select count(*)::int as n from public.users where lower(username) = 'new.link@example.com'"))[0].n === 1, 'onboarding twice never makes a second account (and never touches an existing one)');
   ok(!(await core.unlockPlaybook(q, { email: 'x@example.com', name: 'X', company: '' })).ok, 'no company → nothing unlocked');
@@ -111,7 +111,7 @@ const ok = (c, m) => { console.log((c ? '  ✓ ' : '  ✗ ') + m); if (!c) fails
     'LINK new starter: LINK look, only the FR Playbook; the recruitment app does not show');
   const nj = await signIn('new.juss@example.com'), njh = await core.home(q, nj.person);
   ok(njh.tiles.map(t => t.id).join(',') === 'hf' && njh.person.company === 'JUSS' && !njh.canConnectHf,
-    'JUSS new starter: JUSS look, only the HelloFresh Playbook; the recruitment app does not show');
+    'JUSS new starter: JUSS look, only the JUSS Playbook; the recruitment app does not show');
   ok(!(await core.createHandoff(q, nj.person, 'recruit')) && !(await core.createHandoff(q, nj.person, 'fr')), 'a JUSS new starter can\'t be sent into the recruitment app or the LINK playbook');
   ok((await q("select count(*)::int as n from jl.rows where tab = 'Users' and lower(vals->>2) like 'new.%'"))[0].n === 0, 'onboarding never adds anyone to the recruitment app; only admins do that');
   ok((await core.home(q, jo.person)).person.company === 'JUSS' && (await core.home(q, jo.person)).tiles.some(t => t.id === 'recruit'),
