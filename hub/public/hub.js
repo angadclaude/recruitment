@@ -5,9 +5,11 @@
   const steps = ['stepEmail', 'stepCode', 'stepGo', 'stepHome'];
   const show = id => steps.forEach(s => { $(s).hidden = s !== id; });
   const params = new URLSearchParams(location.search);
-  const want = params.get('app'), back = params.get('r') || '/';
-  const ICON = { recruit: '🗂️', fr: '📘', hf: '🥗', leaders: '🏆', jleaders: '🏆' };
-  const NAMES = { recruit: 'Recruitment', fr: 'Link Org Playbook', hf: 'JUSS Playbook', leaders: 'Leaders Playbook', jleaders: 'Leaders Playbook' };
+  // Old Leaders Playbook links: each is Stage 3 inside its company's playbook since 21 Oct, so they open its Stage 3 pages
+  const OLD = { leaders: 'fr', jleaders: 'hf' }, asked = params.get('app');
+  const want = OLD[asked] || asked, back = OLD[asked] ? '/leaders/playbook' : params.get('r') || '/';
+  const ICON = { recruit: '🗂️', fr: '📘', hf: '🥗' };
+  const NAMES = { recruit: 'Recruitment', fr: 'Link Org Playbook', hf: 'JUSS Playbook' };
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   let email = '';
 
@@ -20,7 +22,7 @@
 
   // One brand at a time: JUSS people (and anyone arriving from the JUSS Playbook) see only JUSS, LINK people only LINK.
   // Before we know who you are and where you came from: both logos.
-  const APP_BRAND = { fr: 'LINK', leaders: 'LINK', hf: 'JUSS', jleaders: 'JUSS' };
+  const APP_BRAND = { fr: 'LINK', hf: 'JUSS' };
   const BRAND_NAME = { LINK: 'LINK Marketing', JUSS: 'JUSS Marketing' };
   function theme(company) {
     const c = company === 'LINK' || company === 'JUSS' ? company : '';
@@ -45,9 +47,9 @@
   function journey(d) {
     if (!d.stage) { $('journey').hidden = true; return; }
     // Angad's ladder: Stages 1 & 2 = Brand Ambassador (the playbook's Cycle of Development 1, then 2 "Becoming a Leader"), Stage 3 = Leader
-    const juss = d.person.company === 'JUSS', pb = juss ? 'JUSS Playbook' : 'Link Org Playbook';
-    // LINK: Stage 3 opens inside the Link Org Playbook (21 Oct); JUSS: its own Leaders Playbook
-    const s3 = juss ? 'your Leaders Playbook' : 'Stage 3 in your Link Org Playbook';
+    const pb = d.person.company === 'JUSS' ? 'JUSS Playbook' : 'Link Org Playbook';
+    // Stage 3 opens inside their company's playbook (21 Oct)
+    const s3 = 'Stage 3 in your ' + pb;
     const steps = [
       { n: 2, dot: '1–2', t: 'Brand Ambassador', s: 'Stages 1 & 2 · your ' + pb + ' and Cycle of Development' },
       { n: 3, dot: '3', t: 'Leader', s: d.stage >= 3 ? (d.waitingForLeaders ? 'Approved · ' + s3 + ' opens very soon' : 'Stage 3 · ' + s3 + ' is open') : 'Stage 3 · opens when an approver moves you on' },
@@ -71,7 +73,7 @@
       TEAM = r.people;
       const co = r.companies.join();
       $('moveHint').textContent = 'Approve a ' + r.companies.join(' or ') + ' BA to Stage 3 · Leader and ' +
-        (co === 'JUSS' ? 'their Leaders Playbook opens' : co === 'LINK' ? 'Stage 3 opens in their Link Org Playbook' : 'Stage 3 opens in their playbook') + ' on their phone.';
+        'Stage 3 opens in their ' + (co === 'JUSS' ? 'JUSS Playbook' : co === 'LINK' ? 'Link Org Playbook' : 'playbook') + ' on their phone.';
       $('moveOn').hidden = false; drawTeam();
     });
   }

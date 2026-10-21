@@ -26,7 +26,11 @@ const ok = (c, m) => { console.log((c ? '  ✓ ' : '  ✗ ') + m); if (!c) fails
     create schema leaders; create table leaders.users (id varchar primary key default gen_random_uuid(), email text, password text, display_name text, role text);
     insert into leaders.users (email, password, display_name, role) values ('Angad@LinkMarketing.org.uk', 'x', 'Angad', 'manager');
     create schema hf; create table hf.users (id serial primary key, username text not null, password_hash text not null, full_name text not null,
-      mentor_name text not null default '', start_date text not null default '', role text not null default 'rep', created_at timestamptz not null default now());
+      mentor_name text not null default '', start_date text not null default '', role text not null default 'rep', created_at timestamptz not null default now(),
+      cod_stage smallint not null default 2, email text);  -- cod_stage 3 = Stage 3 · Leader, 4 = Crew Leader; email = the one their coach typed
+    create unique index on hf.users (lower(username));
+    -- The Leader pages' accounts, which the JUSS Playbook makes itself; the hub never reads or writes them
+    create schema jleaders; create table jleaders.users (id varchar primary key default gen_random_uuid(), email text not null unique, password text not null, display_name text not null, role text not null default 'user');
   `);
   await q('insert into hf.users (username, password_hash, full_name, role) values ($1, $2, $3, $4), ($5, $6, $7, $8)',
     ['jdoe', bcrypt.hashSync('old-pass', 4), 'Jo Doe', 'rep', 'sam@jussmarketing.co.uk', bcrypt.hashSync('x', 4), 'Sam Juss', 'rep']);
@@ -140,21 +144,54 @@ const ok = (c, m) => { console.log((c ? '  ✓ ' : '  ✗ ') + m); if (!c) fails
   ok(/own company/.test((await core.promote(q, jo.person, 'fr', linkBa.id, notify)).error), 'a JUSS approver can\'t move on a LINK BA');
   const njRow = joT.people.find(p => p.email === 'new.juss@example.com');
   const pj = await core.promote(q, jo.person, 'hf', njRow.id, notify);
-  ok(pj.ok && !pj.opened && pj.waiting && congrats.some(c => c.email === 'new.juss@example.com' && c.company === 'JUSS' && !c.opened),
-    'JUSS approver moves Jay on to Leader before the JUSS Leaders Playbook exists: recorded, Jay gets a JUSS congratulations email');
-  let jayH = await core.home(q, nj.person);
-  ok(jayH.stage === 3 && jayH.stageLabel === 'Stage 3 · Leader' && jayH.waitingForLeaders && !jayH.tiles.some(t => t.id === 'jleaders'), 'Jay sees "Stage 3 · Leader", Leaders Playbook "opening soon"');
-  ok((await core.promote(q, jo.person, 'hf', njRow.id, notify)).already, 'moving someone on twice does nothing');
-  // As built (19 Oct): emails kept as typed, so a few leaders have twin accounts differing only in capitals
-  await exec("create schema jleaders; create table jleaders.users (id varchar primary key default gen_random_uuid(), email text not null unique, password text not null, display_name text not null, role text not null default 'user', start_date timestamp, last_login timestamp)");
-  jayH = await core.home(q, nj.person);
-  const jlRow = (await q("select password, display_name from jleaders.users where email = 'new.juss@example.com'"))[0];
-  ok(jayH.tiles.some(t => t.id === 'jleaders' && t.company === 'JUSS') && !jayH.waitingForLeaders && jlRow && jlRow.display_name === 'Jay Juss' && !(await bcrypt.compare('x', jlRow.password)),
-    'the JUSS Leaders Playbook goes live → Jay\'s account opens by itself (email sign-in only) and his JUSS Leaders tile appears');
-  await q(`insert into jleaders.users (email, password, display_name, last_login) values ('Twin.Lead@example.com', 'x', 'Twin Old', '2026-01-01'),
-    ('twin.LEAD@example.com', 'x', 'Twin Recent', '2026-10-01'), ('Case.Lead@example.com', 'x', 'Case Recent', '2026-10-01'), ('case.lead@example.com', 'x', 'Case Exact', '2025-01-01')`);
-  ok((await core.accounts(q, 'twin.lead@example.com')).jleaders.name === 'Twin Recent' && (await core.accounts(q, 'case.lead@example.com')).jleaders.name === 'Case Exact',
-    'JUSS leaders with twin accounts (only the capitals differ): the exact spelling, else the one used most recently');
+  const jayH = await core.home(q, nj.person);
+  const jayRow = (await q("select cod_stage, email from hf.users where username = 'new.juss@example.com'"))[0];
+  ok(pj.ok && pj.opened && congrats.some(c => c.email === 'new.juss@example.com' && c.company === 'JUSS' && c.opened) && jayRow.cod_stage === 3 && jayRow.email === null &&
+    !(await q('select 1 from jleaders.users')).length,
+    'JUSS approver moves Jay on: Stage 3 opens on his JUSS Playbook login (cod_stage 3; no Leaders account made, the app does that), JUSS congratulations email');
+  ok(jayH.stage === 3 && jayH.stageLabel === 'Stage 3 · Leader' && !jayH.waitingForLeaders && jayH.tiles.map(t => t.id).join() === 'hf',
+    'Jay sees "Stage 3 · Leader" and ONE JUSS tile: the Leader pages are inside the JUSS Playbook since 21 Oct');
+  ok((await core.promote(q, jo.person, 'hf', njRow.id, notify)).already && (await core.team(q, jo.person)).people.find(p => p.email === 'new.juss@example.com').stage === 3,
+    'moving someone on twice does nothing; the list shows him at Stage 3');
+  // A username login connected in the hub: its email goes on the login, so the Leader pages find their notes
+  await q("insert into hf.users (username, password_hash, full_name) values ('lilyrep', 'x', 'Lily Rep'), ('marcorep', 'x', 'Marco Rep'), ('marco.old', 'x', 'Marco Old')");
+  await q("update hf.users set email = 'marco@example.com' where username = 'marco.old'");
+  for (const [e, u] of [['lily@example.com', 'lilyrep'], ['marco@example.com', 'marcorep']]) {
+    const pid = (await q("insert into core.people (email, name, company) values ($1, '', 'JUSS') returning id::text", [e]))[0].id;
+    await q("insert into core.app_links (person_id, app, local_id) select $1::uuid, 'hf', id::text from hf.users where username = $2", [pid, u]);
+  }
+  const lily = (await core.team(q, jo.person)).people.find(p => p.name === 'Lily Rep');
+  const pLily = await core.promote(q, jo.person, 'hf', lily.id, notify);
+  ok(lily.email === 'lily@example.com' && lily.canPromote && pLily.opened &&
+    JSON.stringify((await q("select cod_stage, email from hf.users where username = 'lilyrep'"))[0]) === '{"cod_stage":3,"email":"lily@example.com"}',
+    'a BA whose username isn\'t an email (connected in the hub): Stage 3, and her hub email goes on her login (lower case) for her Leader pages');
+  const marco = (await core.team(q, jo.person)).people.find(p => p.name === 'Marco Rep');
+  await core.promote(q, jo.person, 'hf', marco.id, notify);
+  ok(JSON.stringify((await q("select username, cod_stage, email from hf.users where username like 'marco%' order by id"))) ===
+    '[{"username":"marcorep","cod_stage":3,"email":null},{"username":"marco.old","cod_stage":2,"email":"marco@example.com"}]',
+    'an email another login already has is never put on a second one (and the other login isn\'t touched)');
+  // Only ever up: a coach moved them on to Stage 4 · Crew Leader in the app meanwhile
+  await q("insert into hf.users (username, password_hash, full_name, cod_stage, email) values ('cara@example.com', 'x', 'Cara Crew', 4, 'Cara.Other@Example.com')");
+  await q("insert into core.promotions (email, name, company, to_stage, by_email) values ('cara@example.com', 'Cara Crew', 'JUSS', 3, 'jo@jussmarketing.co.uk')");
+  await core.applyPending(q);
+  const cara = (await q("select cod_stage, email from hf.users where username = 'cara@example.com'"))[0];
+  ok(cara.cod_stage === 4 && cara.email === 'Cara.Other@Example.com' && (await core.team(q, jo.person)).people.find(p => p.name === 'Cara Crew').stage === 3,
+    'the hub never moves anyone down (a Crew Leader stays at Stage 4) and never changes an email that\'s there; Stage 4 counts as a Leader');
+  // Found by the email on their login: the 16 leaders who moved in on 21 Oct, or one their coach typed
+  await q("insert into hf.users (username, password_hash, full_name, cod_stage, email) values ('tomlead', 'x', 'Tom Lead', 3, 'tom.lead@example.com')");
+  const tomH = await core.home(q, (await signIn('Tom.Lead@example.com')).person);
+  ok(tomH.tiles.map(t => t.id).join() === 'hf' && tomH.stage === 3 && tomH.person.company === 'JUSS' && (await core.team(q, jo.person)).people.find(p => p.name === 'Tom Lead').email === 'tom.lead@example.com',
+    'a JUSS login found by the email on it (username isn\'t an email): code, JUSS tile, Stage 3');
+  // Only an old JUSS Leaders account (Angad removed them on 21 Oct): no tile, no code
+  await q("insert into jleaders.users (email, password, display_name) values ('gone.lead@example.com', 'x', 'Gone Lead')");
+  const sent = mail.length;
+  await core.requestCode(q, 'gone.lead@example.com', sendMail);
+  ok(mail.length === sent && !Object.keys(await core.accounts(q, 'gone.lead@example.com')).length, 'an old JUSS Leaders account on its own: not in the hub any more (no code, no tile)');
+  // The JUSS Playbook's coach login isn't on the BA ladder
+  await q("insert into hf.users (username, password_hash, full_name, role, cod_stage, email) values ('coach', 'x', 'Coach', 'coach', 2, 'juss.coach@example.com')");
+  const coachH = await core.home(q, (await signIn('juss.coach@example.com')).person);
+  ok(coachH.tiles.map(t => t.id).join() === 'hf' && !coachH.stage && !(await core.team(q, jo.person)).people.some(p => p.name === 'Coach'),
+    'a JUSS Playbook coach: the tile, but no BA stage, and not on the "move people on" list');
   const pl =await core.promote(q, a.person, 'fr', linkBa.id, notify);
   const beaH2 = await core.home(q, beaP);
   const beaRow = (await q("select unlocks from public.users where username = 'ba@example.com'"))[0];
@@ -202,6 +239,14 @@ const ok = (c, m) => { console.log((c ? '  ✓ ' : '  ✗ ') + m); if (!c) fails
   const g3 = await call('GET', '/api/go?app=fr&r=//evil.example', null, cookie);
   ok(/&r=%2F$/.test(g3.headers.location), 'web: only paths on the app itself, never another site');
   ok((await call('GET', '/api/go?app=hf', null, cookie)).headers.location === '/?noaccount=hf', 'web: no account there → back to the hub with a message');
+  ok((await call('GET', '/api/go?app=jleaders&r=/home', null, '')).headers.location === '/?app=hf&r=%2Fleaders%2Fplaybook',
+    'web: an old JUSS "Leaders Playbook" link, not signed in → the hub\'s login, then the JUSS Playbook\'s Stage 3 pages');
+  await q("delete from core.codes where email = 'new.juss@example.com'");
+  await call('POST', '/api/code', { email: 'new.juss@example.com' });
+  const jayCookie = ((await call('POST', '/api/verify', { email: 'new.juss@example.com', code: mail[mail.length - 1].code })).headers['set-cookie'] || '').split(';')[0];
+  const gJ = await call('GET', '/api/go?app=jleaders&r=/home', null, jayCookie);
+  ok(gJ.status === 302 && /^https:\/\/juss-hf-playbook\.vercel\.app\/auth\/hub#hub=[\w-]{32}&r=%2Fleaders%2Fplaybook$/.test(gJ.headers.location),
+    'web: an old JUSS "Leaders Playbook" link → the Stage 3 pages of the JUSS Playbook (21 Oct)');
   ok((await call('GET', '/api/team', null, cookie)).body.ok === false && (await call('GET', '/api/team', null, '')).body.auth === true, 'web: the "move people on" list needs an approver');
   await call('POST', '/api/logout', null, cookie);
   ok((await call('GET', '/api/me', null, cookie)).body.auth === true, 'web: signed out → the cookie is useless');
