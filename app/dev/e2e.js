@@ -284,7 +284,7 @@ async function fillEval(p) {
   ok(/⛔ Non-qualifier message/.test(await jsp.innerText('.sheet .trow:has-text("Ishita")')) && !/Non-qualifier/.test(await jsp.innerText('.sheet .trow:has-text("Jasraj")')), 'Jess\'s list marks which ones get the non-qualifier message');
   const thanks = decodeURIComponent((await jsp.getAttribute('[data-thanks="' + jasId + '"][data-co=LINK]', 'href')).split('?text=')[1]);
   fs.writeFileSync(`${SHOTS}/msg-thanks.txt`, thanks);
-  ok(thanks === "Hey Jasraj! 👋🧡\n\nThanks for coming through for your *Appointment Presentation* today in association with *LINK Marketing* 🙌\nWe loved meeting you in person.\n\n📲 *What happens next*\nOur Team will contact you at the latest by *close of business on Friday 6PM* about your next steps.\nKeep your phone close! 👀\n\n📖 *While you wait*, flick through the *LINK Organisation Magazine 2026* 👇\nhttps://linkmagflip-74ibv4pf.manus.space\n\n*Jess Grace*, on behalf of LINK Marketing recruitment team 🧡",
+  ok(thanks === "Hey Jasraj! 👋🧡\n\nThanks for coming through for your *Appointment Presentation* today in association with *LINK Marketing* 🙌\nWe loved meeting you in person.\n\n📲 *What happens next*\nOur Team will contact you at the latest by *close of business on Friday 6PM* about your next steps.\nKeep your phone close! 👀\n\n📖 *While you wait*, flick through the *LINK Organisation Magazine 2026* 👇\nhttps://www.linkmarketing.org.uk/magazine/\n\n*Jess Grace*, on behalf of LINK Marketing recruitment team 🧡",
     'thank-you WhatsApp = Angad\'s wording, laid out to scan (LINK, contact by Friday 6PM) + the LINK magazine, signed Jess Grace for the LINK recruitment team');
   const rowMsgJ = async (id, co) => decodeURIComponent((await jsp.getAttribute('.sheet .trow[data-tr="' + id + '"] a[data-thanks][data-co=' + co + ']', 'href')).split(/\?text=|[?&]body=/)[1] || '');
   ok(/in association with \*LINK Marketing\*/.test(await rowMsgJ(ishita.id, 'LINK')) && /in association with \*JUSS Marketing\*/.test(await rowMsgJ(ishita.id, 'JUSS')) && /\*Jess Grace\*, on behalf of JUSS Marketing/.test(await rowMsgJ(ishita.id, 'JUSS')) &&
@@ -346,7 +346,7 @@ async function fillEval(p) {
   const presAns = (await post('/dev/eval', { js: "JSON.stringify([presenterAnswer({ q0_presenter: 'Someone else', q0_presenter_other: 'angad oshan' }), presenterAnswer({ q0_presenter: 'Not sure' }), presenterAnswer({ q0_presenter: 'gone' }), presenterAnswer({})])" })).out;
   ok(presAns === JSON.stringify([{ id: '', name: 'Angad Oshan' }, { id: '', name: 'Not sure' }, { id: '', name: 'Not sure' }, null]),
     '"Someone else" keeps the name they typed; "Not sure" (or a name no longer on the team) saved as "Not sure"; a form without the question changes nothing');
-  ok((await cp.$$('.mag')).length === 1 && (await cp.getAttribute('.mag[data-mag=LINK]', 'href')) === 'https://linkmagflip-74ibv4pf.manus.space' && /LINK Organisation Magazine 2026/.test(await cp.innerText('.mag')),
+  ok((await cp.$$('.mag')).length === 1 && (await cp.getAttribute('.mag[data-mag=LINK]', 'href')) === 'https://www.linkmarketing.org.uk/magazine/' && /LINK Organisation Magazine 2026/.test(await cp.innerText('.mag')),
     'thank-you screen: the LINK Organisation Magazine 2026 to flick through (LINK candidate)');
   await shot(cp, '06-eval-done');
   ok((await pushesTo(fiza.id)).some(p => /evaluation is in/.test(p.body.headings.en) && /\?c=/.test(p.body.web_url)), 'PUSH → booker: "evaluation is in" (opens the snapshot)');
@@ -614,13 +614,13 @@ async function fillEval(p) {
   const jasT = await api(admin, 'getCandidate', { id: (await api(admin, 'search', { q: 'Jasraj' })).items[0].id });
   await rbp.goto(APP + 'index.html?c=' + jasT.id); await rbp.waitForSelector('.cobig[data-kind=thanks][data-co=LINK]');
   const rubLink = decodeURIComponent((await rbp.getAttribute('.cobig[data-kind=thanks][data-co=LINK]', 'href')).split('?text=')[1]);
-  ok(/in association with \*LINK Marketing\*/.test(rubLink) && /linkmagflip/.test(rubLink) && /\*Rubal Oshan\*, on behalf of LINK Marketing recruitment team 🧡$/.test(rubLink),
+  ok(/in association with \*LINK Marketing\*/.test(rubLink) && /linkmarketing\.org\.uk\/magazine\//.test(rubLink) && /\*Rubal Oshan\*, on behalf of LINK Marketing recruitment team 🧡$/.test(rubLink),
     'Rubal can send a LINK thank-you too: LINK wording + magazine, signed "*Rubal Oshan*, on behalf of LINK Marketing recruitment team"');
   await rubCtx.close();
   const rubSent = await api(await loginApi('rubal@jussmarketing.co.uk'), 'markSent', { id: jasT.id, kind: 'thanks' });
   ok(rubSent.ok && (await api(admin, 'getCandidate', { id: jasT.id })).thanks_by === 'Rubal Oshan', 'server accepts Rubal sending a LINK thank-you and records "sent by Rubal Oshan"');
   fs.writeFileSync(`${SHOTS}/msg-thanks-juss.txt`, jthanks);
-  ok(/in association with \*JUSS Marketing\*/.test(jthanks) && /\*JUSS Marketing Organisation Magazine 2026\* 👇\nhttps:\/\/jmomagazine-gjfukcw6\.manus\.space\/\n/.test(jthanks) && !/linkmagflip/.test(jthanks) && /\*Rubal Oshan\*, on behalf of JUSS Marketing recruitment team 🧡💙$/.test(jthanks),
+  ok(/in association with \*JUSS Marketing\*/.test(jthanks) && /\*JUSS Marketing Organisation Magazine 2026\* 👇\nhttps:\/\/jmomagazine-gjfukcw6\.manus\.space\/\n/.test(jthanks) && !/linkmarketing\.org\.uk\/magazine\//.test(jthanks) && /\*Rubal Oshan\*, on behalf of JUSS Marketing recruitment team 🧡💙$/.test(jthanks),
     'JUSS thank-you WhatsApp: JUSS wording + the JUSS Marketing Organisation Magazine 2026, signed Rubal Oshan for the JUSS recruitment team');
   const jmsg = decodeURIComponent((await ap.getAttribute('a.wa[data-kind=offer]', 'href')).split('?text=')[1]);
   fs.writeFileSync(`${SHOTS}/msg-juss.txt`, jmsg);
@@ -724,7 +724,7 @@ async function fillEval(p) {
     'Fiza\'s thank-you list: every appointment today, LINK and JUSS (she works for both): "Tap LINK or JUSS on each one"');
   const zrow = async co => decodeURIComponent((await rtp.getAttribute('.sheet .trow[data-tr="' + adham.id + '"] a[data-thanks][data-co=' + co + ']', 'href')).split(/\?text=|[?&]body=/)[1] || '').replace(/\*/g, '');
   const zTy = await zrow('LINK');
-  ok(/in association with LINK Marketing/.test(zTy) && /linkmagflip/.test(zTy) && /Zara Iqbal, on behalf of LINK Marketing recruitment team 🧡$/.test(zTy) && /in association with JUSS Marketing/.test(await zrow('JUSS')),
+  ok(/in association with LINK Marketing/.test(zTy) && /linkmarketing\.org\.uk\/magazine\//.test(zTy) && /Zara Iqbal, on behalf of LINK Marketing recruitment team 🧡$/.test(zTy) && /in association with JUSS Marketing/.test(await zrow('JUSS')),
     'Adham (JUSS booker): his row\'s LINK button opens the LINK thank-you (wording, magazine, hearts) signed by Fiza; JUSS the JUSS one');
   await rtp.$eval('.sheet .trow[data-tr="' + adham.id + '"] a[data-thanks][data-co=LINK]', a => { a.addEventListener('click', e => e.preventDefault()); a.click(); });
   await rtp.waitForSelector('.sheet .trow[data-tr="' + adham.id + '"] .pill.green');
