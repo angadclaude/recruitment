@@ -196,7 +196,7 @@ When a booker books someone onto the Academy (or an admin approves a 🔴 bookin
    - Copy each box across: first name, last name, email, phone (07700 900300), recruitment source.
    - **Recruitment source is a rule, not a choice:** booked by any booker → *Personal Recruitment*; booked by Jess / Rubal (any admin) or no booker → *Office Recruitment*. Wrong? Fix the booker on their page and it follows.
    - Tap **✅ Added to Databyte**. (There's no Databyte API, so this step stays copy-and-paste.)
-2. **Welcome email:** **📧 Preview & send** shows the exact email ("LINK / JUSS Marketing - Your Brand Ambassador Journey Begins!"): their name, Day 1 date, Day 1 / Day 2 times, FieldIQ, pre-coaching (LINK), their Playbook (Link FR Playbook / JUSS HF Playbook), client, magazine, map and contact number. Tap **Send**.
+2. **Welcome email:** **📧 Preview & send** shows the exact email ("LINK / JUSS Marketing - Your Brand Ambassador Journey Begins!"): their name, Day 1 date, Day 1 / Day 2 times, FieldIQ, pre-coaching (LINK), their Playbook (Link Org Playbook / JUSS HF Playbook), client, magazine, map and contact number. Tap **Send**.
    - It's locked until step 1, because FieldIQ only works once they're on Databyte.
    - **It only ever goes from the recruitment team's own addresses**, signed by whoever sends it: Jess from `jess@linkmarketing.org.uk`, Rubal from `rubal@jussmarketing.co.uk`, Fiza from `recruitment@jussmarketing.co.uk` (any of them can send either company's). Anyone else pressing Send (Angad, Satpal) sends from the company's person: LINK → Jess, JUSS → Rubal. Replies go to that address, and it gets a copy.
    - The card and preview say who it's from. If the app can't send as that address yet, Send stays off: it never falls back to another address.

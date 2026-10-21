@@ -109,6 +109,8 @@ const ok = (c, m) => { console.log((c ? '  ✓ ' : '  ✗ ') + m); if (!c) fails
   const nl = await signIn('new.link@example.com'), nlh = await core.home(q, nl.person);
   ok(nlh.tiles.map(t => t.id).join(',') === 'fr' && nlh.person.company === 'LINK' && nlh.person.name === 'Nina Link',
     'LINK new starter: LINK look, only the FR Playbook; the recruitment app does not show');
+  ok(nlh.tiles[0].name === 'Link Org Playbook' && nlh.tiles[0].url === 'https://link-fr-playbook.vercel.app/',
+    'the LINK playbook tile reads "Link Org Playbook" (renamed 21 Oct), same address');
   const nj = await signIn('new.juss@example.com'), njh = await core.home(q, nj.person);
   ok(njh.tiles.map(t => t.id).join(',') === 'hf' && njh.person.company === 'JUSS' && !njh.canConnectHf,
     'JUSS new starter: JUSS look, only the HelloFresh Playbook; the recruitment app does not show');

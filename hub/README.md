@@ -4,7 +4,7 @@
 
 **What it does:**
 - You sign in with your work email and a 6-digit code.
-- It shows a tile for each app you have an account in: Recruitment, the FR Playbook, the HelloFresh Playbook and the Leaders Playbook.
+- It shows a tile for each app you have an account in: Recruitment, the Link Org Playbook, the HelloFresh Playbook and the Leaders Playbook.
 - It sends you into any of them already signed in.
 
 Angad decided this on 18 Oct 2026:

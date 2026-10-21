@@ -71,7 +71,7 @@ create table if not exists core.promotions (
 /** The apps. handoff: where the one-use ticket is sent (#c=…); each app redeems it with redeemHandoff(). */
 const APPS = {
   recruit: { name: 'Recruitment', blurb: 'Check-ins, outcomes, Chase, Day 1', url: 'https://jl-recruitment.vercel.app/', handoff: 'https://jl-recruitment.vercel.app/index.html', company: '' },
-  fr: { name: 'Fund Raising Playbook', blurb: 'LINK · your BA playbook', url: 'https://link-fr-playbook.vercel.app/', handoff: 'https://link-fr-playbook.vercel.app/auth/hub', company: 'LINK' },
+  fr: { name: 'Link Org Playbook', blurb: 'LINK · your BA playbook', url: 'https://link-fr-playbook.vercel.app/', handoff: 'https://link-fr-playbook.vercel.app/auth/hub', company: 'LINK' },
   hf: { name: 'HelloFresh Playbook', blurb: 'JUSS · your BA playbook', url: 'https://juss-hf-playbook.vercel.app/', handoff: 'https://juss-hf-playbook.vercel.app/auth/hub', company: 'JUSS' },
   leaders: { name: 'Leaders Playbook', blurb: 'LINK · for team leaders', url: 'https://link-leaders-playbook.vercel.app/', handoff: 'https://link-leaders-playbook.vercel.app/auth/hub', company: 'LINK' },
   // Being built in another session (18 Oct): schema jleaders, address to confirm. Promotions wait until it exists.

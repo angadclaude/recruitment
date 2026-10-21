@@ -1213,9 +1213,9 @@ async function fillEval(p) {
   ok(!/not set up yet/i.test(await ap.innerText('#onb')), 'after a send the card no longer says "not set up yet"');
   await ap.locator('#onb').screenshot({ path: SHOTS + '/36-onboarded.png' });
   const lp = await api(admin, 'onboardPreview', { id: jasId });
-  ok(lp.from === 'Jess Grace <jess@linkmarketing.org.uk>' && !lp.notReady && /<b>Jess Grace<\/b>/.test(lp.html) && /Read your <b>Link FR Playbook<\/b>/.test(lp.html) &&
-    /href="https:\/\/link-fr-playbook\.vercel\.app\/"[^>]*>📘 (<span[^>]*>)*Open my Link FR Playbook/.test(lp.html) && /3\. Read your Link FR Playbook: https:\/\/link-fr-playbook\.vercel\.app\//.test(lp.text),
-    'LINK starter → from Jess (jess@linkmarketing.org.uk), signed Jess, with the Link FR Playbook as step 3 (after FieldIQ and the Pre-Coaching Module)');
+  ok(lp.from === 'Jess Grace <jess@linkmarketing.org.uk>' && !lp.notReady && /<b>Jess Grace<\/b>/.test(lp.html) && /Read your <b>Link Org Playbook<\/b>/.test(lp.html) &&
+    /href="https:\/\/link-fr-playbook\.vercel\.app\/"[^>]*>📘 (<span[^>]*>)*Open my Link Org Playbook/.test(lp.html) && /3\. Read your Link Org Playbook: https:\/\/link-fr-playbook\.vercel\.app\//.test(lp.text),
+    'LINK starter → from Jess (jess@linkmarketing.org.uk), signed Jess, with the Link Org Playbook as step 3 (after FieldIQ and the Pre-Coaching Module)');
   const jessT = await loginApi('jess@linkmarketing.org.uk');  // one sign-in for all of these (codes per person are limited)
   const jessPrev = await api(jessT, 'onboardPreview', { id: adham.id });
   ok(jessPrev.from === 'Jess Grace <jess@linkmarketing.org.uk>' && /<b>Jess Grace<\/b>/.test(jessPrev.html) && /^JUSS Marketing - /.test(jessPrev.subject),
@@ -1267,7 +1267,7 @@ async function fillEval(p) {
   const mbZ = (await getJson('/dev/mail')).length;
   await api(zT2, 'onboardSend', { id: jasId, co: 'LINK' });
   const zm = (await getJson('/dev/mail')).slice(mbZ).find(m => m.to === 'jasraj@example.com');
-  ok(zm && zm.from === 'recruitment@jussmarketing.co.uk' && zm.name === 'Zara Iqbal | Link Marketing' && zm.bcc === 'recruitment@jussmarketing.co.uk' && zm.subject === 'Link Marketing - Your Brand Ambassador Journey Begins!' && /Link FR Playbook/.test(zm.body),
+  ok(zm && zm.from === 'recruitment@jussmarketing.co.uk' && zm.name === 'Zara Iqbal | Link Marketing' && zm.bcc === 'recruitment@jussmarketing.co.uk' && zm.subject === 'Link Marketing - Your Brand Ambassador Journey Begins!' && /Link Org Playbook/.test(zm.body),
     'Fiza sends it as LINK → from recruitment@jussmarketing.co.uk as "Zara Iqbal | Link Marketing", she gets a copy');
   ok(/Zara Iqbal\nIn association with Link Marketing$/.test(zm.body),
     'a JUSS address sending a LINK email signs "In association with Link Marketing" (as Rubal would)');
@@ -1325,7 +1325,7 @@ async function fillEval(p) {
   ok(pdl.suggestedFilename() === 'New Starts List 19.10.2026.pdf' && /^%PDF-1\.4/.test(pdfRaw) && /%%EOF\s*$/.test(pdfRaw) && /\/Title \(New Starts List 19\.10\.2026\)/.test(pdfRaw),
     '📄 New Starts List → "New Starts List 19.10.2026.pdf" (the PDF\'s own title too)');
   let pdfTxt = '';
-  try { pdfTxt = require('child_process').execFileSync('pdftotext', ['-layout', pdfPath, '-'], { encoding: 'utf8' }); } catch (e) { pdfTxt = pdfRaw; }
+  try { pdfTxt = require('child_process').execFileSync('pdftotext', ['-enc', 'UTF-8', '-layout', pdfPath, '-'], { encoding: 'utf8' }); } catch (e) { pdfTxt = pdfRaw; }
   ok(/New Starts List 19\.10\.2026/.test(pdfTxt) && /BA Academy Day 1 · Monday 19 October 2026 · 1:30pm/.test(pdfTxt) && /Adham Soliman/.test(pdfTxt) && /Jasraj Bhuller/.test(pdfTxt) &&
     /2 expected · 2 confirmed/.test(pdfTxt) && /Arrived: ______ of 2/.test(pdfTxt) && /shred it after Day 1/.test(pdfTxt) && /Page 1 of 1/.test(pdfTxt),
     'the PDF is a real sign-in sheet: names, mobiles, booker, confirmed, an Arrived box to tick, totals, "shred after Day 1"');
