@@ -20,13 +20,13 @@ const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css', '.js': 
     create schema jl; create table jl.tabs (name text primary key, headers jsonb); create table jl.rows (rid bigserial primary key, tab text, pos bigserial, vals jsonb);
     insert into jl.tabs values ('Users', '["id","name","email","company","roles","active"]');
     insert into jl.rows (tab, vals) values ('Users', '["u1","Angad Oshan","angad@linkmarketing.org.uk","LINK","admin","TRUE"]'), ('Users', '["u3","Jo Doe","jo@jussmarketing.co.uk","JUSS","booker","TRUE"]');
-    create table public.users (id varchar primary key default gen_random_uuid(), username text, password text, display_name text, role text);
+    create table public.users (id varchar primary key default gen_random_uuid(), username text, password text, display_name text, role text,
+      last_login timestamp, unlocks text[]);
     insert into public.users (username, password, display_name, role) values ('angad@linkmarketing.org.uk', 'x', 'Angad', 'manager'),
       ('bea@example.com', 'x', 'Bea Ambassador', 'user'), ('ollie@example.com', 'x', 'ollie field', 'user'), ('priya@example.com', 'x', 'Priya Shah', 'user');
-    create schema leaders; create table leaders.users (id varchar primary key default gen_random_uuid(), email text, password text, display_name text, role text);
-    insert into leaders.users (email, password, display_name, role) values ('angad@linkmarketing.org.uk', 'x', 'Angad', 'manager');
     create schema hf; create table hf.users (id serial primary key, username text not null, password_hash text not null, full_name text not null,
-      mentor_name text not null default '', start_date text not null default '', role text not null default 'rep', created_at timestamptz not null default now());`);
+      mentor_name text not null default '', start_date text not null default '', role text not null default 'rep', created_at timestamptz not null default now(),
+      cod_stage smallint not null default 2, email text);`);
   await q('insert into hf.users (username, password_hash, full_name, role) values ($1, $2, $3, $4)', ['jdoe', bcrypt.hashSync('old-pass', 4), 'Jo Doe', 'rep']);
   await q("insert into hf.users (username, password_hash, full_name, role) values ('sam@jussmarketing.co.uk', 'x', 'Sam Juss', 'rep'), ('kimrep', 'x', 'Kim Rep', 'rep')");
   await exec(core.SCHEMA);

@@ -73,10 +73,8 @@ const APPS = {
   recruit: { name: 'Recruitment', blurb: 'Check-ins, outcomes, Chase, Day 1', url: 'https://jl-recruitment.vercel.app/', handoff: 'https://jl-recruitment.vercel.app/index.html', company: '' },
   fr: { name: 'Link Org Playbook', blurb: 'LINK · your BA playbook', url: 'https://link-fr-playbook.vercel.app/', handoff: 'https://link-fr-playbook.vercel.app/auth/hub', company: 'LINK' },
   hf: { name: 'JUSS Playbook', blurb: 'JUSS · your BA & Leader playbook', url: 'https://juss-hf-playbook.vercel.app/', handoff: 'https://juss-hf-playbook.vercel.app/auth/hub', company: 'JUSS' },
-  // No separate LINK Leaders tile: Stage 3 is inside the Link Org Playbook since 21 Oct (link-leaders-playbook.vercel.app
-  // redirects there). Angad wants one go-to app.
-  // Being built in another session (18 Oct): schema jleaders, address to confirm. Promotions wait until it exists.
-  jleaders: { name: 'Leaders Playbook', blurb: 'JUSS · for team leaders', url: 'https://juss-leaders-playbook.vercel.app/', handoff: 'https://juss-leaders-playbook.vercel.app/auth/hub', company: 'JUSS' },
+  // No separate Leaders tiles: Stage 3 is inside each company's playbook since 21 Oct (link-leaders-playbook.vercel.app and
+  // juss-leaders-playbook.vercel.app redirect there). Angad wants one go-to app per company.
 };
 
 /** The ladder (like CG1), Angad's words (19 Oct): Stages 1 & 2 = Brand Ambassador (their company's playbook; the playbook's
@@ -89,8 +87,12 @@ const PLAYBOOK = { LINK: 'fr', JUSS: 'hf' };
 // opens their Stage 3 account itself the first time. leaders.users rows stay when a coach locks Stage 3 again, so they
 // aren't the signal. Coaches (role 'manager') see everything in the app but aren't Stage 3.
 const LINK_STAGE3 = 'cod-stage-3';
-/** Already a Leader: LINK = Stage 3 unlocked in the Link Org Playbook, JUSS = an account in the JUSS Leaders Playbook. */
-function isLeader(acc, company) { return company === 'LINK' ? !!(acc.fr && acc.fr.stage3) : !!acc.jleaders; }
+// JUSS Stage 3 is the Cycle of Development stage on their JUSS Playbook login (hf.users.cod_stage: 3 = Leader, 4 = Crew
+// Leader), the one its coaches set; the app makes their Leader pages' account (jleaders.users) itself the first time they
+// open one. Coaches (role 'coach') see everything in the app but aren't Stage 3.
+const JUSS_STAGE3 = 3;
+/** Already a Leader: Stage 3 open in their company's playbook. */
+function isLeader(acc, company) { const a = company === 'LINK' ? acc.fr : acc.hf; return !!(a && a.stage3); }
 
 const CODE_MINUTES = 10, CODE_TRIES = 5, SENDS_PER_HOUR = 5, SESSION_DAYS = 90, HANDOFF_SECONDS = 120;
 const norm = e => String(e || '').trim().toLowerCase();
@@ -117,35 +119,32 @@ async function accounts(q, email, personId) {
   const fr = (await q(`select id::text, display_name, role, (role <> 'manager' and $2 = any(coalesce(unlocks, '{}'))) as stage3
     from public.users where lower(username) = $1 order by (username = $1) desc, last_login desc nulls last limit 1`, [email, LINK_STAGE3]).catch(() => []))[0];
   if (fr) out.fr = { id: fr.id, name: fr.display_name, role: fr.role, stage3: !!fr.stage3 };
-  let hf = null;
-  if (personId) {
-    const link = (await q("select local_id from core.app_links where person_id = $1 and app = 'hf'", [personId]))[0];
-    if (link) hf = (await q('select id::text, full_name, role from hf.users where id = $1::int', [link.local_id]).catch(() => []))[0];
-  }
-  if (!hf) hf = (await q('select id::text, full_name, role from hf.users where lower(username) = $1', [email]).catch(() => []))[0];
-  if (hf) out.hf = { id: hf.id, name: hf.full_name, role: hf.role };
-  if (await hasSchema(q, 'jleaders')) {
-    // Some leaders have two accounts differing only in capitals (Replit was case-sensitive): the exact spelling, else the
-    // one used most recently (the same rule as the JUSS Leaders Playbook's own hub sign-in)
-    const jl = (await q('select id::text, display_name, role from jleaders.users where lower(email) = $1 order by (email = $1) desc, last_login desc nulls last limit 1', [email]).catch(() => []))[0];
-    if (jl) out.jleaders = { id: jl.id, name: jl.display_name, role: jl.role };
-  }
+  const hf = await hfLogin(q, email, personId);
+  if (hf) out.hf = { id: hf.id, name: hf.full_name, role: hf.role, stage3: !!hf.stage3 };
   return out;
 }
-const SCHEMA_SEEN = {};
-async function hasSchema(q, name) {
-  if (SCHEMA_SEEN[name]) return true;
-  const r = await q("select 1 from information_schema.tables where table_schema = $1 and table_name = 'users'", [name]);
-  return (SCHEMA_SEEN[name] = r.length > 0);
+
+/** Their JUSS Playbook login, found the way its own hub sign-in finds it: the one connected in the hub (core.app_links,
+ *  for usernames that aren't emails), else the one whose username is this email, else the one with this email on it
+ *  (typed by their coach, or the old Leaders Playbook email of a leader who moved in on 21 Oct). */
+async function hfLogin(q, email, personId) {
+  const cols = `id::text, full_name, role, (role <> 'coach' and cod_stage >= ${JUSS_STAGE3}) as stage3`;
+  const link = (await q("select local_id from core.app_links where app = 'hf' and person_id = " + (personId ? '$1::uuid' : '(select id from core.people where email = $1)'),
+    [personId || email]))[0];
+  const linked = link && (await q(`select ${cols} from hf.users where id = $1::int`, [link.local_id]).catch(() => []))[0];
+  return linked || (await q(`select ${cols} from hf.users where lower(username) = $1 or lower(email) = $1 order by (lower(username) = $1) desc, id limit 1`,
+    [email]).catch(() => []))[0] || null;
 }
+/** The email a JUSS Playbook login goes by: the one proved in the hub, else the one on the login, else the username if it's one. */
+function hfEmail(u, linked) { return linked || (isEmail(norm(u.email)) ? norm(u.email) : isEmail(norm(u.username)) ? norm(u.username) : ''); }
 
 /** Admin = an admin in the recruitment app (Angad, Jess, Satpal, Rubal). Approver = someone an admin chose. */
 function isAdmin(acc) { return !!(acc.recruit && (acc.recruit.roles || []).includes('admin')); }
 async function isApprover(q, email) { return (await q('select 1 from core.approvers where email = $1', [email])).length > 0; }
 function stageOf(acc, pending) {
   if (isLeader(acc, 'LINK') || isLeader(acc, 'JUSS') || pending) return 3;
-  // A Link Org Playbook coach (role 'manager') isn't on the BA ladder: like staff, no stage
-  if ((acc.fr && acc.fr.role !== 'manager') || acc.hf) return 2;
+  // A playbook coach (Link Org Playbook role 'manager', JUSS Playbook role 'coach') isn't on the BA ladder: like staff, no stage
+  if ((acc.fr && acc.fr.role !== 'manager') || (acc.hf && acc.hf.role !== 'coach')) return 2;
   return 0;  // staff only (recruitment app), no BA stage
 }
 
@@ -154,7 +153,7 @@ function stageOf(acc, pending) {
 function profile(acc) {
   const name = (acc.recruit && acc.recruit.name) || (acc.fr && acc.fr.name) || (acc.hf && acc.hf.name) || '';
   const co = String((acc.recruit && acc.recruit.company) || '').toUpperCase();
-  const company = co === 'LINK' || co === 'JUSS' ? co : (acc.hf || acc.jleaders) && !acc.fr ? 'JUSS' : acc.fr ? 'LINK' : '';
+  const company = co === 'LINK' || co === 'JUSS' ? co : acc.hf && !acc.fr ? 'JUSS' : acc.fr ? 'LINK' : '';
   return { name: tidyName(name), company };
 }
 
@@ -259,19 +258,18 @@ async function team(q, viewer) {
     });
   }
   if (cos.includes('JUSS')) {
-    const jl = (await hasSchema(q, 'jleaders')) ? new Set((await q('select lower(email) as e from jleaders.users')).map(r => r.e)) : new Set();
     const linked = {};
     (await q("select l.local_id, p.email from core.app_links l join core.people p on p.id = l.person_id where l.app = 'hf'")).forEach(r => { linked[r.local_id] = r.email; });
-    (await q("select id::text, lower(username) as username, full_name from hf.users where role <> 'coach' order by full_name")).forEach(u => {
-      const email = linked[u.id] || (isEmail(u.username) ? u.username : '');
-      const stage = email && (jl.has(email) || pending.has(email)) ? 3 : 2;
+    (await q("select id::text, username, email, full_name, cod_stage >= $1 as stage3 from hf.users where role <> 'coach' order by full_name", [JUSS_STAGE3])).forEach(u => {
+      const email = hfEmail(u, linked[u.id]);
+      const stage = u.stage3 || (email && pending.has(email)) ? 3 : 2;
       people.push({ app: 'hf', id: u.id, name: tidyName(u.full_name), email, company: 'JUSS', stage, canPromote: stage === 2 && !!email });
     });
   }
   return { ok: true, companies: cos, people };
 }
 
-/** An approver moves a BA on to Leader: their company's Leaders Playbook opens (JUSS: as soon as that app is live). */
+/** An approver moves a BA on to Leader: Stage 3 opens in their company's playbook. */
 async function promote(q, viewer, app, id, notify) {
   const company = app === 'fr' ? 'LINK' : app === 'hf' ? 'JUSS' : '';
   if (!company) return { ok: false, error: 'Unknown playbook' };
@@ -283,10 +281,10 @@ async function promote(q, viewer, app, id, notify) {
     const u = (await q('select lower(username) as email, display_name from public.users where id = $1', [String(id)]))[0];
     ba = u && { email: u.email, name: tidyName(u.display_name) };
   } else {
-    const u = (await q('select id::text, lower(username) as username, full_name from hf.users where id = $1::int', [String(id)]))[0];
+    const u = (await q('select id::text, username, email, full_name from hf.users where id = $1::int', [String(id)]))[0];
     if (u) {
       const link = (await q("select p.email from core.app_links l join core.people p on p.id = l.person_id where l.app = 'hf' and l.local_id = $1", [u.id]))[0];
-      ba = { email: link ? link.email : isEmail(u.username) ? u.username : '', name: tidyName(u.full_name) };
+      ba = { email: hfEmail(u, link && link.email), name: tidyName(u.full_name) };
     }
   }
   if (!ba) return { ok: false, error: 'Couldn\'t find that person.' };
@@ -299,8 +297,10 @@ async function promote(q, viewer, app, id, notify) {
   return { ok: true, name: ba.name, opened, waiting: !opened };
 }
 
-/** Open Stage 3 for every approved promotion. LINK: switch Stage 3 on in their Link Org Playbook login (added to what's
- *  there, nothing else touched); with no login yet it waits. JUSS: an account in the JUSS Leaders Playbook, once it's live. */
+/** Open Stage 3 for every approved promotion; with no playbook login yet it waits. LINK: switch Stage 3 on in their Link
+ *  Org Playbook login (added to what's there, nothing else touched). JUSS: their JUSS Playbook login goes to Stage 3, only
+ *  ever up (a Crew Leader stays at 4); if it has no email, the one they use here goes on it (lower case), so their Leader
+ *  pages find them, unless another login already has it. Neither app's Leader account is made here: the apps do that. */
 async function applyPending(q) {
   const rows = await q('select id, email, name, company from core.promotions where to_stage = 3 and applied_at is null order by id');
   const done = [];
@@ -312,10 +312,13 @@ async function applyPending(q) {
         where id = (select id from public.users where lower(username) = $1 order by (username = $1) desc, last_login desc nulls last limit 1) returning id`, [r.email, LINK_STAGE3]);
       if (!hit.length) continue;
     } else {
-      target = 'jleaders';
-      if (!(await hasSchema(q, 'jleaders'))) continue;
-      await q(`insert into jleaders.users (email, password, display_name, role) select $1, '!hub-login-only', $2, 'user'
-        where not exists (select 1 from jleaders.users where lower(email) = $1)`, [r.email, r.name || r.email]);
+      target = 'hf';
+      const login = await hfLogin(q, norm(r.email));
+      if (!login || login.role === 'coach') continue;
+      await q(`update hf.users u set cod_stage = greatest(u.cod_stage, $2::smallint),
+          email = case when coalesce(u.email, '') = '' and lower(u.username) <> $3::text
+            and not exists (select 1 from hf.users o where o.id <> u.id and (lower(o.username) = $3::text or lower(o.email) = $3::text)) then $3::text else u.email end
+        where u.id = $1::int`, [login.id, JUSS_STAGE3, norm(r.email)]);
     }
     await q('update core.promotions set applied_app = $2, applied_at = now() where id = $1', [r.id, target]);
     done.push(r.email);

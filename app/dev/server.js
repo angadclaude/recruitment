@@ -37,7 +37,8 @@ async function onPostgres() {
     create table if not exists leaders.users (id varchar primary key default gen_random_uuid(), email text not null, password text not null, display_name text not null, role text not null default 'user');
     create schema if not exists hf;
     create table if not exists hf.users (id serial primary key, username text not null, password_hash text not null, full_name text not null,
-      mentor_name text not null default '', start_date text not null default '', role text not null default 'rep', created_at timestamptz not null default now());`);
+      mentor_name text not null default '', start_date text not null default '', role text not null default 'rep', created_at timestamptz not null default now(),
+      cod_stage smallint not null default 2, email text);  -- the JUSS Playbook's Cycle of Development stage (3 = Stage 3 · Leader) and Leader-pages email`);
   const rt = new Runtime({ db, testMode: true, env: { PUBLIC_URL: `http://localhost:${PORT}/exec` } });
   await rt.start();
   const plain = v => JSON.parse(JSON.stringify(v === undefined ? null : v));
