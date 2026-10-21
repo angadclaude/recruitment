@@ -7,7 +7,7 @@
   const params = new URLSearchParams(location.search);
   const want = params.get('app'), back = params.get('r') || '/';
   const ICON = { recruit: '🗂️', fr: '📘', hf: '🥗', leaders: '🏆', jleaders: '🏆' };
-  const NAMES = { recruit: 'Recruitment', fr: 'Fund Raising Playbook', hf: 'JUSS Playbook', leaders: 'Leaders Playbook', jleaders: 'Leaders Playbook' };
+  const NAMES = { recruit: 'Recruitment', fr: 'Link Org Playbook', hf: 'JUSS Playbook', leaders: 'Leaders Playbook', jleaders: 'Leaders Playbook' };
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   let email = '';
 
@@ -45,7 +45,7 @@
   function journey(d) {
     if (!d.stage) { $('journey').hidden = true; return; }
     // Angad's ladder: Stages 1 & 2 = Brand Ambassador (the playbook's Cycle of Development 1, then 2 "Becoming a Leader"), Stage 3 = Leader
-    const pb = d.person.company === 'JUSS' ? 'JUSS Playbook' : 'Fund Raising Playbook';
+    const pb = d.person.company === 'JUSS' ? 'JUSS Playbook' : 'Link Org Playbook';
     const steps = [
       { n: 2, dot: '1–2', t: 'Brand Ambassador', s: 'Stages 1 & 2 · your ' + pb + ' and Cycle of Development' },
       { n: 3, dot: '3', t: 'Leader', s: d.stage >= 3 ? (d.waitingForLeaders ? 'Approved · your Leaders Playbook opens very soon' : 'Stage 3 · your Leaders Playbook is open') : 'Stage 3 · opens when an approver moves you on' },
@@ -59,7 +59,7 @@
   function drawTeam() {
     const f = $('teamSearch').value.trim().toLowerCase();
     const list = TEAM.filter(p => !f || p.name.toLowerCase().includes(f)).slice(0, 60);
-    $('people').innerHTML = list.map(p => '<div class="person"><div class="who"><b>' + esc(p.name) + '</b><span>' + esc(p.company) + ' · ' + (p.app === 'fr' ? 'FR' : 'JUSS Playbook') + (p.email ? '' : ' · needs to sign in once') + '</span></div>' +
+    $('people').innerHTML = list.map(p => '<div class="person"><div class="who"><b>' + esc(p.name) + '</b><span>' + esc(p.company) + ' · ' + (p.app === 'fr' ? 'Link Org Playbook' : 'JUSS Playbook') + (p.email ? '' : ' · needs to sign in once') + '</span></div>' +
       (p.stage >= 3 ? '<span class="badge l">Leader</span>' : p.canPromote ? '<button class="mini" data-app="' + p.app + '" data-id="' + esc(p.id) + '" data-name="' + esc(p.name) + '">Move to Stage 3</button>' : '<span class="badge">BA</span>') + '</div>').join('') ||
       '<p class="hint" style="margin:6px 2px">Nobody matches.</p>';
   }

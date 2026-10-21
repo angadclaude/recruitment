@@ -80,7 +80,7 @@ const ONBOARD = {
     brand: 'Link Marketing', colour: '#F3901D', phone: '073110 27272 / 074789 60080', maps: 'https://maps.app.goo.gl/2wmckhXokt3KhCyE9', day3: true,
     preCoaching: ['Link Marketing BA Academy - Pre Coaching Module - Fill in form', 'https://forms.office.com/pages/responsepage.aspx?id=QT4blMNFxEuaVSUMKK6uNT5ZuU1A_UdDsSk-r6KY6olUQ0JEWFU0NDU1MEI5REZZRzY3WEc1SEVaTC4u&route=shorturl'],
     client: ['NDCS', 'https://www.ndcs.org.uk/'], magazine: ['Link Magazine', 'https://linkmagflip-74ibv4pf.manus.space/'],
-    playbook: ['Link FR Playbook', 'https://link-fr-playbook.vercel.app/'],
+    playbook: ['Link Org Playbook', 'https://link-fr-playbook.vercel.app/'],  // was "Link FR Playbook" (renamed 21 Oct; same address)
     from: 'jess@linkmarketing.org.uk',  // welcome emails only ever go from Jess's or Rubal's inbox (either can send either brand)
     // Week 1, day by day (same as the welcome page's WEEK1 in JS.html): [emoji, what, time, about]
     week1: [
