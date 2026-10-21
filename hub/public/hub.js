@@ -59,7 +59,7 @@
   function drawTeam() {
     const f = $('teamSearch').value.trim().toLowerCase();
     const list = TEAM.filter(p => !f || p.name.toLowerCase().includes(f)).slice(0, 60);
-    $('people').innerHTML = list.map(p => '<div class="person"><div class="who"><b>' + esc(p.name) + '</b><span>' + esc(p.company) + ' · ' + (p.app === 'fr' ? 'FR' : 'HelloFresh') + (p.email ? '' : ' · needs to sign in once') + '</span></div>' +
+    $('people').innerHTML = list.map(p => '<div class="person"><div class="who"><b>' + esc(p.name) + '</b><span>' + esc(p.company) + ' · ' + (p.app === 'fr' ? 'FR' : 'JUSS Playbook') + (p.email ? '' : ' · needs to sign in once') + '</span></div>' +
       (p.stage >= 3 ? '<span class="badge l">Leader</span>' : p.canPromote ? '<button class="mini" data-app="' + p.app + '" data-id="' + esc(p.id) + '" data-name="' + esc(p.name) + '">Move to Stage 3</button>' : '<span class="badge">BA</span>') + '</div>').join('') ||
       '<p class="hint" style="margin:6px 2px">Nobody matches.</p>';
   }

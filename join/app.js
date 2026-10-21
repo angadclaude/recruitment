@@ -1,4 +1,4 @@
-window.APP_VERSION = 'bc679cb7';
+window.APP_VERSION = '75338e4e';
 
 (function () {
 'use strict';
@@ -2470,7 +2470,7 @@ function msgWelcomeHeadsUp(c, fr) {
   return 'Hi ' + c.first_name + ' 👋 It\'s ' + S.me.user.name.split(' ')[0] + ' from ' + brandOf(c) + '.\n\n' +
     'I\'ve just emailed your starter pack to ' + c.email + ' 📧\n' +
     '📲 FieldIQ (download before Day 1): ' + FIELDIQ_URL + '\n' + (co === 'LINK' ? '📝 Your Pre-Coaching Module\n' : '') +
-    '📘 Your ' + (co === 'JUSS' ? 'JUSS HF' : 'Link FR') + ' Playbook\n🗓️ Your Week 1 plan\n\n' +
+    '📘 Your ' + (co === 'JUSS' ? 'JUSS' : 'Link FR') + ' Playbook\n🗓️ Your Week 1 plan\n\n' +
     'It\'s from ' + (fr ? fr.email : 'us') + '. Can\'t see it? Check *Spam* or *Promotions* and tap *Not spam*, so nothing else goes missing.\n\n' +
     'Please reply *GOT IT* once you have it ✅';
 }
