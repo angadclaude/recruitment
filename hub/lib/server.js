@@ -43,11 +43,13 @@ async function sendCongrats(email, name, company, opened) {
     '<div style="height:6px;border-radius:3px;background:' + stripe + '"></div>' +
     '<p style="font-size:24px;font-weight:700;margin:22px 0 8px">You\'re a Leader, ' + first + ' 🎉</p>' +
     '<p style="font-size:15px;margin:0 0 16px">You\'ve been moved on to <b>Stage 3 · Leader</b> at ' + brand + '. ' +
-    (opened ? 'Your Leaders Playbook is open now.' : 'Your Leaders Playbook opens as soon as it\'s ready; we\'ll have it waiting for you.') + '</p>' +
+    // LINK: Stage 3 is inside the Link Org Playbook; JUSS: its own Leaders Playbook
+    (juss ? (opened ? 'Your Leaders Playbook is open now.' : 'Your Leaders Playbook opens as soon as it\'s ready; we\'ll have it waiting for you.')
+      : (opened ? 'Stage 3 is open now in your Link Org Playbook.' : 'Stage 3 opens in your Link Org Playbook as soon as your login is ready.')) + '</p>' +
     '<p style="margin:0 0 18px"><a href="https://link-juss.vercel.app/" style="display:inline-block;background:#22222B;color:#fff;text-decoration:none;padding:13px 20px;border-radius:12px;font-weight:600">Open my apps</a></p>' +
     '<p style="font-size:13px;color:#6E6C78;margin:0">Sign in with this email address; we\'ll send you a code.</p></div>';
   const res = await fetch(process.env.RELAY_URL, { method: 'POST', headers: { 'content-type': 'text/plain' }, signal: AbortSignal.timeout(60000),
-    body: JSON.stringify({ action: 'relayMail', secret: process.env.RELAY_SECRET, mail: { via: 'mail', msg: { to: email, subject: 'You\'re a Leader 🎉 Your Leaders Playbook', htmlBody: html, name: brand } } }) });
+    body: JSON.stringify({ action: 'relayMail', secret: process.env.RELAY_SECRET, mail: { via: 'mail', msg: { to: email, subject: 'You\'re a Leader 🎉 ' + (juss ? 'Your Leaders Playbook' : 'Stage 3 is open'), htmlBody: html, name: brand } } }) });
   const j = JSON.parse(await res.text());
   if (!j.ok) throw new Error('relay: ' + j.error);
 }
@@ -89,7 +91,9 @@ async function handle(req, res, opts) {
     if (action === 'me') return json(res, 200, person ? Object.assign({ ok: true }, await core.home(q, person)) : { ok: false, auth: true });
     if (action === 'logout' && req.method === 'POST') { await core.logout(q, cookieToken(req)); setCookie(res, '', 0); return json(res, 200, { ok: true }); }
     if (action === 'go') {
-      const app = url.searchParams.get('app'), r = safePath(url.searchParams.get('r'));
+      let app = url.searchParams.get('app'), r = safePath(url.searchParams.get('r'));
+      // The LINK Leaders Playbook is Stage 3 of the Link Org Playbook now (21 Oct): old links land on its Stage 3 pages
+      if (app === 'leaders') { app = 'fr'; r = '/leaders/playbook'; }
       if (!core.APPS[app]) return json(res, 400, { ok: false, error: 'Unknown app' });
       if (!person) { res.statusCode = 302; res.setHeader('location', '/?app=' + encodeURIComponent(app) + '&r=' + encodeURIComponent(r)); return res.end(); }
       const code = await core.createHandoff(q, person, app);

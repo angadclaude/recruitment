@@ -4,7 +4,7 @@
 
 **What it does:**
 - You sign in with your work email and a 6-digit code.
-- It shows a tile for each app you have an account in: Recruitment, the Link Org Playbook, the JUSS Playbook and the Leaders Playbook.
+- It shows a tile for each app you have an account in: Recruitment, the Link Org Playbook (with Stage 3 · Leader inside it), the JUSS Playbook and the JUSS Leaders Playbook.
 - It sends you into any of them already signed in.
 
 Angad decided this on 18 Oct 2026:
@@ -19,7 +19,7 @@ Angad decided this on 18 Oct 2026:
   - `sessions`: hashed tokens in an HttpOnly cookie; 90 days.
   - `handoffs`: one-use, 2-minute tickets for one app.
   - `app_links`: HelloFresh usernames connected by hand.
-- **Accounts stay in each app** (`jl` Users tab, `public.users`, `leaders.users`, `hf.users`). The hub finds them by email.
+- **Accounts stay in each app** (`jl` Users tab, `public.users` (LINK Stage 3 = `unlocks` has `cod-stage-3`), `hf.users`, `jleaders.users`). The hub finds them by email.
   - HelloFresh usernames that aren't emails are connected once with the old username and password.
 - **Signing in to an app:** the app's "Sign in" link goes to `https://link-juss.vercel.app/?app=<id>&r=<path>`.
   - The hub sends you back to the app's hand-off page with `#hub=<ticket>&r=<path>`.

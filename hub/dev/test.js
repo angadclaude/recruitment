@@ -20,8 +20,9 @@ const ok = (c, m) => { console.log((c ? '  ✓ ' : '  ✗ ') + m); if (!c) fails
     insert into jl.rows (tab, vals) values ('Users', '["u1","Angad Oshan","angad@linkmarketing.org.uk","LINK","admin","TRUE","",""]'),
       ('Users', '["u2","Gone Person","gone@linkmarketing.org.uk","LINK","booker","FALSE","",""]');
     create table public.users (id varchar primary key default gen_random_uuid(), username text not null, password text not null, display_name text not null, role text not null default 'user',
-      start_date timestamp not null default now(), last_login timestamp not null default now());
-    insert into public.users (username, password, display_name, role) values ('angad@linkmarketing.org.uk', 'x', 'Angad', 'manager'), ('ba@example.com', 'x', 'Bea Ambassador', 'user');
+      start_date timestamp not null default now(), last_login timestamp not null default now(), unlocks text[]);
+    insert into public.users (username, password, display_name, role, unlocks) values ('angad@linkmarketing.org.uk', 'x', 'Angad', 'manager', '{cod-stage-3}'),
+      ('ba@example.com', 'x', 'Bea Ambassador', 'user', '{cod-stage-2-video}');
     create schema leaders; create table leaders.users (id varchar primary key default gen_random_uuid(), email text, password text, display_name text, role text);
     insert into leaders.users (email, password, display_name, role) values ('Angad@LinkMarketing.org.uk', 'x', 'Angad', 'manager');
     create schema hf; create table hf.users (id serial primary key, username text not null, password_hash text not null, full_name text not null,
@@ -62,7 +63,8 @@ const ok = (c, m) => { console.log((c ? '  ✓ ' : '  ✗ ') + m); if (!c) fails
   await q("update core.codes set window_start = now() - interval '2 hours' where email = 'angad@linkmarketing.org.uk'");
   const a = await core.verifyCode(q, 'angad@linkmarketing.org.uk', mail[mail.length - 1].code);
   const ah = await core.home(q, a.person);
-  ok(ah.tiles.map(t => t.id).join(',') === 'recruit,fr,leaders' && ah.person.name === 'Angad Oshan', 'Angad sees Recruitment, FR and Leaders (found by email, any case); name from the recruitment app');
+  ok(ah.tiles.map(t => t.id).join(',') === 'recruit,fr' && ah.person.name === 'Angad Oshan' && !ah.stage,
+    'Angad sees Recruitment and the Link Org Playbook, no separate Leaders tile (Stage 3 is inside it since 21 Oct); a coach isn\'t on the BA ladder; found by email, any case; name from the recruitment app');
   await core.requestCode(q, 'gone@linkmarketing.org.uk', sendMail);
   ok(mail[mail.length - 1].email !== 'gone@linkmarketing.org.uk', 'switched off in the recruitment app and nowhere else: no code');
 
@@ -73,8 +75,8 @@ const ok = (c, m) => { console.log((c ? '  ✓ ' : '  ✗ ') + m); if (!c) fails
   ok(red && red.email === 'ba@example.com' && red.account.name === 'Bea Ambassador', 'FR redeems the ticket: it gets her email and her FR account');
   ok((await core.redeemHandoff(q, hc, 'fr')) === null, 'a ticket works once');
   const hc2 = await core.createHandoff(q, bea, 'fr');
-  ok((await core.redeemHandoff(q, hc2, 'leaders')) === null, 'a ticket for FR can\'t be used in another app');
-  ok((await core.createHandoff(q, bea, 'leaders')) === null, 'no ticket for an app she has no account in');
+  ok((await core.redeemHandoff(q, hc2, 'hf')) === null, 'a ticket for FR can\'t be used in another app');
+  ok((await core.createHandoff(q, bea, 'hf')) === null, 'no ticket for an app she has no account in');
   const hc3 = await core.createHandoff(q, bea, 'fr');
   await q("update core.handoffs set expires_at = now() - interval '1 second' where used_at is null");
   ok((await core.redeemHandoff(q, hc3, 'fr')) === null, 'an unused ticket expires after 2 minutes');
@@ -155,8 +157,20 @@ const ok = (c, m) => { console.log((c ? '  ✓ ' : '  ✗ ') + m); if (!c) fails
     'JUSS leaders with twin accounts (only the capitals differ): the exact spelling, else the one used most recently');
   const pl =await core.promote(q, a.person, 'fr', linkBa.id, notify);
   const beaH2 = await core.home(q, beaP);
-  ok(pl.ok && pl.opened && beaH2.stage === 3 && beaH2.tiles.some(t => t.id === 'leaders') && congrats.some(c => c.email === 'ba@example.com' && c.company === 'LINK' && c.opened),
-    'Angad moves Bea (LINK) on: her Leaders Playbook opens straight away, tile on her phone, LINK congratulations email');
+  const beaRow = (await q("select unlocks from public.users where username = 'ba@example.com'"))[0];
+  ok(pl.ok && pl.opened && beaH2.stage === 3 && beaH2.tiles.map(t => t.id).join() === 'fr' && congrats.some(c => c.email === 'ba@example.com' && c.company === 'LINK' && c.opened) &&
+    beaRow.unlocks.includes('cod-stage-3') && beaRow.unlocks.includes('cod-stage-2-video') && beaRow.unlocks.length === 2 &&
+    !(await q("select 1 from leaders.users where lower(email) = 'ba@example.com'")).length,
+    'Angad moves Bea (LINK) on: Stage 3 is switched on in her Link Org Playbook login (her other unlocks kept; no Leaders account made, the app does that), LINK congratulations email');
+  ok((await core.promote(q, a.person, 'fr', linkBa.id, notify)).already && (await core.team(q, a.person)).people.find(p => p.email === 'ba@example.com').stage === 3,
+    'moving Bea on again does nothing; the list shows her at Stage 3');
+  // A Leaders account on its own isn't Stage 3 any more: a coach can lock Stage 3 again and the account stays
+  await q("insert into public.users (username, password, display_name, role, unlocks) values ('locked.lead@example.com', 'x', 'Lee Locked', 'user', '{}')");
+  await q("insert into leaders.users (email, password, display_name, role) values ('locked.lead@example.com', 'x', 'Lee Locked', 'user')");
+  const lee = (await core.team(q, a.person)).people.find(p => p.email === 'locked.lead@example.com');
+  const leeH = await core.home(q, (await signIn('locked.lead@example.com')).person);
+  ok(lee && lee.stage === 2 && lee.canPromote && leeH.stage === 2 && leeH.tiles.map(t => t.id).join() === 'fr',
+    'a LINK BA whose coach locked Stage 3 again: Stage 2 in the hub (the old Leaders account doesn\'t count) and can be moved on again');
   ok((await q("select count(*)::int as n from core.promotions where by_email = 'jo@jussmarketing.co.uk' and email = 'new.juss@example.com'"))[0].n === 1, 'who moved whom, and when, is kept');
   await q("insert into hf.users (username, password_hash, full_name, role) values ('kimrep', 'x', 'Kim Rep', 'rep')");
   const kim = (await core.team(q, jo.person)).people.find(p => p.name === 'Kim Rep');
@@ -174,14 +188,17 @@ const ok = (c, m) => { console.log((c ? '  ✓ ' : '  ✗ ') + m); if (!c) fails
   await call('POST', '/api/code', { email: 'ba@example.com' });
   const vr = await call('POST', '/api/verify', { email: 'ba@example.com', code: mail[mail.length - 1].code });
   const setc = vr.headers['set-cookie'] || '';
-  ok(vr.body.ok && /HttpOnly/.test(setc) && /Secure/.test(setc) && /SameSite=Lax/.test(setc) && vr.body.tiles.map(t => t.id).join() === 'fr,leaders' && vr.body.stage === 3,
-    'web: verify sets a secure, HttpOnly cookie and returns her tiles (FR + Leaders, Stage 3)');
+  ok(vr.body.ok && /HttpOnly/.test(setc) && /Secure/.test(setc) && /SameSite=Lax/.test(setc) && vr.body.tiles.map(t => t.id).join() === 'fr' && vr.body.stage === 3,
+    'web: verify sets a secure, HttpOnly cookie and returns her tiles (Link Org Playbook, Stage 3)');
   const cookie = setc.split(';')[0];
   ok((await call('GET', '/api/me', null, cookie)).body.person.email === 'ba@example.com', 'web: /api/me knows her from the cookie');
   const g1 = await call('GET', '/api/go?app=fr&r=/home', null, '');
   ok(g1.status === 302 && g1.headers.location === '/?app=fr&r=%2Fhome', 'web: not signed in → the hub\'s login, then back to the app');
   const g2 = await call('GET', '/api/go?app=fr&r=/home', null, cookie);
   ok(g2.status === 302 && /^https:\/\/link-fr-playbook\.vercel\.app\/auth\/hub#hub=[\w-]{32}&r=%2Fhome$/.test(g2.headers.location), 'web: signed in → straight to the FR Playbook with a one-use ticket (in the #, never sent to servers in logs)');
+  const gL = await call('GET', '/api/go?app=leaders&r=/home', null, cookie);
+  ok(gL.status === 302 && /^https:\/\/link-fr-playbook\.vercel\.app\/auth\/hub#hub=[\w-]{32}&r=%2Fleaders%2Fplaybook$/.test(gL.headers.location),
+    'web: an old "Leaders Playbook" link → the Stage 3 pages of the Link Org Playbook (21 Oct)');
   const g3 = await call('GET', '/api/go?app=fr&r=//evil.example', null, cookie);
   ok(/&r=%2F$/.test(g3.headers.location), 'web: only paths on the app itself, never another site');
   ok((await call('GET', '/api/go?app=hf', null, cookie)).headers.location === '/?noaccount=hf', 'web: no account there → back to the hub with a message');

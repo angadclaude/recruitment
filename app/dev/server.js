@@ -31,7 +31,8 @@ async function onPostgres() {
   // automatic playbook unlock run for real in the tests
   await db.db.exec(require('../../hub/lib/core.js').SCHEMA + `
     create table if not exists public.users (id varchar primary key default gen_random_uuid(), username text not null, password text not null,
-      display_name text not null, role text not null default 'user', start_date timestamp not null default now(), last_login timestamp not null default now());
+      display_name text not null, role text not null default 'user', start_date timestamp not null default now(), last_login timestamp not null default now(),
+      unlocks text[]);  -- the Link Org Playbook's unlocks ('cod-stage-3' = Stage 3 · Leader)
     create schema if not exists leaders;
     create table if not exists leaders.users (id varchar primary key default gen_random_uuid(), email text not null, password text not null, display_name text not null, role text not null default 'user');
     create schema if not exists hf;
