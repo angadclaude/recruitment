@@ -1,4 +1,4 @@
-window.APP_VERSION = 'fbd1af3a';
+window.APP_VERSION = 'b23a9811';
 
 (function () {
 'use strict';
@@ -750,7 +750,7 @@ function thanksSigner(c) { return canThank() ? S.me.user.name : thanksName(thank
 // Each company's digital magazine: in the thank-you WhatsApp and on the thank-you screen after the evaluation.
 const MAGAZINES = {
   LINK: { title: 'LINK Organisation Magazine 2026', url: 'https://www.linkmarketing.org.uk/magazine/' },
-  JUSS: { title: 'JUSS Marketing Organisation Magazine 2026', url: 'https://jmomagazine-gjfukcw6.manus.space/' },
+  JUSS: { title: 'JUSS Marketing Organisation Magazine 2026', url: 'https://jussmarketing.co.uk/magazine/' },
 };
 function magCard(co) {
   const m = MAGAZINES[co];

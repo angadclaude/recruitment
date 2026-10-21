@@ -272,7 +272,7 @@ async function fillEval(p) {
     jussRows.length === 2 && jussRows.every(t => /Adham|Jagpreet/.test(t)) && /JUSS · Rubal usually sends these/i.test(await jsp.innerText('.sheet')),
     'Jess: "Thank everyone" = her 5 LINK appointments first (whatever booker, even no booker), then the 2 JUSS ones she can send too');
   const jessJuss = decodeURIComponent((await jsp.getAttribute('[data-thanks="' + adham.id + '"][data-co=JUSS]', 'href')).split('?text=')[1]);
-  ok(/in association with \*JUSS Marketing\*/.test(jessJuss) && /jmomagazine/.test(jessJuss) && /\*Jess Grace\*, on behalf of JUSS Marketing recruitment team 🧡💙$/.test(jessJuss),
+  ok(/in association with \*JUSS Marketing\*/.test(jessJuss) && /jussmarketing\.co\.uk\/magazine\//.test(jessJuss) && /\*Jess Grace\*, on behalf of JUSS Marketing recruitment team 🧡💙$/.test(jessJuss),
     'Jess sending a JUSS thank-you: JUSS wording + magazine, signed "*Jess Grace*, on behalf of JUSS Marketing recruitment team"');
   // Non-qualifiers get an honest version: why we can't take them on, no "by Friday" promise, door left open
   const tmsg = async c => decodeURIComponent((await jsp.getAttribute('[data-thanks="' + c.id + '"][data-co=LINK]', 'href')).split('?text=')[1]);
@@ -620,7 +620,7 @@ async function fillEval(p) {
   const rubSent = await api(await loginApi('rubal@jussmarketing.co.uk'), 'markSent', { id: jasT.id, kind: 'thanks' });
   ok(rubSent.ok && (await api(admin, 'getCandidate', { id: jasT.id })).thanks_by === 'Rubal Oshan', 'server accepts Rubal sending a LINK thank-you and records "sent by Rubal Oshan"');
   fs.writeFileSync(`${SHOTS}/msg-thanks-juss.txt`, jthanks);
-  ok(/in association with \*JUSS Marketing\*/.test(jthanks) && /\*JUSS Marketing Organisation Magazine 2026\* 👇\nhttps:\/\/jmomagazine-gjfukcw6\.manus\.space\/\n/.test(jthanks) && !/linkmarketing\.org\.uk\/magazine\//.test(jthanks) && /\*Rubal Oshan\*, on behalf of JUSS Marketing recruitment team 🧡💙$/.test(jthanks),
+  ok(/in association with \*JUSS Marketing\*/.test(jthanks) && /\*JUSS Marketing Organisation Magazine 2026\* 👇\nhttps:\/\/jussmarketing\.co\.uk\/magazine\/\n/.test(jthanks) && !/linkmarketing\.org\.uk\/magazine\//.test(jthanks) && /\*Rubal Oshan\*, on behalf of JUSS Marketing recruitment team 🧡💙$/.test(jthanks),
     'JUSS thank-you WhatsApp: JUSS wording + the JUSS Marketing Organisation Magazine 2026, signed Rubal Oshan for the JUSS recruitment team');
   const jmsg = decodeURIComponent((await ap.getAttribute('a.wa[data-kind=offer]', 'href')).split('?text=')[1]);
   fs.writeFileSync(`${SHOTS}/msg-juss.txt`, jmsg);
