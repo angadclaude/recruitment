@@ -93,7 +93,7 @@ const ONBOARD = {
   JUSS: {
     brand: 'JUSS Marketing', colour: '#E4613F', phone: '077823 77774', maps: 'https://maps.app.goo.gl/n2wTFyzScHLr1Voy9', day3: false,
     client: ['Hello Fresh', 'http://www.hellofresh.co.uk/'], website: ['JUSS Marketing', 'https://jussmarketing.co.uk/'], magazine: ['JUSS Magazine', 'https://jmomagazine-gjfukcw6.manus.space/'],
-    playbook: ['JUSS HF Playbook', 'https://juss-hf-playbook.vercel.app/'],
+    playbook: ['JUSS Playbook', 'https://juss-hf-playbook.vercel.app/'],
     from: 'rubal@jussmarketing.co.uk',
     week1: [
       ['🗓️', 'Induction Day', '1:30pm – 6:00pm', 'Meet the team and learn more about the industry. Expected finish between 5:30 and 6:00 PM.'],
