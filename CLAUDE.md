@@ -54,7 +54,7 @@ The recruitment app for **LINK Marketing** and **JUSS Marketing** (Angad runs bo
 - **Never:** paste passwords in chat; log into Cube; pull IQ Suite / Acwyre data without Angad's sign-off; recreate the old web-app mailer (welcome emails go through Gmail "send mail as" from Apps Script).
 
 ## NEXT TASK: one ecosystem, released in one go (Angad, 18 Oct 2026)
-He asked for J&L to be "an entire ecosystem" with his playbooks (FR `link-fr-playbook.vercel.app`, Leaders `link-leaders-playbook.vercel.app`, JUSS HelloFresh `juss-hf-playbook.vercel.app`, all on the same Supabase) without losing anything. He chose:
+He asked for J&L to be "an entire ecosystem" with his playbooks (FR `link-fr-playbook.vercel.app`, Leaders `link-leaders-playbook.vercel.app`, JUSS Playbook `juss-playbook.vercel.app` (was `juss-hf-playbook.vercel.app`, which still works), all on the same Supabase) without losing anything. He chose:
 - **Everything in one go.** Build and rehearse it all behind the scenes, then switch on one quiet day.
 - **One login for all apps:** work email + 6-digit code.
 - **The immersive look** of the playbooks. A separate session may do this on its own branch and must not merge before switch day.

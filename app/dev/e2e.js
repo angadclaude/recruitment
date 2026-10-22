@@ -1123,7 +1123,7 @@ async function fillEval(p) {
   ok(await ap.textContent('#obsubj') === 'JUSS Marketing - Your Brand Ambassador Journey Begins!' && /Hi Adham,/.test(prevHtml) && /Monday 19th October @ 1:30 PM/.test(prevHtml) &&
     /fieldiqdownload/.test(prevHtml) && /Hello Fresh/.test(prevHtml) && /077823 77774/.test(prevHtml) && /You're in, Adham(<\/span>)* 🎉/.test(prevHtml) && /Tuesday 20th October/.test(prevHtml) &&
     /1:30pm – 6:00pm/.test(prevHtml) && /1:00pm – 6:00pm/.test(prevHtml) && /img\/logo-juss\.png/.test(prevHtml) && /See my Week 1 plan \+ CONFIRM/.test(prevHtml) && /<b>Rubal Oshan<\/b>/.test(prevHtml) &&
-    /Read your <b>JUSS Playbook<\/b>/.test(prevHtml) && /href="https:\/\/juss-hf-playbook\.vercel\.app\/"[^>]*>📘 (<span[^>]*>)*Open my JUSS Playbook/.test(prevHtml),
+    /Read your <b>JUSS Playbook<\/b>/.test(prevHtml) && /href="https:\/\/juss-playbook\.vercel\.app\/"[^>]*>📘 (<span[^>]*>)*Open my JUSS Playbook/.test(prevHtml),
     'preview: Rubal\'s JUSS email in the congratulations-page look ("You\'re in, Adham 🎉", JUSS logo, Day 1 / Day 2 cards, FieldIQ, JUSS Playbook, Week 1 plan + CONFIRM, Hello Fresh, JUSS number, signed Rubal: it\'s from her address)');
   ok(/reply <b>GOT IT<\/b> to this email so we know it reached you/.test(prevHtml), 'the email asks them to reply GOT IT (the strongest "not spam" signal, and Rubal knows it arrived)');
   // The whole email as the candidate sees it (images from this dev server instead of the live site)
@@ -1201,7 +1201,7 @@ async function fillEval(p) {
   await ap.click('#obgo'); await ap.waitForSelector('#onb .pill.green:has-text("Onboarded")');
   const wm = (await getJson('/dev/mail')).slice(mbOnb).find(m => m.to === 'adham@example.com');
   ok(wm && wm.via === 'gmail' && wm.subject === 'JUSS Marketing - Your Brand Ambassador Journey Begins!' && wm.from === 'rubal@jussmarketing.co.uk' && wm.name === 'Rubal Oshan | JUSS Marketing' &&
-    wm.bcc === 'rubal@jussmarketing.co.uk' && !wm.replyTo && /FieldIQ/.test(wm.body) && /juss-hf-playbook\.vercel\.app/.test(wm.body) && /reply GOT IT/.test(wm.body) &&
+    wm.bcc === 'rubal@jussmarketing.co.uk' && !wm.replyTo && /FieldIQ/.test(wm.body) && /juss-playbook\.vercel\.app/.test(wm.body) && /reply GOT IT/.test(wm.body) &&
     /YOUR WEEK 1\nDay 1 · Monday 19th October: Induction Day, 1:30pm – 6:00pm/.test(wm.body),
     'sent from rubal@jussmarketing.co.uk as "Rubal Oshan | JUSS Marketing" (replies go to Rubal, who gets a copy), even though Angad pressed Send');
   ok((await api(admin, 'getCandidate', { id: adham.id })).onboard_email_by === 'Angad Oshan', 'saved: welcome email sent (who, when)');
@@ -1231,7 +1231,7 @@ async function fillEval(p) {
   // the sender's own address, and the starter's own details (name, Day 1, their welcome link, in the same company)
   const rubT = await loginApi('rubal@jussmarketing.co.uk');
   const adTok = (/[?&]t=([^&]+)/.exec((await api(admin, 'getCandidate', { id: adham.id })).welcome_url) || [])[1];
-  const LOOK = { LINK: ['logo-link.png', '#F15A24', 'Link Marketing', 'link-fr-playbook', 'maps.app.goo.gl/2wmckhXokt3KhCyE9'], JUSS: ['logo-juss.png', '#2BA9B8', 'JUSS Marketing', 'juss-hf-playbook', 'maps.app.goo.gl/n2wTFyzScHLr1Voy9'] };
+  const LOOK = { LINK: ['logo-link.png', '#F15A24', 'Link Marketing', 'link-fr-playbook', 'maps.app.goo.gl/2wmckhXokt3KhCyE9'], JUSS: ['logo-juss.png', '#2BA9B8', 'JUSS Marketing', 'juss-playbook', 'maps.app.goo.gl/n2wTFyzScHLr1Voy9'] };
   const combos = [[jessT, 'Jess Grace', 'jess@linkmarketing.org.uk', 'LINK', 'Link Marketing'], [jessT, 'Jess Grace', 'jess@linkmarketing.org.uk', 'JUSS', 'In association with JUSS Marketing'],
     [rubT, 'Rubal Oshan', 'rubal@jussmarketing.co.uk', 'JUSS', 'JUSS Marketing'], [rubT, 'Rubal Oshan', 'rubal@jussmarketing.co.uk', 'LINK', 'In association with Link Marketing']];
   const comboOut = [];
