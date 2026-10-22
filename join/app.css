@@ -499,10 +499,11 @@ details.carry .list { margin-top: 8px; }
 .qa .qq { color: var(--muted); font-size: 13px; }
 .qa .aa { font-weight: 700; white-space: pre-wrap; margin-top: 2px; }
 /* Evaluation at a glance */
-.evgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
-.evt { background: var(--bg); border: 1px solid var(--line); border-radius: 16px; padding: 10px 10px 9px; min-width: 0; }
-.evt b { display: block; font-size: 14px; line-height: 1.2; overflow-wrap: anywhere; }
-.evt span { display: block; font: 600 9.5px/1.2 var(--label); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+/* Two across, each tile with the full question the candidate was asked (22 Oct), in plain readable text */
+.evgrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 12px; }
+.evt { background: var(--bg); border: 1px solid var(--line); border-radius: 16px; padding: 10px 11px; min-width: 0; }
+.evt b { display: block; font-size: 15px; line-height: 1.25; overflow-wrap: anywhere; }
+.evt span { display: block; font-size: 12px; font-weight: 500; line-height: 1.3; color: var(--muted); margin-bottom: 5px; }
 .evt.big { grid-row: span 2; display: flex; flex-direction: column; justify-content: center; background: var(--dark); border: 0; color: #fff; text-align: center; }
 .evt.big span { color: rgba(255,255,255,.7); }
 .evt.big b { font-family: var(--display); font-weight: 400; font-size: 46px; line-height: 1; }

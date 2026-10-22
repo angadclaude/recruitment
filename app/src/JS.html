@@ -3441,15 +3441,20 @@ function renderCandidate(c, quiet) {
   const kv = (k, v) => v ? '<dt>' + h(k) + '</dt><dd>' + h(v) + '</dd>' : '';
   const qa = (q, a) => '<div class="qa"><div class="qq">' + h(q) + '</div><div class="aa">' + (a ? h(a) : '<span class="muted">—</span>') + '</div></div>';
   const glance = (k, v, cls) => '<div class="evt' + (cls ? ' ' + cls : '') + '"><span>' + h(k) + '</span><b>' + (v ? h(v) : '<span class="muted">—</span>') + '</b></div>';
+  // Each answer under the exact question the candidate was asked, not a short label (Angad, 22 Oct: the team couldn't
+  // tell what "Door shut in face" or "Earned on results" had asked)
+  const Q = k => (EVAL.find(e => e.k === k) || {}).t || k;
   const evalHtml = c.eval_at
-    ? '<div class="evgrid"><div class="evt big"><span>Excitement</span><b>' + h(c.q1_excitement || '—') + '</b><i>out of 10</i></div>' +
-        glance('#1 reason', c.q3_reason, 'wide') + glance('Can start', c.q5_start_date ? fmt(c.q5_start_date) : '') + glance('Days / week', c.q6_days) +
-        glance('Commute', c.q7_commute) + glance('Right now', c.q4_situation + (c.q4_looking_for ? ' · ' + c.q4_looking_for : ''), 'wide') +
-        glance('In 2 years', c.q12_bdp_stage, 'full') + '</div>' +
-      qa('What stood out', c.q2_stood_out) + qa('Kept going when it got tough', c.q8_resilience) + qa('Earned on results', c.q9_results_paid + (c.q9_results_detail ? ' — ' + c.q9_results_detail : '')) +
-      qa('Door shut in face', c.q10_door) + qa('Coach says pitch isn\'t working', c.q11_coach) +
-      (c.q12_bdp_why ? qa('What running their own business would mean', c.q12_bdp_why) : '') +
-      (isAdmin() ? qa('Unspent convictions (admin only)', c.q13_unspent) : '') + qa('Questions for us', c.q14_questions)
+    ? '<div class="evgrid"><div class="evt big"><span>' + h(Q('q1_excitement')) + '</span><b>' + h(c.q1_excitement || '—') + '</b><i>out of 10</i></div>' +
+        glance(Q('q3_reason'), c.q3_reason) + glance(Q('q5_start_date'), c.q5_start_date ? fmt(c.q5_start_date) : '') +
+        glance(Q('q6_days'), c.q6_days) + glance(Q('q7_commute'), c.q7_commute) +
+        glance(Q('q4_situation'), c.q4_situation, c.q4_looking_for ? '' : 'full') + (c.q4_looking_for ? glance(Q('q4_looking_for'), c.q4_looking_for) : '') +
+        glance(Q('q12_bdp_stage'), c.q12_bdp_stage, 'full') + '</div>' +
+      qa(Q('q2_stood_out'), c.q2_stood_out) + qa(Q('q8_resilience'), c.q8_resilience) + qa(Q('q9_results_paid'), c.q9_results_paid) +
+      (c.q9_results_detail ? qa(Q('q9_results_detail'), c.q9_results_detail) : '') +
+      qa(Q('q10_door'), c.q10_door) + qa(Q('q11_coach'), c.q11_coach) +
+      (c.q12_bdp_why ? qa(Q('q12_bdp_why'), c.q12_bdp_why) : '') +
+      (isAdmin() ? qa(Q('q13_unspent') + ' (admin only)', c.q13_unspent) : '') + qa(Q('q14_questions'), c.q14_questions)
     : '<p class="muted">' + (c.non_qual ? 'Non-qualifier: no evaluation form.' : 'Not submitted yet.') + '</p>';
   const academyDefault = c.academy_date || nextMonday(S.me.today);
   const offerReady = c.outcome === 'Academy booked' && c.admin_status !== 'pending' && c.admin_status !== 'rejected';

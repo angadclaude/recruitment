@@ -2099,8 +2099,8 @@ function onboardPreview(req, u) {
 /** The company the recruitment team has on screen as they send (LINK / JUSS), so it goes exactly as previewed. Anyone else: ''. */
 function brandPick(req, u) { return (req.co === 'LINK' || req.co === 'JUSS') && onRecruitTeam(u) ? req.co : ''; }
 /** Goes from the sender's own address if they're on the recruitment team (Jess / Rubal / Fiza), else the company's (ONBOARD.*.from),
- *  signed by them: replies go straight to them and they get a copy.
- *  Databyte first: FieldIQ only works once they're on it. */
+ *  signed by them: replies go straight to them. No copy back to the sender (Angad, 22 Oct: "it shouldn't come back as a
+ *  BCC"); the app's card and Log say who sent it and when. Databyte first: FieldIQ only works once they're on it. */
 function onboardSend(req, u) {
   if (!isAdmin(u)) throw new Error('Admin only');
   const c = getC(req.id);
@@ -2111,7 +2111,7 @@ function onboardSend(req, u) {
   if (bad) throw new Error(bad);
   unlockPlaybook(c, brandCo(c, pick), u);  // their playbook is open before they tap the link (after launch)
   const m = onboardEmail(c, s, pick), brand = ONBOARD[brandCo(c, pick)].brand;
-  const opts = { htmlBody: m.html, name: s.name + ' | ' + brand, bcc: s.email };
+  const opts = { htmlBody: m.html, name: s.name + ' | ' + brand };
   if (s.email !== scriptEmail()) opts.from = s.email;
   GmailApp.sendEmail(m.to, m.subject, m.text, opts);
   return withLock(() => {
