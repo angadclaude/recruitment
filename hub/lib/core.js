@@ -72,7 +72,8 @@ create table if not exists core.promotions (
 const APPS = {
   recruit: { name: 'Recruitment', blurb: 'Check-ins, outcomes, Chase, Day 1', url: 'https://jl-recruitment.vercel.app/', handoff: 'https://jl-recruitment.vercel.app/index.html', company: '' },
   fr: { name: 'Link Org Playbook', blurb: 'LINK · your BA playbook', url: 'https://link-fr-playbook.vercel.app/', handoff: 'https://link-fr-playbook.vercel.app/auth/hub', company: 'LINK' },
-  hf: { name: 'JUSS Playbook', blurb: 'JUSS · your BA & Leader playbook', url: 'https://juss-hf-playbook.vercel.app/', handoff: 'https://juss-hf-playbook.vercel.app/auth/hub', company: 'JUSS' },
+  // juss-playbook.vercel.app since 21 Oct; juss-hf-playbook.vercel.app is the same app and keeps working (old icons, QR codes)
+  hf: { name: 'JUSS Playbook', blurb: 'JUSS · your BA & Leader playbook', url: 'https://juss-playbook.vercel.app/', handoff: 'https://juss-playbook.vercel.app/auth/hub', company: 'JUSS' },
   // No separate Leaders tiles: Stage 3 is inside each company's playbook since 21 Oct (link-leaders-playbook.vercel.app and
   // juss-leaders-playbook.vercel.app redirect there). Angad wants one go-to app per company.
 };

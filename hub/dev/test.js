@@ -245,7 +245,7 @@ const ok = (c, m) => { console.log((c ? '  ✓ ' : '  ✗ ') + m); if (!c) fails
   await call('POST', '/api/code', { email: 'new.juss@example.com' });
   const jayCookie = ((await call('POST', '/api/verify', { email: 'new.juss@example.com', code: mail[mail.length - 1].code })).headers['set-cookie'] || '').split(';')[0];
   const gJ = await call('GET', '/api/go?app=jleaders&r=/home', null, jayCookie);
-  ok(gJ.status === 302 && /^https:\/\/juss-hf-playbook\.vercel\.app\/auth\/hub#hub=[\w-]{32}&r=%2Fleaders%2Fplaybook$/.test(gJ.headers.location),
+  ok(gJ.status === 302 && /^https:\/\/juss-playbook\.vercel\.app\/auth\/hub#hub=[\w-]{32}&r=%2Fleaders%2Fplaybook$/.test(gJ.headers.location),
     'web: an old JUSS "Leaders Playbook" link → the Stage 3 pages of the JUSS Playbook (21 Oct)');
   ok((await call('GET', '/api/team', null, cookie)).body.ok === false && (await call('GET', '/api/team', null, '')).body.auth === true, 'web: the "move people on" list needs an approver');
   await call('POST', '/api/logout', null, cookie);
