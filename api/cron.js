@@ -47,7 +47,8 @@ module.exports = async (req, res) => {
   await Promise.all([
     host ? fetch('https://' + host + '/api/rpc', { method: 'POST', body: '{"action":"publicConfig"}', signal: AbortSignal.timeout(20000) })
       .then(r => { warm.api = r.status + ' in ' + (Date.now() - t0) + 'ms'; }, e => { warm.api = 'failed: ' + e.message; }) : null,
-    relay().call('relayInfo').then(() => { warm.relay = 'ok in ' + (Date.now() - t0) + 'ms'; }, e => { warm.relay = 'failed: ' + e.message; }),
+    // …and keep Google's "Send mail as" list, so the app never takes a slow answer for "can't send" (22 Oct)
+    relay().call('relayInfo').then(i => relay().remember(i)).then(() => { warm.relay = 'ok in ' + (Date.now() - t0) + 'ms'; }, e => { warm.relay = 'failed: ' + e.message; }),
   ]);
   // The team's live copy in the Google Sheet (only the tabs that changed)
   let mirrored;

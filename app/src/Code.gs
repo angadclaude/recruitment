@@ -2145,8 +2145,9 @@ function sendableFrom() {
   if (hit) return JSON.parse(hit);
   let list = [];
   try { list = [scriptEmail()].concat(GmailApp.getAliases().map(x => String(x).toLowerCase())); } catch (e) { console.error(e); }
-  // No "Send mail as" addresses can also mean Google was slow to answer (Vercel waits 3 s): ask again in a minute, not ten
-  cache.put('send_as', JSON.stringify(list), list.length > 1 ? 600 : 60);
+  // No "Send mail as" addresses can also mean Google was slow to answer (Vercel waits 3 s, then uses the last answer it
+  // kept): ask again in 15 seconds, not ten minutes, so a second tap on Send works (22 Oct)
+  cache.put('send_as', JSON.stringify(list), list.length > 1 ? 600 : 15);
   return list;
 }
 function welcomeNotReady(s) {

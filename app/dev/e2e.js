@@ -272,19 +272,19 @@ async function fillEval(p) {
     jussRows.length === 2 && jussRows.every(t => /Adham|Jagpreet/.test(t)) && /JUSS · Rubal usually sends these/i.test(await jsp.innerText('.sheet')),
     'Jess: "Thank everyone" = her 5 LINK appointments first (whatever booker, even no booker), then the 2 JUSS ones she can send too');
   const jessJuss = decodeURIComponent((await jsp.getAttribute('[data-thanks="' + adham.id + '"][data-co=JUSS]', 'href')).split('?text=')[1]);
-  ok(/in association with \*JUSS Marketing\*/.test(jessJuss) && /jussmarketing\.co\.uk\/magazine\//.test(jessJuss) && /\*Jess Grace\*, on behalf of JUSS Marketing recruitment team 🧡💙$/.test(jessJuss),
+  ok(/in association with \*JUSS Marketing\*/.test(jessJuss) && /jussmarketing\.co\.uk\/magazine\//.test(jessJuss) && /\*Jess Grace\*, on behalf of JUSS Marketing recruitment team$/.test(jessJuss),
     'Jess sending a JUSS thank-you: JUSS wording + magazine, signed "*Jess Grace*, on behalf of JUSS Marketing recruitment team"');
   // Non-qualifiers get an honest version: why we can't take them on, no "by Friday" promise, door left open
   const tmsg = async c => decodeURIComponent((await jsp.getAttribute('[data-thanks="' + c.id + '"][data-co=LINK]', 'href')).split('?text=')[1]);
   const ishMsg = await tmsg(ishita), kidMsg = await tmsg(kid);
   fs.writeFileSync(`${SHOTS}/msg-thanks-nonqual-visa.txt`, ishMsg); fs.writeFileSync(`${SHOTS}/msg-thanks-nonqual-under18.txt`, kidMsg);
-  ok(/^Hey Ishita! 👋🧡/.test(ishMsg) && /\*self-employed\*, and your current visa or status doesn't allow self-employed work/.test(ishMsg) && /🔁 \*If your status changes\*, message us here/.test(ishMsg) &&
-    !/Friday|next steps/.test(ishMsg) && /\*Jess Grace\*, on behalf of LINK Marketing recruitment team 🧡$/.test(ishMsg), 'Tier 4 thank-you: honest "visa or status doesn\'t allow self-employed work", no Friday promise, signed Jess');
+  ok(/^Hey Ishita! 👋/.test(ishMsg) && /\*self-employed\*, and your current visa or status doesn't allow self-employed work/.test(ishMsg) && /🔁 \*If your status changes\*, message us here/.test(ishMsg) &&
+    !/Friday|next steps/.test(ishMsg) && /\*Jess Grace\*, on behalf of LINK Marketing recruitment team$/.test(ishMsg), 'Tier 4 thank-you: honest "visa or status doesn\'t allow self-employed work", no Friday promise, signed Jess');
   ok(/\*18 or over\*, so we can't take you on just yet/.test(kidMsg) && /🔁 \*When you turn 18\*, message us here and we'll book you straight back in/.test(kidMsg) && !/Friday/.test(kidMsg), 'under-18 thank-you: "18 or over… When you turn 18, message us"');
   ok(/⛔ Non-qualifier message/.test(await jsp.innerText('.sheet .trow:has-text("Ishita")')) && !/Non-qualifier/.test(await jsp.innerText('.sheet .trow:has-text("Jasraj")')), 'Jess\'s list marks which ones get the non-qualifier message');
   const thanks = decodeURIComponent((await jsp.getAttribute('[data-thanks="' + jasId + '"][data-co=LINK]', 'href')).split('?text=')[1]);
   fs.writeFileSync(`${SHOTS}/msg-thanks.txt`, thanks);
-  ok(thanks === "Hey Jasraj! 👋🧡\n\nThanks for coming through for your *Appointment Presentation* today in association with *LINK Marketing* 🙌\nWe loved meeting you in person.\n\n📲 *What happens next*\nOur Team will contact you at the latest by *close of business on Friday 6PM* about your next steps.\nKeep your phone close! 👀\n\n📖 *While you wait*, flick through the *LINK Organisation Magazine 2026* 👇\nhttps://www.linkmarketing.org.uk/magazine/\n\n*Jess Grace*, on behalf of LINK Marketing recruitment team 🧡",
+  ok(thanks === "Hey Jasraj! 👋\n\nThanks for coming through for your *Appointment Presentation* today in association with *LINK Marketing* 🙌\nWe loved meeting you in person.\n\n📲 *What happens next*\nOur Team will contact you at the latest by *close of business on Friday 6PM* about your next steps.\nKeep your phone close! 👀\n\n📖 *While you wait*, flick through the *LINK Organisation Magazine 2026* 👇\nhttps://www.linkmarketing.org.uk/magazine/\n\n*Jess Grace*, on behalf of LINK Marketing recruitment team",
     'thank-you WhatsApp = Angad\'s wording, laid out to scan (LINK, contact by Friday 6PM) + the LINK magazine, signed Jess Grace for the LINK recruitment team');
   const rowMsgJ = async (id, co) => decodeURIComponent((await jsp.getAttribute('.sheet .trow[data-tr="' + id + '"] a[data-thanks][data-co=' + co + ']', 'href')).split(/\?text=|[?&]body=/)[1] || '');
   ok(/in association with \*LINK Marketing\*/.test(await rowMsgJ(ishita.id, 'LINK')) && /in association with \*JUSS Marketing\*/.test(await rowMsgJ(ishita.id, 'JUSS')) && /\*Jess Grace\*, on behalf of JUSS Marketing/.test(await rowMsgJ(ishita.id, 'JUSS')) &&
@@ -550,6 +550,7 @@ async function fillEval(p) {
   fs.writeFileSync(`${SHOTS}/msg-link.txt`, msg);
   const wurl = (msg.match(/https:\/\/\S+welcome-link\.html\?t=\w+/) || [])[0];
   ok(/^JASRAJ!! 🎉 You're IN\./.test(msg) && /Pre-Coaching Module/.test(msg) && wurl, 'LINK WhatsApp: Gen Z copy + personal welcome link');
+  ok(/🪪 Please bring your \*digital photo ID\* \+ your right-to-work share code/.test(msg), 'Day 1 details: "please bring your digital photo ID" (Angad, 22 Oct)');
   ok(/– Jess, LINK Marketing$/.test(msg), 'LINK message signed by Jess (sent by Fiza)');
   ok(/Week 1 game plan \+ Sales Skill Ladder 📈 \+ tap \*CONFIRM\*/.test(msg), 'WhatsApp tells them the link has their Week 1 plan + the Sales Skill Ladder');
   const links = msg.match(/https:\/\/\S+/g);
@@ -614,13 +615,13 @@ async function fillEval(p) {
   const jasT = await api(admin, 'getCandidate', { id: (await api(admin, 'search', { q: 'Jasraj' })).items[0].id });
   await rbp.goto(APP + 'index.html?c=' + jasT.id); await rbp.waitForSelector('.cobig[data-kind=thanks][data-co=LINK]');
   const rubLink = decodeURIComponent((await rbp.getAttribute('.cobig[data-kind=thanks][data-co=LINK]', 'href')).split('?text=')[1]);
-  ok(/in association with \*LINK Marketing\*/.test(rubLink) && /linkmarketing\.org\.uk\/magazine\//.test(rubLink) && /\*Rubal Oshan\*, on behalf of LINK Marketing recruitment team 🧡$/.test(rubLink),
+  ok(/in association with \*LINK Marketing\*/.test(rubLink) && /linkmarketing\.org\.uk\/magazine\//.test(rubLink) && /\*Rubal Oshan\*, on behalf of LINK Marketing recruitment team$/.test(rubLink),
     'Rubal can send a LINK thank-you too: LINK wording + magazine, signed "*Rubal Oshan*, on behalf of LINK Marketing recruitment team"');
   await rubCtx.close();
   const rubSent = await api(await loginApi('rubal@jussmarketing.co.uk'), 'markSent', { id: jasT.id, kind: 'thanks' });
   ok(rubSent.ok && (await api(admin, 'getCandidate', { id: jasT.id })).thanks_by === 'Rubal Oshan', 'server accepts Rubal sending a LINK thank-you and records "sent by Rubal Oshan"');
   fs.writeFileSync(`${SHOTS}/msg-thanks-juss.txt`, jthanks);
-  ok(/in association with \*JUSS Marketing\*/.test(jthanks) && /\*JUSS Marketing Organisation Magazine 2026\* 👇\nhttps:\/\/jussmarketing\.co\.uk\/magazine\/\n/.test(jthanks) && !/linkmarketing\.org\.uk\/magazine\//.test(jthanks) && /\*Rubal Oshan\*, on behalf of JUSS Marketing recruitment team 🧡💙$/.test(jthanks),
+  ok(/in association with \*JUSS Marketing\*/.test(jthanks) && /\*JUSS Marketing Organisation Magazine 2026\* 👇\nhttps:\/\/jussmarketing\.co\.uk\/magazine\/\n/.test(jthanks) && !/linkmarketing\.org\.uk\/magazine\//.test(jthanks) && /\*Rubal Oshan\*, on behalf of JUSS Marketing recruitment team$/.test(jthanks),
     'JUSS thank-you WhatsApp: JUSS wording + the JUSS Marketing Organisation Magazine 2026, signed Rubal Oshan for the JUSS recruitment team');
   const jmsg = decodeURIComponent((await ap.getAttribute('a.wa[data-kind=offer]', 'href')).split('?text=')[1]);
   fs.writeFileSync(`${SHOTS}/msg-juss.txt`, jmsg);
@@ -724,7 +725,7 @@ async function fillEval(p) {
     'Fiza\'s thank-you list: every appointment today, LINK and JUSS (she works for both): "Tap LINK or JUSS on each one"');
   const zrow = async co => decodeURIComponent((await rtp.getAttribute('.sheet .trow[data-tr="' + adham.id + '"] a[data-thanks][data-co=' + co + ']', 'href')).split(/\?text=|[?&]body=/)[1] || '').replace(/\*/g, '');
   const zTy = await zrow('LINK');
-  ok(/in association with LINK Marketing/.test(zTy) && /linkmarketing\.org\.uk\/magazine\//.test(zTy) && /Zara Iqbal, on behalf of LINK Marketing recruitment team 🧡$/.test(zTy) && /in association with JUSS Marketing/.test(await zrow('JUSS')),
+  ok(/in association with LINK Marketing/.test(zTy) && /linkmarketing\.org\.uk\/magazine\//.test(zTy) && /Zara Iqbal, on behalf of LINK Marketing recruitment team$/.test(zTy) && /in association with JUSS Marketing/.test(await zrow('JUSS')),
     'Adham (JUSS booker): his row\'s LINK button opens the LINK thank-you (wording, magazine, hearts) signed by Fiza; JUSS the JUSS one');
   await rtp.$eval('.sheet .trow[data-tr="' + adham.id + '"] a[data-thanks][data-co=LINK]', a => { a.addEventListener('click', e => e.preventDefault()); a.click(); });
   await rtp.waitForSelector('.sheet .trow[data-tr="' + adham.id + '"] .pill.green');
