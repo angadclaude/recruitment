@@ -59,17 +59,28 @@ function relay(db) {
   // Asked from inside a job (opening the app, as an admin), so Google is never waited on for long: what we last knew,
   // refreshed in the background every 10 minutes; at most 3 s the first time (19 Oct: a slow Google held every request
   // queued behind it)
+  // Google often takes 4–15 s, so a fresh server had no answer within the 3 s and said "no Send mail as addresses":
+  // Jess was told "Can't send as jess@…" though hers was set up (22 Oct). Every answer Google gives is now kept
+  // (jl.props SEND_AS_LAST, even one that arrives after the 3 s), and while there's no answer yet, the last one is used.
+  const LAST = 'SEND_AS_LAST';
+  async function keepAliases(a) {
+    if (!Array.isArray(a)) return;
+    try { await db.sql`insert into jl.props (key, val) values (${LAST}, ${JSON.stringify(a)}) on conflict (key) do update set val = excluded.val`; } catch (e) { console.error('keep aliases', e.message); }
+  }
+  async function lastAliases() {
+    try { const r = (await db.sql`select val from jl.props where key = ${LAST}`)[0]; return r ? JSON.parse(r.val) : []; } catch (e) { console.error('last aliases', e.message); return []; }
+  }
   let infoAsk = null;
   function refreshInfo() {
     if (!infoAsk && (!info || Date.now() - infoAt > 10 * 60000)) {
-      infoAsk = call('relayInfo').then(i => { info = i; infoAt = Date.now(); }, e => console.error('relayInfo', e.message)).finally(() => { infoAsk = null; });
+      infoAsk = call('relayInfo').then(i => { if (!i) return; info = i; infoAt = Date.now(); return keepAliases(i.aliases); }, e => console.error('relayInfo', e.message)).finally(() => { infoAsk = null; });
     }
     return infoAsk;
   }
   async function getInfo() {
     const asking = refreshInfo();
     if (!info && asking) await Promise.race([asking, new Promise(r => setTimeout(r, 3000))]);
-    return info || { quota: -1, aliases: [] };
+    return info || { quota: -1, aliases: await lastAliases() };
   }
   const allowed = m => {
     if (!REHEARSAL) return true;
@@ -110,6 +121,8 @@ function relay(db) {
     pending: () => infoAsk,
     quota: async () => { try { return (await getInfo()).quota; } catch (e) { console.error(e); return -1; } },
     aliases: async () => { try { return (await getInfo()).aliases; } catch (e) { console.error(e); return []; } },
+    /** An answer from Google asked elsewhere (the 5-minute timer): used here and kept for slow moments. */
+    remember: i => { if (!i) return null; info = i; infoAt = Date.now(); return keepAliases(i.aliases); },
     /** Send these outbox rows, 4 at a time. */
     async deliver(ids) {
       const queue = ids.slice(), errors = [];

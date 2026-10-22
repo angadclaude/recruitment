@@ -3120,7 +3120,8 @@ function heartOf(c) { return HEART[brandCo(c)]; }
 function msgThanks(c) {
   const co = brandCo(c), mag = MAGAZINES[co];
   if (c.non_qual) return msgThanksNonQual(c);
-  return 'Hey ' + c.first_name + '! 👋' + heartOf(c) + '\n\n' +
+  // No hearts in the thank-you, from anyone (Angad, 22 Oct)
+  return 'Hey ' + c.first_name + '! 👋\n\n' +
     'Thanks for coming through for your *Appointment Presentation* today in association with *' + brandOf(c) + '* 🙌\n' +
     'We loved meeting you in person.\n\n' +
     '📲 *What happens next*\n' +
@@ -3128,7 +3129,7 @@ function msgThanks(c) {
     'Keep your phone close! 👀\n\n' +
     '📖 *While you wait*, flick through the *' + mag.title + '* 👇\n' +
     mag.url + '\n\n' +
-    '*' + thanksSigner(c) + '*, on behalf of ' + co + ' Marketing recruitment team ' + heartOf(c);
+    '*' + thanksSigner(c) + '*, on behalf of ' + co + ' Marketing recruitment team';
 }
 /** Non-qualifier's thank-you: honest about why we can't take them on (no "next steps by Friday"), and an open door to come back. */
 function msgThanksNonQual(c) {
@@ -3138,14 +3139,14 @@ function msgThanksNonQual(c) {
     : /^Visa expired/.test(c.non_qual)
       ? ['The visa expiry date you gave us has passed, so we can\'t take you on right now.', 'Once your visa is renewed']
       : ['Our Brand Ambassador role is *self-employed*, and your current visa or status doesn\'t allow self-employed work, so we can\'t take you on right now.', 'If your status changes'];
-  return 'Hey ' + c.first_name + '! 👋' + heartOf(c) + '\n\n' +
+  return 'Hey ' + c.first_name + '! 👋\n\n' +
     'Thanks for coming through for your *Appointment Presentation* today in association with *' + brandOf(c) + '* 🙌\n' +
     'It was great meeting you.\n\n' +
     why[0] + '\n\n' +
     '🔁 *' + why[1] + '*, message us here and we\'ll book you straight back in 💪\n\n' +
     '📖 In the meantime, flick through the *' + mag.title + '* 👇\n' +
     mag.url + '\n\n' +
-    '*' + thanksSigner(c) + '*, on behalf of ' + co + ' Marketing recruitment team ' + heartOf(c);
+    '*' + thanksSigner(c) + '*, on behalf of ' + co + ' Marketing recruitment team';
 }
 function msgNoAnswer(c) {
   const co = brandCo(c);
@@ -3192,7 +3193,7 @@ function msgAcademy(c) {
   lines.push('🗺️ Find us on Google Maps:', OFFICES[co].maps, '');
   // The recruitment team sign with their own name, whichever company; anyone else: Jess (LINK) / Rubal (JUSS)
   const sign = (canPickBrand() ? '' : (S.me.signoff || {})[co]) || S.me.user.name.split(' ')[0];
-  lines.push('🪪 Bring photo ID + your right-to-work share code', '', 'Let\'s get it 🔥', '– ' + sign + ', ' + brandOf(c));
+  lines.push('🪪 Please bring your *digital photo ID* + your right-to-work share code', '', 'Let\'s get it 🔥', '– ' + sign + ', ' + brandOf(c));
   return lines.join('\n');
 }
 
