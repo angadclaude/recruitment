@@ -517,7 +517,12 @@ async function fillEval(p) {
   const hdr = (await getJson('/dev/sheet?name=Candidates'))[0];
   ok(hdr.slice(-17).join() === 'recruit_source,databyte_at,databyte_by,onboard_email_at,onboard_email_by,brand,presented_by_id,presented_by,offer_by,offer_via,offer_co,thanks_via,thanks_co,outcome_log,callback_at,callback_by_id,callback_nudged' && new Set(hdr).size === hdr.length,
     'live Sheet with the presenter headers written twice: the empty copies cleared, the new columns added in the right place (no data moved)');
-  ok(!/Unspent convictions/.test(snap), 'conviction answer hidden from bookers');
+  ok(!/unspent criminal convictions/i.test(snap), 'conviction answer hidden from bookers');
+  ok(/A door gets shut in your face\. What's your first thought\?/.test(snap) && /Tell us about a time you kept going when things got tough\. What did you do\?/.test(snap) &&
+    /Have you ever earned money based on results\?/.test(snap) && /Where do you want to be in 2 years\?/.test(snap) && /How many days a week do you want to work\?/.test(snap) &&
+    !/Door shut in face|Earned on results|Kept going when it got tough/.test(snap),
+    'evaluation: every answer under the full question the candidate was asked, not a short label (Angad, 22 Oct)');
+  await bp.locator('#sec-ev').screenshot({ path: SHOTS + '/14b-evaluation-full-questions.png' });
   await bp.click('.chips[data-name=outcome] .chip:has-text("Academy booked")');
   await bp.fill('#adate', '2026-10-19');
   await bp.fill('#onotes', 'Great call.');
@@ -1202,9 +1207,9 @@ async function fillEval(p) {
   await ap.click('#obgo'); await ap.waitForSelector('#onb .pill.green:has-text("Onboarded")');
   const wm = (await getJson('/dev/mail')).slice(mbOnb).find(m => m.to === 'adham@example.com');
   ok(wm && wm.via === 'gmail' && wm.subject === 'JUSS Marketing - Your Brand Ambassador Journey Begins!' && wm.from === 'rubal@jussmarketing.co.uk' && wm.name === 'Rubal Oshan | JUSS Marketing' &&
-    wm.bcc === 'rubal@jussmarketing.co.uk' && !wm.replyTo && /FieldIQ/.test(wm.body) && /juss-playbook\.vercel\.app/.test(wm.body) && /reply GOT IT/.test(wm.body) &&
+    !wm.bcc && !wm.replyTo && /FieldIQ/.test(wm.body) && /juss-playbook\.vercel\.app/.test(wm.body) && /reply GOT IT/.test(wm.body) &&
     /YOUR WEEK 1\nDay 1 · Monday 19th October: Induction Day, 1:30pm – 6:00pm/.test(wm.body),
-    'sent from rubal@jussmarketing.co.uk as "Rubal Oshan | JUSS Marketing" (replies go to Rubal, who gets a copy), even though Angad pressed Send');
+    'sent from rubal@jussmarketing.co.uk as "Rubal Oshan | JUSS Marketing" (replies go to Rubal; no BCC copy back, Angad 22 Oct), even though Angad pressed Send');
   ok((await api(admin, 'getCandidate', { id: adham.id })).onboard_email_by === 'Angad Oshan', 'saved: welcome email sent (who, when)');
   const huHref = await ap.getAttribute('#obwa', 'href'), hu = decodeURIComponent(huHref.split(/\?text=|[?&]body=/)[1] || '');
   ok(/^sms:\+447700900300/.test(huHref) && /^Hi Adham 👋 It's Angad from JUSS Marketing\./.test(hu) && /emailed your starter pack to adham@example\.com/.test(hu) && /JUSS Playbook/.test(hu) &&
@@ -1268,8 +1273,8 @@ async function fillEval(p) {
   const mbZ = (await getJson('/dev/mail')).length;
   await api(zT2, 'onboardSend', { id: jasId, co: 'LINK' });
   const zm = (await getJson('/dev/mail')).slice(mbZ).find(m => m.to === 'jasraj@example.com');
-  ok(zm && zm.from === 'recruitment@jussmarketing.co.uk' && zm.name === 'Zara Iqbal | Link Marketing' && zm.bcc === 'recruitment@jussmarketing.co.uk' && zm.subject === 'Link Marketing - Your Brand Ambassador Journey Begins!' && /Link Org Playbook/.test(zm.body),
-    'Fiza sends it as LINK → from recruitment@jussmarketing.co.uk as "Zara Iqbal | Link Marketing", she gets a copy');
+  ok(zm && zm.from === 'recruitment@jussmarketing.co.uk' && zm.name === 'Zara Iqbal | Link Marketing' && !zm.bcc && zm.subject === 'Link Marketing - Your Brand Ambassador Journey Begins!' && /Link Org Playbook/.test(zm.body),
+    'Fiza sends it as LINK → from recruitment@jussmarketing.co.uk as "Zara Iqbal | Link Marketing", no BCC copy back');
   ok(/Zara Iqbal\nIn association with Link Marketing$/.test(zm.body),
     'a JUSS address sending a LINK email signs "In association with Link Marketing" (as Rubal would)');
 
