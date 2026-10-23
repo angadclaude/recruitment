@@ -2570,6 +2570,21 @@ document.addEventListener('click', e => {
   if (!a.closest('.sheet')) setTimeout(() => { if (S.view === 'today' && !document.querySelector('.sheet-back')) render(true); }, 400);  // after WhatsApp has opened
 }, true);
 
+// Tap a name (Expected today, Tried calling, Coming up) → its booking. One listener for the whole page, so a background refresh
+// can never leave a name without its tap (Angad, 23 Oct: booked Lucy on the laptop, couldn't open her on the phone).
+document.addEventListener('click', e => {
+  const el = e.target.closest && e.target.closest('[data-bk]'), page = document.getElementById('page');
+  if (!el || !page || !page.contains(el)) return;
+  const inner = e.target.closest('a, button'); if (inner && inner !== el && !inner.matches('[data-bk]')) return;  // its own buttons
+  openBooking(el.dataset.bk);
+});
+/** Open a booking; not on this phone yet (booked on another device a moment ago) → fetch the list first. */
+function openBooking(id) {
+  const show = () => { try { bookSheet(id); } catch (ex) { console.error(ex); toast('Couldn\'t open that booking: ' + ex.message); } };
+  if (bookById(id)) return show();
+  call('bookingList', {}).then(r => { S.bookings = { items: r.items, at: Date.now() }; saveCache(); if (bookById(id)) show(); else toast('That booking has gone. Pull down to refresh.'); })
+    .catch(ex => toast(ex.message));
+}
 /** Today page (Jess, Rubal, Angad): 📅 Book, who's expected (confirmed? checked in? didn't come?) and what's coming up. */
 function bookingsHtml(day) {
   if (!canBook()) return '';
@@ -2592,7 +2607,7 @@ function bookingsHtml(day) {
       const l = next.filter(b => b.slot_date === x).sort((a, b) => bookName(a).localeCompare(bookName(b))), rem = l.filter(b => String(b.remind_at).slice(0, 10) === S.me.today).length;
       return '<div class="trow bkday"><div class="main"><div class="name">' + h(fmtLong(x)) + (bookDaysTo(x) === 1 ? ' · tomorrow' : '') + '</div>' +
         '<div class="sub">' + l.length + ' booked · ' + l.filter(b => b.confirmed_at).length + ' confirmed</div>' +
-        '<div class="bknames">' + l.map(b => '<button class="nm" data-bk="' + h(b.id) + '">' + h(b.first_name) + (b.confirmed_at ? ' ✅' : '') + '</button>').join('') + '</div></div>' +
+        '<div class="bknames">' + l.map(b => '<button class="nm" data-bk="' + h(b.id) + '">' + h(bookName(b)) + (b.confirmed_at ? ' ✅' : '') + '</button>').join('') + '</div></div>' +
         '<button class="btn ghost sm" data-bkrem="' + x + '">📲 Remind' + (rem ? ' · ' + rem + '/' + l.length : '') + '</button></div>';
     }).join('') + '</div>';
   }
@@ -2617,7 +2632,6 @@ function bookRow(b) {
 }
 function bindBookings(root) {
   const nb = root.querySelector('#bookNew'); if (nb) nb.onclick = () => bookForm({});
-  root.querySelectorAll('[data-bk]').forEach(el => { el.onclick = e => { if (e.target.closest('a, button:not([data-bk])')) return; bookSheet(el.dataset.bk); }; });
   root.querySelectorAll('[data-bkyes]').forEach(b => { b.onclick = e => { e.stopPropagation(); bookYes(b.dataset.bkyes, b); }; });
   root.querySelectorAll('[data-bkre]').forEach(b => { b.onclick = e => { e.stopPropagation(); const x = bookById(b.dataset.bkre); if (x) bookForm(x, 'rebook'); }; });
   root.querySelectorAll('[data-bkrem]').forEach(b => { b.onclick = () => bookRemindSheet(b.dataset.bkrem); });
@@ -2694,10 +2708,11 @@ function bookSendSheet(b, kind) {
   const back = bookSheetOpen(BOOK_SENT[kind],
     (kind === 'confirm' ? '<div class="flag green" style="margin-bottom:10px">✅ ' + h(bookName(b)) + ' is booked · ' + h(fmtOrd(b.slot_date)) + ', ' + h(fmt12(b.slot_time || bookCfg().time)) + '</div>' : '') +
     '<div class="sheet-h"><div><div class="label muted">' + h(bookName(b)) + ' · ' + h(b.mobile) + '</div><div class="display">' + { confirm: 'Send the confirmation', remind: 'Send the reminder', missed: 'Sorry we missed you' }[kind] + '</div></div></div>' +
-    '<div class="waprev">' + waHtml(msg) + '</div>' +
-    link(sms ? 'sms' : 'whatsapp', sms ? '📱 Send by text' : '💬 Send on WhatsApp', 'btn ' + (sms ? 'sms' : 'wa') + ' block') +
-    '<div class="altsend"><span>' + (sms ? '📵 Not on WhatsApp' : 'Not on WhatsApp?') + '</span>' + link(sms ? 'whatsapp' : 'sms', sms ? '💬 WhatsApp' : '📱 Text') + '</div>' +
-    '<p class="hint center" id="bksent">' + (b[kind + '_at'] ? '✓ Sent ' + h(fmtTs(b[kind + '_at'])) + ' by ' + h(String(b[kind + '_by']).split(' ')[0]) + '. Send it again if you need to.' : 'WhatsApp opens with this ready, signed by you. Tap send and come back.') + '</p>' +
+    // The two ways to send first, then what they'll get: on a phone the buttons are on screen without scrolling (Angad, 23 Oct)
+    '<div class="bksend2">' + (sms ? link('sms', '📱 Text', 'btn sms') + link('whatsapp', '💬 WhatsApp', 'btn wa') : link('whatsapp', '💬 WhatsApp', 'btn wa') + link('sms', '📱 Text', 'btn sms')) + '</div>' +
+    '<p class="hint center" id="bksent">' + (b[kind + '_at'] ? '✓ Sent ' + h(fmtTs(b[kind + '_at'])) + ' by ' + h(String(b[kind + '_by']).split(' ')[0]) + ' (' + h(VIA_LABEL[b[kind + '_via']] || 'WhatsApp') + '). Send it again if you need to.'
+      : 'Opens with this ready, signed by you. Not on WhatsApp? 📱 Text sends it from your phone\'s Messages. Tap send and come back.') + '</p>' +
+    '<div class="label muted" style="margin:10px 2px 6px">What they\'ll get</div><div class="waprev">' + waHtml(msg) + '</div>' +
     '<button class="btn ghost block" id="bkdone">Done</button>');
   back.querySelectorAll('[data-bks]').forEach(a => a.addEventListener('click', () => setTimeout(() => {
     const s = back.querySelector('#bksent'); if (s) s.innerHTML = '<span class="pill green">✓ Sent by you · ' + h(londonNow().slice(11, 16)) + '</span>';
@@ -2736,7 +2751,7 @@ function bookSheet(id) {
       (b.notes ? '<div>📝 ' + h(b.notes) + '</div>' : '') +
       sentLine('confirm') + sentLine('remind') + sentLine('missed') +
       (b.confirmed_at ? '<div>✅ Replied YES · ' + h(fmtTs(b.confirmed_at)) + (b.confirmed_by ? ' · ' + h(String(b.confirmed_by).split(' ')[0]) : '') + '</div>' : '') + '</div>' +
-    (open ? '<button class="btn wa block" id="bkc">💬 ' + (b.confirm_at ? 'Send the confirmation again' : 'Send the confirmation') + '</button>' +
+    (open ? '<button class="btn wa block" id="bkc">💬 ' + (b.confirm_at ? 'Send the confirmation again' : 'Send the confirmation') + ' · WhatsApp or 📱 Text</button>' +
       '<button class="btn ghost block" id="bkr" style="margin-top:8px">📲 Send a reminder</button>' +
       (b.confirmed_at ? '' : '<button class="btn ghost block" id="bky" style="margin-top:8px">👍 They replied Yes</button>') +
       '<button class="btn ghost block" id="bke" style="margin-top:8px">📅 Change the day</button>' : '') +

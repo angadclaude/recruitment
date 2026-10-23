@@ -185,6 +185,9 @@ const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked 
   const href = await jp.getAttribute('.bksheet a.btn.wa', 'href');
   ok(/^https:\/\/wa\.me\/447700900126\?text=/.test(href) && textOf(href) === CONFIRM_SAM.replace('Sam', 'Leah').replace('Tuesday 27th', 'Thursday 29th'),
     'the WhatsApp opens to her number with the approved wording, word for word');
+  const smsHref = await jp.getAttribute('.bksheet .bksend2 a.btn.sms', 'href');
+  ok(await jp.$('.bksheet .bksend2 a.btn.wa') && /^sms:\+447700900126/.test(smsHref) && !/\*/.test(textOf(smsHref)) && /Thursday 29th October · 10:00 AM/.test(textOf(smsHref)),
+    'WhatsApp and 📱 Text side by side (not on WhatsApp: text it from the phone), the text without WhatsApp\'s stars');
   await shot(jp, 'b3-send');
   await jp.$eval('.bksheet a.btn.wa', a => { a.addEventListener('click', e => e.preventDefault()); a.click(); });
   await jp.waitForFunction(() => /Sent by you/.test(document.getElementById('bksent').textContent));
@@ -203,6 +206,15 @@ const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked 
   await jp.$eval('.bksheet a.btn[data-bks]', a => { a.addEventListener('click', e => e.preventDefault()); a.click(); });
   await jp.waitForFunction(() => /1 of 1 sent/.test(document.getElementById('bkprog').textContent));
   ok(true, 'each tap ticks them off ("1 of 1 sent")');
+  await jp.click('#bkdone');
+
+  // Booked on another device (Angad, 23 Oct: booked Lucy on the laptop, couldn't open her on the phone): first and last name, one tap
+  await api(angad, 'saveBooking', { booking: { first_name: 'Lucy', last_name: 'Smith', mobile: '07700900130', slot_date: '2026-10-28' } });
+  await jp.reload(); await jp.waitForSelector('.bknames .nm:has-text("Lucy Smith")');
+  await jp.tap('.bknames .nm:has-text("Lucy Smith")'); await jp.waitForSelector('.bksheet .bkinfo');
+  ok(/Booked by Angad Oshan/.test(await jp.innerText('.bksheet')) && /Lucy Smith/.test(await jp.innerText('.bksheet')), 'Coming up shows first and last names; tapping one opens the booking made on another device');
+  await jp.click('#bkc'); await jp.waitForSelector('.bksheet .bksend2 a.btn.sms');
+  ok(/Hey Lucy!/.test(textOf(await jp.getAttribute('.bksheet .bksend2 a.btn.sms', 'href'))), '→ 💬 Send the confirmation → 📱 Text: her confirmation by text from the phone');
   await jp.click('#bkdone');
   await jp.context().close();
 
