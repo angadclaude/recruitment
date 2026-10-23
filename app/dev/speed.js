@@ -183,7 +183,7 @@ async function fillEval(p) {
   // ── New starter: the congratulations link (WhatsApp / welcome email) ──
   const zara = (await api(admin, 'search', { q: 'Zara' })).items[0];
   await api(admin, 'saveOutcome', { id: zara.id, outcome: 'Academy booked', academy_date: '2026-10-19', outcome_notes: '' });
-  const wurl = (await api(admin, 'getCandidate', { id: zara.id })).welcome_url.replace(/^https?:\/\/[^/]+\/recruitment\/join\//, APP);
+  const wurl = (await api(admin, 'getCandidate', { id: zara.id })).welcome_url.replace(/^https?:\/\/[^?]*\/(?=welcome-)/, APP);  // the live address (Vercel since 18 Oct) → this test server
   const wctx = await browser.newContext(PHONE);
   const wp = await wctx.newPage();
   t = Date.now();

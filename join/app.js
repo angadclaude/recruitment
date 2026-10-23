@@ -1,4 +1,4 @@
-window.APP_VERSION = '5c6615fa';
+window.APP_VERSION = '367e8ad7';
 
 (function () {
 'use strict';
@@ -754,7 +754,7 @@ function brandSend(c, kind) {
   return '<div class="cosend">' + ['LINK', 'JUSS'].map(co => '<a class="cobig ' + co + '" target="_blank" rel="noopener" data-kind="' + kind + '" data-via="' + via + '" data-co="' + co + '" href="' + h(brandUrl(c, kind, via, co)) + '">' +
       '<small>' + lead + what + (via === 'sms' ? ' by text' : via === 'email' ? ' by email' : '') + '</small><b>' + co + '</b></a>').join('') + '</div>' +
     '<div class="altsend"><span>' + (via === 'whatsapp' ? 'Not on WhatsApp?' : via === 'sms' ? '📵 Not on WhatsApp' : 'Or') + '</span>' +
-      other.map(v => '<button type="button" data-chan="' + v + '">' + CHAN_LABEL[v] + '</button>').join('') + '</div>';
+      other.map(v => '<button type="button" data-chan="' + v + '">' + CHAN_LABEL[v] + '</button>').join('') + '</div>' + (via === 'whatsapp' ? deskPasteNote() : '');
 }
 /** Switch the company: instant on screen, saved in the background (like every other save). */
 function pickBrand(c, co) {
@@ -2792,9 +2792,9 @@ function bookSendSheet(b, kind) {
     (kind === 'confirm' ? '<div class="flag green" style="margin-bottom:10px">✅ ' + h(bookName(b)) + ' is booked · ' + h(fmtOrd(b.slot_date)) + ', ' + h(fmt12(b.slot_time || bookCfg().time)) + '</div>' : '') +
     '<div class="sheet-h"><div><div class="label muted">' + h(bookName(b)) + ' · ' + h(b.mobile) + '</div><div class="display">' + { confirm: 'Send the confirmation', remind: 'Send the reminder', missed: 'Sorry we missed you' }[kind] + '</div></div></div>' +
     // The two ways to send first, then what they'll get: on a phone the buttons are on screen without scrolling (Angad, 23 Oct)
-    '<div class="bksend2">' + (sms ? link('sms', '📱 Text', 'btn sms') + link('whatsapp', '💬 WhatsApp', 'btn wa') : link('whatsapp', '💬 WhatsApp', 'btn wa') + link('sms', '📱 Text', 'btn sms')) + '</div>' +
+    '<div class="bksend2">' + (sms ? link('sms', '📱 Text', 'btn sms') + link('whatsapp', '💬 WhatsApp', 'btn wa') : link('whatsapp', '💬 WhatsApp', 'btn wa') + link('sms', '📱 Text', 'btn sms')) + '</div>' + deskPasteNote() +
     '<p class="hint center" id="bksent">' + (b[kind + '_at'] ? '✓ Sent ' + h(fmtTs(b[kind + '_at'])) + ' by ' + h(String(b[kind + '_by']).split(' ')[0]) + ' (' + h(VIA_LABEL[b[kind + '_via']] || 'WhatsApp') + '). Send it again if you need to.'
-      : 'Opens with this ready, signed by you. Not on WhatsApp? 📱 Text sends it from your phone\'s Messages. Tap send and come back.') + '</p>' +
+      : (IS_DESKTOP ? 'Signed by you.' : 'Opens with this ready, signed by you.') + ' Not on WhatsApp? 📱 Text sends it from your phone\'s Messages. Tap send and come back.') + '</p>' +
     '<div class="label muted" style="margin:10px 2px 6px">What they\'ll get</div><div class="waprev">' + waHtml(msg) + '</div>' +
     '<button class="btn ghost block" id="bkdone">Done</button>');
   back.querySelectorAll('[data-bks]').forEach(a => a.addEventListener('click', () => setTimeout(() => {
@@ -2810,7 +2810,7 @@ function bookRemindSheet(date) {
   const prog = () => items.filter(reminded).length + ' of ' + items.length + ' sent';
   const back = bookSheetOpen('Presentation reminders',
     '<div class="sheet-h"><div><div class="label muted">' + (n === 0 ? 'TODAY · ' : n === 1 ? 'TOMORROW · ' : '') + h(fmtLong(date)) + ' · ' + h(bookCfg().time) + '</div><div class="display">📲 Reminders</div></div></div>' +
-    '<p class="hint" style="margin-top:-6px"><b id="bkprog">' + prog() + '</b>. Signed by you. Tap send, come back, next one.</p>' +
+    '<p class="hint" style="margin-top:-6px"><b id="bkprog">' + prog() + '</b>. Signed by you. Tap send, come back, next one.</p>' + deskPasteNote() +
     '<div class="list">' + items.map(b => '<div class="trow"><span class="av co-' + bookCo(b) + '">' + h(initials(bookName(b))) + '</span><div class="main"><div class="name">' + h(bookName(b)) + '</div>' +
       '<div class="sub"><span class="co ' + bookCo(b) + '">' + bookCo(b) + '</span> ' + (b.confirmed_at ? '✅ confirmed' : '⏳ not confirmed') + ' · ' + h(b.source) + '</div></div>' +
       (reminded(b) ? sent(b) : bookSend(b, 'remind')) + '</div>').join('') + '</div>' +
@@ -3507,11 +3507,27 @@ const IS_DESKTOP = !/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
 // WhatsApp on a computer (the Windows / Mac app) turns the emojis in a pre-filled message into "�" (Angad, 23 Oct: Jake's
 // confirmation, sent from the laptop). Pasted, they arrive fine. So on a computer a WhatsApp button copies the message and
 // opens the chat empty: paste it in (Ctrl+V). On a phone nothing changes.
+const PASTE_KEYS = /Mac/.test(navigator.platform || navigator.userAgent) ? '⌘V' : 'Ctrl+V';
+/** Said next to the WhatsApp button on a computer, before it's pressed: the chat opens empty, paste the message in. */
+function deskPasteNote() {
+  return IS_DESKTOP ? '<p class="hint deskpaste">💻 On a computer, 💬 WhatsApp opens the chat <b>empty</b> with the message copied: click the message box, press <b>' + PASTE_KEYS + '</b>, then Send.</p>' : '';
+}
+/** And after it's pressed, on screen until closed: the 2-second toast had gone by the time they were looking at an empty
+ *  chat (Angad, 23 Oct: "sent the confirmation on WhatsApp and the whole details are wiped off"). */
+function pasteBar() {
+  let bar = document.getElementById('pastebar');
+  if (!bar) { bar = document.createElement('div'); bar.id = 'pastebar'; bar.className = 'pastebar'; bar.setAttribute('role', 'status'); document.body.appendChild(bar); }
+  bar.innerHTML = '<span>📋 <b>Message copied.</b> In WhatsApp, click the message box, press <b>' + PASTE_KEYS + '</b>, then Send.</span><button type="button" class="btn sm">Got it</button>';
+  bar.hidden = false;
+  bar.querySelector('button').onclick = () => { bar.hidden = true; };
+  clearTimeout(pasteBar._t); pasteBar._t = setTimeout(() => { bar.hidden = true; }, 180000);
+}
 document.addEventListener('click', e => {
   if (!IS_DESKTOP) return;
   const a = e.target.closest && e.target.closest('a[href^="https://wa.me/"]'); if (!a) return;
   const full = a.getAttribute('href'), m = /^(https:\/\/wa\.me\/[^?]*)\?text=(.*)$/.exec(full); if (!m) return;
-  copyText(decodeURIComponent(m[2]), 'the message: paste it into WhatsApp (Ctrl+V)');
+  copyText(decodeURIComponent(m[2]), 'the message: paste it into WhatsApp (' + PASTE_KEYS + ')');
+  pasteBar();
   a.setAttribute('href', m[1]);
   setTimeout(() => a.setAttribute('href', full), 1500);  // the button keeps its message for next time
 }, true);
@@ -3538,7 +3554,7 @@ function sendButtons(c, kind, label, text) {
     : link('whatsapp', waUrl(c.mobile, text), label, 'btn wa block');
   return main + '<div class="altsend"><span>' + (sms ? '📵 Not on WhatsApp' : 'Not on WhatsApp?') + '</span>' +
     (sms ? link('whatsapp', waUrl(c.mobile, text), '💬 WhatsApp') : link('sms', smsUrl(c.mobile, text), '📱 Text')) +
-    (c.email ? link('email', mailUrl(c.email, MSG_SUBJECT[kind](c), text), '✉️ Email') : '') + '</div>';
+    (c.email ? link('email', mailUrl(c.email, MSG_SUBJECT[kind](c), text), '✉️ Email') : '') + '</div>' + (sms ? '' : deskPasteNote());
 }
 
 const HEART = { LINK: '🧡', JUSS: '🧡💙' };
