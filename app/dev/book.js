@@ -48,7 +48,7 @@ const textOf = href => decodeURIComponent(href.split(/[?&]text=|[?&]body=/)[1]);
 
 // The approved wording (Angad, 23 Oct): the thank-you's style, no hearts, signed by whoever sends it, JUSS Marketing Ltd
 const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked in* for your *Appointment Presentation* 🎉\n\n' +
-  '📅 *Tuesday 27th October · 10:00 AM*\n⏱️ About 1–2 hours\n\n' +
+  '📅 *Tuesday 27th October · 10:00 AM*\n⏱️ Approximately 60–90 minutes\n\n' +
   '📍 *Where*\nJUSS Marketing, 2nd Floor East\nAutomotive House, Grays Place, Slough SL2 5AF\n🗺️ https://maps.app.goo.gl/zeP4MjS2hMJzB9V9A\n' +
   '🚗 Parking right outside the main entrance\n🚆 By train? Exit Slough station from *platform 5*\n\n' +
   '👔 *Dress code:* office wear / smart casual\n📄 *Documents:* none needed yet 🙌\n\n👇 Tap *CONFIRM* to lock in your spot ✅\n{LINK}\n\n' +
@@ -272,6 +272,9 @@ const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked 
   const lpt = await lp.innerText('#app');
   ok(/You're booked in, Leah/.test(lpt) && /Thursday 29 October/.test(lpt) && /10:00 AM/.test(lpt) && /Automotive House/.test(lpt) && /JUSS Marketing/.test(lpt) && /from Jess/.test(lpt) &&
     await lp.evaluate(() => document.body.dataset.co) === 'JUSS', 'her page: "You\'re booked in, Leah 🎉", Thursday 29 October · 10:00 AM, where, Maps + calendar, JUSS look');
+  const cal = await lp.getAttribute('a[href*="calendar.google.com"]', 'href');
+  ok(/10:00 AM · approximately 60–90 minutes/.test(lpt) && /dates=20261029T100000\/20261029T113000/.test(cal),
+    'how long: "approximately 60–90 minutes" (Angad, 23 Oct; was 1–2 hours), and Add to calendar books 10:00–11:30');
   await shot(lp, 'b9-booked-page', true);
   await lp.click('#conf'); await lp.waitForSelector('.wl-done');
   ok(/locked in\. See you Thursday at 10:00 AM/.test(await lp.textContent('.wl-done')), 'tap 🔒 Confirm I\'m coming → "✅ You\'re locked in. See you Thursday at 10:00 AM! 🔥"');
