@@ -214,6 +214,7 @@ When a booker books someone onto the Academy (or an admin approves a 🔴 bookin
    - Tap **✅ Added to Databyte**. (There's no Databyte API, so this step stays copy-and-paste.)
 2. **Welcome email:** **📧 Preview & send** shows the exact email ("LINK / JUSS Marketing - Your Brand Ambassador Journey Begins!"): their name, Day 1 date, Day 1 / Day 2 times, FieldIQ, pre-coaching (LINK), their Playbook (Link Org Playbook / JUSS Playbook), client, magazine, map and contact number. Tap **Send**.
    - It's locked until step 1, because FieldIQ only works once they're on Databyte.
+   - **FieldIQ says "Your account isn't activated yet"?** They haven't tapped the link in FieldIQ's own invitation (email or text, it often lands in Junk). The welcome email and heads-up now say so as step 1. Can't find it at all? Check the email and mobile you typed into Databyte are right, then get the invitation sent again.
    - **It only ever goes from the recruitment team's own addresses**, signed by whoever sends it: Jess from `jess@linkmarketing.org.uk`, Rubal from `rubal@jussmarketing.co.uk`, Fiza from `recruitment@jussmarketing.co.uk` (any of them can send either company's). Anyone else pressing Send (Angad, Satpal) sends from the company's person: LINK → Jess, JUSS → Rubal. Replies go to that address, and it gets a copy.
    - The card and preview say who it's from. If the app can't send as that address yet, Send stays off: it never falls back to another address.
 

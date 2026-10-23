@@ -1131,6 +1131,9 @@ async function fillEval(p) {
     /1:30pm – 6:00pm/.test(prevHtml) && /1:00pm – 6:00pm/.test(prevHtml) && /img\/logo-juss\.png/.test(prevHtml) && /See my Week 1 plan \+ CONFIRM/.test(prevHtml) && /<b>Rubal Oshan<\/b>/.test(prevHtml) &&
     /Read your <b>JUSS Playbook<\/b>/.test(prevHtml) && /href="https:\/\/juss-playbook\.vercel\.app\/"[^>]*>📘 (<span[^>]*>)*Open my JUSS Playbook/.test(prevHtml),
     'preview: Rubal\'s JUSS email in the congratulations-page look ("You\'re in, Adham 🎉", JUSS logo, Day 1 / Day 2 cards, FieldIQ, JUSS Playbook, Week 1 plan + CONFIRM, Hello Fresh, JUSS number, signed Rubal: it\'s from her address)');
+  ok(/<b>Activate FieldIQ first:<\/b> find the invitation from FieldIQ \(email or text, check Junk\) and tap its link\. Then download the app, log in with that same email/.test(prevHtml) &&
+    !/Download FieldIQ<\/b> and complete/.test(prevHtml),
+    'FieldIQ step 1 is "activate from its invite first", then download and log in (Rubal, 23 Oct: candidates hit "Your account isn\'t activated yet")');
   ok(/reply <b>GOT IT<\/b> to this email so we know it reached you/.test(prevHtml), 'the email asks them to reply GOT IT (the strongest "not spam" signal, and Rubal knows it arrived)');
   // The whole email as the candidate sees it (images from this dev server instead of the live site)
   fs.writeFileSync(`${SHOTS}/welcome-email-juss.html`, prevHtml);
@@ -1208,13 +1211,14 @@ async function fillEval(p) {
   const wm = (await getJson('/dev/mail')).slice(mbOnb).find(m => m.to === 'adham@example.com');
   ok(wm && wm.via === 'gmail' && wm.subject === 'JUSS Marketing - Your Brand Ambassador Journey Begins!' && wm.from === 'rubal@jussmarketing.co.uk' && wm.name === 'Rubal Oshan | JUSS Marketing' &&
     !wm.bcc && !wm.replyTo && /FieldIQ/.test(wm.body) && /juss-playbook\.vercel\.app/.test(wm.body) && /reply GOT IT/.test(wm.body) &&
-    /YOUR WEEK 1\nDay 1 · Monday 19th October: Induction Day, 1:30pm – 6:00pm/.test(wm.body),
+    /YOUR WEEK 1\nDay 1 · Monday 19th October: Induction Day, 1:30pm – 6:00pm/.test(wm.body) &&
+    /1\. Activate FieldIQ first: find the invitation from FieldIQ \(email or text, check Junk\) and tap its link\. Then download the app \(https:\/\/www\.tfo\.group\/fieldiqdownload\)/.test(wm.body),
     'sent from rubal@jussmarketing.co.uk as "Rubal Oshan | JUSS Marketing" (replies go to Rubal; no BCC copy back, Angad 22 Oct), even though Angad pressed Send');
   ok((await api(admin, 'getCandidate', { id: adham.id })).onboard_email_by === 'Angad Oshan', 'saved: welcome email sent (who, when)');
   const huHref = await ap.getAttribute('#obwa', 'href'), hu = decodeURIComponent(huHref.split(/\?text=|[?&]body=/)[1] || '');
   ok(/^sms:\+447700900300/.test(huHref) && /^Hi Adham 👋 It's Angad from JUSS Marketing\./.test(hu) && /emailed your starter pack to adham@example\.com/.test(hu) && /JUSS Playbook/.test(hu) &&
     /It's from rubal@jussmarketing\.co\.uk\. Can't see it\? Check Spam or Promotions and tap Not spam/.test(hu) && /reply GOT IT/.test(hu) &&
-    /FieldIQ \(download before Day 1\): https:\/\/www\.tfo\.group\/fieldiqdownload/.test(hu),
+    /FieldIQ \(before Day 1\): first tap the link in FieldIQ's invitation email or text \(check Junk\), then download the app and log in with that email: https:\/\/www\.tfo\.group\/fieldiqdownload/.test(hu),
     'once sent: a one-tap heads-up (by text: Adham isn\'t on WhatsApp) "just emailed your starter pack… from rubal@… check Spam / Promotions, tap Not spam… reply GOT IT"');
   ok(!/not set up yet/i.test(await ap.innerText('#onb')), 'after a send the card no longer says "not set up yet"');
   await ap.locator('#onb').screenshot({ path: SHOTS + '/36-onboarded.png' });

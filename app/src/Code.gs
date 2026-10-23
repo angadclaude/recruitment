@@ -2185,7 +2185,7 @@ function onboardEmail(c, u, pick) {
       (j < lit ? gradBg : fill(S.tint)) + '">&nbsp;</div></td>').join('') + '</tr></table>';
   const step = (n, t) => '<tr><td style="vertical-align:top;width:40px;padding:7px 0">' + tile(String(n), 30) + '</td><td style="padding:7px 0 7px 10px;' + TXT + 'line-height:1.45">' + dk(t) + '</td></tr>';
   const chip = (emoji, t) => '<span style="display:inline-block;margin:0 6px 8px 0;padding:9px 14px;border-radius:14px;' + fill(S.tint) + 'color:#22222B;font-weight:700;font-size:15px">' + emoji + ' ' + dk(t) + '</span>';
-  const pre = '<div style="display:none;max-height:0;overflow:hidden;opacity:0">You\'re in, ' + esc(first) + ' 🎉 Day 1: ' + esc(longDate(d1)) + ' @ 1:30 PM. Download FieldIQ and read your ' + esc(o.playbook[0]) + ' before you come in.</div>';
+  const pre = '<div style="display:none;max-height:0;overflow:hidden;opacity:0">You\'re in, ' + esc(first) + ' 🎉 Day 1: ' + esc(longDate(d1)) + ' @ 1:30 PM. Activate FieldIQ from its invite and read your ' + esc(o.playbook[0]) + ' before you come in.</div>';
 
   // Week 1: a card a day, stepping up to the first day on badge (framed in the brand's gradient, like Mastery on the ladder).
   // All four white: the dark Day 4 card was hard to read on iPhone Mail (Angad, 20 Oct: "do it in the same white background")
@@ -2241,7 +2241,8 @@ function onboardEmail(c, u, pick) {
     // Before Day 1
     head('⚡', 'Before Day 1', 'Two minutes now saves you an hour on Day 1') +
     card('<table role="presentation" width="100%" cellpadding="0" cellspacing="0">' +
-      step(1, '<b>Download FieldIQ</b> and complete your vetting form before your first day.') +
+      // FieldIQ won't log anyone in until they've tapped the link in its own invite (Rubal, 23 Oct: "Your account isn't activated yet")
+      step(1, '<b>Activate FieldIQ first:</b> find the invitation from FieldIQ (email or text, check Junk) and tap its link. Then download the app, log in with that same email and complete your vetting form before your first day.') +
       (o.preCoaching ? step(2, 'Complete the short online <b>Pre-Coaching Module</b>: around <b>15–20 minutes</b> of short videos and quick questions. It’s important it’s done before ' + DAYS_LONG[weekday(d1)] + ', so you’re fully prepared for coaching.') : '') +
       step(o.preCoaching ? 3 : 2, 'Read your <b>' + esc(o.playbook[0]) + '</b>, so you walk in on Day 1 already knowing how we work.') +
       '</table>' + bigBtn('📲 Download FieldIQ', ONBOARD.FIELDIQ_URL) + (o.preCoaching ? bigBtn('📝 Open the Pre-Coaching Module', o.preCoaching[1]) : '') +
@@ -2269,7 +2270,7 @@ function onboardEmail(c, u, pick) {
     (wUrl ? 'Your Week 1 plan + CONFIRM: ' + wUrl + '\n\n' : '') +
     'YOUR WEEK 1\n' + W.map((r, i) => dayName(i) + ': ' + r[1] + ', ' + r[2] + '. ' + r[3]).join('\n') + '\n' +
     'Address: ' + CONFIG.OFFICE_ADDRESS + ' · ' + o.maps + '\n' +
-    '\nBEFORE DAY 1\n1. Download FieldIQ and complete your vetting form before your first day: ' + ONBOARD.FIELDIQ_URL + '\n' +
+    '\nBEFORE DAY 1\n1. Activate FieldIQ first: find the invitation from FieldIQ (email or text, check Junk) and tap its link. Then download the app (' + ONBOARD.FIELDIQ_URL + '), log in with that same email and complete your vetting form before your first day.\n' +
     (o.preCoaching ? '2. Complete the Pre-Coaching Module (15-20 minutes): ' + o.preCoaching[1] + '\n' : '') +
     (o.preCoaching ? '3' : '2') + '. Read your ' + o.playbook[0] + ': ' + pbUrl + '\n' +
     '\nBRING: notepad and pen, photo ID, your right-to-work share code\n' +
