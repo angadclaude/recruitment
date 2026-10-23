@@ -2411,8 +2411,9 @@ function drawAcademy(r, quiet) {
   const label = x => { const n = Math.round((D(x) - D(today)) / 86400000); return fmtLong(x) + (n === 0 ? ' · TODAY' : n === 1 ? ' · TOMORROW' : ''); };
   const row = c => {
     const started = c.academy_date <= today;
-    const pills = (c.academy_confirmed_at ? '<span class="pill green">✅ Confirmed</span>' : '<span class="pill amber">⏳ Not confirmed</span>' +
-        (c.day1_status ? '' : '<button class="pill yes" data-yes="' + h(c.id) + '">👍 They replied Yes</button>')) +
+    // Two statuses only (⏳ / ✅) and one button to move them, so the button can't be read as a third status (Angad, 23 Oct)
+    const pills = (c.academy_confirmed_at ? '<span class="pill green">✅ Confirmed</span>' : '<span class="pill amber">⏳ Not confirmed yet</span>' +
+        (c.day1_status ? '' : '<button type="button" class="btn ghost sm markyes" data-yes="' + h(c.id) + '">✅ Mark as confirmed</button>')) +
       // Not for someone who has confirmed: they had the details, however they were sent (20 Oct: Jasraj confirmed, still "not sent")
       (c.offer_sent_at || c.academy_confirmed_at || started ? '' : '<span class="pill red">Day 1 text not sent</span>') +
       (remindedToday(c) && !c.day1_status ? '<span class="pill blue">📲 Reminded ' + h(String(c.day1_reminded_at).slice(11, 16)) + '</span>' : '') +
@@ -2468,7 +2469,7 @@ function drawAcademy(r, quiet) {
     weekNav1 + weekTools +
     (!wk ? skeleton(3) : dates.length ? dates.map(block).join('')
       : empty('🎓', we === thisWe ? 'Nobody booked to start this week.' : we > thisWe ? 'Nobody booked to start that week yet.' : 'Nobody started that week.')) +
-    '<p class="hint">' + (admin ? '📲 Send reminders: the Day 1 reminder to every starter, signed by you (Jess / Rubal: you get a nudge at 10:00 on the day). 👍 When someone replies Yes, tap "They replied Yes". 📄 New Starts List: the week\'s sign-in sheet for the room. ' : '💬 Remind sends them the Day 1 reminder (time, address, Maps pin). 👍 When they reply Yes, tap "They replied Yes". ') +
+    '<p class="hint">' + (admin ? '📲 Send reminders: the Day 1 reminder to every starter, signed by you (Jess / Rubal: you get a nudge at 10:00 on the day). ✅ Confirmed = they tapped CONFIRM on their welcome page. Said yes on WhatsApp instead? Tap "Mark as confirmed". 📄 New Starts List: the week\'s sign-in sheet for the room. ' : '💬 Remind sends them the Day 1 reminder (time, address, Maps pin). ✅ Confirmed = they tapped CONFIRM on their welcome page. Said yes on WhatsApp instead? Tap "Mark as confirmed". ') +
     'On Day 1, tap Arrived or No-show for everyone: that\'s your show-up rate. Booked for Tuesday instead of Monday? Tap 📅 Tuesday (twice), before the day or on it: they move to Tuesday\'s list (📅 Monday moves them back). The PDF shows the same ticks. ‹ › go week by week.</p>', quiet, !admin);
   const go = w => { S.d1Pick = { on: today, auto: false, we: w }; drawAcademy(r, true); window.scrollTo(0, 0); };
   page.querySelector('#d1prev').onclick = () => go(addDays(we, -7));
@@ -2673,7 +2674,8 @@ function viewBook(quiet) {
       '<p class="hint" style="margin:8px 2px 0">Just booked someone on the phone? Tap here: their confirmation is ready to send on WhatsApp, signed by you.</p></div>' +
     '<div class="chips bkmode">' + [['day', 'Day'], ['week', 'Week']].map(m => '<button type="button" class="chip' + (p.mode === m[0] ? ' on' : '') + '" data-bkmode="' + m[0] + '">' + m[1] + '</button>').join('') + '</div>' +
     (d || S.bookings ? (p.mode === 'week' ? bookWeekHtml(p.we) : bookDayHtml(p.day)) : skeleton(3)) +
-    '<p class="hint">Booked here = the confirmation, the 18:00 reminder the evening before, "didn\'t come" at ' + h(bookCfg().missed) + ', and check-in knows who booked them. Tap a name for their booking.</p>', quiet);
+    '<p class="hint">⏳ Not confirmed yet turns ✅ Confirmed by itself when they tap CONFIRM in your message. Said yes on WhatsApp instead? Tap "Mark as confirmed". ' +
+      'Booked here = the confirmation, the 18:00 reminder the evening before, "didn\'t come" at ' + h(bookCfg().missed) + ', and check-in knows who booked them. Tap a name for their booking.</p>', quiet);
   bindBookings(page);
 }
 /** What Book Appts shows: Day or Week, which day, which week. Today (Monday at the weekend) until someone picks another
@@ -2737,14 +2739,14 @@ function bookWeekHtml(we) {
         '<div class="list alist">' + o.due.concat(o.missed, o.came).map(bookRow).join('') + '</div>';
     }).join('');
 }
-/** Where a booking stands. yes: with the "They replied Yes" button. */
+/** Where a booking stands: ⏳ Not confirmed yet or ✅ Confirmed. yes: with the "Mark as confirmed" button (they said yes on WhatsApp). */
 function bookPills(b, yes) {
   const missed = bookMissed(b), t = s => h(String(s).slice(11, 16));
   return b.status === 'came' ? '<span class="pill green">🎓 Checked in ' + t(b.came_at) + '</span>'
     : b.status === 'no_show' ? '<span class="pill red">❌ Didn\'t come</span><span class="pill blue">📅 Rebooked</span>'
     : missed ? '<span class="pill red">❌ Didn\'t come</span>' + (b.missed_at ? '<span class="pill green">✓ Messaged ' + t(b.missed_at) + '</span>' : '')
-    : (b.confirmed_at ? '<span class="pill green">✅ Confirmed</span>' : '<span class="pill amber">⏳ Not confirmed</span>' + (yes ? '<button class="pill yes" data-bkyes="' + h(b.id) + '">👍 They replied Yes</button>' : '')) +
-      (b.confirm_at ? '' : '<span class="pill red">Confirmation not sent</span>') +
+    : (b.confirmed_at ? '<span class="pill green">✅ Confirmed</span>' : '<span class="pill amber">⏳ Not confirmed yet</span>' + (yes ? '<button type="button" class="btn ghost sm markyes" data-bkyes="' + h(b.id) + '">✅ Mark as confirmed</button>' : '')) +
+      (b.confirm_at || b.confirmed_at ? '' : '<span class="pill red">Confirmation not sent</span>') +  // confirmed = they had it, however it reached them
       (String(b.remind_at).slice(0, 10) === S.me.today ? '<span class="pill blue">📲 Reminded ' + t(b.remind_at) + '</span>' : '');
 }
 function bookRow(b) {
@@ -2893,7 +2895,7 @@ function bookSheet(id) {
       (b.confirmed_at ? '<div>✅ ' + (b.confirmed_by === 'CONFIRM' ? 'Tapped CONFIRM · ' + h(fmtTs(b.confirmed_at)) : 'Replied YES · ' + h(fmtTs(b.confirmed_at)) + (b.confirmed_by ? ' · ' + h(String(b.confirmed_by).split(' ')[0]) : '')) + '</div>' : '') + '</div>' +
     (open ? '<button class="btn wa block" id="bkc">💬 ' + (b.confirm_at ? 'Send the confirmation again' : 'Send the confirmation') + ' · WhatsApp or 📱 Text</button>' +
       '<button class="btn ghost block" id="bkr" style="margin-top:8px">📲 Send a reminder</button>' +
-      (b.confirmed_at ? '' : '<button class="btn ghost block" id="bky" style="margin-top:8px">👍 They replied Yes</button>') +
+      (b.confirmed_at ? '' : '<button class="btn ghost block" id="bky" style="margin-top:8px">✅ Mark as confirmed (they said yes)</button>') +
       '<button class="btn ghost block" id="bke" style="margin-top:8px">📅 Change the day</button>' : '') +
     (missed && b.status === 'booked' ? '<button class="btn wa block" id="bkm">💬 Sorry we missed you</button><button class="btn ghost block" id="bkre" style="margin-top:8px">📅 Rebook</button>' : '') +
     (b.status === 'came' && b.candidate_id ? '<button class="btn block" id="bko">🎓 Open their check-in</button>' : '') +

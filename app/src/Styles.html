@@ -181,7 +181,8 @@ details.carry .list { margin-top: 8px; }
 .onbq { margin-bottom: 14px; }
 .qsub { margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--line); }
 .qsub .q { font-size: 15px; }
-.pill.yes { border: 0; cursor: pointer; font-family: inherit; background: var(--ink); color: #fff; }
+/* "Mark as confirmed": a button (white, outlined), never mistaken for a status pill */
+.pills .btn.sm.markyes { padding: 3px 11px; font-size: 12.5px; line-height: 1.35; border-radius: 999px; }
 .sub.wrap, .item .sub.wrap, .trow .sub.wrap { white-space: normal; overflow-wrap: anywhere; }
 .d1btns { display: flex; flex-direction: column; gap: 6px; flex: none; }
 /* Day 1: who's arrived stands out (light green, like the New Starts List PDF); "Move to Tue?" asks before moving a Day 1 */

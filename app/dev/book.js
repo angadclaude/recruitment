@@ -292,7 +292,17 @@ const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked 
   ok(/Booked by Angad Oshan/.test(await jp.innerText('.bksheet')) && /Lucy Smith/.test(await jp.innerText('.bksheet')), 'first and last name; tapping her opens the booking made on another device');
   await jp.click('#bkc'); await jp.waitForSelector('.bksheet .bksend2 a.btn.sms');
   ok(/Hey Lucy!/.test(textOf(await jp.getAttribute('.bksheet .bksend2 a.btn.sms', 'href'))), '→ 💬 Send the confirmation → 📱 Text: her confirmation by text from the phone');
-  await jp.click('#bkdone');
+  await jp.click('#bkdone'); await jp.waitForSelector('.bkrow:has-text("Lucy Smith") .markyes');
+  // Two statuses and one button (Angad, 23 Oct: "Not confirmed, They replied Yes, Confirmed… too confusing")
+  const lrow = await jp.innerText('.bkrow:has-text("Lucy Smith") .pills');
+  ok(/⏳ Not confirmed yet/.test(lrow) && /✅ Mark as confirmed/.test(lrow) && !/They replied Yes/.test(lrow) &&
+    await jp.$eval('.bkrow:has-text("Lucy Smith") .markyes', b => b.tagName === 'BUTTON' && b.classList.contains('btn') && !b.classList.contains('pill')),
+    'a row says ⏳ Not confirmed yet, with a ✅ Mark as confirmed button (a white button, not a status pill)');
+  await jp.click('.bkrow:has-text("Lucy Smith") .markyes'); await jp.waitForSelector('.bkrow:has-text("Lucy Smith") .pill.green:has-text("Confirmed")');
+  ok(!(await jp.$('.bkrow:has-text("Lucy Smith") .markyes')) && !/not sent/i.test(await jp.innerText('.bkrow:has-text("Lucy Smith") .pills')) &&
+    (await api(jess, 'bookingList', {})).items.find(b => b.first_name === 'Lucy').confirmed_by === 'Jess Grace',
+    'Mark as confirmed (she said yes on WhatsApp) → ✅ Confirmed, the button and "not sent" go, saved as confirmed by Jess');
+  await shot(jp, 'b11-confirmed', true);
   await jp.context().close();
 
   // The 18:00 alert, tapped: the send list opens by itself
