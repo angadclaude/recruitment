@@ -1155,10 +1155,12 @@ async function fillEval(p) {
   await ep.setContent(safeHtml.split(PUBLIC).join(APP), { waitUntil: 'load' });
   const textAfter = await ep.evaluate(() => document.body.innerText);
   const gm = emailSafe({ via: 'gmail', to: 'x@example.com', subject: 'Hi 🎉', body: 'b 🎉', opts: { htmlBody: '<b>🎉 Day 1 ✅</b>', name: 'n' } });
-  const mm = emailSafe({ via: 'mail', msg: { to: 'x@example.com', subject: 's', htmlBody: '<p>📅 Mon</p>' } });
+  const mm = emailSafe({ via: 'mail', msg: { to: 'x@example.com', subject: '📋 Team week: 46 appointments · 15 booked ✅ ⚠️', htmlBody: '<p>📅 Mon</p>' } });
   ok(/^[\x00-\x7E]*$/.test(safeHtml) && /&#127881;/.test(safeHtml) && textAfter === textBefore && /🎉/.test(textAfter) &&
-    gm.opts.htmlBody === '<b>&#127881; Day 1 &#9989;</b>' && gm.subject === 'Hi 🎉' && gm.body === 'b 🎉' && mm.msg.htmlBody === '<p>&#128197; Mon</p>',
-    'emails go to Google with emojis written as &#…; (plain ASCII), so 🎉 📅 🔥 can\'t arrive as "������"; on screen it reads exactly the same');
+    gm.opts.htmlBody === '<b>&#127881; Day 1 &#9989;</b>' && gm.subject === 'Hi' && gm.body === 'b' && mm.msg.htmlBody === '<p>&#128197; Mon</p>' &&
+    mm.msg.subject === 'Team week: 46 appointments · 15 booked ✅ ⚠️',
+    'emails go to Google with emojis written as &#…; (plain ASCII), so 🎉 📅 🔥 can\'t arrive as "������"; on screen it reads exactly the same. ' +
+    'Subjects and plain text can\'t use &#…;: there those emojis are left out (✅ ⚠️ stay), so no more "������ Team week" (23 Oct)');
   // Gmail's dark theme turned the white header text and button labels dark: kept white (Gmail-only CSS), the logo box keeps its shape
   const keptWhite = (prevHtml.match(/<span class="jls"[^>]*><span class="jld"/g) || []).length;
   ok(/<body class="body"/.test(prevHtml) && /u \+ \.body \.jls\{background:#000;mix-blend-mode:screen\}/.test(prevHtml) && /<span class="jld"[^>]*>You're in, Adham<\/span><\/span> 🎉/.test(prevHtml) &&
