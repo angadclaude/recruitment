@@ -199,6 +199,7 @@ function brandTheme(co) { C.co = coOf(co); setTheme(C.co, true); }
 
 function startCandidate() {
   if (BOOT.mode === 'welcome') return startWelcome();
+  if (BOOT.mode === 'booked') return startBooked();
   const saved = store.get('cand');
   resendPending();
   if (saved && saved.id && saved.date === londonToday()) {
@@ -867,6 +868,68 @@ function renderWelcome(w, keepScroll) {
   warm([office.maps, 'https://www.google.com/maps', gcal, PRE_COACHING[co]]);
 }
 
+// ───── "You're booked in" (booked.html?t=…, the link in the booking confirmation): the day, where, and 🔒 Confirm I'm coming ─────
+function startBooked() {
+  const q = new URLSearchParams(location.search), key = 'bk_' + BOOT.k;
+  // The link carries the first name + day, so the page needs nothing from the server to appear
+  const quick = store.get(key) || (q.get('n') && /^\d{4}-\d{2}-\d{2}$/.test(q.get('d') || '')
+    ? { first_name: q.get('n').slice(0, 40), slot_date: q.get('d'), slot_time: '10:00', company: 'JUSS', confirmed_at: '' } : null);
+  if (quick) { quick.today = londonToday(); renderBooked(quick); }
+  resendPending();
+  const confirming = !!sendq()['bkconfirm_' + BOOT.k];
+  callRetry('bookingInfo', { t: BOOT.k }, null, 3).then(w => {
+    if (confirming && !w.confirmed_at) w.confirmed_at = londonNow();
+    store.set(key, w);
+    if (!quick || quick.first_name !== w.first_name || quick.slot_date !== w.slot_date || !!quick.booker !== !!w.booker) renderBooked(w, !!quick);
+    else if (!!quick.confirmed_at !== !!w.confirmed_at && C.bkCta) C.bkCta(!!w.confirmed_at);
+  }).catch(e => { if (!quick) $app.innerHTML = logos(56) + '<div class="card center"><div class="big-emoji">🔗</div><p>' + h(e.message) + '</p></div>'; });
+}
+function renderBooked(w, keepScroll) {
+  if (!keepScroll) scrollTop();
+  const co = w.company === 'LINK' ? 'LINK' : 'JUSS', brand = co + ' Marketing', office = OFFICES[co], time = w.slot_time || '10:00';
+  brandTheme(co);
+  const days = Math.round((D(w.slot_date) - D(w.today || londonToday())) / 86400000);
+  const when = days > 1 ? 'In ' + days + ' days' : days === 1 ? 'TOMORROW 👀' : days === 0 ? 'TODAY 🔥' : fmt(w.slot_date);
+  const see = days === 0 ? 'today' : days === 1 ? 'tomorrow' : DAYS_LONG[D(w.slot_date).getUTCDay()];
+  const ymd = w.slot_date.replace(/-/g, ''), t0 = time.replace(':', '') + '00', t1 = String(Number(time.slice(0, 2)) + 2).padStart(2, '0') + time.slice(3) + '00';
+  const gcal = 'https://calendar.google.com/calendar/render?action=TEMPLATE&text=' + encodeURIComponent('Appointment Presentation – ' + brand) +
+    '&dates=' + ymd + 'T' + t0 + '/' + ymd + 'T' + t1 + '&ctz=Europe/London&location=' + encodeURIComponent(office.address) +
+    '&details=' + encodeURIComponent('Office wear / smart casual. No documents needed. Arrive 10 minutes early.');
+  const sec = (icon, title) => '<section class="evsec"><div class="evsec-h"><span>' + icon + '</span>' + title + '</div>';
+  $app.innerHTML = '<div class="wl wl-' + co + '">' +
+    '<div class="wl-hero">' + FX + '<img class="wl-logo" src="' + LOGOS[co] + '" alt="' + h(brand) + '">' +
+    '<h1>You\'re booked in, <span class="gname">' + h(w.first_name) + '</span> 🎉</h1><p>Your <b>Appointment Presentation</b> with <b>' + h(brand) + '</b></p>' +
+    '<span class="wl-pill">' + h(when) + '</span></div>' +
+    sec('📅', 'When and where') + '<div class="qcard"><div class="wl-date">' + h(fmtLong(w.slot_date)) + '</div>' +
+    '<div class="wl-time">⏰ ' + h(fmt12(time)) + ' · about 1–2 hours</div><p>📍 ' + h(office.address) + '<br><span class="muted small">2 mins from Slough station · exit from platform 5</span></p>' +
+    '<div class="row"><a class="btn sm" href="' + h(office.maps) + '" target="_blank" rel="noopener">🗺️ Google Maps</a>' +
+    '<a class="btn ghost sm" href="' + h(gcal) + '" target="_blank" rel="noopener">📅 Add to calendar</a></div></div></section>' +
+    sec('✅', 'Good to know') + '<div class="wl-bring"><div><span>👔</span>Office wear / smart casual</div><div><span>📄</span>No documents needed yet</div>' +
+    '<div><span>🚗</span>Parking right outside the main entrance</div><div><span>⏰</span>Arrive 10 minutes early</div></div></section>' +
+    '<p class="center muted small" style="margin:18px 0 110px">Questions? Just reply to the message' + (w.booker ? ' from ' + h(w.booker) : '') + ' 💬</p>' +
+    '<div class="wl-cta" id="cta"></div></div>';
+  const cta = document.getElementById('cta');
+  const drawCta = confirmed => {
+    cta.innerHTML = confirmed
+      ? '<div class="wl-done">✅ You\'re locked in. See you ' + h(see) + ' at ' + h(fmt12(time)) + '! 🔥</div>'
+      : '<button class="btn block evsubmit wl-btn" id="conf">🔒 Confirm I\'m coming</button>';
+    const b = document.getElementById('conf');
+    // Locked in the moment they tap; it reaches the server in the background (and keeps trying with no signal)
+    if (b) b.onclick = () => {
+      const key = 'bk_' + BOOT.k, saved = store.get(key) || w;
+      saved.confirmed_at = londonNow(); store.set(key, saved);
+      drawCta(true); burst();
+      sendSoon('bkconfirm_' + BOOT.k, 'confirmBooking', { t: BOOT.k }, null, ex => {
+        const x = store.get(key); if (x) { x.confirmed_at = ''; store.set(key, x); }
+        drawCta(false); toast('Couldn\'t confirm: ' + ex.message);
+      });
+    };
+  };
+  C.bkCta = drawCta;
+  drawCta(!!w.confirmed_at);
+  warm([office.maps, 'https://www.google.com/maps', gcal]);
+}
+
 function burst() {
   const em = ['🎉', '🔥', '🧡', C.co === 'LINK' ? '🖤' : '💙', '✨', '🙌'];
   for (let i = 0; i < 28; i++) {
@@ -1117,7 +1180,7 @@ function boot() {
     // From the evening-before briefing / the 10:00 "starters to remind" alert (that one opens the send list too)
     S.openRemind = BOOT.cid === 'remind' && isAdmin(); BOOT.cid = '';
     if (isAdmin()) { S.tab = 'academy'; nav('academy', {}, false); } else { nav(S.tab, {}, false); nav('academy', {}, true); }
-  } else if (BOOT.cid === 'bookrem' || BOOT.cid === 'bookmiss') {
+  } else if (BOOT.cid === 'bookrem' || BOOT.cid === 'bookmiss' || BOOT.cid === 'book') {
     // From the 18:00 "N to remind for tomorrow" alert (opens the send list) / the 10:30 "N didn't come": the Book Appts tab
     const rem = BOOT.cid === 'bookrem'; BOOT.cid = ''; nav(canBook() ? 'book' : S.tab, {}, false);
     let tries = 0;
@@ -2513,6 +2576,11 @@ function bookUpsert(b) {
   if (b.status === 'cancelled') { if (i >= 0) l.splice(i, 1); } else if (i >= 0) l[i] = b; else l.push(b);
   saveCache();
 }
+/** Their "You're booked in" page with the CONFIRM button (the link carries their first name + day, so it opens instantly). */
+function bookPage(b) {
+  const base = ((S.me.links && S.me.links.checkin) || '').replace(/checkin\.html.*$/, '');
+  return b.confirm_token && base ? base + 'booked.html?t=' + b.confirm_token + '&n=' + encodeURIComponent(b.first_name) + '&d=' + b.slot_date : '';
+}
 /** "Kind regards, *Jess Grace*, In association with *JUSS Marketing Ltd*": whoever sends it (it's their WhatsApp they reply to). */
 function bookSign(b) { return 'Kind regards,\n*' + S.me.user.name + '*\nIn association with *' + bookCo(b) + ' Marketing Ltd*'; }
 /** The booking confirmation (Angad, 23 Oct): the thank-you's style, no hearts. */
@@ -2528,7 +2596,7 @@ function msgBookConfirm(b) {
     '🚆 By train? Exit Slough station from *platform 5*\n\n' +
     '👔 *Dress code:* office wear / smart casual\n' +
     '📄 *Documents:* none needed yet 🙌\n\n' +
-    '👉 Reply *YES* to lock in your spot ✅\n\n' +
+    (bookPage(b) ? '👇 Tap *CONFIRM* to lock in your spot ✅\n' + bookPage(b) + '\n\n' : '👉 Reply *YES* to lock in your spot ✅\n\n') +
     'Questions before then? Just message me here 💬\n\n' + bookSign(b);
 }
 /** The evening before (or that morning): "Tomorrow's the day!" */
@@ -2542,7 +2610,7 @@ function msgBookRemind(b) {
     '🗺️ ' + OFFICES[co].maps + '\n\n' +
     '⏰ Aim to arrive *10 minutes early*\n' +
     '👔 Office wear / smart casual\n\n' +
-    '👉 Reply *YES* if you’re still coming ✅\n\n' +
+    (b.confirmed_at ? '✅ You’re confirmed. Anything changes, just message me.\n\n' : bookPage(b) ? '👇 Still coming? Tap *CONFIRM* ✅\n' + bookPage(b) + '\n\n' : '👉 Reply *YES* if you’re still coming ✅\n\n') +
     'See you ' + (n > 1 ? 'on ' + day : day) + '! 🔥\n\n' + bookSign(b);
 }
 /** Didn't come: their spot isn't gone, which day suits them? */
@@ -2764,7 +2832,7 @@ function bookSheet(id) {
       '<div>🙋 Booked by ' + h(b.booked_by) + ' · ' + h(fmtTs(b.created_at)) + ' · ' + h(b.source) + '</div>' +
       (b.notes ? '<div>📝 ' + h(b.notes) + '</div>' : '') +
       sentLine('confirm') + sentLine('remind') + sentLine('missed') +
-      (b.confirmed_at ? '<div>✅ Replied YES · ' + h(fmtTs(b.confirmed_at)) + (b.confirmed_by ? ' · ' + h(String(b.confirmed_by).split(' ')[0]) : '') + '</div>' : '') + '</div>' +
+      (b.confirmed_at ? '<div>✅ ' + (b.confirmed_by === 'CONFIRM' ? 'Tapped CONFIRM · ' + h(fmtTs(b.confirmed_at)) : 'Replied YES · ' + h(fmtTs(b.confirmed_at)) + (b.confirmed_by ? ' · ' + h(String(b.confirmed_by).split(' ')[0]) : '')) + '</div>' : '') + '</div>' +
     (open ? '<button class="btn wa block" id="bkc">💬 ' + (b.confirm_at ? 'Send the confirmation again' : 'Send the confirmation') + ' · WhatsApp or 📱 Text</button>' +
       '<button class="btn ghost block" id="bkr" style="margin-top:8px">📲 Send a reminder</button>' +
       (b.confirmed_at ? '' : '<button class="btn ghost block" id="bky" style="margin-top:8px">👍 They replied Yes</button>') +

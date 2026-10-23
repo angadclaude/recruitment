@@ -10,6 +10,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 
 const PORT = 8790, BASE = 'http://localhost:' + PORT, APP = BASE + '/join/';
+const PUBLIC = require('../site.json').url;  // where the app lives (the links in messages point there)
 const SHOTS = process.argv[2] || './shots-book';
 fs.mkdirSync(SHOTS, { recursive: true });
 const PHONE = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true };
@@ -50,7 +51,7 @@ const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked 
   '📅 *Tuesday 27th October · 10:00 AM*\n⏱️ About 1–2 hours\n\n' +
   '📍 *Where*\nJUSS Marketing, 2nd Floor East\nAutomotive House, Grays Place, Slough SL2 5AF\n🗺️ https://maps.app.goo.gl/zeP4MjS2hMJzB9V9A\n' +
   '🚗 Parking right outside the main entrance\n🚆 By train? Exit Slough station from *platform 5*\n\n' +
-  '👔 *Dress code:* office wear / smart casual\n📄 *Documents:* none needed yet 🙌\n\n👉 Reply *YES* to lock in your spot ✅\n\n' +
+  '👔 *Dress code:* office wear / smart casual\n📄 *Documents:* none needed yet 🙌\n\n👇 Tap *CONFIRM* to lock in your spot ✅\n{LINK}\n\n' +
   'Questions before then? Just message me here 💬\n\nKind regards,\n*Jess Grace*\nIn association with *JUSS Marketing Ltd*';
 
 (async () => {
@@ -97,6 +98,20 @@ const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked 
   const r1 = await api(jess, 'bookingAction', { id: ruby.id, act: 'sent', kind: 'confirm', via: 'sms' });
   ok(r1.no_whatsapp === 'TRUE' && r1.confirm_via === 'sms', 'sent by text = not on WhatsApp: her next messages go by text too');
   ok(/booking team/.test(await refused(fiza, 'bookingAction', { id: sam.id, act: 'yes' })), 'nobody else can change a booking');
+
+  console.log('CONFIRM, like Day 1');
+  ok([sam, ollie, ruby].every(b => /^[0-9a-f]{24}$/.test(b.confirm_token)) && new Set([sam, ollie, ruby].map(b => b.confirm_token)).size === 3, 'every booking has its own "You\'re booked in" page link');
+  const info = await api('', 'bookingInfo', { t: sam.confirm_token });
+  ok(info.first_name === 'Sam' && info.slot_date === '2026-10-27' && info.slot_time === '10:00' && info.company === 'JUSS' && info.booker === 'Jess' && !!info.confirmed_at &&
+    !('mobile' in info) && !('last_name' in info) && !('notes' in info), 'the page gets only what it shows: first name, the day, JUSS, who booked them (first name), confirmed or not');
+  ok(/expired/.test(await refused('', 'bookingInfo', { t: 'nope' })) && /expired/.test(await refused('', 'confirmBooking', { t: '' })), 'a wrong link: "This link has expired…"');
+  let c0 = (await getJson('/dev/pushes')).length;
+  const oc = await api('', 'confirmBooking', { t: ollie.confirm_token });
+  const ol = (await api(angad, 'bookingList', {})).items.find(b => b.id === ollie.id), op = to(await pushesSince(c0), angadId)[0];
+  ok(!!oc.confirmed_at && ol.confirmed_by === 'CONFIRM' && op && op.body.headings.en === '✅ Ollie confirmed Tuesday\'s presentation' && /tapped CONFIRM for Tuesday 27th October at 10:00/.test(op.body.contents.en) && /\?c=book$/.test(op.body.web_url),
+    'Ollie taps 🔒 Confirm I\'m coming → confirmed in the app; Angad: "' + (op ? op.body.headings.en : 'none') + '"');
+  c0 = (await getJson('/dev/pushes')).length; await api('', 'confirmBooking', { t: ollie.confirm_token });
+  ok(!(await pushesSince(c0)).length, 'tapping it again: no second alert');
 
   console.log('18:00 the evening before');
   let n0 = (await getJson('/dev/pushes')).length;
@@ -185,7 +200,9 @@ const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked 
   ok(/^Hey Leah! 👋/.test(prev) && /Thursday 29th October · 10:00 AM/.test(prev) && !/🧡|💙/.test(prev) && /In association with JUSS Marketing Ltd$/.test(prev.trim()),
     'Next → the confirmation to send: "Hey Leah!", Thursday 29th October · 10:00 AM, no hearts, In association with JUSS Marketing Ltd');
   const href = await jp.getAttribute('.bksheet a.btn.wa', 'href');
-  ok(/^https:\/\/wa\.me\/447700900126\?text=/.test(href) && textOf(href) === CONFIRM_SAM.replace('Sam', 'Leah').replace('Tuesday 27th', 'Thursday 29th'),
+  const leahTok = (await api(jess, 'bookingList', {})).items.find(b => b.first_name === 'Leah').confirm_token;
+  const leahPage = PUBLIC + 'booked.html?t=' + leahTok + '&n=Leah&d=2026-10-29';
+  ok(/^https:\/\/wa\.me\/447700900126\?text=/.test(href) && textOf(href) === CONFIRM_SAM.replace('Sam', 'Leah').replace('Tuesday 27th', 'Thursday 29th').replace('{LINK}', leahPage),
     'the WhatsApp opens to her number with the approved wording, word for word');
   const smsHref = await jp.getAttribute('.bksheet .bksend2 a.btn.sms', 'href');
   ok(await jp.$('.bksheet .bksend2 a.btn.wa') && /^sms:\+447700900126/.test(smsHref) && !/\*/.test(textOf(smsHref)) && /Thursday 29th October · 10:00 AM/.test(textOf(smsHref)),
@@ -201,14 +218,30 @@ const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked 
   const rs = await jp.innerText('.bksheet');
   ok(/TOMORROW · Wednesday 28 October/i.test(rs) && /0 of 1 sent/.test(rs) && /Ollie Grant/.test(rs), 'Coming up → 📲 Remind: tomorrow\'s send list ("0 of 1 sent")');
   const remTxt = textOf(await jp.getAttribute('.bksheet a.btn[data-bks]', 'href'));
+  const ol2Tok = (await api(jess, 'bookingList', {})).items.find(b => b.first_name === 'Ollie' && b.slot_date === '2026-10-28').confirm_token;
   ok(remTxt === 'Hey Ollie! 👋\n\n*Tomorrow’s the day!* 🙌\nYour *Appointment Presentation* with *JUSS Marketing*\n\n📅 *Wednesday 28th October · 10:00 AM*\n' +
     '📍 Automotive House, Slough (2 mins from the station)\n🗺️ https://maps.app.goo.gl/zeP4MjS2hMJzB9V9A\n\n⏰ Aim to arrive *10 minutes early*\n👔 Office wear / smart casual\n\n' +
-    '👉 Reply *YES* if you’re still coming ✅\n\nSee you tomorrow! 🔥\n\nKind regards,\n*Jess Grace*\nIn association with *JUSS Marketing Ltd*', 'the reminder: "Tomorrow’s the day!", signed by Jess');
+    '👇 Still coming? Tap *CONFIRM* ✅\n' + PUBLIC + 'booked.html?t=' + ol2Tok + '&n=Ollie&d=2026-10-28\n\nSee you tomorrow! 🔥\n\nKind regards,\n*Jess Grace*\nIn association with *JUSS Marketing Ltd*',
+    'the reminder: "Tomorrow’s the day!", the CONFIRM link (not confirmed yet), signed by Jess');
   await shot(jp, 'b4-reminders');
   await jp.$eval('.bksheet a.btn[data-bks]', a => { a.addEventListener('click', e => e.preventDefault()); a.click(); });
   await jp.waitForFunction(() => /1 of 1 sent/.test(document.getElementById('bkprog').textContent));
   ok(true, 'each tap ticks them off ("1 of 1 sent")');
   await jp.click('#bkdone');
+
+  // Leah taps the link in her WhatsApp: her "You're booked in" page, like Day 1's welcome page, with 🔒 Confirm I'm coming
+  n0 = (await getJson('/dev/pushes')).length;
+  const lctx = await browser.newContext(PHONE), lp = await lctx.newPage();
+  await lp.goto(leahPage.replace(PUBLIC, APP)); await lp.waitForSelector('#conf');
+  const lpt = await lp.innerText('#app');
+  ok(/You're booked in, Leah/.test(lpt) && /Thursday 29 October/.test(lpt) && /10:00 AM/.test(lpt) && /Automotive House/.test(lpt) && /JUSS Marketing/.test(lpt) && /from Jess/.test(lpt) &&
+    await lp.evaluate(() => document.body.dataset.co) === 'JUSS', 'her page: "You\'re booked in, Leah 🎉", Thursday 29 October · 10:00 AM, where, Maps + calendar, JUSS look');
+  await shot(lp, 'b9-booked-page', true);
+  await lp.click('#conf'); await lp.waitForSelector('.wl-done');
+  ok(/locked in\. See you Thursday at 10:00 AM/.test(await lp.textContent('.wl-done')), 'tap 🔒 Confirm I\'m coming → "✅ You\'re locked in. See you Thursday at 10:00 AM! 🔥"');
+  let lc = null; for (let i = 0; i < 25 && !(lc && lc.confirmed_at); i++) { lc = (await api(jess, 'bookingList', {})).items.find(b => b.first_name === 'Leah'); if (!lc.confirmed_at) await new Promise(r => setTimeout(r, 200)); }
+  ok(lc.confirmed_by === 'CONFIRM' && to(await pushesSince(n0), jessId).some(p => p.body.headings.en === '✅ Leah confirmed Thursday\'s presentation'), 'confirmed in the app, and Jess gets "✅ Leah confirmed Thursday\'s presentation"');
+  await lctx.close();
 
   // Booked on another device (Angad, 23 Oct: booked Lucy on the laptop, couldn't open her on the phone): first and last name, one tap
   await api(angad, 'saveBooking', { booking: { first_name: 'Lucy', last_name: 'Smith', mobile: '07700900130', slot_date: '2026-10-28' } });
