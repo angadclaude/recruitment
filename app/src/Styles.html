@@ -306,6 +306,12 @@ details.carry .list { margin-top: 8px; }
 .kpi.alert b { color: var(--brand); } .hero .kpi.alert b { background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent; }
 
 .hint { font-size: 13px; color: var(--muted); margin: 6px 2px 10px; }
+.deskpaste { margin: 8px 2px 4px; }
+.pastebar { position: fixed; z-index: 60; top: calc(12px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); width: max-content; max-width: calc(100vw - 24px);
+  display: flex; align-items: center; gap: 12px; padding: 12px 12px 12px 16px; border-radius: 16px; background: var(--dark); color: #fff; font-size: 14px; line-height: 1.4;
+  box-shadow: 0 14px 30px -10px rgba(0,0,0,.5); }
+.pastebar[hidden] { display: none; }
+.pastebar .btn { flex: none; }
 .section-h { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin: 22px 4px 10px; font: 600 12.5px/1.2 var(--label); color: var(--ink2); text-transform: uppercase; letter-spacing: .14em; }
 .section-h::before { content: ''; flex: none; width: 4px; height: 14px; border-radius: 3px; background: var(--grad); align-self: center; margin-right: -2px; }
 .section-h > b { flex: 1; font-weight: inherit; }

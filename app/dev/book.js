@@ -207,6 +207,7 @@ const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked 
   const smsHref = await jp.getAttribute('.bksheet .bksend2 a.btn.sms', 'href');
   ok(await jp.$('.bksheet .bksend2 a.btn.wa') && /^sms:\+447700900126/.test(smsHref) && !/\*/.test(textOf(smsHref)) && /Thursday 29th October · 10:00 AM/.test(textOf(smsHref)),
     'WhatsApp and 📱 Text side by side (not on WhatsApp: text it from the phone), the text without WhatsApp\'s stars');
+  ok(!(await jp.$('.deskpaste')) && /^Opens with this ready/.test(await jp.innerText('#bksent')), 'on a phone: no paste note, WhatsApp opens with the message ready');
   await shot(jp, 'b3-send');
   await jp.$eval('.bksheet a.btn.wa', a => { a.addEventListener('click', e => e.preventDefault()); a.click(); });
   await jp.waitForFunction(() => /Sent by you/.test(document.getElementById('bksent').textContent));
@@ -310,14 +311,20 @@ const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked 
   const dp = await dctx.newPage(); await dp.goto(APP + 'index.html'); await dp.waitForSelector('.tabbar button[data-tab=book]');
   await dp.click('.tabbar button[data-tab=book]'); await dp.waitForSelector('.bknames .nm:has-text("Jake Hill")');
   await dp.click('.bknames .nm:has-text("Jake Hill")'); await dp.waitForSelector('#bkc'); await dp.click('#bkc'); await dp.waitForSelector('.bksheet .bksend2 a.btn.wa');
+  ok(/opens the chat empty with the message copied: click the message box, press Ctrl\+V, then Send/.test(await dp.innerText('.bksheet .deskpaste')) && !/Opens with this ready/.test(await dp.innerText('#bksent')),
+    'on a laptop the sheet says so before you press it: WhatsApp opens empty, press Ctrl+V (Angad, 23 Oct: "the whole details are wiped off")');
   const full = await dp.getAttribute('.bksheet .bksend2 a.btn.wa', 'href');
   await dp.$eval('.bksheet .bksend2 a.btn.wa', a => { a.addEventListener('click', e => { window.__href = a.getAttribute('href'); e.preventDefault(); }); a.click(); });
   await dp.waitForFunction(() => /paste it into WhatsApp/.test((document.getElementById('toast') || {}).textContent || ''));
   const clip = (await dp.evaluate(() => navigator.clipboard.readText())).replace(/\r\n/g, '\n');  // Windows reads it back with \r\n
   ok(await dp.evaluate(() => window.__href) === 'https://wa.me/447700900131' && clip === textOf(full) && /^Hey Jake! 👋/.test(clip) && /📅 \*Friday 30th October · 10:00 AM\*/.test(clip),
     'on a laptop, 💬 WhatsApp copies the message (every emoji intact) and opens the chat empty: "📋 Copied the message: paste it into WhatsApp"');
-  await dp.waitForTimeout(1700);
+  await dp.waitForTimeout(3000);
   ok(await dp.getAttribute('.bksheet .bksend2 a.btn.wa', 'href') === full, 'the button keeps its message for next time');
+  ok(await dp.isVisible('#pastebar') && /Message copied\. In WhatsApp, click the message box, press Ctrl\+V, then Send\./.test(await dp.innerText('#pastebar')) && await dp.isHidden('#toast'),
+    'and after: "Message copied… press Ctrl+V" stays on screen once the toast has gone, for when you come back from an empty chat');
+  await shot(dp, 'b8-laptop-paste');
+  await dp.click('#pastebar button'); ok(await dp.isHidden('#pastebar'), '"Got it" closes it');
   let jk = null; for (let i = 0; i < 25 && !(jk && jk.confirm_at); i++) { jk = (await api(angad, 'bookingList', {})).items.find(b => b.id === jake.id); if (!jk.confirm_at) await new Promise(r => setTimeout(r, 200)); }
   ok(jk.confirm_via === 'whatsapp' && jk.confirm_by === 'Angad Oshan', 'and it still counts as sent on WhatsApp');
   await dctx.close();
