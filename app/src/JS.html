@@ -1188,8 +1188,8 @@ function boot() {
       if (S.view !== 'book') return;
       if (!(S.bookings && S.bookings.at)) { if (tries++ < 40) setTimeout(open, 250); return; }
       const next = bookings().filter(b => b.status === 'booked' && b.slot_date > S.me.today).map(b => b.slot_date).sort()[0];
+      const p = bookPick(); p.mode = 'day'; p.day = rem && next ? next : bookWeekday(S.me.today, 1); p.we = weekEndingOf(p.day); render(true);
       if (rem && next) bookRemindSheet(next);
-      else { const el = document.getElementById('bkexp'); if (el) el.scrollIntoView({ block: 'start' }); }
     };
     setTimeout(open, 300);
   } else if (BOOT.cid) { const id = BOOT.cid; BOOT.cid = ''; nav('cand', { id: id }, true); } else nav(S.tab, {}, false);
@@ -2658,42 +2658,78 @@ function openBooking(id) {
   call('bookingList', {}).then(r => { S.bookings = { items: r.items, at: Date.now() }; saveCache(); if (bookById(id)) show(); else toast('That booking has gone. Pull down to refresh.'); })
     .catch(ex => toast(ex.message));
 }
-/** The Book Appts tab (Jess, Rubal, Angad): book after the call, who's expected today, what's coming up, reminders. */
+/** The Book Appts tab (Jess, Rubal, Angad): 📅 Book, then a day at a time (‹ ›, like Today) or the whole week in one go
+ *  (‹ ›, like All). Angad (23 Oct): "Can it not just be day-wise, like all the other tabs… the week in one go." Live: the week's
+ *  bundle brings everyone's bookings, every 10 s while this tab is open (7am–5pm). */
 function viewBook(quiet) {
   if (!canBook()) return go(tabs()[0][0]);
   const d = want(weekEndingOf(S.me.today));  // the week's bundle brings the bookings, and keeps them fresh
-  const has = bookings().length;
-  const page = paint('Book Appts', (d || S.bookings ? bookingsHtml(S.me.today) + (has ? '' : empty('📅', 'Nobody booked yet. After your next call, tap 📅 Book a presentation.')) : skeleton(3)) +
+  const p = bookPick();
+  const page = paint('Book Appts', '<div class="card bookcard"><button class="btn block" id="bookNew">📅 Book a presentation</button>' +
+      '<p class="hint" style="margin:8px 2px 0">Just booked someone on the phone? Tap here: their confirmation is ready to send on WhatsApp, signed by you.</p></div>' +
+    '<div class="chips bkmode">' + [['day', 'Day'], ['week', 'Week']].map(m => '<button type="button" class="chip' + (p.mode === m[0] ? ' on' : '') + '" data-bkmode="' + m[0] + '">' + m[1] + '</button>').join('') + '</div>' +
+    (d || S.bookings ? (p.mode === 'week' ? bookWeekHtml(p.we) : bookDayHtml(p.day)) : skeleton(3)) +
     '<p class="hint">Booked here = the confirmation, the 18:00 reminder the evening before, "didn\'t come" at ' + h(bookCfg().missed) + ', and check-in knows who booked them. Tap a name for their booking.</p>', quiet);
   bindBookings(page);
 }
-/** Book Appts (Jess, Rubal, Angad): 📅 Book, who's expected (confirmed? checked in? didn't come?) and what's coming up. */
-function bookingsHtml(day) {
-  if (!canBook()) return '';
-  const isToday = day === S.me.today, cfg = bookCfg(), all = bookings();
-  const list = all.filter(b => b.slot_date === day).sort((a, b) => bookName(a).localeCompare(bookName(b)));
-  let out = isToday ? '<div class="card bookcard"><button class="btn block" id="bookNew">📅 Book a presentation</button>' +
-    '<p class="hint" style="margin:8px 2px 0">Just booked someone on the phone? Tap here: their confirmation is ready to send on WhatsApp, signed by you.</p></div>' : '';
-  if (list.length) {
-    const came = list.filter(b => b.status === 'came'), missed = list.filter(bookMissed), due = list.filter(b => came.indexOf(b) < 0 && missed.indexOf(b) < 0);
-    const after = !!missed.length || day < S.me.today || (isToday && londonNow().slice(11, 16) >= cfg.missed);
-    out += '<div class="section-h" id="bkexp"><b>📅 ' + (isToday ? 'Expected today' : 'Booked') + ' · ' + h(cfg.time) + '</b><span>' + list.length + ' booked · ' +
-      (after ? came.length + ' came' : list.filter(b => b.confirmed_at).length + ' confirmed') + '</span></div>' +
-      '<div class="list alist">' + due.concat(missed, came).map(bookRow).join('') + '</div>';
-  }
-  if (isToday) {
-    const next = all.filter(b => b.slot_date > day && b.status === 'booked'), dates = [];
-    next.forEach(b => { if (dates.indexOf(b.slot_date) < 0) dates.push(b.slot_date); });
-    dates.sort();
-    if (dates.length) out += '<div class="section-h"><b>📅 Coming up</b><span>' + next.length + ' booked</span></div><div class="list alist">' + dates.map(x => {
-      const l = next.filter(b => b.slot_date === x).sort((a, b) => bookName(a).localeCompare(bookName(b))), rem = l.filter(b => String(b.remind_at).slice(0, 10) === S.me.today).length;
-      return '<div class="trow bkday"><div class="main"><div class="name">' + h(fmtLong(x)) + (bookDaysTo(x) === 1 ? ' · tomorrow' : '') + '</div>' +
-        '<div class="sub">' + l.length + ' booked · ' + l.filter(b => b.confirmed_at).length + ' confirmed</div>' +
-        '<div class="bknames">' + l.map(b => '<button class="nm" data-bk="' + h(b.id) + '">' + h(bookName(b)) + (b.confirmed_at ? ' ✅' : '') + '</button>').join('') + '</div></div>' +
-        '<button class="btn ghost sm" data-bkrem="' + x + '">📲 Remind' + (rem ? ' · ' + rem + '/' + l.length : '') + '</button></div>';
-    }).join('') + '</div>';
-  }
-  return out;
+/** What Book Appts shows: Day or Week, which day, which week. Today (Monday at the weekend) until someone picks another
+ *  with ‹ ›, until the date changes. */
+function bookPick() {
+  const today = S.me.today;
+  if (!S.bkPick || S.bkPick.on !== today) { const d0 = bookWeekday(today, 1); S.bkPick = { on: today, mode: (S.bkPick && S.bkPick.mode) || 'day', day: d0, we: weekEndingOf(d0) }; }
+  return S.bkPick;
+}
+/** ymd if it's Mon–Fri, else the next (dir 1) or previous (dir -1) weekday: presentations are Mon–Fri. */
+function bookWeekday(ymd, dir) { let d = ymd; while (D(d).getUTCDay() === 0 || D(d).getUTCDay() === 6) d = addDays(d, dir); return d; }
+/** The bookings this phone has: from last week's Monday (what the server sends) to 2 months ahead (the furthest anyone can book). */
+function bookRange() { const t = S.me.today; return { from: addDays(weekEndingOf(t), -13), to: addDays(t, 60) }; }
+function bookByName(a, b) { return bookName(a).localeCompare(bookName(b)); }
+/** Not come yet first, then didn't come, then came. */
+function bookOrder(l) {
+  const came = l.filter(b => b.status === 'came'), missed = l.filter(b => b.status !== 'came' && bookMissed(b));
+  return { came: came, missed: missed, due: l.filter(b => came.indexOf(b) < 0 && missed.indexOf(b) < 0) };
+}
+/** That day's presentation has happened (its "didn't come" time has passed). */
+function bookAfter(day) { return day < S.me.today || (day === S.me.today && londonNow().slice(11, 16) >= bookCfg().missed); }
+function bookRemBtn(day, o, small) {
+  const n = bookDaysTo(day), sent = o.due.filter(b => String(b.remind_at).slice(0, 10) === S.me.today).length;
+  return day >= S.me.today && o.due.length ? '<button type="button" class="btn ghost ' + (small ? 'sm' : 'block bkremd') + '" data-bkrem="' + day + '">📲 ' +
+    (small ? 'Remind' : 'Send ' + (n === 0 ? 'today\'s' : n === 1 ? 'tomorrow\'s' : DAYS_LONG[D(day).getUTCDay()] + '\'s') + ' reminders') + (sent ? ' · ' + sent + '/' + o.due.length : '') + '</button>' : '';
+}
+/** One day: ‹ › a weekday at a time, how it stands, everyone booked for it. */
+function bookDayHtml(day) {
+  const cfg = bookCfg(), r = bookRange(), n = bookDaysTo(day);
+  const l = bookings().filter(b => b.slot_date === day).sort(bookByName), o = bookOrder(l), after = bookAfter(day);
+  const prev = bookWeekday(addDays(day, -1), -1), next = bookWeekday(addDays(day, 1), 1);
+  const lbl = n === 0 ? 'Today' : n === 1 ? 'Tomorrow' : n === -1 ? 'Yesterday' : n > 0 ? 'Coming up' : 'Looking back';
+  const nav = '<div class="seg-nav bknav"><div class="lbl"><span>' + lbl + ' · ' + h(fmt12(cfg.time)) + '</span><b>' + h(fmtLong(day)) + '</b></div>' +
+    '<button class="iconbtn" id="bkprev" aria-label="Previous day"' + (prev < r.from ? ' disabled' : '') + '>‹</button>' +
+    '<button class="iconbtn" id="bknext" aria-label="Next day"' + (next > r.to ? ' disabled' : '') + '>›</button></div>';
+  if (!l.length) return nav + empty('📅', 'Nobody booked for ' + h(fmtLong(day)) + (after ? '.' : ' yet.'));
+  const unconf = o.due.filter(b => !b.confirmed_at).length, unsent = o.due.filter(b => !b.confirm_at).length;
+  return nav + (after ? kpis([[l.length, 'Booked'], [o.came.length, 'Came'], [o.missed.length, 'Didn\'t come', o.missed.length > 0], [Math.round(o.came.length / l.length * 100) + '%', 'Show-up']])
+      : kpis([[l.length, 'Booked'], [l.length - unconf, 'Confirmed'], [unconf, 'Not confirmed', unconf > 0], [unsent, 'Not sent', unsent > 0]])) +
+    bookRemBtn(day, o) + '<div class="list alist">' + o.due.concat(o.missed, o.came).map(bookRow).join('') + '</div>';
+}
+/** The whole week in one go, a day at a time (‹ › a week at a time, like All). */
+function bookWeekHtml(we) {
+  const today = S.me.today, r = bookRange(), mon = addDays(we, -6);
+  const l = bookings().filter(b => b.slot_date >= mon && b.slot_date <= we);
+  const nav = '<div class="seg-nav bknav"><div class="lbl"><span>' + (we === weekEndingOf(today) ? 'This week · ending' : 'Week ending') + '</span><b>' + h(fmt(we)) + '</b></div>' +
+    '<button class="iconbtn" id="bkwprev" aria-label="Previous week"' + (addDays(we, -7) < weekEndingOf(r.from) ? ' disabled' : '') + '>‹</button>' +
+    '<button class="iconbtn" id="bkwnext" aria-label="Next week"' + (addDays(we, 1) > r.to ? ' disabled' : '') + '>›</button></div>';
+  if (!l.length) return nav + empty('📅', 'Nobody booked for this week yet.');
+  const all = bookOrder(l);
+  return nav + kpis([[l.length, 'Booked'], [l.filter(b => b.confirmed_at).length, 'Confirmed'], [all.came.length, 'Came'], [all.missed.length, 'Didn\'t come', all.missed.length > 0]]) +
+    [0, 1, 2, 3, 4].map(i => addDays(mon, i)).map(day => {
+      const dl = l.filter(b => b.slot_date === day).sort(bookByName); if (!dl.length) return '';
+      const o = bookOrder(dl), n = bookDaysTo(day);
+      // Short dates and the Remind button on a line of its own, like All's day headers: a phone is too narrow for both
+      const rem = bookRemBtn(day, o, true);
+      return '<div class="section-h bkdayh"><b data-bkday="' + day + '">' + h(fmt(day)) + (n === 0 ? ' · today' : n === 1 ? ' · tomorrow' : '') + '</b><span>' + dl.length + ' booked · ' +
+          (bookAfter(day) ? o.came.length + ' came' : dl.filter(b => b.confirmed_at).length + ' confirmed') + '</span></div>' + (rem ? '<div class="bkremw">' + rem + '</div>' : '') +
+        '<div class="list alist">' + o.due.concat(o.missed, o.came).map(bookRow).join('') + '</div>';
+    }).join('');
 }
 /** Where a booking stands. yes: with the "They replied Yes" button. */
 function bookPills(b, yes) {
@@ -2714,6 +2750,21 @@ function bookRow(b) {
 }
 function bindBookings(root) {
   const nb = root.querySelector('#bookNew'); if (nb) nb.onclick = () => bookForm({});
+  const p = bookPick(), on = (id, fn) => { const el = root.querySelector('#' + id); if (el) el.onclick = fn; };
+  const day = d => { p.day = d; p.we = weekEndingOf(d); render(); };
+  on('bkprev', () => day(bookWeekday(addDays(p.day, -1), -1)));
+  on('bknext', () => day(bookWeekday(addDays(p.day, 1), 1)));
+  on('bkwprev', () => { p.we = addDays(p.we, -7); render(); });
+  on('bkwnext', () => { p.we = addDays(p.we, 7); render(); });
+  root.querySelectorAll('[data-bkmode]').forEach(b => { b.onclick = () => {
+    if (p.mode === b.dataset.bkmode) return;
+    p.mode = b.dataset.bkmode;
+    // Week → the week of the day on screen; Day → that day if it's in the week on screen, else the week's first day still to come
+    if (p.mode === 'week') p.we = weekEndingOf(p.day);
+    else if (weekEndingOf(p.day) !== p.we) p.day = bookWeekday(p.we === weekEndingOf(S.me.today) ? S.me.today : addDays(p.we, -6), 1);
+    render(true);
+  }; });
+  root.querySelectorAll('[data-bkday]').forEach(el => { el.onclick = () => { p.mode = 'day'; day(el.dataset.bkday); }; });
   root.querySelectorAll('[data-bkyes]').forEach(b => { b.onclick = e => { e.stopPropagation(); bookYes(b.dataset.bkyes, b); }; });
   root.querySelectorAll('[data-bkre]').forEach(b => { b.onclick = e => { e.stopPropagation(); const x = bookById(b.dataset.bkre); if (x) bookForm(x, 'rebook'); }; });
   root.querySelectorAll('[data-bkrem]').forEach(b => { b.onclick = () => bookRemindSheet(b.dataset.bkrem); });
