@@ -850,6 +850,19 @@ async function fillEval(p) {
   const grp = decodeURIComponent((await ap.getAttribute('#waGroup', 'href')).replace('https://wa.me/?text=', ''));
   ok(/^⏰ \*Pipeline check: week ending [^*]+\*/.test(grp) && /Outcomes due Fri 18:00/.test(grp) && new RegExp('\\*Fiza\\*\\n📞 Log the call: ' + fizaLog[0]).test(grp) && /Sort them now 👉 http/.test(grp),
     "Post to team WhatsApp: the week's list by booker in one message, ready for the bookers' group");
+  // Like the All tab's (Angad, 23 Oct): the week's chase list as a PDF, a table per booker
+  ok((await ap.textContent('#chasePdf')).trim() === '📄 Chase w/e Sun 18 Oct (PDF)', 'Chase (admins): "📄 Chase w/e Sun 18 Oct (PDF)" for the week on screen');
+  await ap.click('#chasePdf'); await ap.waitForSelector('.pdfprev #pdfgo');
+  const cTitle = await ap.textContent('.pdfprev .display');
+  const [cdl] = await Promise.all([ap.waitForEvent('download'), ap.click('#pdfgo')]);
+  await ap.waitForFunction(() => !document.querySelector('.pdfprev'));
+  const cPath = `${SHOTS}/25-chase.pdf`; await cdl.saveAs(cPath);
+  const cRaw = fs.readFileSync(cPath, 'latin1'), cHas = s => cRaw.includes('(' + s.replace(/[\\()]/g, '\\$&') + ') Tj');
+  const fizaRows = nowP.filter(c => c.booker_id === fiza.id);
+  ok(cTitle === 'Chase w-e 18.10.2026' && cdl.suggestedFilename() === 'Chase w-e 18.10.2026.pdf' && /\/Title \(Chase w-e 18\.10\.2026\)/.test(cRaw) &&
+    cHas('Chase · week ending Sunday 18 October 2026') && cHas('Fiza Iqbal') && cHas('To chase') && cHas('Last call') &&
+    nowP.every(c => cRaw.includes(c.full_name)) && fizaRows.filter(c => c.leak === 'log').every(c => cRaw.includes(c.full_name)) && /\((Carried: )?Log the call( LATE)?\) Tj/.test(cRaw),
+    '📄 → "Chase w-e 18.10.2026.pdf": all ' + nowP.length + ' to chase (carried over included), a table per booker, what each needs and their last call');
   await shot(ap, '25-chase-admin', true);
   await ap.click('[data-nudge="' + fiza.id + '"] >> xpath=.. >> .nm'); await ap.waitForSelector('text=Call outcome');
   ok(true, 'tapping a name opens that candidate');
@@ -881,6 +894,7 @@ async function fillEval(p) {
     new RegExp('^' + fThis.length + ' to chase this week').test(await fcp.innerText('.card .display')) && await fcp.textContent('.tabbar button[data-tab=chase] .tbadge') === badgeOf(fNow.length, fCarry.length),
     'Fiza taps it → her Chase tab: "' + fThis.length + ' to chase this week" (tabs: Mine · Chase · Appts Attended)');
   ok(/📞 Log the call · \d+/i.test(await fcp.innerText('#page')) && await fcp.$('.ccard .quick [data-out]'), 'grouped by what to do, with Call / WhatsApp / Log outcome on each');
+  ok(!(await fcp.$('#chasePdf')), 'no Chase PDF for a booker (admins only, like the All tab\'s)');
   await shot(fcp, '26-chase-booker', true);
   await fcp.click('.ccard .quick [data-out]'); await fcp.waitForSelector('.sheet #sosave');
   ok(/Log the call · /i.test(await fcp.innerText('.sheet')), 'Log outcome opens straight from the Chase tab (even for last week\'s appointments)');

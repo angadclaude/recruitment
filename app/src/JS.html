@@ -2242,7 +2242,8 @@ function drawChase(quiet) {
   const wk = '<div class="seg-nav"><div class="lbl"><span>' + (isNow ? 'This week · ending' : week < cw ? 'Week ending' : 'Coming up · week ending') + '</span><b>' + fmt(week) + '</b></div>' +
     '<button class="iconbtn" id="cprev" aria-label="Previous week">‹</button><button class="iconbtn" id="cnext" aria-label="Next week"' + (ahead ? '' : ' disabled') + '>›</button></div>';
   const v = { week: week, cw: cw, isNow: isNow, due: due, late: late, count: count };
-  const page = paint('Chase', wk + (admin ? chaseAdmin(list, carry, v) : chaseBooker(list, carry, v)), quiet);
+  const pdf = admin ? '<button class="btn ghost block" id="chasePdf" style="margin:2px 0 12px">📄 Chase w/e ' + h(fmt(week)) + ' (PDF)</button>' : '';
+  const page = paint('Chase', wk + pdf + (admin ? chaseAdmin(list, carry, v) : chaseBooker(list, carry, v)), quiet);
   paintTabs();
   bindItems(page);
   const go = w => { S.chaseWeek = w; drawChase(true); window.scrollTo(0, 0); };
@@ -2252,6 +2253,7 @@ function drawChase(quiet) {
   page.querySelectorAll('[data-cand]').forEach(b => { b.onclick = () => nav('cand', { id: b.dataset.cand }, true); });
   const ga = page.querySelector('#goAcademy'); if (ga) ga.onclick = () => nav('academy', {}, true);
   if (!admin) return;
+  page.querySelector('#chasePdf').onclick = () => savePdf(chasePdf(week, list, carry, due), chasePdfName(week) + '.pdf');
   const res = page.querySelector('#cres'), first = n => String(n).split(' ')[0];
   const nudge = (ids, btn) => {
     busy(btn, true, 'Sending…');
@@ -2696,6 +2698,8 @@ function bookRemBtn(day, o, small) {
   return day >= S.me.today && o.due.length ? '<button type="button" class="btn ghost ' + (small ? 'sm' : 'block bkremd') + '" data-bkrem="' + day + '">📲 ' +
     (small ? 'Remind' : 'Send ' + (n === 0 ? 'today\'s' : n === 1 ? 'tomorrow\'s' : DAYS_LONG[D(day).getUTCDay()] + '\'s') + ' reminders') + (sent ? ' · ' + sent + '/' + o.due.length : '') + '</button>' : '';
 }
+/** Like the All tab's: the week as a PDF, who was booked and who came (Angad, 23 Oct). */
+function bookPdfBtn(we) { return '<button class="btn ghost block bkpdf" data-bkpdf="' + we + '">📄 Booked appointments w/e ' + h(fmt(we)) + ' (PDF)</button>'; }
 /** One day: ‹ › a weekday at a time, how it stands, everyone booked for it. */
 function bookDayHtml(day) {
   const cfg = bookCfg(), r = bookRange(), n = bookDaysTo(day);
@@ -2705,9 +2709,9 @@ function bookDayHtml(day) {
   const nav = '<div class="seg-nav bknav"><div class="lbl"><span>' + lbl + ' · ' + h(fmt12(cfg.time)) + '</span><b>' + h(fmtLong(day)) + '</b></div>' +
     '<button class="iconbtn" id="bkprev" aria-label="Previous day"' + (prev < r.from ? ' disabled' : '') + '>‹</button>' +
     '<button class="iconbtn" id="bknext" aria-label="Next day"' + (next > r.to ? ' disabled' : '') + '>›</button></div>';
-  if (!l.length) return nav + empty('📅', 'Nobody booked for ' + h(fmtLong(day)) + (after ? '.' : ' yet.'));
+  if (!l.length) return nav + bookPdfBtn(weekEndingOf(day)) + empty('📅', 'Nobody booked for ' + h(fmtLong(day)) + (after ? '.' : ' yet.'));
   const unconf = o.due.filter(b => !b.confirmed_at).length, unsent = o.due.filter(b => !b.confirm_at).length;
-  return nav + (after ? kpis([[l.length, 'Booked'], [o.came.length, 'Came'], [o.missed.length, 'Didn\'t come', o.missed.length > 0], [Math.round(o.came.length / l.length * 100) + '%', 'Show-up']])
+  return nav + bookPdfBtn(weekEndingOf(day)) + (after ? kpis([[l.length, 'Booked'], [o.came.length, 'Came'], [o.missed.length, 'Didn\'t come', o.missed.length > 0], [Math.round(o.came.length / l.length * 100) + '%', 'Show-up']])
       : kpis([[l.length, 'Booked'], [l.length - unconf, 'Confirmed'], [unconf, 'Not confirmed', unconf > 0], [unsent, 'Not sent', unsent > 0]])) +
     bookRemBtn(day, o) + '<div class="list alist">' + o.due.concat(o.missed, o.came).map(bookRow).join('') + '</div>';
 }
@@ -2718,9 +2722,9 @@ function bookWeekHtml(we) {
   const nav = '<div class="seg-nav bknav"><div class="lbl"><span>' + (we === weekEndingOf(today) ? 'This week · ending' : 'Week ending') + '</span><b>' + h(fmt(we)) + '</b></div>' +
     '<button class="iconbtn" id="bkwprev" aria-label="Previous week"' + (addDays(we, -7) < weekEndingOf(r.from) ? ' disabled' : '') + '>‹</button>' +
     '<button class="iconbtn" id="bkwnext" aria-label="Next week"' + (addDays(we, 1) > r.to ? ' disabled' : '') + '>›</button></div>';
-  if (!l.length) return nav + empty('📅', 'Nobody booked for this week yet.');
+  if (!l.length) return nav + bookPdfBtn(we) + empty('📅', 'Nobody booked for this week yet.');
   const all = bookOrder(l);
-  return nav + kpis([[l.length, 'Booked'], [l.filter(b => b.confirmed_at).length, 'Confirmed'], [all.came.length, 'Came'], [all.missed.length, 'Didn\'t come', all.missed.length > 0]]) +
+  return nav + bookPdfBtn(we) + kpis([[l.length, 'Booked'], [l.filter(b => b.confirmed_at).length, 'Confirmed'], [all.came.length, 'Came'], [all.missed.length, 'Didn\'t come', all.missed.length > 0]]) +
     [0, 1, 2, 3, 4].map(i => addDays(mon, i)).map(day => {
       const dl = l.filter(b => b.slot_date === day).sort(bookByName); if (!dl.length) return '';
       const o = bookOrder(dl), n = bookDaysTo(day);
@@ -2765,6 +2769,7 @@ function bindBookings(root) {
     render(true);
   }; });
   root.querySelectorAll('[data-bkday]').forEach(el => { el.onclick = () => { p.mode = 'day'; day(el.dataset.bkday); }; });
+  root.querySelectorAll('[data-bkpdf]').forEach(b => { b.onclick = () => savePdf(bookPdf(b.dataset.bkpdf), bookPdfName(b.dataset.bkpdf) + '.pdf'); });
   root.querySelectorAll('[data-bkyes]').forEach(b => { b.onclick = e => { e.stopPropagation(); bookYes(b.dataset.bkyes, b); }; });
   root.querySelectorAll('[data-bkre]').forEach(b => { b.onclick = e => { e.stopPropagation(); const x = bookById(b.dataset.bkre); if (x) bookForm(x, 'rebook'); }; });
   root.querySelectorAll('[data-bkrem]').forEach(b => { b.onclick = () => bookRemindSheet(b.dataset.bkrem); });
@@ -3252,6 +3257,142 @@ function weekPdf(we, list) {
     return p.join('\n');
   });
   return pdfFile(streams, weekPdfName(we));
+}
+
+// ───── A week as a PDF in the Appointments PDF's look, for Book Appts and Chase (Angad, 23 Oct: "the exact same way" as
+// the All tab's): title, summary boxes, a line of totals, then a table per group (a day, a booker), rows coloured by how
+// they stand. ─────
+/** o: { name (title + file name), heading, sub, boxes [[n, label, ink]], line, cols [[head, width]] ('#' first, 523 in all),
+ *  groups [{ head, note, rows [{ cells [text or [text, ink, bold]], fill: green / red / amber }] }], empty } */
+function listPdf(o) {
+  const W = 595.28, H = 841.89, M = 36, RH = 19, BOTTOM = 48, TW = 523, cols = o.cols;
+  const colX = []; cols.reduce((x, c) => { colX.push(x + 4); return x + c[1]; }, M);
+  const INK = { grey: '0.42 0.42 0.47', green: '0.05 0.5 0.3', amber: '0.75 0.38 0.02', red: '0.75 0.15 0.15' };
+  const FILL = { green: '0.88 0.96 0.9', red: '0.99 0.88 0.88', amber: '1 0.95 0.86' };
+  const shrink = (s, i, size, min, bold) => { let z = size; while (z > min && pdfTextW(s, z, bold) > cols[i][1] - 7) z -= 0.5; return [pdfFit(s, cols[i][1] - 7, z, bold), z]; };
+  const pages = [];
+  let out, y;
+  const txt = (x, yy, s, size, bold, ink) => out.push((INK[ink] || '0.13 0.13 0.17') + ' rg BT /' + (bold ? 'F2' : 'F1') + ' ' + size + ' Tf ' + x.toFixed(2) + ' ' + yy.toFixed(2) + ' Td (' + pdfStr(s) + ') Tj ET');
+  const newPage = () => {
+    out = []; pages.push(out);
+    out.push('0.95 0.42 0.11 rg 0 ' + (H - 10).toFixed(2) + ' ' + (W / 2).toFixed(2) + ' 10 re f', '0.05 0.6 0.6 rg ' + (W / 2).toFixed(2) + ' ' + (H - 10).toFixed(2) + ' ' + (W / 2).toFixed(2) + ' 10 re f');
+    y = H - 34;
+  };
+  const room = need => { if (y - need >= BOTTOM) return false; newPage(); return true; };
+  const colHead = () => {
+    out.push('0.94 0.93 0.91 rg ' + M + ' ' + (y - 17).toFixed(2) + ' ' + TW + ' 17 re f');
+    cols.forEach((c, i) => txt(colX[i], y - 12, c[0], 8, true));
+    y -= 17;
+  };
+  const groupHead = (g, cont) => {
+    y -= 10;
+    const head = g.head + (cont ? ' (continued)' : '');
+    txt(M, y - 12, head, 12, true);
+    if (!cont && g.note) { const x = M + pdfTextW(head, 12, true) + 14; txt(x, y - 12, pdfFit(g.note, M + TW - x, 8.5), 8.5, false, 'grey'); }
+    y -= 20;
+  };
+  const row = (r, i) => {
+    const yy = y - 13;
+    if (r.fill) out.push(FILL[r.fill] + ' rg ' + M + ' ' + (y - RH).toFixed(2) + ' ' + TW + ' ' + RH + ' re f');
+    txt(colX[0], yy, String(i + 1), 8, false, 'grey');
+    r.cells.forEach((c, j) => {
+      const v = Array.isArray(c) ? c : [c], z = shrink(String(v[0] == null ? '' : v[0]), j + 1, j ? 8.5 : 9, 6.5, j === 0 || v[2]);
+      txt(colX[j + 1], yy, z[0], z[1], j === 0 || v[2], v[1]);
+    });
+    out.push('0.85 0.84 0.82 RG 0.5 w ' + M + ' ' + (y - RH).toFixed(2) + ' m ' + (M + TW) + ' ' + (y - RH).toFixed(2) + ' l S');
+    y -= RH;
+  };
+
+  newPage();
+  txt(M, H - 50, o.heading, 18, true);
+  txt(M, H - 67, pdfFit(o.sub, TW, 9.5), 9.5);
+  txt(M, H - 82, 'Printed ' + fmt(S.me.today) + ' ' + londonNow().slice(11) + ' by ' + S.me.user.name + '. As it stood in the app at that moment.', 8.5, false, 'grey');
+  y = H - 94;
+  const bw = (TW - (o.boxes.length - 1) * 6) / o.boxes.length;
+  o.boxes.forEach((b, i) => {
+    const x = M + i * (bw + 6);
+    out.push('0.97 0.96 0.94 rg ' + x.toFixed(2) + ' ' + (y - 52).toFixed(2) + ' ' + bw.toFixed(2) + ' 52 re f');
+    txt(x + 7, y - 23, String(b[0]), 17, true, b[2]);
+    b[1].split('\n').forEach((l, j) => txt(x + 7, y - 36 - j * 9, pdfFit(l, bw - 12, 7.5), 7.5, false, 'grey'));
+  });
+  y -= 66;
+  if (o.line) txt(M, y, pdfFit(o.line, TW, 8.5), 8.5, false, 'grey');
+  y -= 8;
+  const groups = o.groups.filter(g => g.rows.length);
+  if (!groups.length) { y -= 24; txt(M, y, o.empty, 11, false, 'grey'); }
+  groups.forEach(g => {
+    room(30 + 17 + RH);
+    groupHead(g, false); colHead();
+    g.rows.forEach((r, i) => { if (room(RH)) { groupHead(g, true); colHead(); } row(r, i); });
+  });
+  const streams = pages.map((p, i) => {
+    out = p;
+    txt(M, 24, 'Personal data: keep it safe, share it only inside LINK / JUSS, and delete it when you\'re done.', 8, false, 'grey');
+    txt(W - M - 52, 24, 'Page ' + (i + 1) + ' of ' + pages.length, 8, false, 'grey');
+    return p.join('\n');
+  });
+  return pdfFile(streams, o.name);
+}
+/** "Name 3, Name 1": how many of l each key has, most first. */
+function pdfTally(l, key) {
+  const t = {}; l.forEach(x => { const k = key(x) || '-'; t[k] = (t[k] || 0) + 1; });
+  return Object.keys(t).sort((a, b) => t[b] - t[a] || a.localeCompare(b)).map(k => k + ' ' + t[k]).join(', ');
+}
+/** "Booked Appointments w-e 01.11.2026": the Book Appts week as a PDF (title and file name). */
+function bookPdfName(we) { return 'Booked Appointments w-e ' + we.slice(8, 10) + '.' + we.slice(5, 7) + '.' + we.slice(0, 4); }
+/** Everyone booked into a presentation that week, a table per day: confirmed or not, and who came. */
+function bookPdf(we) {
+  const mon = addDays(we, -6), l = bookings().filter(b => b.slot_date >= mon && b.slot_date <= we), all = bookOrder(l), first = n => String(n || '').split(' ')[0];
+  const conf = l.filter(b => b.confirmed_at).length, happened = all.came.length + all.missed.length;
+  const confirmed = b => b.confirmed_at ? [b.confirmed_by === 'CONFIRM' ? 'Tapped CONFIRM' : 'Replied YES', 'green'] : b.confirm_at ? ['No', 'amber', true] : ['Not sent', 'red', true];
+  const came = b => b.status === 'came' ? ['Came ' + String(b.came_at || '').slice(11, 16), 'green', true] : b.status === 'no_show' ? ['Didn\'t come (rebooked)', 'red', true]
+    : bookMissed(b) ? ['Didn\'t come', 'red', true] : [b.slot_date === S.me.today ? 'Expected today' : 'Expected', 'grey'];
+  return listPdf({
+    name: bookPdfName(we), heading: 'Booked appointments · week ending ' + fmtLong(we) + ' ' + we.slice(0, 4),
+    sub: 'Everyone booked into a ' + fmt12(bookCfg().time) + ' presentation after their call (Mon-Fri), confirmed or not, and who came  |  ' + bookCfg().co + ' Marketing',
+    boxes: [[l.length, 'Booked'], [conf, 'Confirmed', 'green'], [l.length - conf, 'Not confirmed', l.length > conf ? 'amber' : ''], [all.came.length, 'Came', 'green'],
+      [all.missed.length, 'Didn\'t come', all.missed.length ? 'red' : ''], [happened ? Math.round(all.came.length / happened * 100) + '%' : '-', 'Show-up\n(days so far)']],
+    line: l.length ? 'Booked by: ' + pdfTally(l, b => first(b.booked_by)) + '  ·  Applied via: ' + pdfTally(l, b => b.source) + '  ·  Still to come: ' + all.due.length : '',
+    cols: [['#', 18], ['Name', 112], ['Mobile', 68], ['Booked by', 64], ['Applied via', 62], ['Confirmed', 80], ['Came?', 119]],
+    groups: [0, 1, 2, 3, 4].map(i => addDays(mon, i)).map(day => {
+      const dl = l.filter(b => b.slot_date === day).sort(bookByName), o = bookOrder(dl);
+      return { head: fmtLong(day), note: dl.length + ' booked · ' + dl.filter(b => b.confirmed_at).length + ' confirmed' + (bookAfter(day) ? ' · ' + o.came.length + ' came · ' + o.missed.length + ' didn\'t come' : ''),
+        rows: o.due.concat(o.missed, o.came).map(b => ({ fill: b.status === 'came' ? 'green' : o.missed.indexOf(b) >= 0 ? 'red' : '',
+          cells: [bookName(b), b.mobile, first(b.booked_by), b.source, confirmed(b), came(b)] })) };
+    }),
+    empty: 'Nobody booked for this week.',
+  });
+}
+/** "Chase w-e 25.10.2026": the Chase week as a PDF (title and file name). */
+function chasePdfName(we) { return 'Chase w-e ' + we.slice(8, 10) + '.' + we.slice(5, 7) + '.' + we.slice(0, 4); }
+/** Everyone on the Chase tab's week (carried over included, this week): no final answer yet, a table per booker. */
+function chasePdf(week, list, carry, due) {
+  const l = list.concat(carry), first = n => String(n || '').split(' ')[0], cnt = k => l.filter(x => x.k === k).length;
+  const late = x => x.k === 'log' && x.c.deadline && londonNow() > x.c.deadline, nLate = l.filter(late).length;
+  const todo = x => (carry.indexOf(x) >= 0 ? 'Carried: ' : '') + { stale: 'Stale', log: 'Log the call', callback: 'Call back' }[x.k] + (late(x) ? ' LATE' : '');
+  const last = c => {
+    const e = callLog(c)[0];
+    return e ? [e.o + (e.cb ? ', call back ' + fmtTs(e.cb) : '') + ' · ' + first(e.by) + ' ' + fmtTs(e.at)] : ['No call logged yet', 'amber'];
+  };
+  const by = {};
+  l.forEach(x => { const k = x.c.booker_id || ''; (by[k] = by[k] || { name: x.c.booker_name || 'No booker', l: [] }).l.push(x); });
+  const order = { log: 0, callback: 1, stale: 2 };
+  return listPdf({
+    name: chasePdfName(week), heading: 'Chase · week ending ' + fmtLong(week) + ' ' + week.slice(0, 4),
+    sub: 'Everyone with no final answer yet: no outcome logged, a call-back to make, or stale. Outcomes due ' + due + '.',
+    boxes: [[l.length, 'To chase'], [cnt('log'), 'No outcome\nlogged', cnt('log') ? 'amber' : ''], [nLate, 'LATE', nLate ? 'red' : ''], [cnt('callback'), 'No answer or\nthinking it over'],
+      [cnt('stale'), 'Stale\n(over 2 weeks)', cnt('stale') ? 'red' : ''], [carry.length, 'Carried over\nfrom earlier weeks']],
+    line: l.length ? 'Bookers: ' + pdfTally(l, x => first(x.c.booker_name) || 'No booker') + '  ·  LINK ' + l.filter(x => x.c.company === 'LINK').length + '  ·  JUSS ' + l.filter(x => x.c.company === 'JUSS').length : '',
+    cols: [['#', 18], ['Name', 104], ['Co', 28], ['Mobile', 66], ['Appt', 50], ['Eval', 26], ['To do', 74], ['Last call', 157]],
+    groups: Object.keys(by).map(k => by[k]).sort((a, b) => b.l.length - a.l.length || a.name.localeCompare(b.name)).map(g => {
+      const n = k => g.l.filter(x => x.k === k).length, gl = g.l.filter(late).length;
+      return { head: g.name, note: [n('log') ? n('log') + ' to log' + (gl ? ' (' + gl + ' LATE)' : '') : '', n('callback') ? n('callback') + ' call back' : '', n('stale') ? n('stale') + ' stale' : '',
+          g.l.filter(x => carry.indexOf(x) >= 0).length ? g.l.filter(x => carry.indexOf(x) >= 0).length + ' carried over' : ''].filter(String).join(' · '),
+        rows: g.l.slice().sort((a, b) => order[a.k] - order[b.k] || a.c.attended_date.localeCompare(b.c.attended_date)).map(x => ({ fill: late(x) || x.k === 'stale' ? 'red' : '',
+          cells: [x.c.full_name, x.c.company || '', x.c.mobile || '', fmt(x.c.attended_date), x.c.eval_at ? 'Yes' : ['No', 'amber', true], [todo(x), late(x) || x.k === 'stale' ? 'red' : x.k === 'log' ? 'amber' : '', true], last(x.c)] })) };
+    }),
+    empty: 'Nobody to chase this week.',
+  });
 }
 
 // ───── "Appointments total": the week as a PDF (Incentive tab, admins), one grid like Angad's old sheet (20 Oct):
