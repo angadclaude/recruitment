@@ -1,4 +1,4 @@
-window.APP_VERSION = 'a669252b';
+window.APP_VERSION = '0ee11f9b';
 
 (function () {
 'use strict';
@@ -1119,11 +1119,11 @@ function boot() {
     S.openRemind = BOOT.cid === 'remind' && isAdmin(); BOOT.cid = '';
     if (isAdmin()) { S.tab = 'academy'; nav('academy', {}, false); } else { nav(S.tab, {}, false); nav('academy', {}, true); }
   } else if (BOOT.cid === 'bookrem' || BOOT.cid === 'bookmiss') {
-    // From the 18:00 "N to remind for tomorrow" alert (opens the send list) / the 10:30 "N didn't come": Today, with the bookings
-    const rem = BOOT.cid === 'bookrem'; BOOT.cid = ''; S.day = S.me.today; nav('today', {}, false);
+    // From the 18:00 "N to remind for tomorrow" alert (opens the send list) / the 10:30 "N didn't come": the Book Appts tab
+    const rem = BOOT.cid === 'bookrem'; BOOT.cid = ''; nav(canBook() ? 'book' : S.tab, {}, false);
     let tries = 0;
     const open = () => {
-      if (S.view !== 'today') return;
+      if (S.view !== 'book') return;
       if (!(S.bookings && S.bookings.at)) { if (tries++ < 40) setTimeout(open, 250); return; }
       const next = bookings().filter(b => b.status === 'booked' && b.slot_date > S.me.today).map(b => b.slot_date).sort()[0];
       if (rem && next) bookRemindSheet(next);
@@ -1170,7 +1170,7 @@ function swVersion() {
 function tick() {
   if (document.visibilityState !== 'visible' || !S.me) return;
   const hr = Number(londonNow().slice(11, 13));
-  const live = S.view === 'today' && S.day === S.me.today && hr >= 7 && hr < 17;
+  const live = (S.view === 'book' || (S.view === 'today' && S.day === S.me.today)) && hr >= 7 && hr < 17;
   if (Date.now() - S.lastPoll >= (live ? 10000 : POLL_MS)) { S.lastPoll = Date.now(); refreshQuiet(); }
   if (outbox().length) flush();
   if (S.swReg && Date.now() - (S.swCheck || 0) > 15 * 60000) { S.swCheck = Date.now(); S.swReg.update().catch(() => {}); }
@@ -1179,7 +1179,7 @@ function refreshQuiet() {
   if (!S.me) return;
   const we = S.view === 'today' ? weekEndingOf(S.day) : S.week;
   prefetchLists();
-  fetchWeek(we).then(() => whenCalm('list', () => { if (['today', 'mine', 'all', 'pay'].indexOf(S.view) >= 0) render(true); })).catch(() => {});
+  fetchWeek(we).then(() => whenCalm('list', () => { if (['today', 'book', 'mine', 'all', 'pay'].indexOf(S.view) >= 0) render(true); })).catch(() => {});
 }
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && S.booted) refreshQuiet(); });
 window.addEventListener('popstate', e => {
@@ -1205,7 +1205,7 @@ function nav(view, params, push) {
 function hist(kind, st) { try { kind === 'push' ? history.pushState(st, '') : history.replaceState(st, ''); S.hist = kind === 'push' ? (S.hist || 0) + 1 : (S.hist || 0); } catch (e) { /* not allowed in this frame */ } }
 function back() { if (S.hist > 0 && history.state && ['cand', 'user', 'slideqr', 'bulletin', 'alerts', 'academy'].indexOf(history.state.v) >= 0) { S.hist--; history.back(); } else nav(S.tab); }
 function go(tab) { nav(tab, {}, false); }
-function titleOf(v) { return { today: 'Today', mine: 'My candidates', all: 'All candidates', pay: 'Appts Attended', team: 'Team', slideqr: 'Slide QR codes', user: 'Team', bulletin: 'Bulletin', alerts: 'Alerts check', chase: 'Chase', academy: 'Day 1' }[v] || ''; }
+function titleOf(v) { return { today: 'Today', mine: 'My candidates', all: 'All candidates', pay: 'Appts Attended', team: 'Team', slideqr: 'Slide QR codes', user: 'Team', bulletin: 'Bulletin', alerts: 'Alerts check', chase: 'Chase', academy: 'Day 1', book: 'Book Appts' }[v] || ''; }
 
 function render(quiet) {
   const v = S.view;
@@ -1215,6 +1215,7 @@ function render(quiet) {
   if (v === 'alerts') return viewAlerts();
   if (v === 'chase') return viewChase(quiet);
   if (v === 'academy') return viewAcademy(quiet);
+  if (v === 'book') return viewBook(quiet);
   if (v === 'bulletin') return viewBulletin();
   ({ today: viewToday, mine: viewMine, all: viewAll, pay: viewPay, team: viewTeam }[v] || viewToday)(quiet);
 }
@@ -1227,6 +1228,7 @@ const ICONS = {
   chase: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
   academy: '<path d="M22 10 12 5 2 10l10 5 10-5z"/><path d="M6 12v5c3 2 9 2 12 0v-5"/><path d="M22 10v6"/>',
   pay: '<path d="M17 7.5A4.5 4.5 0 0 0 9 10v9M6 13.5h8M6 19h12"/>',
+  book: '<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4M12 13.5v5M9.5 16h5"/>',
   team: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17.5" cy="9" r="2.5"/><path d="M16.5 14.6A5 5 0 0 1 21.5 19.5"/>',
   back: '<path d="M15 5l-7 7 7 7"/>',
   phone: '<path d="M5 4h3.5l2 5-2.4 1.6a11 11 0 0 0 5.3 5.3L15 13.5l5 2V19a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/>',
@@ -1238,12 +1240,14 @@ function initials(name) { return String(name || '?').split(' ').filter(String).s
 function tabs() {
   const t = [];
   if (isPresenter()) t.push(['today', 'Today']);
+  if (canBook()) t.push(['book', 'Book Appts']);  // Jess, Rubal, Angad: book after the call, send the details (Angad, 23 Oct)
   if (isBooker()) t.push(['mine', 'Mine']);
   if (isAdmin() || isBooker()) t.push(['chase', 'Chase']);
   if (isAdmin()) t.push(['academy', 'Day 1']);
   if (isAdmin()) t.push(['all', 'All']);
   t.push(['pay', 'Appts Attended']);  // was "Incentive" (Angad, 20 Oct)
-  if (isAdmin() && !isBooker()) t.push(['team', 'Team']);  // an admin who also books: Team is in the menu (7 tabs don't fit a phone)
+  if (isAdmin() && !isBooker() && !canBook()) t.push(['team', 'Team']);  // an admin who also books (or books appointments): Team is in the menu (7 tabs don't fit a phone)
+  if (t.length > 6) t.splice(t.findIndex(x => x[0] === 'mine'), 1);  // still too many: their own candidates move to the menu too
   return t;
 }
 function ensureShell() {
@@ -1279,7 +1283,7 @@ function paint(title, html, quiet, sub) {
   // A background refresh of a list: change only the rows that changed. The rest stay exactly as they are,
   // so a finger aiming at someone still lands on them (rebuilding the whole list swallowed taps on slower phones).
   const key = S.view + '|' + JSON.stringify(S.params || {});
-  const patch = quiet && ['today', 'mine', 'all', 'pay'].indexOf(S.view) >= 0 && paint._key === key;
+  const patch = quiet && ['today', 'book', 'mine', 'all', 'pay'].indexOf(S.view) >= 0 && paint._key === key;
   paint._key = key;
   clearTimeout(paint._t);
   if (patch) { if (paint._html !== html) { const t = document.createElement('div'); t.innerHTML = html; morph(page, t, true); } paint._html = html; return page; }
@@ -1313,7 +1317,7 @@ addEventListener('scroll', () => { const s = window.scrollY > 6; if (s !== paint
 // Pull down at the top of a list to refresh
 const PTR = { y: 0, d: 0, on: false };
 document.addEventListener('touchstart', e => {
-  PTR.on = BOOT.mode === 'staff' && S.booted && window.scrollY <= 0 && ['today', 'mine', 'all', 'pay', 'team'].indexOf(S.view) >= 0 && !e.target.closest('.swipe, input, textarea');
+  PTR.on = BOOT.mode === 'staff' && S.booted && window.scrollY <= 0 && ['today', 'book', 'mine', 'all', 'pay', 'team'].indexOf(S.view) >= 0 && !e.target.closest('.swipe, input, textarea');
   PTR.y = e.touches[0].clientY; PTR.d = 0;
 }, { passive: true });
 document.addEventListener('touchmove', e => {
@@ -1344,14 +1348,16 @@ function toggleMenu() {
   const u = S.me.user;
   m.innerHTML = '<div class="menu-card"><div class="row" style="flex-wrap:nowrap"><span class="av lg co-' + h(coOf(u.company) || 'LINK') + '">' + h(initials(u.name)) + '</span><div style="min-width:0"><b>' + h(u.name) + '</b><div class="small muted" style="overflow:hidden;text-overflow:ellipsis">' + h(u.email) + '</div>' +
     '<div class="small muted"><span class="co ' + h(u.company) + '">' + h(u.company) + '</span> · ' + (isAdmin() ? '<b>Admin</b>' : '<b>BA</b> · ' + h(u.roles.join(', '))) + '</div></div></div>' +
-    (isAdmin() && isBooker() ? '<button class="btn ghost block" id="mTeam" style="margin-top:12px">👥 Team</button>' : '') +
-    '<button class="btn ghost block" id="mRefresh" style="margin-top:' + (isAdmin() && isBooker() ? 8 : 12) + 'px">↻ Refresh now</button>' +
+    (isAdmin() && !tabs().some(t => t[0] === 'team') ? '<button class="btn ghost block" id="mTeam" style="margin-top:12px">👥 Team</button>' : '') +
+    (isBooker() && !tabs().some(t => t[0] === 'mine') ? '<button class="btn ghost block" id="mMine" style="margin-top:8px">📞 My candidates</button>' : '') +
+    '<button class="btn ghost block" id="mRefresh" style="margin-top:8px">↻ Refresh now</button>' +
     '<button class="btn ghost block" id="mLogout" style="margin-top:8px;color:var(--red)">Log out</button>' +
     '<p class="small muted center" style="margin:10px 0 0">App version ' + h(window.APP_VERSION || 'dev') + '<br>Alerts: ' + h(pushStatus()) + '</p></div>';
   m.hidden = false;
   m.onclick = e => { if (e.target === m) m.hidden = true; };
   document.getElementById('mRefresh').onclick = () => { m.hidden = true; pullRefresh(); };
   const mt = document.getElementById('mTeam'); if (mt) mt.onclick = () => { m.hidden = true; nav('team', {}, true); };
+  const mm = document.getElementById('mMine'); if (mm) mm.onclick = () => { m.hidden = true; nav('mine', {}, true); };
   document.getElementById('mLogout').onclick = () => {
     if (outbox().length && !navigator.onLine) { toast('Wait for signal first: you have changes that haven\'t synced'); return; }
     store.del('outbox'); store.del('tok'); store.del('cache'); S.token = ''; S.me = null; S.data = {}; S.users = null; S.chase = null; S.chaseN = 0; S.chaseCarry = 0; S.academy = null; S.d1Old = null; S.d1Pick = null; S.booted = false; S.tab = '';
@@ -1608,7 +1614,6 @@ function viewToday(quiet) {
     body = '<div class="hero">' + FX + top + kpis([[items.length, 'Checked in'], [rated, 'Rated'], [items.filter(c => c.eval_at).length, 'Evaluated'], [toCall, 'To call', toCall > 0]]) + '</div>' +
       (isAdmin() || canThank() ? thanksButton(items) : '') +
       (isAdmin() ? '<div class="bullbtns"><button class="btn" id="bullDaily">📣 ' + (isToday ? 'Today\'s' : DAYS[D(S.day).getUTCDay()]) + ' bulletin</button><button class="btn ghost" id="bullWeek">🏆 Week top 5</button></div>' : '') +
-      bookingsHtml(S.day) +
       (items.length ? '<div class="section-h"><b>In the room</b><span>' + rated + ' of ' + toRate.length + ' rated</span></div>' +
         (isPresenter() ? '<p class="hint">Tap Green, Amber or Red to rate. Rating = they were in the room (that\'s what counts for the recruitment incentive). Left before the end? Tap 🚶 Walk out. Under 18 or no right to work: no rating needed. Tap a name for stars and notes.</p>' : '') +
         (items.some(c => c.limited) ? '<p class="hint">🔒 You see your own candidates in full. Everyone else\'s: name, who booked them and the room rating only.</p>' : '') +
@@ -1616,7 +1621,7 @@ function viewToday(quiet) {
         : empty('📷', 'No check-ins yet. They appear here live as people scan the check-in QR on your first slide.'));
   }
   const page = paint('', body, quiet);
-  bindItems(page); bindBookings(page);
+  bindItems(page);
   const ta = document.getElementById('thanksAll'); if (ta) ta.onclick = thanksSheet;
   [['bullDaily', 'daily'], ['bullWeek', 'weekly']].forEach(b => { const el = document.getElementById(b[0]); if (el) el.onclick = () => nav('bulletin', { day: S.day, kind: b[1] }, true); });
   document.getElementById('dprev').onclick = () => { S.day = addDays(S.day, -1); render(); };
@@ -2568,7 +2573,7 @@ document.addEventListener('click', e => {
   if (via === 'sms') b.no_whatsapp = 'TRUE';
   saveCache();
   call('bookingAction', { id: b.id, act: 'sent', kind: kind, via: via }).then(nb => { Object.assign(b, nb); bookUpsert(b); }).catch(ex => toast(ex.message));
-  if (!a.closest('.sheet')) setTimeout(() => { if (S.view === 'today' && !document.querySelector('.sheet-back')) render(true); }, 400);  // after WhatsApp has opened
+  if (!a.closest('.sheet')) setTimeout(() => { if (S.view === 'book' && !document.querySelector('.sheet-back')) render(true); }, 400);  // after WhatsApp has opened
 }, true);
 
 // Tap a name (Expected today, Tried calling, Coming up) → its booking. One listener for the whole page, so a background refresh
@@ -2586,7 +2591,16 @@ function openBooking(id) {
   call('bookingList', {}).then(r => { S.bookings = { items: r.items, at: Date.now() }; saveCache(); if (bookById(id)) show(); else toast('That booking has gone. Pull down to refresh.'); })
     .catch(ex => toast(ex.message));
 }
-/** Today page (Jess, Rubal, Angad): 📅 Book, who's expected (confirmed? checked in? didn't come?) and what's coming up. */
+/** The Book Appts tab (Jess, Rubal, Angad): book after the call, who's expected today, what's coming up, reminders. */
+function viewBook(quiet) {
+  if (!canBook()) return go(tabs()[0][0]);
+  const d = want(weekEndingOf(S.me.today));  // the week's bundle brings the bookings, and keeps them fresh
+  const has = bookings().length;
+  const page = paint('Book Appts', (d || S.bookings ? bookingsHtml(S.me.today) + (has ? '' : empty('📅', 'Nobody booked yet. After your next call, tap 📅 Book a presentation.')) : skeleton(3)) +
+    '<p class="hint">Booked here = the confirmation, the 18:00 reminder the evening before, "didn\'t come" at ' + h(bookCfg().missed) + ', and check-in knows who booked them. Tap a name for their booking.</p>', quiet);
+  bindBookings(page);
+}
+/** Book Appts (Jess, Rubal, Angad): 📅 Book, who's expected (confirmed? checked in? didn't come?) and what's coming up. */
 function bookingsHtml(day) {
   if (!canBook()) return '';
   const isToday = day === S.me.today, cfg = bookCfg(), all = bookings();
@@ -2642,7 +2656,7 @@ function bookYes(id, btn, then) {
   busy(btn, true, '…');
   call('bookingAction', { id: id, act: 'yes' }).then(b => {
     bookUpsert(b); toast('✅ ' + b.first_name + ' confirmed');
-    if (then) then(b); else if (S.view === 'today' && !document.querySelector('.sheet-back')) render(true);
+    if (then) then(b); else if (S.view === 'book' && !document.querySelector('.sheet-back')) render(true);
   }).catch(e => { busy(btn, false); toast(e.message); });
 }
 function bookSheetOpen(label, html) {
@@ -2652,7 +2666,7 @@ function bookSheetOpen(label, html) {
   back.innerHTML = '<div class="sheet bksheet" role="dialog" aria-label="' + h(label) + '"><div class="grab"></div>' + html + '</div>';
   document.body.appendChild(back);
   document.body.style.overflow = 'hidden';
-  const done = () => { closeSheet(); if (S.view === 'today') render(true); };
+  const done = () => { closeSheet(); if (S.view === 'book') render(true); };
   back.onclick = e => { if (e.target === back) done(); };
   const d = back.querySelector('#bkdone'); if (d) d.onclick = done;
   return back;
@@ -2771,7 +2785,7 @@ function bookSheet(id) {
   on('#bkx', e => {
     if (!window.confirm('Cancel ' + bookName(b) + '\'s presentation on ' + fmtLong(b.slot_date) + '?')) return;
     busy(e.currentTarget, true, 'Cancelling…');
-    call('bookingAction', { id: b.id, act: 'cancel' }).then(nb => { bookUpsert(nb); closeSheet(); toast('Booking cancelled'); if (S.view === 'today') render(true); })
+    call('bookingAction', { id: b.id, act: 'cancel' }).then(nb => { bookUpsert(nb); closeSheet(); toast('Booking cancelled'); if (S.view === 'book') render(true); })
       .catch(ex => { busy(e.currentTarget, false); toast(ex.message); });
   });
 }
@@ -2799,7 +2813,7 @@ function msgWelcomeHeadsUp(c, fr) {
   const co = brandCo(c);
   return 'Hi ' + c.first_name + ' 👋 It\'s ' + S.me.user.name.split(' ')[0] + ' from ' + brandOf(c) + '.\n\n' +
     'I\'ve just emailed your starter pack to ' + c.email + ' 📧\n' +
-    '📲 FieldIQ (download before Day 1): ' + FIELDIQ_URL + '\n' + (co === 'LINK' ? '📝 Your Pre-Coaching Module\n' : '') +
+    '📲 FieldIQ (before Day 1): first tap the link in FieldIQ\'s invitation email or text (check Junk), then download the app and log in with that email: ' + FIELDIQ_URL + '\n' + (co === 'LINK' ? '📝 Your Pre-Coaching Module\n' : '') +
     '📘 Your ' + (co === 'JUSS' ? 'JUSS' : 'Link Org') + ' Playbook\n🗓️ Your Week 1 plan\n\n' +
     'It\'s from ' + (fr ? fr.email : 'us') + '. Can\'t see it? Check *Spam* or *Promotions* and tap *Not spam*, so nothing else goes missing.\n\n' +
     'Please reply *GOT IT* once you have it ✅';
@@ -2836,7 +2850,7 @@ function onboardCard(c) {
       '<div class="row" style="margin-top:10px"><a class="btn ghost sm" href="' + DATABYTE_URL + '" target="_blank" rel="noopener">Open Databyte ↗</a>' +
       (onDb ? '<button type="button" class="btn ghost sm" id="dbundo">Undo</button>' : '<button type="button" class="btn green sm grow" id="dbdone">✅ Added to Databyte</button>') + '</div></div>' +
     '<div class="onb-step' + (sent ? ' done' : '') + (onDb ? '' : ' locked') + '"><div class="onb-t"><b>2 · Send the welcome email</b>' + (sent ? '<span class="pill green">✓ Sent ' + by(c.onboard_email_by, c.onboard_email_at) + '</span>' : '') + '</div>' +
-      '<p class="small muted">"' + brand + ' - Your Brand Ambassador Journey Begins!" with FieldIQ and their Playbook, to <b>' + h(c.email) + '</b>.' +
+      '<p class="small muted">"' + brand + ' - Your Brand Ambassador Journey Begins!" with FieldIQ and their Playbook, to <b>' + h(c.email) + '</b>. FieldIQ sends them its own invite: they tap its link before they can log in.' +
       (onDb ? '' : ' 🔒 Unlocks once they\'re on Databyte: FieldIQ only works after that.') + '</p>' +
       (fr ? '<p class="small obfrom">📤 From <b>' + h(fr.name || fr.email) + '</b> · ' + h(fr.email) + (fr.ready ? '' : ' <span class="pill amber">not set up yet</span>') + '</p>' : '') +
       (sent && c.mobile ? '<a class="btn ' + (c.no_whatsapp ? 'sms' : 'wa') + ' block" id="obwa" target="_blank" rel="noopener" href="' + h(msgUrl(c, msgWelcomeHeadsUp(c, fr))) + '">' +
@@ -3420,6 +3434,19 @@ window.addEventListener('online', () => flush());
 
 function brandOf(c) { return brandCo(c) === 'JUSS' ? 'JUSS Marketing' : 'LINK Marketing'; }
 function waUrl(mobile, text) { return 'https://wa.me/44' + String(mobile).slice(1) + '?text=' + encodeURIComponent(text); }
+/** A laptop or desktop computer: not a phone or tablet, no touch screen. */
+const IS_DESKTOP = !/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) && !(navigator.maxTouchPoints > 0);
+// WhatsApp on a computer (the Windows / Mac app) turns the emojis in a pre-filled message into "�" (Angad, 23 Oct: Jake's
+// confirmation, sent from the laptop). Pasted, they arrive fine. So on a computer a WhatsApp button copies the message and
+// opens the chat empty: paste it in (Ctrl+V). On a phone nothing changes.
+document.addEventListener('click', e => {
+  if (!IS_DESKTOP) return;
+  const a = e.target.closest && e.target.closest('a[href^="https://wa.me/"]'); if (!a) return;
+  const full = a.getAttribute('href'), m = /^(https:\/\/wa\.me\/[^?]*)\?text=(.*)$/.exec(full); if (!m) return;
+  copyText(decodeURIComponent(m[2]), 'the message: paste it into WhatsApp (Ctrl+V)');
+  a.setAttribute('href', m[1]);
+  setTimeout(() => a.setAttribute('href', full), 1500);  // the button keeps its message for next time
+}, true);
 // ───── Not on WhatsApp: the same message by text (from the sender's own phone) or email ─────
 /** WhatsApp's *bold* stars would show as stars in a text or email. */
 function plainMsg(text) { return String(text).replace(/\*([^*\n]+)\*/g, '$1'); }

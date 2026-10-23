@@ -163,8 +163,10 @@ const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked 
   };
   await setTime('2026-10-27T13:00:00+00:00');  // Tuesday afternoon
   const jp = await as(jess);
-  await jp.waitForSelector('#bookNew');
-  ok(await jp.$('.tabbar button.on[data-tab=today]') && /Book a presentation/.test(await jp.textContent('#bookNew')), 'Jess\'s Today page: 📅 Book a presentation');
+  ok(!(await jp.$('#bookNew')) && JSON.stringify(await jp.$$eval('.tabbar button', b => b.map(x => x.dataset.tab))) === '["today","book","chase","academy","all","pay"]',
+    'Jess\'s tabs: Today, Book Appts, Chase, Day 1, All, Appts Attended (Team is under her initials); Today has no booking on it');
+  await jp.click('.tabbar button[data-tab=book]'); await jp.waitForSelector('#bookNew');
+  ok(/Book Appts/.test(await jp.textContent('#abTitle')) && /Book a presentation/.test(await jp.textContent('#bookNew')), 'its own tab, Book Appts: 📅 Book a presentation');
   const exp = await jp.innerText('#page');
   ok(/Booked · 10:00|Expected today · 10:00/i.test(exp) && /Sam Carter/.test(exp) && /Checked in 09:40/.test(exp) && /Ollie Grant/.test(exp) && /Rebooked/.test(exp) && /Coming up/i.test(exp),
     'Expected today: Sam 🎓 checked in 09:40, Ollie didn\'t come (rebooked); Coming up lists Wednesday');
@@ -210,7 +212,7 @@ const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked 
 
   // Booked on another device (Angad, 23 Oct: booked Lucy on the laptop, couldn't open her on the phone): first and last name, one tap
   await api(angad, 'saveBooking', { booking: { first_name: 'Lucy', last_name: 'Smith', mobile: '07700900130', slot_date: '2026-10-28' } });
-  await jp.reload(); await jp.waitForSelector('.bknames .nm:has-text("Lucy Smith")');
+  await jp.reload(); await jp.waitForSelector('.tabbar button[data-tab=book]'); await jp.click('.tabbar button[data-tab=book]'); await jp.waitForSelector('.bknames .nm:has-text("Lucy Smith")');
   await jp.tap('.bknames .nm:has-text("Lucy Smith")'); await jp.waitForSelector('.bksheet .bkinfo');
   ok(/Booked by Angad Oshan/.test(await jp.innerText('.bksheet')) && /Lucy Smith/.test(await jp.innerText('.bksheet')), 'Coming up shows first and last names; tapping one opens the booking made on another device');
   await jp.click('#bkc'); await jp.waitForSelector('.bksheet .bksend2 a.btn.sms');
@@ -221,13 +223,13 @@ const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked 
   // The 18:00 alert, tapped: the send list opens by itself
   const jp2 = await as(jess, APP + 'index.html?c=bookrem');
   await jp2.waitForSelector('.bksheet [data-bks], .bksheet .pill.green', { timeout: 15000 });
-  ok(/Reminders/.test(await jp2.innerText('.bksheet')), 'tapping the 18:00 alert opens Today with the reminders ready');
+  ok(/Reminders/.test(await jp2.innerText('.bksheet')) && await jp2.$('.tabbar button.on[data-tab=book]'), 'tapping the 18:00 alert opens Book Appts with the reminders ready');
   await jp2.context().close();
 
   // Someone who didn't come: "sorry we missed you" + rebook, straight from Today
   await setTime('2026-10-28T10:40:00+00:00');
   const ap = await as(angad);
-  await ap.waitForSelector('.bkrow');
+  await ap.click('.tabbar button[data-tab=book]'); await ap.waitForSelector('.bkrow');
   const missRow = await ap.innerText('.bkrow:has-text("Ollie")');
   ok(/Didn't come/.test(missRow) && await ap.$('.bkrow:has-text("Ollie") a[data-kind=missed]') && await ap.$('.bkrow:has-text("Ollie") [data-bkre]'), 'Wed 10:40, Ollie didn\'t come again → "Sorry we missed you" + 📅 Rebook on his row');
   const missTxt = textOf(await ap.getAttribute('.bkrow:has-text("Ollie") a.btn[data-kind=missed]', 'href'));
@@ -263,16 +265,36 @@ const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked 
   const spp = await as(satpal);
   await spp.click('.tabbar button[data-tab=pay]'); await spp.waitForSelector('.showup');
   const sut = await spp.innerText('.showup');
-  ok(/Jess Grace/.test(sut) && /Angad Oshan/.test(sut) && /Teamtailor/.test(sut) && !(await spp.$('#bookNew')), 'Satpal (admin): the 📅 Show-up card on Appts Attended; no Book button (he isn\'t on the booking team)');
+  ok(/Jess Grace/.test(sut) && /Angad Oshan/.test(sut) && /Teamtailor/.test(sut) && !(await spp.$('.tabbar button[data-tab=book]')) && await spp.$('.tabbar button[data-tab=team]'), 'Satpal (admin): the 📅 Show-up card on Appts Attended; no Book Appts tab (he isn\'t on the booking team), Team stays a tab');
   await shot(spp, 'b7-showup', true);
   await spp.context().close();
+
+  // On a laptop: WhatsApp's computer app turns pre-filled emojis into "�" (Angad, 23 Oct: Jake's confirmation from the laptop).
+  // There the button copies the message and opens the chat empty, to paste in; on a phone the message is pre-filled as before.
+  const jake = await api(angad, 'saveBooking', { booking: { first_name: 'Jake', last_name: 'Hill', mobile: '07700900131', slot_date: '2026-10-30' } });
+  const dctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, permissions: ['clipboard-read', 'clipboard-write'] });
+  await dctx.addInitScript(t => { try { if (!localStorage.getItem('lr_tok')) localStorage.setItem('lr_tok', JSON.stringify(t)); } catch (e) {} }, angad);
+  const dp = await dctx.newPage(); await dp.goto(APP + 'index.html'); await dp.waitForSelector('.tabbar button[data-tab=book]');
+  await dp.click('.tabbar button[data-tab=book]'); await dp.waitForSelector('.bknames .nm:has-text("Jake Hill")');
+  await dp.click('.bknames .nm:has-text("Jake Hill")'); await dp.waitForSelector('#bkc'); await dp.click('#bkc'); await dp.waitForSelector('.bksheet .bksend2 a.btn.wa');
+  const full = await dp.getAttribute('.bksheet .bksend2 a.btn.wa', 'href');
+  await dp.$eval('.bksheet .bksend2 a.btn.wa', a => { a.addEventListener('click', e => { window.__href = a.getAttribute('href'); e.preventDefault(); }); a.click(); });
+  await dp.waitForFunction(() => /paste it into WhatsApp/.test((document.getElementById('toast') || {}).textContent || ''));
+  const clip = (await dp.evaluate(() => navigator.clipboard.readText())).replace(/\r\n/g, '\n');  // Windows reads it back with \r\n
+  ok(await dp.evaluate(() => window.__href) === 'https://wa.me/447700900131' && clip === textOf(full) && /^Hey Jake! 👋/.test(clip) && /📅 \*Friday 30th October · 10:00 AM\*/.test(clip),
+    'on a laptop, 💬 WhatsApp copies the message (every emoji intact) and opens the chat empty: "📋 Copied the message: paste it into WhatsApp"');
+  await dp.waitForTimeout(1700);
+  ok(await dp.getAttribute('.bksheet .bksend2 a.btn.wa', 'href') === full, 'the button keeps its message for next time');
+  let jk = null; for (let i = 0; i < 25 && !(jk && jk.confirm_at); i++) { jk = (await api(angad, 'bookingList', {})).items.find(b => b.id === jake.id); if (!jk.confirm_at) await new Promise(r => setTimeout(r, 200)); }
+  ok(jk.confirm_via === 'whatsapp' && jk.confirm_by === 'Angad Oshan', 'and it still counts as sent on WhatsApp');
+  await dctx.close();
   await browser.close();
 
   console.log('GDPR');
   await setTime('2027-01-28T03:00:00+00:00'); await post('/dev/run', { fn: 'dailyMaintenance' });
   const bt = await getJson('/dev/sheet?name=Bookings'), iN = bt[0].indexOf('notes');
   ok(bt.length > 1 && bt.slice(1).every(r => !r[iN]), 'after 12 weeks a booking keeps who and when; the notes from the call go');
-  await setTime('2027-05-01T03:00:00+00:00'); await post('/dev/run', { fn: 'dailyMaintenance' });
+  await setTime('2027-05-08T03:00:00+00:00'); await post('/dev/run', { fn: 'dailyMaintenance' });
   ok((await getJson('/dev/sheet?name=Bookings')).length === 1, 'after 6 months every booking is deleted');
 
   console.log('\nALL ' + passed + ' ✓');

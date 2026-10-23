@@ -69,6 +69,10 @@ const setTime = async iso => {
   return post('/dev/time', { iso });
 };
 const ok = (cond, msg) => { assert.ok(cond, msg); console.log('  ✓ ' + msg); };
+// Team: a tab, or (an admin on the booking team, or who also books) under their initials
+const openTeam = async p => { if (await p.$('.tabbar button[data-tab=team]')) return p.click('.tabbar button[data-tab=team]'); await p.click('#abMe'); await p.click('#mTeam'); };
+// Mine: a tab, or (an admin on the booking team who also books: 7 tabs don't fit) under their initials
+const openMine = async p => { if (await p.$('.tabbar button[data-tab=mine]')) return p.click('.tabbar button[data-tab=mine]'); await p.click('#abMe'); await p.click('#mMine'); };
 const pushesTo = async id => (await getJson('/dev/pushes')).filter(p => p.body.include_aliases.external_id.includes(id));
 
 const coOf = p => p.evaluate(() => document.body.dataset.co || '');
@@ -671,7 +675,7 @@ async function fillEval(p) {
   ok(ishLog.length === 2 && ishLog[0].o === 'Academy booked' && ishLog[0].by === 'Mo Aden' && ishLog[1].o === 'Not suitable' && ishLog[1].by === 'Angad Oshan' && /^Academy booking rejected/.test(ishLog[1].n),
     'call log keeps both: Mo\'s "Academy booked", then Angad\'s rejection ("Not suitable · Academy booking rejected")');
 
-  await ap.click('.tabbar button[data-tab=team]');
+  await openTeam(ap);
   await ap.waitForSelector('#slideqr');
   await ap.click('#slideqr');
   await ap.waitForSelector('.qrcard img');
@@ -825,7 +829,7 @@ async function fillEval(p) {
   await ap.goto(APP + 'index.html?c=chase');
   await ap.waitForSelector('#nudgeAll');
   ok(await ap.textContent('#abTitle') === 'Chase' && await ap.$('.tabbar button.on[data-tab=chase]') &&
-    JSON.stringify(await ap.$$eval('.tabbar button', b => b.map(x => x.dataset.tab))) === '["today","chase","academy","all","pay","team"]',
+    JSON.stringify(await ap.$$eval('.tabbar button', b => b.map(x => x.dataset.tab))) === '["today","book","chase","academy","all","pay"]',
     'admin tab bar: Today · Chase · Day 1 · All · Appts Attended · Team, and the alert lands on Chase');
   ok(await ap.textContent('.tabbar button[data-tab=chase] .tbadge') === badgeOf(nowP.length, carryP.length) && new RegExp('^' + thisP.length + ' (person|people) to chase this week').test(await ap.innerText('.card .display')) &&
     /This week · ending/i.test(await ap.innerText('.seg-nav')),
@@ -1131,6 +1135,9 @@ async function fillEval(p) {
     /1:30pm – 6:00pm/.test(prevHtml) && /1:00pm – 6:00pm/.test(prevHtml) && /img\/logo-juss\.png/.test(prevHtml) && /See my Week 1 plan \+ CONFIRM/.test(prevHtml) && /<b>Rubal Oshan<\/b>/.test(prevHtml) &&
     /Read your <b>JUSS Playbook<\/b>/.test(prevHtml) && /href="https:\/\/juss-playbook\.vercel\.app\/"[^>]*>📘 (<span[^>]*>)*Open my JUSS Playbook/.test(prevHtml),
     'preview: Rubal\'s JUSS email in the congratulations-page look ("You\'re in, Adham 🎉", JUSS logo, Day 1 / Day 2 cards, FieldIQ, JUSS Playbook, Week 1 plan + CONFIRM, Hello Fresh, JUSS number, signed Rubal: it\'s from her address)');
+  ok(/<b>Activate FieldIQ first:<\/b> find the invitation from FieldIQ \(email or text, check Junk\) and tap its link\. Then download the app, log in with that same email/.test(prevHtml) &&
+    !/Download FieldIQ<\/b> and complete/.test(prevHtml),
+    'FieldIQ step 1 is "activate from its invite first", then download and log in (Rubal, 23 Oct: candidates hit "Your account isn\'t activated yet")');
   ok(/reply <b>GOT IT<\/b> to this email so we know it reached you/.test(prevHtml), 'the email asks them to reply GOT IT (the strongest "not spam" signal, and Rubal knows it arrived)');
   // The whole email as the candidate sees it (images from this dev server instead of the live site)
   fs.writeFileSync(`${SHOTS}/welcome-email-juss.html`, prevHtml);
@@ -1208,13 +1215,14 @@ async function fillEval(p) {
   const wm = (await getJson('/dev/mail')).slice(mbOnb).find(m => m.to === 'adham@example.com');
   ok(wm && wm.via === 'gmail' && wm.subject === 'JUSS Marketing - Your Brand Ambassador Journey Begins!' && wm.from === 'rubal@jussmarketing.co.uk' && wm.name === 'Rubal Oshan | JUSS Marketing' &&
     !wm.bcc && !wm.replyTo && /FieldIQ/.test(wm.body) && /juss-playbook\.vercel\.app/.test(wm.body) && /reply GOT IT/.test(wm.body) &&
-    /YOUR WEEK 1\nDay 1 · Monday 19th October: Induction Day, 1:30pm – 6:00pm/.test(wm.body),
+    /YOUR WEEK 1\nDay 1 · Monday 19th October: Induction Day, 1:30pm – 6:00pm/.test(wm.body) &&
+    /1\. Activate FieldIQ first: find the invitation from FieldIQ \(email or text, check Junk\) and tap its link\. Then download the app \(https:\/\/www\.tfo\.group\/fieldiqdownload\)/.test(wm.body),
     'sent from rubal@jussmarketing.co.uk as "Rubal Oshan | JUSS Marketing" (replies go to Rubal; no BCC copy back, Angad 22 Oct), even though Angad pressed Send');
   ok((await api(admin, 'getCandidate', { id: adham.id })).onboard_email_by === 'Angad Oshan', 'saved: welcome email sent (who, when)');
   const huHref = await ap.getAttribute('#obwa', 'href'), hu = decodeURIComponent(huHref.split(/\?text=|[?&]body=/)[1] || '');
   ok(/^sms:\+447700900300/.test(huHref) && /^Hi Adham 👋 It's Angad from JUSS Marketing\./.test(hu) && /emailed your starter pack to adham@example\.com/.test(hu) && /JUSS Playbook/.test(hu) &&
     /It's from rubal@jussmarketing\.co\.uk\. Can't see it\? Check Spam or Promotions and tap Not spam/.test(hu) && /reply GOT IT/.test(hu) &&
-    /FieldIQ \(download before Day 1\): https:\/\/www\.tfo\.group\/fieldiqdownload/.test(hu),
+    /FieldIQ \(before Day 1\): first tap the link in FieldIQ's invitation email or text \(check Junk\), then download the app and log in with that email: https:\/\/www\.tfo\.group\/fieldiqdownload/.test(hu),
     'once sent: a one-tap heads-up (by text: Adham isn\'t on WhatsApp) "just emailed your starter pack… from rubal@… check Spam / Promotions, tap Not spam… reply GOT IT"');
   ok(!/not set up yet/i.test(await ap.innerText('#onb')), 'after a send the card no longer says "not set up yet"');
   await ap.locator('#onb').screenshot({ path: SHOTS + '/36-onboarded.png' });
@@ -1296,7 +1304,7 @@ async function fillEval(p) {
   const jr = await browser.newContext(PHONE); const jrp = await jr.newPage();
   await loginUi(jrp, 'jess@linkmarketing.org.uk', APP + 'index.html?c=remind');
   await jrp.waitForSelector('.sheet [data-r1]');
-  ok(await jrp.$('.tabbar button.on[data-tab=academy]') && JSON.stringify(await jrp.$$eval('.tabbar button', b => b.map(x => x.dataset.tab))) === '["today","chase","academy","all","pay","team"]',
+  ok(await jrp.$('.tabbar button.on[data-tab=academy]') && JSON.stringify(await jrp.$$eval('.tabbar button', b => b.map(x => x.dataset.tab))) === '["today","book","chase","academy","all","pay"]',
     'Jess taps it → the Day 1 tab with the send list already open');
   const remSheet = await jrp.innerText('.sheet');
   ok(/0 of 2 sent/.test(remSheet) && remSheet.indexOf('Jasraj') < remSheet.indexOf('Adham') && /TODAY · Monday 19 October/i.test(remSheet), 'send list: "0 of 2 sent", her LINK starters first');
@@ -1460,15 +1468,15 @@ async function fillEval(p) {
   ok(!prog.some(p => p.body.include_aliases.external_id.includes(jessId)), 'no incentive progress alert for an admin');
   const jb = await browser.newContext(PHONE); const jbp = await jb.newPage();
   await loginUi(jbp, 'jess@linkmarketing.org.uk');
-  await jbp.click('.tabbar button[data-tab=mine]'); await jbp.waitForSelector('.item:has-text("Grace Okafor")');
+  await openMine(jbp); await jbp.waitForSelector('.item:has-text("Grace Okafor")');
   ok(!(await jbp.$('.hero .ring')) && /booked/i.test(await jbp.$eval('.hero', e => e.innerText)) && !/more to hit|target/i.test(await jbp.$eval('.hero', e => e.innerText)),
     'admin\'s "Mine": her numbers, no incentive ring or target');
   const tb6 = await jbp.$$eval('.tabbar button', b => b.map(x => { const r = x.getBoundingClientRect(), s = x.querySelector('span'); return { t: x.dataset.tab, fits: s.scrollWidth <= r.width + 1 && r.right <= innerWidth }; }));
-  ok(tb6.map(x => x.t).join() === 'today,mine,chase,academy,all,pay' && tb6.every(x => x.fits), 'an admin who also books: Today · Mine · Chase · Day 1 · All · Appts Attended (on two lines), every label fits on a phone');
+  ok(tb6.map(x => x.t).join() === 'today,book,chase,academy,all,pay' && tb6.every(x => x.fits), 'an admin who also books and is on the booking team (Jess): Today · Book Appts · Chase · Day 1 · All · Appts Attended, every label fits on a phone (Mine and Team under her initials)');
   await jbp.click('#abMe'); await jbp.click('#mTeam'); await jbp.waitForSelector('#slideqr');
   ok(await jbp.textContent('#abTitle') === 'Team', '…and Team is under their initials (7 tabs don\'t fit a phone)');
   await shot(jbp, '31-team-from-menu');
-  await jbp.click('.tabbar button[data-tab=mine]'); await jbp.click('.item:has-text("Grace Okafor")'); await jbp.waitForSelector('.profile h1');
+  await openMine(jbp); await jbp.click('.item:has-text("Grace Okafor")'); await jbp.waitForSelector('.profile h1');
   ok(/Booked by Jess Grace \(admin\), so no incentive/.test(await jbp.$eval('#page', e => e.innerText)) && !(await jbp.$('#excl')), 'candidate page: "Booked by Jess Grace (admin), so no incentive"');
   await jb.close();
   // Admins who book (like Jess) get nudged for their own people too
@@ -1513,8 +1521,8 @@ async function fillEval(p) {
     'every alert is logged with who got it on their phone (📲) and who by email (✉️)');
   // Alerts check (Team → 🔔 Alerts check): who actually gets their alerts
   await post('/dev/eval', { js: `globalThis.__pushOff = ['${abd.id}']; globalThis.__pushNever = ['${mo.id}']` });
-  await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button[data-tab=team]');
-  await ap.click('.tabbar button[data-tab=team]'); await ap.click('#alertsck'); await ap.waitForSelector('.achk');
+  await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button');
+  await openTeam(ap); await ap.click('#alertsck'); await ap.waitForSelector('.achk');
   const ach = await ap.innerText('#page');
   const offTxt = await ap.innerText('.datehead:has-text("Not getting") + .list'), onTxt = await ap.innerText('.datehead:has-text("Alerts on") + .list');
   ok(/of \d+ get alerts on their phone/.test(ach) && /Abdullahi Ahmed/.test(offTxt) && /Mo Aden/.test(offTxt) && /Gets alerts by email instead: abdullahi@example\.com/.test(offTxt) && /Fiza Iqbal/.test(onTxt) && !/Fiza/.test(offTxt),
@@ -1621,7 +1629,7 @@ async function fillEval(p) {
   ok((await getJson('/dev/sheet?name=Log')).some(r => r[2] === 'auto_booker' && /"Daniel Thompson" → Fiza Iqbal/.test(r[4])), 'each automatic match is in the Log ("Daniel Thompson" → Fiza Iqbal)');
   const al7 = await alc('Seventeen', 'Zuzanna Sroda');
   ok(!(await bOf(al7)), 'typed "Zuzanna Sroda" (nobody\'s other name yet) → no booker');
-  await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button[data-tab=team]'); await ap.click('.tabbar button[data-tab=team]');
+  await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button'); await openTeam(ap);
   await ap.click('.item[data-u="' + mo.id + '"]'); await ap.waitForSelector('#ual');
   ok(await ap.inputValue('#ual') === 'Ramis - Ali Abbas', 'Team → Mo: "Other names they use" shows what he has');
   await ap.fill('#ual', 'Ramis - Ali Abbas\nZuzanna Sroda');
@@ -1631,8 +1639,9 @@ async function fillEval(p) {
   await ap.waitForSelector('.item[data-u="' + mo.id + '"]');
   ok(/also: Ramis - Ali Abbas · Zuzanna Sroda/.test(await ap.innerText('.item[data-u="' + mo.id + '"]')), 'the Team list shows everyone\'s other names');
   await saveAl(await userOf(abd.id), ['Ali Milad', 'John - Mayba', 'Sally - MSA', 'William - Zohra Marketing', 'Rajan - RS Global', 'Stones Recruitment Limited']);
-  await ap.reload(); await ap.waitForSelector('.tabbar button[data-tab=team]'); await ap.click('.tabbar button[data-tab=team]'); await ap.waitForSelector('.item[data-u="' + abd.id + '"]');
+  await ap.reload(); await ap.waitForSelector('.tabbar button'); await openTeam(ap); await ap.waitForSelector('.item[data-u="' + abd.id + '"]');
   await ap.waitForFunction(id => /William - Zohra/.test((document.querySelector('.item[data-u="' + id + '"]') || {}).innerText || ''), abd.id);
+  await ap.waitForTimeout(600);  // opened from the menu, the page slides in: measure once it has landed
   const widths = await ap.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]);
   ok(widths[0] <= widths[1], 'a long "also: …" line wraps: the Team page stays phone-width (' + widths[0] + 'px of ' + widths[1] + 'px; live it had doubled)');
   await ap.goto(APP + 'index.html?c=' + al1.id); await ap.waitForSelector('.profile h1');
@@ -1671,8 +1680,8 @@ async function fillEval(p) {
   const lim = await post('/api', { action: 'requestCode', email: 'monish_m4@yahoo.com' });
   ok(!lim.ok && /Check Spam\/Junk/.test(lim.error) && /show you a code/.test(lim.error), 'after 5 codes in 15 minutes: "Check Spam/Junk… or ask an admin to show you a code"');
   await ap.evaluate(() => localStorage.removeItem('lr_cache'));
-  await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button[data-tab=team]');
-  await ap.click('.tabbar button[data-tab=team]'); await ap.click('.item:has-text("Monish Somalai")');
+  await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button');
+  await openTeam(ap); await ap.click('.item:has-text("Monish Somalai")');
   await ap.click('#ucode'); await ap.waitForSelector('.codeshow .code');
   const shown = (await ap.innerText('.codeshow .code')).trim();
   ok(/^\d{6}$/.test(shown) && /BA login/.test(await ap.innerText('.codeshow')) && /Already have a code\?/.test(await ap.innerText('.codeshow')),
