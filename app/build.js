@@ -100,6 +100,8 @@ const pages = [
     og: { title: "You're IN 🎉 LINK Marketing BA Academy", desc: 'Your Week 1 game plan + confirm your spot', img: 'og-link.jpg' } },
   { file: 'welcome-juss.html', mode: 'welcome', theme: 'JUSS', title: "You're in! · JUSS Marketing BA Academy",
     og: { title: "You're IN 🎉 JUSS Marketing BA Academy", desc: 'Your Week 1 game plan + confirm your spot', img: 'og-juss.jpg' } },
+  // The link in the booking confirmation: their day, where, and CONFIRM (Angad, 23 Oct)
+  { file: 'booked.html', mode: 'booked', theme: 'JUSS', title: "You're booked in · JUSS Marketing" },
 ];
 pages.forEach(p => write(p.file, page(p)));
 

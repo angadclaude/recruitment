@@ -139,7 +139,8 @@ const SHEETS = {
   Bookings: ['id', 'created_at', 'booked_by_id', 'booked_by', 'first_name', 'last_name', 'mobile', 'source', 'notes',
     'slot_date', 'slot_time', 'company', 'status', 'rebook_of', 'no_whatsapp',
     'confirm_at', 'confirm_by', 'confirm_via', 'confirmed_at', 'confirmed_by', 'remind_at', 'remind_by', 'remind_via',
-    'missed_at', 'missed_by', 'missed_via', 'candidate_id', 'came_at', 'updated_at'],
+    'missed_at', 'missed_by', 'missed_via', 'candidate_id', 'came_at', 'updated_at',
+    'confirm_token'],  // their "You're booked in" page (booked.html?t=…) with the CONFIRM button
   History: ['attended_date', 'full_name', 'mobile', 'email', 'booker_raw', 'presenter_raw'],
   Codes: ['email', 'code_hash', 'expires', 'attempts'],
   Sessions: ['token', 'user_id', 'expires'],
@@ -1439,7 +1440,7 @@ function deleteUser(req, u) {
 const PUBLIC_ACTIONS = {
   publicConfig: publicConfig, checkin: checkin, candidateStatus: candidateStatus,
   resumeByMobile: resumeByMobile, submitEval: submitEval, myEval: myEval, requestCode: requestCode, verifyCode: verifyCode,
-  hubLogin: hubLogin, loginInfo: loginInfo, bookingByMobile: bookingByMobile,
+  hubLogin: hubLogin, loginInfo: loginInfo, bookingByMobile: bookingByMobile, bookingInfo: bookingInfo, confirmBooking: confirmBooking,
   welcomeInfo: welcomeInfo, confirmAcademy: confirmAcademy,
 };
 const STAFF_ACTIONS = {
@@ -1953,6 +1954,10 @@ function getBooking(id) {
 function bookingList(req, u) {
   if (!canBook(u)) return { items: [] };
   const from = addDays(todayStr(), -7);
+  // Booked before CONFIRM existed (23 Oct): give them their page now
+  if (readTable('Bookings').some(b => b.status === 'booked' && b.slot_date >= from && !b.confirm_token)) {
+    withLock(() => { delete MEMO.Bookings; readTable('Bookings').filter(b => b.status === 'booked' && !b.confirm_token).forEach(b => { b.confirm_token = token().slice(0, 24); writeRow('Bookings', b); }); });
+  }
   return { items: readTable('Bookings').filter(b => b.status !== 'cancelled' && b.slot_date >= from).map(bookOut) };
 }
 /** The open booking a check-in on this mobile belongs to: the one nearest today (they may come on another day than booked). */
@@ -1968,6 +1973,33 @@ function bookingByMobile(req) {
   const u = b ? userById(b.booked_by_id) : null;
   return b && u ? { found: true, booker_id: u.id, booker_name: u.name, booker_company: u.company, company: b.company, time: b.slot_time } : { found: false };
 }
+/** Their "You're booked in" page (booked.html?t=…): only what the page shows, nothing else about them. */
+function bookingByToken(t) {
+  const b = t && String(t).length >= 16 ? readTable('Bookings').filter(x => x.confirm_token === String(t))[0] : null;
+  if (!b || b.status === 'cancelled') throw new Error('This link has expired. Message the person who booked you and they\'ll sort it.');
+  return b;
+}
+function bookingInfo(req) {
+  const b = bookingByToken(req.t), u = userById(b.booked_by_id);
+  return { first_name: b.first_name, slot_date: b.slot_date, slot_time: b.slot_time || CONFIG.BOOK_TIME, company: b.company || CONFIG.BOOK_CO,
+    confirmed_at: b.confirmed_at, came: b.status === 'came', booker: u ? u.name.split(' ')[0] : '', today: todayStr() };
+}
+/** They tapped 🔒 Confirm I'm coming: confirmed in the app, and whoever booked them hears about it (once). */
+function confirmBooking(req) {
+  const b = withLock(() => {
+    delete MEMO.Bookings;
+    const x = bookingByToken(req.t);
+    if (!x.confirmed_at && x.status === 'booked') { x.confirmed_at = nowStr(); x.confirmed_by = 'CONFIRM'; x.updated_at = nowStr(); writeRow('Bookings', x); x._new = true; }
+    return x;
+  });
+  if (b._new) {
+    log(null, 'booking_confirmed', b.candidate_id || '', b.first_name + ' ' + b.last_name + ' · ' + b.slot_date);
+    notify([userById(b.booked_by_id)], '✅ ' + b.first_name + ' confirmed ' + DAYS_LONG[weekday(b.slot_date)] + '\'s presentation',
+      bookingName(b) + ' tapped CONFIRM for ' + longDate(b.slot_date) + ' at ' + (b.slot_time || CONFIG.BOOK_TIME) + '.', 'book');
+  }
+  return { confirmed_at: b.confirmed_at };
+}
+function bookingName(b) { return (b.first_name + ' ' + (b.last_name || '')).trim(); }
 /** New booking, or a booking moved to another day (its messages start again: the new day needs confirming).
  *  rebook_of: they missed one; it stays as a no-show and this is a new booking. */
 function saveBooking(req, u) {
@@ -1998,7 +2030,7 @@ function saveBooking(req, u) {
     if (old && old.status === 'booked') { old.status = 'no_show'; old.updated_at = nowStr(); writeRow('Bookings', old); }
     const b = appendRow('Bookings', {
       id: uid(), created_at: nowStr(), booked_by_id: u.id, booked_by: u.name, first_name: first, last_name: last, mobile: mobile,
-      source: source, notes: notes, slot_date: day, slot_time: CONFIG.BOOK_TIME, company: CONFIG.BOOK_CO, status: 'booked',
+      source: source, notes: notes, slot_date: day, slot_time: CONFIG.BOOK_TIME, company: CONFIG.BOOK_CO, status: 'booked', confirm_token: token().slice(0, 24),
       rebook_of: old ? old.id : '', no_whatsapp: old ? old.no_whatsapp : '', updated_at: nowStr(),
     });
     log(u, old ? 'booking_rebooked' : 'booking', '', first + ' ' + last + ' → ' + day);
@@ -2074,9 +2106,9 @@ function showupFor(we) {
   const list = o => Object.keys(o).map(k => o[k]).sort((a, b) => b.booked - a.booked);
   return { rows: list(by), sources: list(src), booked: rows.length, came: rows.filter(b => b.status === 'came').length };
 }
-/** After 12 weeks a booking keeps who, when and whether they came; the notes from the call go. */
+/** After 12 weeks a booking keeps who, when and whether they came; the notes from the call and their page's link go. */
 function trimOldBookings(before) {
-  readTable('Bookings').forEach(b => { if (b.slot_date && b.slot_date < before && b.notes) { b.notes = ''; writeRow('Bookings', b); } });
+  readTable('Bookings').forEach(b => { if (b.slot_date && b.slot_date < before && (b.notes || b.confirm_token)) { b.notes = ''; b.confirm_token = ''; writeRow('Bookings', b); } });
 }
 
 // ───────────────────────── NEW STARTER ONBOARDING (admins only: Databyte, then the welcome email) ─────────────────────────

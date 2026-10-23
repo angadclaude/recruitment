@@ -1,4 +1,4 @@
-window.APP_VERSION = '0f57a188';
+window.APP_VERSION = '5c6615fa';
 
 (function () {
 'use strict';
@@ -200,6 +200,7 @@ function brandTheme(co) { C.co = coOf(co); setTheme(C.co, true); }
 
 function startCandidate() {
   if (BOOT.mode === 'welcome') return startWelcome();
+  if (BOOT.mode === 'booked') return startBooked();
   const saved = store.get('cand');
   resendPending();
   if (saved && saved.id && saved.date === londonToday()) {
@@ -868,6 +869,68 @@ function renderWelcome(w, keepScroll) {
   warm([office.maps, 'https://www.google.com/maps', gcal, PRE_COACHING[co]]);
 }
 
+// ───── "You're booked in" (booked.html?t=…, the link in the booking confirmation): the day, where, and 🔒 Confirm I'm coming ─────
+function startBooked() {
+  const q = new URLSearchParams(location.search), key = 'bk_' + BOOT.k;
+  // The link carries the first name + day, so the page needs nothing from the server to appear
+  const quick = store.get(key) || (q.get('n') && /^\d{4}-\d{2}-\d{2}$/.test(q.get('d') || '')
+    ? { first_name: q.get('n').slice(0, 40), slot_date: q.get('d'), slot_time: '10:00', company: 'JUSS', confirmed_at: '' } : null);
+  if (quick) { quick.today = londonToday(); renderBooked(quick); }
+  resendPending();
+  const confirming = !!sendq()['bkconfirm_' + BOOT.k];
+  callRetry('bookingInfo', { t: BOOT.k }, null, 3).then(w => {
+    if (confirming && !w.confirmed_at) w.confirmed_at = londonNow();
+    store.set(key, w);
+    if (!quick || quick.first_name !== w.first_name || quick.slot_date !== w.slot_date || !!quick.booker !== !!w.booker) renderBooked(w, !!quick);
+    else if (!!quick.confirmed_at !== !!w.confirmed_at && C.bkCta) C.bkCta(!!w.confirmed_at);
+  }).catch(e => { if (!quick) $app.innerHTML = logos(56) + '<div class="card center"><div class="big-emoji">🔗</div><p>' + h(e.message) + '</p></div>'; });
+}
+function renderBooked(w, keepScroll) {
+  if (!keepScroll) scrollTop();
+  const co = w.company === 'LINK' ? 'LINK' : 'JUSS', brand = co + ' Marketing', office = OFFICES[co], time = w.slot_time || '10:00';
+  brandTheme(co);
+  const days = Math.round((D(w.slot_date) - D(w.today || londonToday())) / 86400000);
+  const when = days > 1 ? 'In ' + days + ' days' : days === 1 ? 'TOMORROW 👀' : days === 0 ? 'TODAY 🔥' : fmt(w.slot_date);
+  const see = days === 0 ? 'today' : days === 1 ? 'tomorrow' : DAYS_LONG[D(w.slot_date).getUTCDay()];
+  const ymd = w.slot_date.replace(/-/g, ''), t0 = time.replace(':', '') + '00', t1 = String(Number(time.slice(0, 2)) + 2).padStart(2, '0') + time.slice(3) + '00';
+  const gcal = 'https://calendar.google.com/calendar/render?action=TEMPLATE&text=' + encodeURIComponent('Appointment Presentation – ' + brand) +
+    '&dates=' + ymd + 'T' + t0 + '/' + ymd + 'T' + t1 + '&ctz=Europe/London&location=' + encodeURIComponent(office.address) +
+    '&details=' + encodeURIComponent('Office wear / smart casual. No documents needed. Arrive 10 minutes early.');
+  const sec = (icon, title) => '<section class="evsec"><div class="evsec-h"><span>' + icon + '</span>' + title + '</div>';
+  $app.innerHTML = '<div class="wl wl-' + co + '">' +
+    '<div class="wl-hero">' + FX + '<img class="wl-logo" src="' + LOGOS[co] + '" alt="' + h(brand) + '">' +
+    '<h1>You\'re booked in, <span class="gname">' + h(w.first_name) + '</span> 🎉</h1><p>Your <b>Appointment Presentation</b> with <b>' + h(brand) + '</b></p>' +
+    '<span class="wl-pill">' + h(when) + '</span></div>' +
+    sec('📅', 'When and where') + '<div class="qcard"><div class="wl-date">' + h(fmtLong(w.slot_date)) + '</div>' +
+    '<div class="wl-time">⏰ ' + h(fmt12(time)) + ' · about 1–2 hours</div><p>📍 ' + h(office.address) + '<br><span class="muted small">2 mins from Slough station · exit from platform 5</span></p>' +
+    '<div class="row"><a class="btn sm" href="' + h(office.maps) + '" target="_blank" rel="noopener">🗺️ Google Maps</a>' +
+    '<a class="btn ghost sm" href="' + h(gcal) + '" target="_blank" rel="noopener">📅 Add to calendar</a></div></div></section>' +
+    sec('✅', 'Good to know') + '<div class="wl-bring"><div><span>👔</span>Office wear / smart casual</div><div><span>📄</span>No documents needed yet</div>' +
+    '<div><span>🚗</span>Parking right outside the main entrance</div><div><span>⏰</span>Arrive 10 minutes early</div></div></section>' +
+    '<p class="center muted small" style="margin:18px 0 110px">Questions? Just reply to the message' + (w.booker ? ' from ' + h(w.booker) : '') + ' 💬</p>' +
+    '<div class="wl-cta" id="cta"></div></div>';
+  const cta = document.getElementById('cta');
+  const drawCta = confirmed => {
+    cta.innerHTML = confirmed
+      ? '<div class="wl-done">✅ You\'re locked in. See you ' + h(see) + ' at ' + h(fmt12(time)) + '! 🔥</div>'
+      : '<button class="btn block evsubmit wl-btn" id="conf">🔒 Confirm I\'m coming</button>';
+    const b = document.getElementById('conf');
+    // Locked in the moment they tap; it reaches the server in the background (and keeps trying with no signal)
+    if (b) b.onclick = () => {
+      const key = 'bk_' + BOOT.k, saved = store.get(key) || w;
+      saved.confirmed_at = londonNow(); store.set(key, saved);
+      drawCta(true); burst();
+      sendSoon('bkconfirm_' + BOOT.k, 'confirmBooking', { t: BOOT.k }, null, ex => {
+        const x = store.get(key); if (x) { x.confirmed_at = ''; store.set(key, x); }
+        drawCta(false); toast('Couldn\'t confirm: ' + ex.message);
+      });
+    };
+  };
+  C.bkCta = drawCta;
+  drawCta(!!w.confirmed_at);
+  warm([office.maps, 'https://www.google.com/maps', gcal]);
+}
+
 function burst() {
   const em = ['🎉', '🔥', '🧡', C.co === 'LINK' ? '🖤' : '💙', '✨', '🙌'];
   for (let i = 0; i < 28; i++) {
@@ -1118,12 +1181,12 @@ function boot() {
     // From the evening-before briefing / the 10:00 "starters to remind" alert (that one opens the send list too)
     S.openRemind = BOOT.cid === 'remind' && isAdmin(); BOOT.cid = '';
     if (isAdmin()) { S.tab = 'academy'; nav('academy', {}, false); } else { nav(S.tab, {}, false); nav('academy', {}, true); }
-  } else if (BOOT.cid === 'bookrem' || BOOT.cid === 'bookmiss') {
-    // From the 18:00 "N to remind for tomorrow" alert (opens the send list) / the 10:30 "N didn't come": Today, with the bookings
-    const rem = BOOT.cid === 'bookrem'; BOOT.cid = ''; S.day = S.me.today; nav('today', {}, false);
+  } else if (BOOT.cid === 'bookrem' || BOOT.cid === 'bookmiss' || BOOT.cid === 'book') {
+    // From the 18:00 "N to remind for tomorrow" alert (opens the send list) / the 10:30 "N didn't come": the Book Appts tab
+    const rem = BOOT.cid === 'bookrem'; BOOT.cid = ''; nav(canBook() ? 'book' : S.tab, {}, false);
     let tries = 0;
     const open = () => {
-      if (S.view !== 'today') return;
+      if (S.view !== 'book') return;
       if (!(S.bookings && S.bookings.at)) { if (tries++ < 40) setTimeout(open, 250); return; }
       const next = bookings().filter(b => b.status === 'booked' && b.slot_date > S.me.today).map(b => b.slot_date).sort()[0];
       if (rem && next) bookRemindSheet(next);
@@ -1170,7 +1233,7 @@ function swVersion() {
 function tick() {
   if (document.visibilityState !== 'visible' || !S.me) return;
   const hr = Number(londonNow().slice(11, 13));
-  const live = S.view === 'today' && S.day === S.me.today && hr >= 7 && hr < 17;
+  const live = (S.view === 'book' || (S.view === 'today' && S.day === S.me.today)) && hr >= 7 && hr < 17;
   if (Date.now() - S.lastPoll >= (live ? 10000 : POLL_MS)) { S.lastPoll = Date.now(); refreshQuiet(); }
   if (outbox().length) flush();
   if (S.swReg && Date.now() - (S.swCheck || 0) > 15 * 60000) { S.swCheck = Date.now(); S.swReg.update().catch(() => {}); }
@@ -1179,7 +1242,7 @@ function refreshQuiet() {
   if (!S.me) return;
   const we = S.view === 'today' ? weekEndingOf(S.day) : S.week;
   prefetchLists();
-  fetchWeek(we).then(() => whenCalm('list', () => { if (['today', 'mine', 'all', 'pay'].indexOf(S.view) >= 0) render(true); })).catch(() => {});
+  fetchWeek(we).then(() => whenCalm('list', () => { if (['today', 'book', 'mine', 'all', 'pay'].indexOf(S.view) >= 0) render(true); })).catch(() => {});
 }
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && S.booted) refreshQuiet(); });
 window.addEventListener('popstate', e => {
@@ -1205,7 +1268,7 @@ function nav(view, params, push) {
 function hist(kind, st) { try { kind === 'push' ? history.pushState(st, '') : history.replaceState(st, ''); S.hist = kind === 'push' ? (S.hist || 0) + 1 : (S.hist || 0); } catch (e) { /* not allowed in this frame */ } }
 function back() { if (S.hist > 0 && history.state && ['cand', 'user', 'slideqr', 'bulletin', 'alerts', 'academy'].indexOf(history.state.v) >= 0) { S.hist--; history.back(); } else nav(S.tab); }
 function go(tab) { nav(tab, {}, false); }
-function titleOf(v) { return { today: 'Today', mine: 'My candidates', all: 'All candidates', pay: 'Appts Attended', team: 'Team', slideqr: 'Slide QR codes', user: 'Team', bulletin: 'Bulletin', alerts: 'Alerts check', chase: 'Chase', academy: 'Day 1' }[v] || ''; }
+function titleOf(v) { return { today: 'Today', mine: 'My candidates', all: 'All candidates', pay: 'Appts Attended', team: 'Team', slideqr: 'Slide QR codes', user: 'Team', bulletin: 'Bulletin', alerts: 'Alerts check', chase: 'Chase', academy: 'Day 1', book: 'Book Appts' }[v] || ''; }
 
 function render(quiet) {
   const v = S.view;
@@ -1215,6 +1278,7 @@ function render(quiet) {
   if (v === 'alerts') return viewAlerts();
   if (v === 'chase') return viewChase(quiet);
   if (v === 'academy') return viewAcademy(quiet);
+  if (v === 'book') return viewBook(quiet);
   if (v === 'bulletin') return viewBulletin();
   ({ today: viewToday, mine: viewMine, all: viewAll, pay: viewPay, team: viewTeam }[v] || viewToday)(quiet);
 }
@@ -1227,6 +1291,7 @@ const ICONS = {
   chase: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
   academy: '<path d="M22 10 12 5 2 10l10 5 10-5z"/><path d="M6 12v5c3 2 9 2 12 0v-5"/><path d="M22 10v6"/>',
   pay: '<path d="M17 7.5A4.5 4.5 0 0 0 9 10v9M6 13.5h8M6 19h12"/>',
+  book: '<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4M12 13.5v5M9.5 16h5"/>',
   team: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17.5" cy="9" r="2.5"/><path d="M16.5 14.6A5 5 0 0 1 21.5 19.5"/>',
   back: '<path d="M15 5l-7 7 7 7"/>',
   phone: '<path d="M5 4h3.5l2 5-2.4 1.6a11 11 0 0 0 5.3 5.3L15 13.5l5 2V19a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/>',
@@ -1238,12 +1303,14 @@ function initials(name) { return String(name || '?').split(' ').filter(String).s
 function tabs() {
   const t = [];
   if (isPresenter()) t.push(['today', 'Today']);
+  if (canBook()) t.push(['book', 'Book Appts']);  // Jess, Rubal, Angad: book after the call, send the details (Angad, 23 Oct)
   if (isBooker()) t.push(['mine', 'Mine']);
   if (isAdmin() || isBooker()) t.push(['chase', 'Chase']);
   if (isAdmin()) t.push(['academy', 'Day 1']);
   if (isAdmin()) t.push(['all', 'All']);
   t.push(['pay', 'Appts Attended']);  // was "Incentive" (Angad, 20 Oct)
-  if (isAdmin() && !isBooker()) t.push(['team', 'Team']);  // an admin who also books: Team is in the menu (7 tabs don't fit a phone)
+  if (isAdmin() && !isBooker() && !canBook()) t.push(['team', 'Team']);  // an admin who also books (or books appointments): Team is in the menu (7 tabs don't fit a phone)
+  if (t.length > 6) t.splice(t.findIndex(x => x[0] === 'mine'), 1);  // still too many: their own candidates move to the menu too
   return t;
 }
 function ensureShell() {
@@ -1279,7 +1346,7 @@ function paint(title, html, quiet, sub) {
   // A background refresh of a list: change only the rows that changed. The rest stay exactly as they are,
   // so a finger aiming at someone still lands on them (rebuilding the whole list swallowed taps on slower phones).
   const key = S.view + '|' + JSON.stringify(S.params || {});
-  const patch = quiet && ['today', 'mine', 'all', 'pay'].indexOf(S.view) >= 0 && paint._key === key;
+  const patch = quiet && ['today', 'book', 'mine', 'all', 'pay'].indexOf(S.view) >= 0 && paint._key === key;
   paint._key = key;
   clearTimeout(paint._t);
   if (patch) { if (paint._html !== html) { const t = document.createElement('div'); t.innerHTML = html; morph(page, t, true); } paint._html = html; return page; }
@@ -1313,7 +1380,7 @@ addEventListener('scroll', () => { const s = window.scrollY > 6; if (s !== paint
 // Pull down at the top of a list to refresh
 const PTR = { y: 0, d: 0, on: false };
 document.addEventListener('touchstart', e => {
-  PTR.on = BOOT.mode === 'staff' && S.booted && window.scrollY <= 0 && ['today', 'mine', 'all', 'pay', 'team'].indexOf(S.view) >= 0 && !e.target.closest('.swipe, input, textarea');
+  PTR.on = BOOT.mode === 'staff' && S.booted && window.scrollY <= 0 && ['today', 'book', 'mine', 'all', 'pay', 'team'].indexOf(S.view) >= 0 && !e.target.closest('.swipe, input, textarea');
   PTR.y = e.touches[0].clientY; PTR.d = 0;
 }, { passive: true });
 document.addEventListener('touchmove', e => {
@@ -1344,14 +1411,16 @@ function toggleMenu() {
   const u = S.me.user;
   m.innerHTML = '<div class="menu-card"><div class="row" style="flex-wrap:nowrap"><span class="av lg co-' + h(coOf(u.company) || 'LINK') + '">' + h(initials(u.name)) + '</span><div style="min-width:0"><b>' + h(u.name) + '</b><div class="small muted" style="overflow:hidden;text-overflow:ellipsis">' + h(u.email) + '</div>' +
     '<div class="small muted"><span class="co ' + h(u.company) + '">' + h(u.company) + '</span> · ' + (isAdmin() ? '<b>Admin</b>' : '<b>BA</b> · ' + h(u.roles.join(', '))) + '</div></div></div>' +
-    (isAdmin() && isBooker() ? '<button class="btn ghost block" id="mTeam" style="margin-top:12px">👥 Team</button>' : '') +
-    '<button class="btn ghost block" id="mRefresh" style="margin-top:' + (isAdmin() && isBooker() ? 8 : 12) + 'px">↻ Refresh now</button>' +
+    (isAdmin() && !tabs().some(t => t[0] === 'team') ? '<button class="btn ghost block" id="mTeam" style="margin-top:12px">👥 Team</button>' : '') +
+    (isBooker() && !tabs().some(t => t[0] === 'mine') ? '<button class="btn ghost block" id="mMine" style="margin-top:8px">📞 My candidates</button>' : '') +
+    '<button class="btn ghost block" id="mRefresh" style="margin-top:8px">↻ Refresh now</button>' +
     '<button class="btn ghost block" id="mLogout" style="margin-top:8px;color:var(--red)">Log out</button>' +
     '<p class="small muted center" style="margin:10px 0 0">App version ' + h(window.APP_VERSION || 'dev') + '<br>Alerts: ' + h(pushStatus()) + '</p></div>';
   m.hidden = false;
   m.onclick = e => { if (e.target === m) m.hidden = true; };
   document.getElementById('mRefresh').onclick = () => { m.hidden = true; pullRefresh(); };
   const mt = document.getElementById('mTeam'); if (mt) mt.onclick = () => { m.hidden = true; nav('team', {}, true); };
+  const mm = document.getElementById('mMine'); if (mm) mm.onclick = () => { m.hidden = true; nav('mine', {}, true); };
   document.getElementById('mLogout').onclick = () => {
     if (outbox().length && !navigator.onLine) { toast('Wait for signal first: you have changes that haven\'t synced'); return; }
     store.del('outbox'); store.del('tok'); store.del('cache'); S.token = ''; S.me = null; S.data = {}; S.users = null; S.chase = null; S.chaseN = 0; S.chaseCarry = 0; S.academy = null; S.d1Old = null; S.d1Pick = null; S.booted = false; S.tab = '';
@@ -1608,7 +1677,6 @@ function viewToday(quiet) {
     body = '<div class="hero">' + FX + top + kpis([[items.length, 'Checked in'], [rated, 'Rated'], [items.filter(c => c.eval_at).length, 'Evaluated'], [toCall, 'To call', toCall > 0]]) + '</div>' +
       (isAdmin() || canThank() ? thanksButton(items) : '') +
       (isAdmin() ? '<div class="bullbtns"><button class="btn" id="bullDaily">📣 ' + (isToday ? 'Today\'s' : DAYS[D(S.day).getUTCDay()]) + ' bulletin</button><button class="btn ghost" id="bullWeek">🏆 Week top 5</button></div>' : '') +
-      bookingsHtml(S.day) +
       (items.length ? '<div class="section-h"><b>In the room</b><span>' + rated + ' of ' + toRate.length + ' rated</span></div>' +
         (isPresenter() ? '<p class="hint">Tap Green, Amber or Red to rate. Rating = they were in the room (that\'s what counts for the recruitment incentive). Left before the end? Tap 🚶 Walk out. Under 18 or no right to work: no rating needed. Tap a name for stars and notes.</p>' : '') +
         (items.some(c => c.limited) ? '<p class="hint">🔒 You see your own candidates in full. Everyone else\'s: name, who booked them and the room rating only.</p>' : '') +
@@ -1616,7 +1684,7 @@ function viewToday(quiet) {
         : empty('📷', 'No check-ins yet. They appear here live as people scan the check-in QR on your first slide.'));
   }
   const page = paint('', body, quiet);
-  bindItems(page); bindBookings(page);
+  bindItems(page);
   const ta = document.getElementById('thanksAll'); if (ta) ta.onclick = thanksSheet;
   [['bullDaily', 'daily'], ['bullWeek', 'weekly']].forEach(b => { const el = document.getElementById(b[0]); if (el) el.onclick = () => nav('bulletin', { day: S.day, kind: b[1] }, true); });
   document.getElementById('dprev').onclick = () => { S.day = addDays(S.day, -1); render(); };
@@ -2509,6 +2577,11 @@ function bookUpsert(b) {
   if (b.status === 'cancelled') { if (i >= 0) l.splice(i, 1); } else if (i >= 0) l[i] = b; else l.push(b);
   saveCache();
 }
+/** Their "You're booked in" page with the CONFIRM button (the link carries their first name + day, so it opens instantly). */
+function bookPage(b) {
+  const base = ((S.me.links && S.me.links.checkin) || '').replace(/checkin\.html.*$/, '');
+  return b.confirm_token && base ? base + 'booked.html?t=' + b.confirm_token + '&n=' + encodeURIComponent(b.first_name) + '&d=' + b.slot_date : '';
+}
 /** "Kind regards, *Jess Grace*, In association with *JUSS Marketing Ltd*": whoever sends it (it's their WhatsApp they reply to). */
 function bookSign(b) { return 'Kind regards,\n*' + S.me.user.name + '*\nIn association with *' + bookCo(b) + ' Marketing Ltd*'; }
 /** The booking confirmation (Angad, 23 Oct): the thank-you's style, no hearts. */
@@ -2524,7 +2597,7 @@ function msgBookConfirm(b) {
     '🚆 By train? Exit Slough station from *platform 5*\n\n' +
     '👔 *Dress code:* office wear / smart casual\n' +
     '📄 *Documents:* none needed yet 🙌\n\n' +
-    '👉 Reply *YES* to lock in your spot ✅\n\n' +
+    (bookPage(b) ? '👇 Tap *CONFIRM* to lock in your spot ✅\n' + bookPage(b) + '\n\n' : '👉 Reply *YES* to lock in your spot ✅\n\n') +
     'Questions before then? Just message me here 💬\n\n' + bookSign(b);
 }
 /** The evening before (or that morning): "Tomorrow's the day!" */
@@ -2538,7 +2611,7 @@ function msgBookRemind(b) {
     '🗺️ ' + OFFICES[co].maps + '\n\n' +
     '⏰ Aim to arrive *10 minutes early*\n' +
     '👔 Office wear / smart casual\n\n' +
-    '👉 Reply *YES* if you’re still coming ✅\n\n' +
+    (b.confirmed_at ? '✅ You’re confirmed. Anything changes, just message me.\n\n' : bookPage(b) ? '👇 Still coming? Tap *CONFIRM* ✅\n' + bookPage(b) + '\n\n' : '👉 Reply *YES* if you’re still coming ✅\n\n') +
     'See you ' + (n > 1 ? 'on ' + day : day) + '! 🔥\n\n' + bookSign(b);
 }
 /** Didn't come: their spot isn't gone, which day suits them? */
@@ -2568,10 +2641,34 @@ document.addEventListener('click', e => {
   if (via === 'sms') b.no_whatsapp = 'TRUE';
   saveCache();
   call('bookingAction', { id: b.id, act: 'sent', kind: kind, via: via }).then(nb => { Object.assign(b, nb); bookUpsert(b); }).catch(ex => toast(ex.message));
-  if (!a.closest('.sheet')) setTimeout(() => { if (S.view === 'today' && !document.querySelector('.sheet-back')) render(true); }, 400);  // after WhatsApp has opened
+  if (!a.closest('.sheet')) setTimeout(() => { if (S.view === 'book' && !document.querySelector('.sheet-back')) render(true); }, 400);  // after WhatsApp has opened
 }, true);
 
-/** Today page (Jess, Rubal, Angad): 📅 Book, who's expected (confirmed? checked in? didn't come?) and what's coming up. */
+// Tap a name (Expected today, Tried calling, Coming up) → its booking. One listener for the whole page, so a background refresh
+// can never leave a name without its tap (Angad, 23 Oct: booked Lucy on the laptop, couldn't open her on the phone).
+document.addEventListener('click', e => {
+  const el = e.target.closest && e.target.closest('[data-bk]'), page = document.getElementById('page');
+  if (!el || !page || !page.contains(el)) return;
+  const inner = e.target.closest('a, button'); if (inner && inner !== el && !inner.matches('[data-bk]')) return;  // its own buttons
+  openBooking(el.dataset.bk);
+});
+/** Open a booking; not on this phone yet (booked on another device a moment ago) → fetch the list first. */
+function openBooking(id) {
+  const show = () => { try { bookSheet(id); } catch (ex) { console.error(ex); toast('Couldn\'t open that booking: ' + ex.message); } };
+  if (bookById(id)) return show();
+  call('bookingList', {}).then(r => { S.bookings = { items: r.items, at: Date.now() }; saveCache(); if (bookById(id)) show(); else toast('That booking has gone. Pull down to refresh.'); })
+    .catch(ex => toast(ex.message));
+}
+/** The Book Appts tab (Jess, Rubal, Angad): book after the call, who's expected today, what's coming up, reminders. */
+function viewBook(quiet) {
+  if (!canBook()) return go(tabs()[0][0]);
+  const d = want(weekEndingOf(S.me.today));  // the week's bundle brings the bookings, and keeps them fresh
+  const has = bookings().length;
+  const page = paint('Book Appts', (d || S.bookings ? bookingsHtml(S.me.today) + (has ? '' : empty('📅', 'Nobody booked yet. After your next call, tap 📅 Book a presentation.')) : skeleton(3)) +
+    '<p class="hint">Booked here = the confirmation, the 18:00 reminder the evening before, "didn\'t come" at ' + h(bookCfg().missed) + ', and check-in knows who booked them. Tap a name for their booking.</p>', quiet);
+  bindBookings(page);
+}
+/** Book Appts (Jess, Rubal, Angad): 📅 Book, who's expected (confirmed? checked in? didn't come?) and what's coming up. */
 function bookingsHtml(day) {
   if (!canBook()) return '';
   const isToday = day === S.me.today, cfg = bookCfg(), all = bookings();
@@ -2593,7 +2690,7 @@ function bookingsHtml(day) {
       const l = next.filter(b => b.slot_date === x).sort((a, b) => bookName(a).localeCompare(bookName(b))), rem = l.filter(b => String(b.remind_at).slice(0, 10) === S.me.today).length;
       return '<div class="trow bkday"><div class="main"><div class="name">' + h(fmtLong(x)) + (bookDaysTo(x) === 1 ? ' · tomorrow' : '') + '</div>' +
         '<div class="sub">' + l.length + ' booked · ' + l.filter(b => b.confirmed_at).length + ' confirmed</div>' +
-        '<div class="bknames">' + l.map(b => '<button class="nm" data-bk="' + h(b.id) + '">' + h(b.first_name) + (b.confirmed_at ? ' ✅' : '') + '</button>').join('') + '</div></div>' +
+        '<div class="bknames">' + l.map(b => '<button class="nm" data-bk="' + h(b.id) + '">' + h(bookName(b)) + (b.confirmed_at ? ' ✅' : '') + '</button>').join('') + '</div></div>' +
         '<button class="btn ghost sm" data-bkrem="' + x + '">📲 Remind' + (rem ? ' · ' + rem + '/' + l.length : '') + '</button></div>';
     }).join('') + '</div>';
   }
@@ -2618,7 +2715,6 @@ function bookRow(b) {
 }
 function bindBookings(root) {
   const nb = root.querySelector('#bookNew'); if (nb) nb.onclick = () => bookForm({});
-  root.querySelectorAll('[data-bk]').forEach(el => { el.onclick = e => { if (e.target.closest('a, button:not([data-bk])')) return; bookSheet(el.dataset.bk); }; });
   root.querySelectorAll('[data-bkyes]').forEach(b => { b.onclick = e => { e.stopPropagation(); bookYes(b.dataset.bkyes, b); }; });
   root.querySelectorAll('[data-bkre]').forEach(b => { b.onclick = e => { e.stopPropagation(); const x = bookById(b.dataset.bkre); if (x) bookForm(x, 'rebook'); }; });
   root.querySelectorAll('[data-bkrem]').forEach(b => { b.onclick = () => bookRemindSheet(b.dataset.bkrem); });
@@ -2628,7 +2724,7 @@ function bookYes(id, btn, then) {
   busy(btn, true, '…');
   call('bookingAction', { id: id, act: 'yes' }).then(b => {
     bookUpsert(b); toast('✅ ' + b.first_name + ' confirmed');
-    if (then) then(b); else if (S.view === 'today' && !document.querySelector('.sheet-back')) render(true);
+    if (then) then(b); else if (S.view === 'book' && !document.querySelector('.sheet-back')) render(true);
   }).catch(e => { busy(btn, false); toast(e.message); });
 }
 function bookSheetOpen(label, html) {
@@ -2638,7 +2734,7 @@ function bookSheetOpen(label, html) {
   back.innerHTML = '<div class="sheet bksheet" role="dialog" aria-label="' + h(label) + '"><div class="grab"></div>' + html + '</div>';
   document.body.appendChild(back);
   document.body.style.overflow = 'hidden';
-  const done = () => { closeSheet(); if (S.view === 'today') render(true); };
+  const done = () => { closeSheet(); if (S.view === 'book') render(true); };
   back.onclick = e => { if (e.target === back) done(); };
   const d = back.querySelector('#bkdone'); if (d) d.onclick = done;
   return back;
@@ -2695,10 +2791,11 @@ function bookSendSheet(b, kind) {
   const back = bookSheetOpen(BOOK_SENT[kind],
     (kind === 'confirm' ? '<div class="flag green" style="margin-bottom:10px">✅ ' + h(bookName(b)) + ' is booked · ' + h(fmtOrd(b.slot_date)) + ', ' + h(fmt12(b.slot_time || bookCfg().time)) + '</div>' : '') +
     '<div class="sheet-h"><div><div class="label muted">' + h(bookName(b)) + ' · ' + h(b.mobile) + '</div><div class="display">' + { confirm: 'Send the confirmation', remind: 'Send the reminder', missed: 'Sorry we missed you' }[kind] + '</div></div></div>' +
-    '<div class="waprev">' + waHtml(msg) + '</div>' +
-    link(sms ? 'sms' : 'whatsapp', sms ? '📱 Send by text' : '💬 Send on WhatsApp', 'btn ' + (sms ? 'sms' : 'wa') + ' block') +
-    '<div class="altsend"><span>' + (sms ? '📵 Not on WhatsApp' : 'Not on WhatsApp?') + '</span>' + link(sms ? 'whatsapp' : 'sms', sms ? '💬 WhatsApp' : '📱 Text') + '</div>' +
-    '<p class="hint center" id="bksent">' + (b[kind + '_at'] ? '✓ Sent ' + h(fmtTs(b[kind + '_at'])) + ' by ' + h(String(b[kind + '_by']).split(' ')[0]) + '. Send it again if you need to.' : 'WhatsApp opens with this ready, signed by you. Tap send and come back.') + '</p>' +
+    // The two ways to send first, then what they'll get: on a phone the buttons are on screen without scrolling (Angad, 23 Oct)
+    '<div class="bksend2">' + (sms ? link('sms', '📱 Text', 'btn sms') + link('whatsapp', '💬 WhatsApp', 'btn wa') : link('whatsapp', '💬 WhatsApp', 'btn wa') + link('sms', '📱 Text', 'btn sms')) + '</div>' +
+    '<p class="hint center" id="bksent">' + (b[kind + '_at'] ? '✓ Sent ' + h(fmtTs(b[kind + '_at'])) + ' by ' + h(String(b[kind + '_by']).split(' ')[0]) + ' (' + h(VIA_LABEL[b[kind + '_via']] || 'WhatsApp') + '). Send it again if you need to.'
+      : 'Opens with this ready, signed by you. Not on WhatsApp? 📱 Text sends it from your phone\'s Messages. Tap send and come back.') + '</p>' +
+    '<div class="label muted" style="margin:10px 2px 6px">What they\'ll get</div><div class="waprev">' + waHtml(msg) + '</div>' +
     '<button class="btn ghost block" id="bkdone">Done</button>');
   back.querySelectorAll('[data-bks]').forEach(a => a.addEventListener('click', () => setTimeout(() => {
     const s = back.querySelector('#bksent'); if (s) s.innerHTML = '<span class="pill green">✓ Sent by you · ' + h(londonNow().slice(11, 16)) + '</span>';
@@ -2736,8 +2833,8 @@ function bookSheet(id) {
       '<div>🙋 Booked by ' + h(b.booked_by) + ' · ' + h(fmtTs(b.created_at)) + ' · ' + h(b.source) + '</div>' +
       (b.notes ? '<div>📝 ' + h(b.notes) + '</div>' : '') +
       sentLine('confirm') + sentLine('remind') + sentLine('missed') +
-      (b.confirmed_at ? '<div>✅ Replied YES · ' + h(fmtTs(b.confirmed_at)) + (b.confirmed_by ? ' · ' + h(String(b.confirmed_by).split(' ')[0]) : '') + '</div>' : '') + '</div>' +
-    (open ? '<button class="btn wa block" id="bkc">💬 ' + (b.confirm_at ? 'Send the confirmation again' : 'Send the confirmation') + '</button>' +
+      (b.confirmed_at ? '<div>✅ ' + (b.confirmed_by === 'CONFIRM' ? 'Tapped CONFIRM · ' + h(fmtTs(b.confirmed_at)) : 'Replied YES · ' + h(fmtTs(b.confirmed_at)) + (b.confirmed_by ? ' · ' + h(String(b.confirmed_by).split(' ')[0]) : '')) + '</div>' : '') + '</div>' +
+    (open ? '<button class="btn wa block" id="bkc">💬 ' + (b.confirm_at ? 'Send the confirmation again' : 'Send the confirmation') + ' · WhatsApp or 📱 Text</button>' +
       '<button class="btn ghost block" id="bkr" style="margin-top:8px">📲 Send a reminder</button>' +
       (b.confirmed_at ? '' : '<button class="btn ghost block" id="bky" style="margin-top:8px">👍 They replied Yes</button>') +
       '<button class="btn ghost block" id="bke" style="margin-top:8px">📅 Change the day</button>' : '') +
@@ -2756,7 +2853,7 @@ function bookSheet(id) {
   on('#bkx', e => {
     if (!window.confirm('Cancel ' + bookName(b) + '\'s presentation on ' + fmtLong(b.slot_date) + '?')) return;
     busy(e.currentTarget, true, 'Cancelling…');
-    call('bookingAction', { id: b.id, act: 'cancel' }).then(nb => { bookUpsert(nb); closeSheet(); toast('Booking cancelled'); if (S.view === 'today') render(true); })
+    call('bookingAction', { id: b.id, act: 'cancel' }).then(nb => { bookUpsert(nb); closeSheet(); toast('Booking cancelled'); if (S.view === 'book') render(true); })
       .catch(ex => { busy(e.currentTarget, false); toast(ex.message); });
   });
 }
@@ -3405,6 +3502,19 @@ window.addEventListener('online', () => flush());
 
 function brandOf(c) { return brandCo(c) === 'JUSS' ? 'JUSS Marketing' : 'LINK Marketing'; }
 function waUrl(mobile, text) { return 'https://wa.me/44' + String(mobile).slice(1) + '?text=' + encodeURIComponent(text); }
+/** A laptop or desktop computer: not a phone or tablet, no touch screen. */
+const IS_DESKTOP = !/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) && !(navigator.maxTouchPoints > 0);
+// WhatsApp on a computer (the Windows / Mac app) turns the emojis in a pre-filled message into "�" (Angad, 23 Oct: Jake's
+// confirmation, sent from the laptop). Pasted, they arrive fine. So on a computer a WhatsApp button copies the message and
+// opens the chat empty: paste it in (Ctrl+V). On a phone nothing changes.
+document.addEventListener('click', e => {
+  if (!IS_DESKTOP) return;
+  const a = e.target.closest && e.target.closest('a[href^="https://wa.me/"]'); if (!a) return;
+  const full = a.getAttribute('href'), m = /^(https:\/\/wa\.me\/[^?]*)\?text=(.*)$/.exec(full); if (!m) return;
+  copyText(decodeURIComponent(m[2]), 'the message: paste it into WhatsApp (Ctrl+V)');
+  a.setAttribute('href', m[1]);
+  setTimeout(() => a.setAttribute('href', full), 1500);  // the button keeps its message for next time
+}, true);
 // ───── Not on WhatsApp: the same message by text (from the sender's own phone) or email ─────
 /** WhatsApp's *bold* stars would show as stars in a text or email. */
 function plainMsg(text) { return String(text).replace(/\*([^*\n]+)\*/g, '$1'); }
