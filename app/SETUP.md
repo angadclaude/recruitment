@@ -129,6 +129,22 @@ Put the two QR codes on the presentation once. They never change:
 | **10:00 on an Academy day:** "🎓 Day 1 today: 4 starters to remind" → opens the send list | Jess (LINK starters), Rubal (JUSS) |
 | Sat 14:00: "🔴 2 outcomes LATE (due Fri 18:00)" | bookers who missed the deadline |
 | Mon 09:00: recruitment incentive report | admins |
+| **18:00 the evening before a presentation** (Sunday for Monday's): "📲 2 to remind for tomorrow · Sam ✅, Ruby ⏳" → opens the send list | whoever booked them (Jess, Rubal, Angad) |
+| **10:30 on the day:** "😕 1 didn't come today" → Today, with "Sorry we missed you" + Rebook on their row | whoever booked them |
+
+## 📅 Booking a presentation after the call (Jess, Rubal, Angad)
+Applicants from Teamtailor are called by **Jess, Rubal or Angad** (`BOOK_TEAM` in `Code.gs`) and booked into a **10:00 presentation, Monday to Friday**. Everyone booked this way is **JUSS Marketing's** (`BOOK_CO`): that's where every CV applies.
+
+1. **After the call:** Today → **📅 Book a presentation** → first name, surname, mobile, the day (the next 5 presentation days, or *Later date…*), where they applied (Teamtailor, Indeed, Referral, Other) and any notes for the presenter → **Next**.
+2. **Send the confirmation:** you see exactly what they'll get. **💬 Send on WhatsApp** opens WhatsApp with it ready, signed *"Kind regards, <your name>, In association with JUSS Marketing Ltd"*. Not on WhatsApp? **📱 Text**. When they reply YES, tap **👍 They replied Yes**.
+3. **The evening before (18:00):** you get *"📲 N to remind for tomorrow"*. Tap it: the send list opens. One tap each (*"Tomorrow's the day!"*). You can also send reminders any time from **📅 Coming up → 📲 Remind**.
+4. **On the day:** **📅 Expected today** shows who's booked, who confirmed and who has checked in. At check-in their mobile finds the booking (*"✓ Found your booking: today 10:00 AM, booked by Jess Grace"*), so the right person is credited even if they pick someone else, and the presenter sees your notes (*"📝 From the call: …"*).
+5. **Didn't come (10:30):** their row turns red with **💬 Sorry we missed you** and **📅 Rebook**. Rebook makes a new booking; the missed one stays a no-show.
+6. **Tap any name** for the booking: mobile, who booked them, every message sent (who, when, how), **Change the day**, or **Cancel this booking**.
+
+**Show-up** (admins, Appts Attended): booked vs came this week, by who booked them and by where they applied. Today's count starts at 10:30. Cancelled bookings are left out.
+
+**GDPR:** a booking's notes go after 12 weeks; the whole booking is deleted after 6 months, like everything else.
 
 ## 🔔 Chase tab: nobody drops out of the pipeline
 A tab in the bottom bar for admins and bookers. The red number on it shows how many people are at risk right now. Someone is on it if, in the last 2 weeks (`CHASE_DAYS` in `Code.gs`):

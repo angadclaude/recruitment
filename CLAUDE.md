@@ -34,6 +34,7 @@ The recruitment app for **LINK Marketing** and **JUSS Marketing** (Angad runs bo
      - `dev/speed.js`: must print ALL INSTANT.
      - `dev/room.js`: busy room, 20 check-ins; `CPU=10` for a slow phone.
      - `dev/move-test.js`: address moves.
+     - `dev/book.js`: booking a presentation after the call (both back ends, 49 checks).
    - **Needs:** Node 22+ and Playwright with Chromium (`npm i -g playwright && npx playwright install chromium`). `pdftotext` is optional.
    - **On Angad's PC (PowerShell):** Playwright is installed in `%LOCALAPPDATA%\jl-recruitment-tools`, so first run `$env:NODE_PATH = "$env:LOCALAPPDATA\jl-recruitment-tools\node_modules"`. Run the harnesses one at a time: with `speed.js` running alongside, an e2e step (Chase → Nudge all) once timed out. Alone, e2e passes 379/379 on UK time and on UTC. Git is at `%LOCALAPPDATA%\Programs\Git\cmd\git.exe` (not on PATH in older shells). This clone has `core.autocrlf=false`: keep files LF, or the build's version hash changes. `private/` (ignored locally) holds files that must never go in this public repo.
    - **Test browser clocks** follow the fake server clock (`setTime`), so tests don't depend on today's real date.
@@ -102,6 +103,9 @@ What was done:
 4. **Team message** (short, WhatsApp-style): open the new link (still logged in) → **Turn on alerts** → add it to the home screen again and delete the old icon.
 
 Old links keep working through the forward, so nothing has to be reprinted.
+
+## Done: booking a presentation after the call (23 Oct 2026)
+Jess, Rubal and Angad (`CONFIG.BOOK_TEAM`) book Teamtailor applicants into a Mon–Fri 10:00 presentation from Today → **📅 Book a presentation**. Data: the **Bookings** tab (made by itself the first time it's needed, `newTab`). The app writes three WhatsApp messages in the thank-you's style, no hearts, signed by the sender, "In association with JUSS Marketing Ltd" (`msgBookConfirm`, `msgBookRemind`, `msgBookMissed` in `JS.html`; Angad approved the wording). Alerts: 18:00 the evening before (`maybeBookingReminders`, `?c=bookrem` opens the send list) and 10:30 on the day (`maybeMissedBookings`). Check-in matches the booking by mobile (`bookingFor`): the booking's booker wins, `brand` = JUSS, `booking_note` shows to the presenter. Show-up card on Appts Attended (admins, `showupFor`). The office robot (`office-texting` branch) is on hold.
 
 ## Open items (ask Angad when relevant)
 - Should Fiza (`recruitment@jussmarketing.co.uk`) get the new-starter / 12:00 / 10:00 alerts that Jess and Rubal get?

@@ -35,6 +35,13 @@ const CONFIG = {
   ROUNDUP_TIME: '15:00',          // Friday: week roundup to each booker + a team roundup to admins
   TEAM_ROUNDUP: true,             // false = admins don't get the Friday team roundup
   CHASE_DAYS: 14,                 // Chase tab: appointments and no-shows from the last 2 weeks stay on it until they're dealt with
+  // Booking a presentation straight after the call (Angad, 23 Oct): these three book applicants (Teamtailor CVs) from the app,
+  // which writes the confirmation, the evening-before reminder and "sorry we missed you", and check-in finds the booking.
+  BOOK_TEAM: ['angad@linkmarketing.org.uk', 'jess@linkmarketing.org.uk', 'rubal@jussmarketing.co.uk'],
+  BOOK_CO: 'JUSS',                // every applicant applies to JUSS Marketing, whoever books them
+  BOOK_TIME: '10:00',             // presentations: Mon–Fri at 10:00
+  BOOK_REMIND_TIME: '18:00',      // the evening before (Sunday for Monday's): whoever booked them gets "N to remind for tomorrow"
+  BOOK_MISSED_TIME: '10:30',      // on the day: anyone booked who hasn't checked in by now "didn't come" (and their booker is told)
   EMAIL_ALERTS: false,            // true = also email every alert. Push is used when OneSignal keys are set.
   SESSION_DAYS: 30,               // staff stay logged in for this long
   SHEET_ID: '',                   // the data Sheet; only needed if this script isn't opened from the Sheet itself
@@ -125,7 +132,14 @@ const SHEETS = {
     'offer_by', 'offer_via', 'offer_co', 'thanks_via', 'thanks_co',  // the BA Academy Day 1 details / thank-you: who sent it, how (whatsapp / sms / email), as which company
     'outcome_log',  // every call outcome logged, oldest first: [{at, by, o: outcome, d: Day 1 date, cb: call back at, late: 1, n: notes}]
     'callback_at', 'callback_by_id', 'callback_nudged',  // "Thinking it over": when they asked to be called back, who logged it (gets the reminder), reminder sent for
+    'booking_id', 'booking_note',  // booked from the app after a call (Bookings tab): which booking, and the notes for the presenter
   ],
+  // Presentations booked after a call. status: booked · came (checked in) · no_show (rebooked after missing it) · cancelled.
+  // Each message sent (confirmation, reminder, "sorry we missed you"): when, by whom, how.
+  Bookings: ['id', 'created_at', 'booked_by_id', 'booked_by', 'first_name', 'last_name', 'mobile', 'source', 'notes',
+    'slot_date', 'slot_time', 'company', 'status', 'rebook_of', 'no_whatsapp',
+    'confirm_at', 'confirm_by', 'confirm_via', 'confirmed_at', 'confirmed_by', 'remind_at', 'remind_by', 'remind_via',
+    'missed_at', 'missed_by', 'missed_via', 'candidate_id', 'came_at', 'updated_at'],
   History: ['attended_date', 'full_name', 'mobile', 'email', 'booker_raw', 'presenter_raw'],
   Codes: ['email', 'code_hash', 'expires', 'attempts'],
   Sessions: ['token', 'user_id', 'expires'],
@@ -302,7 +316,18 @@ function ss() {
   const id = PropertiesService.getScriptProperties().getProperty('SS_ID');
   return (MEMO._ss = id ? SpreadsheetApp.openById(id) : SpreadsheetApp.getActive());
 }
-function sheet(name) { return ss().getSheetByName(name); }
+function sheet(name) { return ss().getSheetByName(name) || newTab(name); }
+/** A tab a new version added (Bookings, 23 Oct) is made the first time it's needed, so nothing has to be run by hand. */
+function newTab(name) {
+  const cols = SHEETS[name];
+  if (!cols) return null;
+  const sh = ss().insertSheet(name);
+  ensureCols(sh, cols.length, name);
+  sh.getRange(1, 1, 1, cols.length).setValues([cols]).setFontWeight('bold');
+  sh.getRange(1, 1, sh.getMaxRows(), cols.length).setNumberFormat('@');
+  sh.setFrozenRows(1);
+  return sh;
+}
 
 let MEMO = {};  // sheet reads cached for the length of one request
 function readTable(name, retried) {
@@ -706,6 +731,10 @@ function checkin(req) {
   // Typed rather than picked ("Daniel Thompson", "Skye Promotions", "Hasini"): credit the booker it clearly means
   const auto = !booker && f.booker_typed ? matchBooker(f.booker_typed) : null;
   if (auto) booker = auto;
+  // Booked from the app after a call: the booking says who booked them (whoever they picked) and that they're JUSS's
+  const bk = bookingFor(mobile, today), bkBy = bk ? userById(bk.booked_by_id) : null;
+  const picked = booker && bkBy && booker.id !== bkBy.id ? booker.name : '';
+  if (bkBy) booker = bkBy;
   // Repeat check (last 6 months + old form history) before taking the lock: those rows don't change today.
   const rep = findRepeat(readTable('Candidates'), mobile, email, today);
 
@@ -724,12 +753,18 @@ function checkin(req) {
       visa_expiry: rtwLevel(f.rtw) === 'visa' ? String(f.visa_expiry || '') : '',
       privacy_ok: 'TRUE',
       repeat_of: rep ? rep.ref : '', repeat_info: rep ? rep.info : '', repeat_block: rep && rep.block ? 'TRUE' : '',
+      brand: bk ? bk.company : '', booking_id: bk ? bk.id : '', booking_note: bk ? bk.notes : '',
     };
     appendRow('Candidates', c);
+    if (bk) {  // the booking: they came (read fresh, inside the lock)
+      const r = rowOfId('Bookings', bk.id), b = r ? readRow('Bookings', r) : null;
+      if (b && b.status === 'booked') { b.status = 'came'; b.candidate_id = c.id; b.came_at = c.created_at; b.updated_at = c.created_at; writeRow('Bookings', b); }
+    }
     return { c: c, isNew: true };
   });
   if (res.isNew) log(null, 'checkin', res.c.id, name);
-  if (res.isNew && auto) log(null, 'auto_booker', res.c.id, '"' + res.c.booker_typed + '" → ' + auto.name);
+  if (res.isNew && auto && !bk) log(null, 'auto_booker', res.c.id, '"' + res.c.booker_typed + '" → ' + auto.name);
+  if (res.isNew && bk) log(null, 'booking_came', res.c.id, 'booked by ' + bk.booked_by + ' for ' + bk.slot_date + (picked ? ' (they picked ' + picked + ')' : ''));
   const nq = nonQualifier(res.c);
   if (res.isNew && nq) {
     // Straight to Jess + Rubal and the booker, so someone speaks to them before they leave
@@ -891,7 +926,7 @@ function fullAccess(u, c) { return isAdmin(u) || c.booker_id === u.id; }
 /** A presenter's view of someone else's candidate: only what's needed to rate the room, and who booked them (Angad, 17 Oct).
  *  No evaluation answers, outcome, contact details or eligibility. */
 const ROOM_FIELDS = ['id', 'created_at', 'attended_date', 'week_ending', 'full_name', 'company', 'booker_name', 'booker_typed', 'in_room', 'rag', 'stars', 'tags', 'notes',
-  'presenter_id', 'presenter_name', 'notes_at', 'p_why_sales', 'p_why_sales_note', 'p_interesting'];
+  'presenter_id', 'presenter_name', 'notes_at', 'p_why_sales', 'p_why_sales_note', 'p_interesting', 'booking_note'];
 function roomShape(c) {
   const o = { limited: true, flags: [], first_name: c.full_name.split(' ')[0], eval_at: c.eval_at ? 'yes' : '' };  // eval_at: for the day's count only
   ROOM_FIELDS.forEach(k => { o[k] = c[k]; });
@@ -938,6 +973,8 @@ function me(req, u) {
     thanksTeam: thanksTeam(),
     recruitTeam: recruitTeam(),
     welcomeFrom: isAdmin(u) ? welcomeFromInfo(u) : null,
+    bookTeam: bookTeam(),
+    book: { time: CONFIG.BOOK_TIME, co: CONFIG.BOOK_CO, missed: CONFIG.BOOK_MISSED_TIME, sources: BOOK_SOURCES },
   };
 }
 
@@ -960,6 +997,7 @@ function bundle(req, u) {
   const out = { weekEnding: we, items: listWeek({ weekEnding: we }, u).items, pay: payReport({ weekEnding: we }, u) };
   if (req.withMe) out.me = me(req, u);
   if (req.withUsers && isAdmin(u)) out.users = listUsers(req, u).users;
+  if (canBook(u)) out.bookings = bookingList(req, u).items;  // Jess, Rubal, Angad: who's booked for the presentations
   // The number on the Chase tab: this week's + carried over from earlier weeks ("3+8")
   const cw = weekEnding(todayStr()), now = chaseNow(u);
   out.chase = now.length;
@@ -1226,6 +1264,7 @@ function payReport(req, u) {
   return {
     weekEnding: we, deadline: outcomeDeadline(addDays(we, -6)),
     target: CONFIG.PAY_TARGET, rows: list, unassigned: isAdmin(u) ? unassigned : [],
+    showup: isAdmin(u) ? showupFor(we) : null,
   };
 }
 
@@ -1400,7 +1439,7 @@ function deleteUser(req, u) {
 const PUBLIC_ACTIONS = {
   publicConfig: publicConfig, checkin: checkin, candidateStatus: candidateStatus,
   resumeByMobile: resumeByMobile, submitEval: submitEval, myEval: myEval, requestCode: requestCode, verifyCode: verifyCode,
-  hubLogin: hubLogin, loginInfo: loginInfo,
+  hubLogin: hubLogin, loginInfo: loginInfo, bookingByMobile: bookingByMobile,
   welcomeInfo: welcomeInfo, confirmAcademy: confirmAcademy,
 };
 const STAFF_ACTIONS = {
@@ -1411,6 +1450,7 @@ const STAFF_ACTIONS = {
   alertsCheck: alertsCheck, testAlert: testAlert, sendSetupEmails: sendSetupEmails, adminCode: adminCode,
   chaseOutcomes: chaseOutcomes, chaseList: chaseList, academyList: academyList, markDay1: markDay1, markConfirmed: markConfirmed,
   onboardStep: onboardStep, onboardPreview: onboardPreview, onboardSend: onboardSend, setBrand: setBrand,
+  saveBooking: saveBooking, bookingAction: bookingAction, bookingList: bookingList,
 };
 
 // ───────────────────────── LINKS ─────────────────────────
@@ -1616,6 +1656,8 @@ function keepWarm() {
   try { maybeCallbackReminders(); } catch (e) { console.error(e); }
   maybeAcademyBriefing();
   maybeDay1Reminder();
+  try { maybeBookingReminders(); } catch (e) { console.error(e); }
+  try { maybeMissedBookings(); } catch (e) { console.error(e); }
 }
 
 /** Every day at THANKS_TIME: Jess / Rubal get "N thank-you messages to send" for today's appointments not thanked yet.
@@ -1891,6 +1933,152 @@ function maybeDay1Reminder() {
       (not.length ? '\n⏳ Not confirmed yet: ' + firstNames(not) + '.' : '') + '\nTap to send the reminders in one go.', 'remind');
   });
 }
+// ───────────────────────── BOOKING A PRESENTATION, straight after the call (Angad, 23 Oct) ─────────────────────────
+// Jess, Rubal and Angad call the applicants (Teamtailor CVs, all JUSS), book them into a 10:00 presentation in the app, and send
+// the confirmation from their own WhatsApp. The evening before, whoever booked them gets "N to remind for tomorrow"; anyone who
+// hasn't checked in by 10:30 "didn't come" (a "sorry we missed you" + rebook). At check-in their mobile finds the booking.
+const BOOK_SOURCES = ['Teamtailor', 'Indeed', 'Referral', 'Other'];
+function bookTeam() {
+  const emails = (CONFIG.BOOK_TEAM || []).map(e => String(e).toLowerCase());
+  return usersAll().filter(x => truthy(x.active) && emails.indexOf(String(x.email).toLowerCase()) >= 0).map(x => ({ id: x.id, name: x.name }));
+}
+function canBook(u) { return !!u && bookTeam().some(t => t.id === u.id); }
+function bookOut(b) { const o = Object.assign({}, b); delete o._row; return o; }
+function getBooking(id) {
+  const r = rowOfId('Bookings', id);
+  if (!r) throw new Error('Booking not found');
+  return readRow('Bookings', r);
+}
+/** Bookings from a week ago onwards (cancelled ones left off): the Today page's "Expected today", "Coming up" and "Didn't come". */
+function bookingList(req, u) {
+  if (!canBook(u)) return { items: [] };
+  const from = addDays(todayStr(), -7);
+  return { items: readTable('Bookings').filter(b => b.status !== 'cancelled' && b.slot_date >= from).map(bookOut) };
+}
+/** The open booking a check-in on this mobile belongs to: the one nearest today (they may come on another day than booked). */
+function bookingFor(mobile, today) {
+  const near = b => Math.abs(daysBetween(today, b.slot_date));
+  return readTable('Bookings').filter(b => b.status === 'booked' && b.mobile === mobile && b.slot_date >= addDays(today, -14) && b.slot_date <= addDays(today, 60))
+    .sort((a, b) => near(a) - near(b) || a.slot_date.localeCompare(b.slot_date))[0] || null;
+}
+/** Check-in page: their mobile → "Found your booking: today 10:00, booked by Jess Grace" (who booked them, nothing about them). */
+function bookingByMobile(req) {
+  const m = normMobile(req.mobile), today = todayStr();
+  const b = m ? readTable('Bookings').filter(x => x.status === 'booked' && x.mobile === m && x.slot_date === today)[0] : null;
+  const u = b ? userById(b.booked_by_id) : null;
+  return b && u ? { found: true, booker_id: u.id, booker_name: u.name, booker_company: u.company, company: b.company, time: b.slot_time } : { found: false };
+}
+/** New booking, or a booking moved to another day (its messages start again: the new day needs confirming).
+ *  rebook_of: they missed one; it stays as a no-show and this is a new booking. */
+function saveBooking(req, u) {
+  if (!canBook(u)) throw new Error('Presentations are booked by ' + (orList(bookTeam().map(t => t.name.split(' ')[0])) || 'the booking team') + '.');
+  const f = req.booking || {}, today = todayStr();
+  const first = cleanName(f.first_name), last = cleanName(f.last_name), mobile = normMobile(f.mobile), day = String(f.slot_date || '');
+  if (!first) throw new Error('Add their first name.');
+  if (!mobile) throw new Error('Add a valid UK mobile (07…).');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day < today) throw new Error('Pick the day of their presentation.');
+  if (weekday(day) === 0 || weekday(day) === 6) throw new Error('Presentations are Monday to Friday.');
+  if (day > addDays(today, 60)) throw new Error('That\'s more than 2 months away.');
+  const source = BOOK_SOURCES.indexOf(f.source) >= 0 ? f.source : BOOK_SOURCES[0];
+  const notes = String(f.notes || '').trim().slice(0, 300);
+  return withLock(() => {
+    if (f.id) {
+      const b = getBooking(f.id);
+      if (b.status !== 'booked') throw new Error(b.status === 'came' ? 'They\'ve already checked in.' : 'This booking was cancelled.');
+      const moved = b.slot_date !== day;
+      Object.assign(b, { first_name: first, last_name: last, mobile: mobile, source: source, notes: notes, slot_date: day, updated_at: nowStr() });
+      if (moved) ['confirm_at', 'confirm_by', 'confirm_via', 'confirmed_at', 'confirmed_by', 'remind_at', 'remind_by', 'remind_via', 'missed_at', 'missed_by', 'missed_via'].forEach(k => { b[k] = ''; });
+      writeRow('Bookings', b);
+      log(u, moved ? 'booking_moved' : 'booking_edited', '', first + ' ' + last + ' → ' + day);
+      return bookOut(b);
+    }
+    const open = readTable('Bookings').filter(x => x.status === 'booked' && x.mobile === mobile && x.slot_date >= today && x.id !== f.rebook_of)[0];
+    if (open) throw new Error('Already booked for ' + longDate(open.slot_date) + ' (by ' + open.booked_by.split(' ')[0] + '). Open their booking to change the day.');
+    const old = f.rebook_of ? getBooking(f.rebook_of) : null;
+    if (old && old.status === 'booked') { old.status = 'no_show'; old.updated_at = nowStr(); writeRow('Bookings', old); }
+    const b = appendRow('Bookings', {
+      id: uid(), created_at: nowStr(), booked_by_id: u.id, booked_by: u.name, first_name: first, last_name: last, mobile: mobile,
+      source: source, notes: notes, slot_date: day, slot_time: CONFIG.BOOK_TIME, company: CONFIG.BOOK_CO, status: 'booked',
+      rebook_of: old ? old.id : '', no_whatsapp: old ? old.no_whatsapp : '', updated_at: nowStr(),
+    });
+    log(u, old ? 'booking_rebooked' : 'booking', '', first + ' ' + last + ' → ' + day);
+    return bookOut(b);
+  });
+}
+/** act: sent (kind confirm · remind · missed, via whatsapp · sms) · yes (they replied YES) · cancel. */
+function bookingAction(req, u) {
+  if (!canBook(u)) throw new Error('Only the booking team can do that.');
+  const via = req.via === 'sms' ? 'sms' : 'whatsapp';
+  if (['sent', 'yes', 'cancel'].indexOf(req.act) < 0 || (req.act === 'sent' && ['confirm', 'remind', 'missed'].indexOf(req.kind) < 0)) throw new Error('Unknown action');
+  return withLock(() => {
+    const b = getBooking(req.id);
+    if (req.act === 'sent') {
+      b[req.kind + '_at'] = nowStr(); b[req.kind + '_by'] = u.name; b[req.kind + '_via'] = via;
+      if (via === 'sms') b.no_whatsapp = 'TRUE';  // not on WhatsApp: their next message goes by text too
+    }
+    if (req.act === 'yes' && !b.confirmed_at) { b.confirmed_at = nowStr(); b.confirmed_by = u.name; }
+    if (req.act === 'cancel') { if (b.status !== 'booked') throw new Error('Only a booking still to come can be cancelled.'); b.status = 'cancelled'; }
+    b.updated_at = nowStr();
+    writeRow('Bookings', b);
+    log(u, 'booking_' + (req.act === 'sent' ? via + '_' + req.kind : req.act), b.candidate_id || '', b.first_name + ' ' + b.last_name + ' · ' + b.slot_date);
+    return bookOut(b);
+  });
+}
+/** BOOK_REMIND_TIME the evening before (Sunday for Monday's): whoever booked them gets "📲 N to remind for tomorrow". */
+function maybeBookingReminders() {
+  const now = nowStr(), today = now.slice(0, 10), hm = now.slice(11, 16);
+  if (hm < CONFIG.BOOK_REMIND_TIME || hm > '21:59') return;
+  const p = PropertiesService.getScriptProperties();
+  if (p.getProperty('BOOK_REMINDED') === today) return;
+  p.setProperty('BOOK_REMINDED', today);  // claim it first so an overlapping run can't send twice
+  const tomorrow = addDays(today, 1);
+  const rows = readTable('Bookings').filter(b => b.status === 'booked' && b.slot_date === tomorrow && String(b.remind_at).slice(0, 10) !== today);
+  const by = {};
+  rows.forEach(b => { (by[b.booked_by_id] = by[b.booked_by_id] || []).push(b); });
+  Object.keys(by).forEach(id => {
+    const list = by[id];
+    notify([userById(id)], '📲 ' + list.length + ' to remind for tomorrow', DAYS_LONG[weekday(tomorrow)] + '\'s ' + CONFIG.BOOK_TIME + ' presentation: ' +
+      list.map(b => b.first_name + (b.confirmed_at ? ' ✅' : ' ⏳')).join(', ') + '. Tap to send the reminders, signed by you.', 'bookrem');
+  });
+}
+/** BOOK_MISSED_TIME on the day: whoever booked them hears who didn't come, with a "sorry we missed you" to send. */
+function maybeMissedBookings() {
+  const now = nowStr(), today = now.slice(0, 10), hm = now.slice(11, 16);
+  if (hm < CONFIG.BOOK_MISSED_TIME || hm > '16:59') return;
+  const p = PropertiesService.getScriptProperties();
+  if (p.getProperty('BOOK_MISSED') === today) return;
+  p.setProperty('BOOK_MISSED', today);
+  const rows = readTable('Bookings').filter(b => b.status === 'booked' && b.slot_date === today);
+  const by = {};
+  rows.forEach(b => { (by[b.booked_by_id] = by[b.booked_by_id] || []).push(b); });
+  Object.keys(by).forEach(id => {
+    const list = by[id];
+    notify([userById(id)], '😕 ' + list.length + ' didn\'t come today', firstNames(list.map(b => ({ full_name: b.first_name })), 6) +
+      ' didn\'t check in for the ' + CONFIG.BOOK_TIME + ' presentation. Tap to send "sorry we missed you" and rebook them.', 'bookmiss');
+  });
+}
+/** Show-up for the week (admins, Appts Attended): booked vs came, by who booked them and where they applied.
+ *  Today's only count once BOOK_MISSED_TIME has passed (before that, the ones still to come aren't no-shows). */
+function showupFor(we) {
+  const mon = addDays(we, -6), fri = addDays(we, -2), now = nowStr(), today = now.slice(0, 10), past = now.slice(11, 16) >= CONFIG.BOOK_MISSED_TIME;
+  const rows = readTable('Bookings').filter(b => b.status !== 'cancelled' && b.slot_date >= mon && b.slot_date <= fri &&
+    (b.slot_date < today || (b.slot_date === today && (past || b.status === 'came'))));
+  const by = {}, src = {};
+  rows.forEach(b => {
+    const k = b.booked_by_id, s = b.source || 'Other';
+    by[k] = by[k] || { id: k, name: b.booked_by, booked: 0, came: 0 };
+    src[s] = src[s] || { source: s, booked: 0, came: 0 };
+    by[k].booked++; src[s].booked++;
+    if (b.status === 'came') { by[k].came++; src[s].came++; }
+  });
+  const list = o => Object.keys(o).map(k => o[k]).sort((a, b) => b.booked - a.booked);
+  return { rows: list(by), sources: list(src), booked: rows.length, came: rows.filter(b => b.status === 'came').length };
+}
+/** After 12 weeks a booking keeps who, when and whether they came; the notes from the call go. */
+function trimOldBookings(before) {
+  readTable('Bookings').forEach(b => { if (b.slot_date && b.slot_date < before && b.notes) { b.notes = ''; writeRow('Bookings', b); } });
+}
+
 // ───────────────────────── NEW STARTER ONBOARDING (admins only: Databyte, then the welcome email) ─────────────────────────
 /** Someone's just been booked onto the Academy: Jess (LINK) / Rubal (JUSS) onboard them straight away. */
 function newStarterAlert(c) {
@@ -2264,7 +2452,9 @@ function dailyMaintenance() {
     deleteWhere('Sessions', r => r.expires < nowStr());
     deleteWhere('Codes', r => r.expires < nowStr());
     deleteWhere('Log', r => { const t = tsText(r.at); return !!t && t.slice(0, 10) < cutoff; });  // times can be real dates in this tab
+    deleteWhere('Bookings', r => !!r.slot_date && r.slot_date < cutoff);
     trimOldDetails(trim);
+    trimOldBookings(trim);
   });
 }
 /** After 12 weeks: keep name, contact, booker, result and what pay needs (to spot repeat applicants); wipe the rest,
@@ -2272,7 +2462,7 @@ function dailyMaintenance() {
 const TRIM_FIELDS = ['resume_token', 'booker_typed', 'visa_expiry', 'rag', 'stars', 'tags', 'notes',
   'q1_excitement', 'q2_stood_out', 'q3_reason', 'q4_situation', 'q4_looking_for', 'q5_start_date', 'q6_days', 'q7_commute',
   'q8_resilience', 'q9_results_paid', 'q9_results_detail', 'q10_door', 'q11_coach', 'q12_bdp_stage', 'q12_bdp_why',
-  'q13_unspent', 'q14_questions', 'outcome_notes', 'admin_note', 'welcome_token', 'p_why_sales', 'p_why_sales_note', 'p_interesting'];
+  'q13_unspent', 'q14_questions', 'outcome_notes', 'admin_note', 'welcome_token', 'p_why_sales', 'p_why_sales_note', 'p_interesting', 'booking_note'];
 function trimOldDetails(before) {
   let n = 0;
   readTable('Candidates').forEach(r => {

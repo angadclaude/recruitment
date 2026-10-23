@@ -895,6 +895,28 @@ table.t td { padding: 9px 4px; border-bottom: 1px solid var(--line); vertical-al
 @keyframes orb { from { transform: translate(0, 0) scale(1); opacity: .85; } to { transform: translate(-30px, 25px) scale(1.15); opacity: 1; } }
 @keyframes spin3d { 0% { transform: rotateX(12deg) rotateY(-28deg) translateY(0); } 100% { transform: rotateX(-10deg) rotateY(26deg) translateY(10px); } }
 
+/* Booking a presentation after the call (Jess, Rubal, Angad, 23 Oct) */
+.bookcard { padding: 12px; }
+.bkrow .main[data-bk], .bkday .main { cursor: pointer; }
+.bkrow .pills { margin-top: 6px; }
+.bkbtns { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; margin-top: 8px; }
+.bkbtns .tsend { align-items: flex-start; }
+.bknames { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.bknames .nm { margin: 0; }
+.bkday .sub { white-space: normal; }
+.waprev { background: #fff; border: 1px solid var(--line); border-radius: 18px; padding: 12px 14px; margin: 4px 0 12px; font-size: 13.5px; line-height: 1.45; white-space: pre-line; overflow-wrap: anywhere; box-shadow: var(--shadow); }
+.bksheet .two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.bksheet .q .muted { font-weight: 600; }
+.bkinfo { font-size: 14px; margin: 10px 0 14px; }
+.bkinfo > div { padding: 7px 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
+.bkfound { margin-top: 10px; border-radius: 14px; padding: 10px 12px; font-size: 14px; font-weight: 700; background: var(--green-bg); color: var(--green); animation: pop .25s ease; }
+.sutab { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+.sutab th { font: 600 10.5px/1.2 var(--label); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); text-align: center; padding: 2px 2px 8px; }
+.sutab td { text-align: center; padding: 8px 2px; border-top: 1px solid var(--line); }
+.sutab th:first-child, .sutab td:first-child { text-align: left; }
+.su-src { margin-top: 10px; }
+.su-l { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; animation-delay: 0s !important; transition-duration: .01ms !important; }
 }

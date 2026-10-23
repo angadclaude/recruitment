@@ -1,4 +1,4 @@
-window.APP_VERSION = 'c4b96a9e';
+window.APP_VERSION = '582fbf95';
 
 (function () {
 'use strict';
@@ -279,7 +279,7 @@ function renderCheckin(then, pre, preErr) {
     '<form id="f" class="evform" novalidate autocomplete="on">' +
     sec('🙋', 'About you') +
     '<label class="q">Full name <span class="req">*</span></label><input type="text" name="full_name" autocomplete="name" placeholder="First and last name" value="' + h(pre.full_name || '') + '">' +
-    '<label class="q">Mobile number <span class="req">*</span></label><input type="tel" name="mobile" autocomplete="tel" inputmode="tel" placeholder="07…" value="' + h(pre.mobile || '') + '">' +
+    '<label class="q">Mobile number <span class="req">*</span></label><input type="tel" name="mobile" autocomplete="tel" inputmode="tel" placeholder="07…" value="' + h(pre.mobile || '') + '"><div id="bkfound"></div>' +
     '<label class="q">Email <span class="req">*</span></label><input type="email" name="email" autocomplete="email" placeholder="you@email.com" value="' + h(pre.email || '') + '">' +
     '<label class="q">Are you 18 or over? <span class="req">*</span></label>' + chips('over18', ['Yes', 'No'], pre.over18) + '</div></section>' +
     sec('🤝', 'Your booking') +
@@ -300,7 +300,9 @@ function renderCheckin(then, pre, preErr) {
 
   const f = document.getElementById('f');
   bindChips(f);
-  let booker = pre.booker || null, redraw = null;
+  let booker = pre.booker || null, redraw = null, booking = null;  // booking: booked from the app after a call (found by their mobile)
+  // Their company: the booking's (everyone booked after a call is JUSS's), else their booker's
+  const coNow = () => booker ? (booking && booking.booker_id === booker.id ? coOf(booking.company) : coOf(booker.company)) : '';
   // Each booker under their own name and every other name they use (a team member, their company): same booker either way
   const bookerNames = () => [].concat.apply([], (C.cfg.bookers || []).map(b => [b].concat((b.aliases || []).map(a => ({ id: b.id, name: a, company: b.company })))));
   // Google's names (and its right-to-work list) landing after the form is already on screen
@@ -313,7 +315,7 @@ function renderCheckin(then, pre, preErr) {
   document.documentElement.classList.add('theme-anim');
   const drawBooker = (typed) => {
     // Picking the booker switches the page to their company's look (LINK or JUSS)
-    const co = booker ? coOf(booker.company) : '';
+    const co = coNow();
     brandTheme(co);
     withEl.innerHTML = co ? '<div class="c-with"><img src="' + LOGOS[co] + '" alt="">You\'re with <b>' + co + ' Marketing</b></div>' : '';
     if (booker) {
@@ -345,6 +347,21 @@ function renderCheckin(then, pre, preErr) {
     draw();
   };
   drawBooker('');
+  // Booked from the app after a call: typing their mobile finds the booking and fills in who booked them
+  let looked = '';
+  const lookUp = () => {
+    const m = ukMobile(f.mobile.value); if (!m || m === looked) return; looked = m;
+    call('bookingByMobile', { mobile: m }).then(r => {
+      if (!r || !r.found || ukMobile(f.mobile.value) !== m || !f.isConnected) return;
+      booking = r;
+      document.getElementById('bkfound').innerHTML = '<div class="bkfound">✓ Found your booking: today ' + h(fmt12(r.time || '10:00')) + ', booked by ' + h(r.booker_name) + '</div>';
+      if (!booker) { booker = (C.cfg.bookers || []).filter(b => b.id === r.booker_id)[0] || { id: r.booker_id, name: r.booker_name, company: r.booker_company }; document.getElementById('unsure').checked = false; }
+      drawBooker('');
+    }).catch(() => {});
+  };
+  f.mobile.addEventListener('input', () => { clearTimeout(lookUp.t); lookUp.t = setTimeout(lookUp, 350); });
+  f.mobile.addEventListener('blur', lookUp);
+  if (f.mobile.value) lookUp();
 
   f.rtw.addEventListener('change', () => { document.getElementById('exp').hidden = rtwLevelOf(f.rtw.value) !== 'visa'; });
 
@@ -382,7 +399,7 @@ function renderCheckin(then, pre, preErr) {
       // Scanned the evaluation QR without checking in: the evaluation needs the check-in's id, so wait for it here
       const btn = document.getElementById('go'); busy(btn, true, 'Checking in…');
       return callRetry('checkin', { form: form }, () => { btn.innerHTML = 'Busy, still checking you in…'; }).then(r => {
-        C.rec = { id: r.id, resume: r.resume, first_name: r.first_name, company: coOf(r.company) || (booker ? coOf(booker.company) : ''), nq: !!r.nonQual, date: today, evalDone: !!r.evalDone };
+        C.rec = { id: r.id, resume: r.resume, first_name: r.first_name, company: coOf(r.company) || coNow(), nq: !!r.nonQual, date: today, evalDone: !!r.evalDone };
         store.set('cand', C.rec); brandTheme(C.rec.company);
         if (r.evalDone) return renderDone('already');
         r.nonQual ? renderNoEval() : renderEval();
@@ -391,7 +408,7 @@ function renderCheckin(then, pre, preErr) {
     // Checked in, on screen now. The check-in carries on to Google in the background (busy moments, no signal: it keeps trying).
     const nq = form.over18 !== 'Yes' || rtwLevelOf(form.rtw) === 'no' || !!(form.visa_expiry && form.visa_expiry < today);
     store.del('cand');
-    C.rec = { first_name: firstOf(form.full_name), company: booker ? coOf(booker.company) : '', nq: nq, date: today };
+    C.rec = { first_name: firstOf(form.full_name), company: coNow(), nq: nq, date: today };
     brandTheme(C.rec.company);
     renderCheckedIn(C.rec.first_name, false, false, nq);
     const mark = $app.dataset.mark = 'ci' + Date.now();
@@ -901,7 +918,7 @@ function saveCacheNow() {
   Object.keys(S.data).sort().slice(-3).forEach(k => { keep[k] = S.data[k]; });
   const base = { me: S.me, data: keep, users: S.users };
   // Phone storage full? Keep the essentials rather than lose the whole cache.
-  try { localStorage.setItem('lr_cache', JSON.stringify(Object.assign({ chase: S.chase || null, academy: S.academy || null }, base))); } catch (e) { store.set('cache', base); }
+  try { localStorage.setItem('lr_cache', JSON.stringify(Object.assign({ chase: S.chase || null, academy: S.academy || null, bookings: S.bookings || null }, base))); } catch (e) { store.set('cache', base); }
 }
 function setSync(d) {
   S.syncing = Math.max(0, S.syncing + d);
@@ -924,6 +941,7 @@ function fetchWeek(we, extra) {
     if (pend.length) b.items = b.items.map(x => pend.indexOf(x.id) >= 0 ? (findCand(x.id) || x) : x);
     S.data[b.weekEnding] = { items: b.items, pay: b.pay, at: Date.now() };
     if (b.users) S.users = b.users;
+    if (b.bookings) S.bookings = { items: b.bookings, at: Date.now() };  // Jess, Rubal, Angad: presentations they've booked
     if (typeof b.chase === 'number' && (b.chase !== S.chaseN || (b.chaseCarry || 0) !== (S.chaseCarry || 0))) { S.chaseN = b.chase; S.chaseCarry = b.chaseCarry || 0; paintTabs(); }
     if (b.me) {
       const old = S.me;
@@ -974,7 +992,7 @@ function upsert(c) {
 
 /** Signed in (login code or the hub): keep the token, start fresh. */
 function signedIn(token) {
-  S.token = token; store.set('tok', token); store.del('cache'); store.del('codeSent'); S.data = {}; S.users = null; S.chase = null; S.chaseN = 0; S.chaseCarry = 0; S.academy = null; S.d1Old = null; S.d1Pick = null; startStaff();
+  S.token = token; store.set('tok', token); store.del('cache'); store.del('codeSent'); S.data = {}; S.users = null; S.chase = null; S.chaseN = 0; S.chaseCarry = 0; S.academy = null; S.d1Old = null; S.d1Pick = null; S.bookings = null; startStaff();
 }
 function startStaff() {
   stopTimer();
@@ -994,6 +1012,7 @@ function startStaff() {
   if (cached && cached.me) {
     S.me = cached.me; S.data = Object.assign(cached.data || {}, S.data); S.users = cached.users || null;
     S.chase = S.chase || cached.chase || null; S.academy = S.academy || cached.academy || null;
+    S.bookings = S.bookings || (cached.bookings ? { items: cached.bookings.items || [], at: 0 } : null);
     Object.keys(S.data).forEach(k => { if (!S.inflight[k]) S.data[k].at = 0; });
     boot();
   } else {
@@ -1099,6 +1118,18 @@ function boot() {
     // From the evening-before briefing / the 10:00 "starters to remind" alert (that one opens the send list too)
     S.openRemind = BOOT.cid === 'remind' && isAdmin(); BOOT.cid = '';
     if (isAdmin()) { S.tab = 'academy'; nav('academy', {}, false); } else { nav(S.tab, {}, false); nav('academy', {}, true); }
+  } else if (BOOT.cid === 'bookrem' || BOOT.cid === 'bookmiss') {
+    // From the 18:00 "N to remind for tomorrow" alert (opens the send list) / the 10:30 "N didn't come": Today, with the bookings
+    const rem = BOOT.cid === 'bookrem'; BOOT.cid = ''; S.day = S.me.today; nav('today', {}, false);
+    let tries = 0;
+    const open = () => {
+      if (S.view !== 'today') return;
+      if (!(S.bookings && S.bookings.at)) { if (tries++ < 40) setTimeout(open, 250); return; }
+      const next = bookings().filter(b => b.status === 'booked' && b.slot_date > S.me.today).map(b => b.slot_date).sort()[0];
+      if (rem && next) bookRemindSheet(next);
+      else { const el = document.getElementById('bkexp'); if (el) el.scrollIntoView({ block: 'start' }); }
+    };
+    setTimeout(open, 300);
   } else if (BOOT.cid) { const id = BOOT.cid; BOOT.cid = ''; nav('cand', { id: id }, true); } else nav(S.tab, {}, false);
   stopTimer();
   S.lastPoll = Date.now();
@@ -1577,6 +1608,7 @@ function viewToday(quiet) {
     body = '<div class="hero">' + FX + top + kpis([[items.length, 'Checked in'], [rated, 'Rated'], [items.filter(c => c.eval_at).length, 'Evaluated'], [toCall, 'To call', toCall > 0]]) + '</div>' +
       (isAdmin() || canThank() ? thanksButton(items) : '') +
       (isAdmin() ? '<div class="bullbtns"><button class="btn" id="bullDaily">📣 ' + (isToday ? 'Today\'s' : DAYS[D(S.day).getUTCDay()]) + ' bulletin</button><button class="btn ghost" id="bullWeek">🏆 Week top 5</button></div>' : '') +
+      bookingsHtml(S.day) +
       (items.length ? '<div class="section-h"><b>In the room</b><span>' + rated + ' of ' + toRate.length + ' rated</span></div>' +
         (isPresenter() ? '<p class="hint">Tap Green, Amber or Red to rate. Rating = they were in the room (that\'s what counts for the recruitment incentive). Left before the end? Tap 🚶 Walk out. Under 18 or no right to work: no rating needed. Tap a name for stars and notes.</p>' : '') +
         (items.some(c => c.limited) ? '<p class="hint">🔒 You see your own candidates in full. Everyone else\'s: name, who booked them and the room rating only.</p>' : '') +
@@ -1584,7 +1616,7 @@ function viewToday(quiet) {
         : empty('📷', 'No check-ins yet. They appear here live as people scan the check-in QR on your first slide.'));
   }
   const page = paint('', body, quiet);
-  bindItems(page);
+  bindItems(page); bindBookings(page);
   const ta = document.getElementById('thanksAll'); if (ta) ta.onclick = thanksSheet;
   [['bullDaily', 'daily'], ['bullWeek', 'weekly']].forEach(b => { const el = document.getElementById(b[0]); if (el) el.onclick = () => nav('bulletin', { day: S.day, kind: b[1] }, true); });
   document.getElementById('dprev').onclick = () => { S.day = addDays(S.day, -1); render(); };
@@ -1683,7 +1715,7 @@ function viewPay(quiet) {
       '<p class="hint">Net ' + p.target + ' attended, Mon–Fri, rated by the presenter. Doesn\'t count: under 18, not eligible to work self-employed, seen in the last 6 months, removed by admin (a walk out still counts). ' +
         (isAdmin() ? 'Admins don\'t earn the incentive, so people you book aren\'t on here. ' : '') + 'Tap a row for details. Outcomes due ' + fmtTs(p.deadline) + '.</p>' +
       (p.unassigned.length ? '<div class="section-h">No confirmed booker <span>' + p.unassigned.length + '</span></div><div class="list">' + p.unassigned.map(x => '<button class="item" data-id="' + h(x.id) + '"><span class="av">?</span><div class="main"><div class="name">' + h(x.name) + '</div><div class="sub">Typed "' + h(x.typed || '—') + '" · tap to assign</div></div><span class="chev">›</span></button>').join('') + '</div>' : '') +
-      (isAdmin() ? presenterFunnel(d.items || []) : '');
+      (isAdmin() ? showupCard(p.showup) + presenterFunnel(d.items || []) : '');
   }
   const page = paint('Appts Attended', weekNav() + body, quiet);
   bindItems(page); bindWeekNav();
@@ -2456,6 +2488,289 @@ function day1Sheet(date) {
     markReminded(c, a.dataset.via);
     setTimeout(() => { (a.closest('.tsend') || a).outerHTML = sent(c); back.querySelector('#d1prog').textContent = prog(); }, 300);  // after WhatsApp / Messages has opened
   }));
+}
+
+// ───── Booking a presentation straight after the call (Angad, 23 Oct): Jess, Rubal and Angad book, the app writes the messages ─────
+const BOOK_DEFAULT = { time: '10:00', co: 'JUSS', missed: '10:30', sources: ['Teamtailor', 'Indeed', 'Referral', 'Other'] };
+function canBook() { return !!S.me && (S.me.bookTeam || []).some(t => t.id === S.me.user.id); }
+function bookCfg() { return (S.me && S.me.book) || BOOK_DEFAULT; }
+function bookings() { return (S.bookings && S.bookings.items) || []; }
+function bookById(id) { return bookings().filter(b => b.id === id)[0] || null; }
+function bookName(b) { return (b.first_name + ' ' + (b.last_name || '')).trim(); }
+function bookCo(b) { return b.company === 'LINK' ? 'LINK' : 'JUSS'; }
+function bookDaysTo(ymd) { return Math.round((D(ymd) - D(S.me.today)) / 86400000); }
+/** Not checked in by 10:30 on the day (or rebooked after missing it) = didn't come. */
+function bookMissed(b) {
+  return b.status === 'no_show' || (b.status === 'booked' && (b.slot_date < S.me.today || (b.slot_date === S.me.today && londonNow().slice(11, 16) >= bookCfg().missed)));
+}
+function bookUpsert(b) {
+  S.bookings = S.bookings || { items: [], at: Date.now() };
+  const l = S.bookings.items, i = l.findIndex(x => x.id === b.id);
+  if (b.status === 'cancelled') { if (i >= 0) l.splice(i, 1); } else if (i >= 0) l[i] = b; else l.push(b);
+  saveCache();
+}
+/** "Kind regards, *Jess Grace*, In association with *JUSS Marketing Ltd*": whoever sends it (it's their WhatsApp they reply to). */
+function bookSign(b) { return 'Kind regards,\n*' + S.me.user.name + '*\nIn association with *' + bookCo(b) + ' Marketing Ltd*'; }
+/** The booking confirmation (Angad, 23 Oct): the thank-you's style, no hearts. */
+function msgBookConfirm(b) {
+  const co = bookCo(b);
+  return 'Hey ' + b.first_name + '! 👋\n\n' +
+    'Great speaking with you! You’re *booked in* for your *Appointment Presentation* 🎉\n\n' +
+    '📅 *' + fmtOrd(b.slot_date) + ' · ' + fmt12(b.slot_time || bookCfg().time) + '*\n' +
+    '⏱️ About 1–2 hours\n\n' +
+    '📍 *Where*\n' + co + ' Marketing, 2nd Floor East\nAutomotive House, Grays Place, Slough SL2 5AF\n' +
+    '🗺️ ' + OFFICES[co].maps + '\n' +
+    '🚗 Parking right outside the main entrance\n' +
+    '🚆 By train? Exit Slough station from *platform 5*\n\n' +
+    '👔 *Dress code:* office wear / smart casual\n' +
+    '📄 *Documents:* none needed yet 🙌\n\n' +
+    '👉 Reply *YES* to lock in your spot ✅\n\n' +
+    'Questions before then? Just message me here 💬\n\n' + bookSign(b);
+}
+/** The evening before (or that morning): "Tomorrow's the day!" */
+function msgBookRemind(b) {
+  const n = bookDaysTo(b.slot_date), day = n === 0 ? 'today' : n === 1 ? 'tomorrow' : DAYS_LONG[D(b.slot_date).getUTCDay()], co = bookCo(b);
+  return 'Hey ' + b.first_name + '! 👋\n\n' +
+    '*' + day.charAt(0).toUpperCase() + day.slice(1) + '’s the day!* 🙌\n' +
+    'Your *Appointment Presentation* with *' + co + ' Marketing*\n\n' +
+    '📅 *' + fmtOrd(b.slot_date) + ' · ' + fmt12(b.slot_time || bookCfg().time) + '*\n' +
+    '📍 Automotive House, Slough (2 mins from the station)\n' +
+    '🗺️ ' + OFFICES[co].maps + '\n\n' +
+    '⏰ Aim to arrive *10 minutes early*\n' +
+    '👔 Office wear / smart casual\n\n' +
+    '👉 Reply *YES* if you’re still coming ✅\n\n' +
+    'See you ' + (n > 1 ? 'on ' + day : day) + '! 🔥\n\n' + bookSign(b);
+}
+/** Didn't come: their spot isn't gone, which day suits them? */
+function msgBookMissed(b) {
+  return 'Hey ' + b.first_name + '! 👋\n\n' +
+    'We missed you at your *Appointment Presentation* ' + (b.slot_date === S.me.today ? 'today' : 'on ' + DAYS_LONG[D(b.slot_date).getUTCDay()]) + ' 😕 Everything OK?\n\n' +
+    'Your spot isn’t gone: let’s get you *rebooked* 📅\n' +
+    'We run presentations *Monday to Friday at ' + fmt12(bookCfg().time) + '*.\n\n' +
+    '👉 Which day suits you? Just reply here 💬\n\n' + bookSign(b);
+}
+const BOOK_MSG = { confirm: msgBookConfirm, remind: msgBookRemind, missed: msgBookMissed };
+const BOOK_SENT = { confirm: 'Confirmation', remind: 'Reminder', missed: 'Sorry we missed you' };
+/** WhatsApp's *bold* as bold, for the preview of what they'll get. */
+function waHtml(text) { return h(text).replace(/\*([^*\n]+)\*/g, '<b>$1</b>'); }
+/** 💬 Send (WhatsApp) with "📱 Text instead" under it; the other way round once they're known not to be on WhatsApp. */
+function bookSend(b, kind, label) {
+  const msg = BOOK_MSG[kind](b), sms = !!b.no_whatsapp;
+  const a = (via, inner, cls) => '<a class="' + cls + '" data-bks="' + h(b.id) + '" data-kind="' + kind + '" data-via="' + via + '" href="' + h(via === 'sms' ? smsUrl(b.mobile, msg) : waUrl(b.mobile, msg)) + '" target="_blank" rel="noopener">' + inner + '</a>';
+  return '<span class="tsend">' + a(sms ? 'sms' : 'whatsapp', (sms ? '📱 ' : '💬 ') + (label || (sms ? 'Text' : 'Send')), 'btn ' + (sms ? 'sms' : 'wa') + ' sm') +
+    a(sms ? 'whatsapp' : 'sms', sms ? '💬 WhatsApp' : '📱 Text instead', 'tx') + '</span>';
+}
+// Any booking message opened (WhatsApp / Messages): who sent it, when, how. Not on WhatsApp = their next one goes by text too.
+document.addEventListener('click', e => {
+  const a = e.target.closest && e.target.closest('[data-bks]'); if (!a) return;
+  const b = bookById(a.dataset.bks), kind = a.dataset.kind, via = a.dataset.via === 'sms' ? 'sms' : 'whatsapp'; if (!b) return;
+  b[kind + '_at'] = londonNow(); b[kind + '_by'] = S.me.user.name; b[kind + '_via'] = via;
+  if (via === 'sms') b.no_whatsapp = 'TRUE';
+  saveCache();
+  call('bookingAction', { id: b.id, act: 'sent', kind: kind, via: via }).then(nb => { Object.assign(b, nb); bookUpsert(b); }).catch(ex => toast(ex.message));
+  if (!a.closest('.sheet')) setTimeout(() => { if (S.view === 'today' && !document.querySelector('.sheet-back')) render(true); }, 400);  // after WhatsApp has opened
+}, true);
+
+/** Today page (Jess, Rubal, Angad): 📅 Book, who's expected (confirmed? checked in? didn't come?) and what's coming up. */
+function bookingsHtml(day) {
+  if (!canBook()) return '';
+  const isToday = day === S.me.today, cfg = bookCfg(), all = bookings();
+  const list = all.filter(b => b.slot_date === day).sort((a, b) => bookName(a).localeCompare(bookName(b)));
+  let out = isToday ? '<div class="card bookcard"><button class="btn block" id="bookNew">📅 Book a presentation</button>' +
+    '<p class="hint" style="margin:8px 2px 0">Just booked someone on the phone? Tap here: their confirmation is ready to send on WhatsApp, signed by you.</p></div>' : '';
+  if (list.length) {
+    const came = list.filter(b => b.status === 'came'), missed = list.filter(bookMissed), due = list.filter(b => came.indexOf(b) < 0 && missed.indexOf(b) < 0);
+    const after = !!missed.length || day < S.me.today || (isToday && londonNow().slice(11, 16) >= cfg.missed);
+    out += '<div class="section-h" id="bkexp"><b>📅 ' + (isToday ? 'Expected today' : 'Booked') + ' · ' + h(cfg.time) + '</b><span>' + list.length + ' booked · ' +
+      (after ? came.length + ' came' : list.filter(b => b.confirmed_at).length + ' confirmed') + '</span></div>' +
+      '<div class="list alist">' + due.concat(missed, came).map(bookRow).join('') + '</div>';
+  }
+  if (isToday) {
+    const next = all.filter(b => b.slot_date > day && b.status === 'booked'), dates = [];
+    next.forEach(b => { if (dates.indexOf(b.slot_date) < 0) dates.push(b.slot_date); });
+    dates.sort();
+    if (dates.length) out += '<div class="section-h"><b>📅 Coming up</b><span>' + next.length + ' booked</span></div><div class="list alist">' + dates.map(x => {
+      const l = next.filter(b => b.slot_date === x).sort((a, b) => bookName(a).localeCompare(bookName(b))), rem = l.filter(b => String(b.remind_at).slice(0, 10) === S.me.today).length;
+      return '<div class="trow bkday"><div class="main"><div class="name">' + h(fmtLong(x)) + (bookDaysTo(x) === 1 ? ' · tomorrow' : '') + '</div>' +
+        '<div class="sub">' + l.length + ' booked · ' + l.filter(b => b.confirmed_at).length + ' confirmed</div>' +
+        '<div class="bknames">' + l.map(b => '<button class="nm" data-bk="' + h(b.id) + '">' + h(b.first_name) + (b.confirmed_at ? ' ✅' : '') + '</button>').join('') + '</div></div>' +
+        '<button class="btn ghost sm" data-bkrem="' + x + '">📲 Remind' + (rem ? ' · ' + rem + '/' + l.length : '') + '</button></div>';
+    }).join('') + '</div>';
+  }
+  return out;
+}
+/** Where a booking stands. yes: with the "They replied Yes" button. */
+function bookPills(b, yes) {
+  const missed = bookMissed(b), t = s => h(String(s).slice(11, 16));
+  return b.status === 'came' ? '<span class="pill green">🎓 Checked in ' + t(b.came_at) + '</span>'
+    : b.status === 'no_show' ? '<span class="pill red">❌ Didn\'t come</span><span class="pill blue">📅 Rebooked</span>'
+    : missed ? '<span class="pill red">❌ Didn\'t come</span>' + (b.missed_at ? '<span class="pill green">✓ Messaged ' + t(b.missed_at) + '</span>' : '')
+    : (b.confirmed_at ? '<span class="pill green">✅ Confirmed</span>' : '<span class="pill amber">⏳ Not confirmed</span>' + (yes ? '<button class="pill yes" data-bkyes="' + h(b.id) + '">👍 They replied Yes</button>' : '')) +
+      (b.confirm_at ? '' : '<span class="pill red">Confirmation not sent</span>') +
+      (String(b.remind_at).slice(0, 10) === S.me.today ? '<span class="pill blue">📲 Reminded ' + t(b.remind_at) + '</span>' : '');
+}
+function bookRow(b) {
+  const missed = bookMissed(b);
+  const act = missed && b.status === 'booked' ? '<div class="bkbtns">' + bookSend(b, 'missed', 'Sorry we missed you') + '<button class="btn ghost sm" data-bkre="' + h(b.id) + '">📅 Rebook</button></div>' : '';
+  return '<div class="trow bkrow' + (b.status === 'came' ? ' arrived' : '') + '"><span class="av co-' + bookCo(b) + '">' + h(initials(bookName(b))) + '</span>' +
+    '<div class="main" data-bk="' + h(b.id) + '"><div class="name">' + h(bookName(b)) + ' <span class="co ' + bookCo(b) + '">' + bookCo(b) + '</span></div>' +
+    '<div class="sub">booked by ' + h(String(b.booked_by).split(' ')[0]) + ' · ' + h(b.source) + '</div><div class="pills">' + bookPills(b, true) + '</div>' + act + '</div></div>';
+}
+function bindBookings(root) {
+  const nb = root.querySelector('#bookNew'); if (nb) nb.onclick = () => bookForm({});
+  root.querySelectorAll('[data-bk]').forEach(el => { el.onclick = e => { if (e.target.closest('a, button:not([data-bk])')) return; bookSheet(el.dataset.bk); }; });
+  root.querySelectorAll('[data-bkyes]').forEach(b => { b.onclick = e => { e.stopPropagation(); bookYes(b.dataset.bkyes, b); }; });
+  root.querySelectorAll('[data-bkre]').forEach(b => { b.onclick = e => { e.stopPropagation(); const x = bookById(b.dataset.bkre); if (x) bookForm(x, 'rebook'); }; });
+  root.querySelectorAll('[data-bkrem]').forEach(b => { b.onclick = () => bookRemindSheet(b.dataset.bkrem); });
+}
+/** They replied YES on WhatsApp: one tap and they show as ✅ Confirmed. */
+function bookYes(id, btn, then) {
+  busy(btn, true, '…');
+  call('bookingAction', { id: id, act: 'yes' }).then(b => {
+    bookUpsert(b); toast('✅ ' + b.first_name + ' confirmed');
+    if (then) then(b); else if (S.view === 'today' && !document.querySelector('.sheet-back')) render(true);
+  }).catch(e => { busy(btn, false); toast(e.message); });
+}
+function bookSheetOpen(label, html) {
+  closeSheet(true);
+  const back = document.createElement('div');
+  back.className = 'sheet-back';
+  back.innerHTML = '<div class="sheet bksheet" role="dialog" aria-label="' + h(label) + '"><div class="grab"></div>' + html + '</div>';
+  document.body.appendChild(back);
+  document.body.style.overflow = 'hidden';
+  const done = () => { closeSheet(); if (S.view === 'today') render(true); };
+  back.onclick = e => { if (e.target === back) done(); };
+  const d = back.querySelector('#bkdone'); if (d) d.onclick = done;
+  return back;
+}
+/** 📅 Book a presentation (or change the day, or rebook someone who didn't come): 20 seconds at the end of the call. */
+function bookForm(pre, mode) {
+  const cfg = bookCfg(), today = S.me.today, now = londonNow().slice(11, 16), days = [];
+  for (let d = today; days.length < 5; d = addDays(d, 1)) { const w = D(d).getUTCDay(); if (w > 0 && w < 6 && (d > today || now < cfg.time)) days.push(d); }
+  const sel = mode === 'edit' ? pre.slot_date : '', later = !!sel && days.indexOf(sel) < 0;
+  const dayChip = d => '<button type="button" class="chip' + (d === sel ? ' on' : '') + '" data-day="' + d + '">' + DAYS[D(d).getUTCDay()] + ' ' + D(d).getUTCDate() + ' ' + MONTHS[D(d).getUTCMonth()] + '</button>';
+  const back = bookSheetOpen('Book a presentation',
+    '<div class="sheet-h"><div><div class="label muted">' + (mode === 'edit' ? 'Change the day · ' + h(bookName(pre)) : mode === 'rebook' ? 'Rebook · they didn\'t come' : 'After the call') + '</div><div class="display">📅 Book a presentation</div></div></div>' +
+    '<div class="two"><div><label class="q" for="bkfn">First name <span class="req">*</span></label><input type="text" id="bkfn" autocomplete="off" autocapitalize="words" value="' + h(pre.first_name || '') + '"></div>' +
+    '<div><label class="q" for="bksn">Surname</label><input type="text" id="bksn" autocomplete="off" autocapitalize="words" value="' + h(pre.last_name || '') + '"></div></div>' +
+    '<label class="q" for="bkmob">Mobile <span class="req">*</span></label><input type="tel" id="bkmob" inputmode="tel" placeholder="07…" value="' + h(pre.mobile || '') + '">' +
+    '<label class="q">Which day? <span class="muted">All at ' + h(fmt12(cfg.time)) + '</span></label><div class="chips" id="bkdays">' + days.map(dayChip).join('') +
+      '<button type="button" class="chip' + (later ? ' on' : '') + '" id="bklater">Later date…</button></div>' +
+    '<input type="date" id="bkdate" min="' + today + '" value="' + h(later ? sel : '') + '"' + (later ? '' : ' hidden') + ' style="margin-top:8px">' +
+    '<label class="q">Where did they apply?</label>' + chips('bksrc', cfg.sources, pre.source || cfg.sources[0]) +
+    '<label class="q" for="bknotes">Notes for the presenter <span class="muted">(optional)</span></label><textarea id="bknotes" class="short" maxlength="300" placeholder="e.g. driving in, has done sales before">' + h(pre.notes || '') + '</textarea>' +
+    '<div class="help" style="margin-top:8px">Booked for <b>' + h(cfg.co) + ' Marketing</b>, signed by you (' + h(S.me.user.name) + ').</div>' +
+    '<div id="bkerr"></div><button class="btn block" id="bksave" style="margin-top:12px">' + (mode === 'edit' ? 'Save the new day →' : 'Next: send the confirmation →') + '</button>' +
+    '<button class="btn ghost block" id="bkdone" style="margin-top:8px">Cancel</button>');
+  const box = back.querySelector('.sheet'), di = box.querySelector('#bkdate');
+  bindChips(box);
+  let day = sel;
+  const pick = c => box.querySelectorAll('#bkdays .chip').forEach(x => x.classList.toggle('on', x === c));
+  box.querySelectorAll('[data-day]').forEach(c => { c.onclick = () => { day = c.dataset.day; pick(c); di.hidden = true; di.value = ''; }; });
+  box.querySelector('#bklater').onclick = e => { pick(e.currentTarget); di.hidden = false; day = di.value; di.focus(); };
+  di.onchange = () => { day = di.value; };
+  if (!pre.first_name) setTimeout(() => box.querySelector('#bkfn').focus(), 350);
+  box.querySelector('#bksave').onclick = () => {
+    const err = box.querySelector('#bkerr'), val = id => box.querySelector(id).value;
+    const f = { id: mode === 'edit' ? pre.id : '', rebook_of: mode === 'rebook' ? pre.id : '', first_name: val('#bkfn'), last_name: val('#bksn'), mobile: val('#bkmob'),
+      slot_date: day, source: chipVal(box, 'bksrc'), notes: val('#bknotes') };
+    if (!f.first_name.trim()) return showErr(err, 'Add their first name.');
+    if (!ukMobile(f.mobile)) return showErr(err, 'Add a valid UK mobile (07…).');
+    if (!f.slot_date) return showErr(err, 'Pick the day of their presentation.');
+    if (f.slot_date < today) return showErr(err, 'That day has already gone.');
+    const w = D(f.slot_date).getUTCDay(); if (w === 0 || w === 6) return showErr(err, 'Presentations are Monday to Friday.');
+    showErr(err, '');
+    const btn = box.querySelector('#bksave'); busy(btn, true, 'Booking…');
+    call('saveBooking', { booking: f }).then(b => {
+      bookUpsert(b);
+      if (mode === 'rebook') bookUpsert(Object.assign({}, pre, { status: 'no_show' }));
+      bookSendSheet(b, 'confirm');
+    }).catch(e => { busy(btn, false); showErr(err, e.message); });
+  };
+}
+/** The message, ready to send: what they'll get, and one tap opens WhatsApp with it (signed by you). */
+function bookSendSheet(b, kind) {
+  const msg = BOOK_MSG[kind](b), sms = !!b.no_whatsapp;
+  const link = (via, inner, cls) => '<a class="' + (cls || '') + '" data-bks="' + h(b.id) + '" data-kind="' + kind + '" data-via="' + via + '" href="' + h(via === 'sms' ? smsUrl(b.mobile, msg) : waUrl(b.mobile, msg)) + '" target="_blank" rel="noopener">' + inner + '</a>';
+  const back = bookSheetOpen(BOOK_SENT[kind],
+    (kind === 'confirm' ? '<div class="flag green" style="margin-bottom:10px">✅ ' + h(bookName(b)) + ' is booked · ' + h(fmtOrd(b.slot_date)) + ', ' + h(fmt12(b.slot_time || bookCfg().time)) + '</div>' : '') +
+    '<div class="sheet-h"><div><div class="label muted">' + h(bookName(b)) + ' · ' + h(b.mobile) + '</div><div class="display">' + { confirm: 'Send the confirmation', remind: 'Send the reminder', missed: 'Sorry we missed you' }[kind] + '</div></div></div>' +
+    '<div class="waprev">' + waHtml(msg) + '</div>' +
+    link(sms ? 'sms' : 'whatsapp', sms ? '📱 Send by text' : '💬 Send on WhatsApp', 'btn ' + (sms ? 'sms' : 'wa') + ' block') +
+    '<div class="altsend"><span>' + (sms ? '📵 Not on WhatsApp' : 'Not on WhatsApp?') + '</span>' + link(sms ? 'whatsapp' : 'sms', sms ? '💬 WhatsApp' : '📱 Text') + '</div>' +
+    '<p class="hint center" id="bksent">' + (b[kind + '_at'] ? '✓ Sent ' + h(fmtTs(b[kind + '_at'])) + ' by ' + h(String(b[kind + '_by']).split(' ')[0]) + '. Send it again if you need to.' : 'WhatsApp opens with this ready, signed by you. Tap send and come back.') + '</p>' +
+    '<button class="btn ghost block" id="bkdone">Done</button>');
+  back.querySelectorAll('[data-bks]').forEach(a => a.addEventListener('click', () => setTimeout(() => {
+    const s = back.querySelector('#bksent'); if (s) s.innerHTML = '<span class="pill green">✓ Sent by you · ' + h(londonNow().slice(11, 16)) + '</span>';
+  }, 300)));
+}
+/** Reminders for one day, one after another: tap send, WhatsApp opens with it ready (signed by you), come back, next one. */
+function bookRemindSheet(date) {
+  const items = bookings().filter(b => b.slot_date === date && b.status === 'booked').sort((a, b) => bookName(a).localeCompare(bookName(b)));
+  if (!items.length) return toast('Nobody to remind for ' + fmtLong(date));
+  const n = bookDaysTo(date), reminded = b => String(b.remind_at).slice(0, 10) === S.me.today;
+  const sent = b => '<span class="pill green">✓ Sent ' + h(String(b.remind_at).slice(11, 16)) + (b.remind_by && b.remind_by !== S.me.user.name ? ' · ' + h(String(b.remind_by).split(' ')[0]) : '') + '</span>';
+  const prog = () => items.filter(reminded).length + ' of ' + items.length + ' sent';
+  const back = bookSheetOpen('Presentation reminders',
+    '<div class="sheet-h"><div><div class="label muted">' + (n === 0 ? 'TODAY · ' : n === 1 ? 'TOMORROW · ' : '') + h(fmtLong(date)) + ' · ' + h(bookCfg().time) + '</div><div class="display">📲 Reminders</div></div></div>' +
+    '<p class="hint" style="margin-top:-6px"><b id="bkprog">' + prog() + '</b>. Signed by you. Tap send, come back, next one.</p>' +
+    '<div class="list">' + items.map(b => '<div class="trow"><span class="av co-' + bookCo(b) + '">' + h(initials(bookName(b))) + '</span><div class="main"><div class="name">' + h(bookName(b)) + '</div>' +
+      '<div class="sub"><span class="co ' + bookCo(b) + '">' + bookCo(b) + '</span> ' + (b.confirmed_at ? '✅ confirmed' : '⏳ not confirmed') + ' · ' + h(b.source) + '</div></div>' +
+      (reminded(b) ? sent(b) : bookSend(b, 'remind')) + '</div>').join('') + '</div>' +
+    '<button class="btn ghost block" id="bkdone" style="margin-top:14px">Done</button>');
+  back.querySelectorAll('[data-bks]').forEach(a => a.addEventListener('click', () => {
+    const b = items.filter(x => x.id === a.dataset.bks)[0]; if (!b) return;
+    setTimeout(() => { (a.closest('.tsend') || a).outerHTML = sent(b); back.querySelector('#bkprog').textContent = prog(); }, 300);  // after WhatsApp / Messages has opened
+  }));
+}
+/** One booking: who, when, what's been sent, and what you can do next. */
+function bookSheet(id) {
+  const b = bookById(id); if (!b) return;
+  const missed = bookMissed(b), open = b.status === 'booked' && !missed;
+  const sentLine = k => b[k + '_at'] ? '<div>📨 ' + BOOK_SENT[k] + ': ' + h(fmtTs(b[k + '_at'])) + ' · ' + h(String(b[k + '_by']).split(' ')[0]) + ' · ' + h(VIA_LABEL[b[k + '_via']] || 'WhatsApp') + '</div>' : '';
+  const back = bookSheetOpen('Booking',
+    '<div class="sheet-h"><span class="av co-' + bookCo(b) + '">' + h(initials(bookName(b))) + '</span><div style="min-width:0"><div class="label muted">📅 ' + h(fmtLong(b.slot_date)) + ' · ' + h(fmt12(b.slot_time || bookCfg().time)) + '</div>' +
+      '<div class="display">' + h(bookName(b)) + '</div></div></div>' +
+    '<div class="pills">' + bookPills(b, false) + '</div>' +
+    '<div class="bkinfo"><div>📱 <a href="tel:' + h(b.mobile) + '">' + h(b.mobile) + '</a>' + (b.no_whatsapp ? ' · not on WhatsApp' : '') + '</div>' +
+      '<div>🙋 Booked by ' + h(b.booked_by) + ' · ' + h(fmtTs(b.created_at)) + ' · ' + h(b.source) + '</div>' +
+      (b.notes ? '<div>📝 ' + h(b.notes) + '</div>' : '') +
+      sentLine('confirm') + sentLine('remind') + sentLine('missed') +
+      (b.confirmed_at ? '<div>✅ Replied YES · ' + h(fmtTs(b.confirmed_at)) + (b.confirmed_by ? ' · ' + h(String(b.confirmed_by).split(' ')[0]) : '') + '</div>' : '') + '</div>' +
+    (open ? '<button class="btn wa block" id="bkc">💬 ' + (b.confirm_at ? 'Send the confirmation again' : 'Send the confirmation') + '</button>' +
+      '<button class="btn ghost block" id="bkr" style="margin-top:8px">📲 Send a reminder</button>' +
+      (b.confirmed_at ? '' : '<button class="btn ghost block" id="bky" style="margin-top:8px">👍 They replied Yes</button>') +
+      '<button class="btn ghost block" id="bke" style="margin-top:8px">📅 Change the day</button>' : '') +
+    (missed && b.status === 'booked' ? '<button class="btn wa block" id="bkm">💬 Sorry we missed you</button><button class="btn ghost block" id="bkre" style="margin-top:8px">📅 Rebook</button>' : '') +
+    (b.status === 'came' && b.candidate_id ? '<button class="btn block" id="bko">🎓 Open their check-in</button>' : '') +
+    (b.status === 'booked' ? '<button class="linkbtn block center" id="bkx" style="margin-top:12px">Cancel this booking</button>' : '') +
+    '<button class="btn ghost block" id="bkdone" style="margin-top:10px">Done</button>');
+  const on = (sel, fn) => { const el = back.querySelector(sel); if (el) el.onclick = fn; };
+  on('#bkc', () => bookSendSheet(b, 'confirm'));
+  on('#bkr', () => bookSendSheet(b, 'remind'));
+  on('#bkm', () => bookSendSheet(b, 'missed'));
+  on('#bke', () => bookForm(b, 'edit'));
+  on('#bkre', () => bookForm(b, 'rebook'));
+  on('#bky', e => bookYes(b.id, e.currentTarget, nb => bookSheet(nb.id)));
+  on('#bko', () => { closeSheet(true); nav('cand', { id: b.candidate_id }, true); });
+  on('#bkx', e => {
+    if (!window.confirm('Cancel ' + bookName(b) + '\'s presentation on ' + fmtLong(b.slot_date) + '?')) return;
+    busy(e.currentTarget, true, 'Cancelling…');
+    call('bookingAction', { id: b.id, act: 'cancel' }).then(nb => { bookUpsert(nb); closeSheet(); toast('Booking cancelled'); if (S.view === 'today') render(true); })
+      .catch(ex => { busy(e.currentTarget, false); toast(ex.message); });
+  });
+}
+/** Appts Attended (admins): of the people booked after a call, how many came, by who booked them and where they applied. */
+function showupCard(s) {
+  if (!s || !s.booked) return '';
+  const pct = (a, b) => b ? Math.round(a / b * 100) + '%' : '–';
+  return '<div class="section-h"><b>📅 Show-up</b><span>' + s.came + ' of ' + s.booked + ' came · ' + pct(s.came, s.booked) + '</span></div>' +
+    '<div class="card showup"><table class="sutab"><tr><th>Booked by</th><th>Booked</th><th>Came</th><th>Show-up</th></tr>' +
+      s.rows.map(r => '<tr><td>' + h(r.name) + '</td><td>' + r.booked + '</td><td>' + r.came + '</td><td><b>' + pct(r.came, r.booked) + '</b></td></tr>').join('') + '</table>' +
+    '<div class="label muted" style="margin:14px 0 2px">Where they applied</div>' +
+      s.sources.map(x => '<div class="su-src"><div class="su-l"><span><b>' + h(x.source) + '</b> · ' + x.booked + ' booked → ' + x.came + ' came</span><b>' + pct(x.came, x.booked) + '</b></div>' +
+        '<div class="bar"><i style="width:' + (x.booked ? Math.round(x.came / x.booked * 100) : 0) + '%"></i></div></div>').join('') + '</div>' +
+    '<p class="hint">Booked from the app after a call, Mon–Fri. Today\'s count once ' + h(bookCfg().missed) + ' has passed. Cancelled bookings are left out.</p>';
 }
 
 // ───── New starter onboarding (admins only): 1 · add to Databyte (copy each box), 2 · the welcome email with the FieldIQ link ─────
@@ -3373,7 +3688,7 @@ window.addEventListener('scroll', () => { if (!spy.raf) spy.raf = requestAnimati
 /** Appointment feedback: the presenter's rating + notes (editable for presenters, read-only for everyone else). */
 function presCard(c, canNotes) {
   const kv = (k, v) => v ? '<dt>' + h(k) + '</dt><dd>' + h(v) + '</dd>' : '';
-  let pres = '<div class="card" id="pres">';
+  let pres = '<div class="card" id="pres">' + (c.booking_note ? '<div class="flag amber" style="margin-bottom:12px">📝 From the call: ' + h(c.booking_note) + '</div>' : '');
   if (canNotes) {
     pres += '<label class="q" style="margin-top:0">💬 Why work in sales?</label>' +
       '<textarea id="whynote" maxlength="300" class="short" placeholder="Type their answer, e.g. wants to earn on results, saving for a house">' + h(c.p_why_sales_note || c.p_why_sales) + '</textarea>' +
