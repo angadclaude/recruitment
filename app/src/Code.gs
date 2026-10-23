@@ -1953,7 +1953,7 @@ function getBooking(id) {
 /** Bookings from a week ago onwards (cancelled ones left off): the Today page's "Expected today", "Coming up" and "Didn't come". */
 function bookingList(req, u) {
   if (!canBook(u)) return { items: [] };
-  const from = addDays(todayStr(), -7);
+  const from = addDays(weekEnding(todayStr()), -13);  // last week's Monday: Book Appts goes back a week, day by day or the whole week
   // Booked before CONFIRM existed (23 Oct): give them their page now
   if (readTable('Bookings').some(b => b.status === 'booked' && b.slot_date >= from && !b.confirm_token)) {
     withLock(() => { delete MEMO.Bookings; readTable('Bookings').filter(b => b.status === 'booked' && !b.confirm_token).forEach(b => { b.confirm_token = token().slice(0, 24); writeRow('Bookings', b); }); });

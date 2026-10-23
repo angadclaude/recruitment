@@ -183,9 +183,30 @@ const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked 
   await jp.click('.tabbar button[data-tab=book]'); await jp.waitForSelector('#bookNew');
   ok(/Book Appts/.test(await jp.textContent('#abTitle')) && /Book a presentation/.test(await jp.textContent('#bookNew')), 'its own tab, Book Appts: 📅 Book a presentation');
   const exp = await jp.innerText('#page');
-  ok(/Booked · 10:00|Expected today · 10:00/i.test(exp) && /Sam Carter/.test(exp) && /Checked in 09:40/.test(exp) && /Ollie Grant/.test(exp) && /Rebooked/.test(exp) && /Coming up/i.test(exp),
-    'Expected today: Sam 🎓 checked in 09:40, Ollie didn\'t come (rebooked); Coming up lists Wednesday');
+  ok(/Today · 10:00 AM/i.test(exp) && /Tuesday 27 October/.test(exp) && /Sam Carter/.test(exp) && /Checked in 09:40/.test(exp) && /Ollie Grant/.test(exp) && /Rebooked/.test(exp) &&
+    /Show-up/i.test(exp) && await jp.$('.bkmode .chip.on[data-bkmode=day]') && await jp.$('#bkprev') && await jp.$('#bknext'),
+    'Day by day, like Today (Angad, 23 Oct): Today · Tuesday 27 October, Sam 🎓 checked in 09:40, Ollie didn\'t come (rebooked), the day\'s show-up');
   await shot(jp, 'b1-today', true);
+  await jp.click('#bknext'); await jp.waitForFunction(() => /Wednesday 28 October/.test(document.querySelector('.bknav').textContent));
+  const wed = await jp.innerText('#page');
+  ok(/Tomorrow · 10:00 AM/i.test(wed) && /Ollie Grant/.test(wed) && !/Sam Carter/.test(wed) && /Not confirmed/i.test(wed) && /Send tomorrow's reminders/.test(wed),
+    '› the next day: Tomorrow · Wednesday 28 October, Ollie, not confirmed, 📲 Send tomorrow\'s reminders');
+  await jp.click('#bkprev'); await jp.waitForFunction(() => /Tuesday 27 October/.test(document.querySelector('.bknav').textContent));
+  await jp.click('#bkprev'); await jp.waitForFunction(() => /Monday 26 October/.test(document.querySelector('.bknav').textContent));
+  await jp.click('#bkprev'); await jp.waitForFunction(() => /Friday 23 October/.test(document.querySelector('.bknav').textContent));
+  ok(true, '‹ goes back a weekday at a time, skipping the weekend (Monday → Friday)');
+  await jp.click('[data-bkmode=week]'); await jp.waitForSelector('#bkwprev');
+  let wk = await jp.innerText('#page');
+  ok(/Week ending/i.test(wk) && /Sun 25 Oct/.test(wk) && /Nobody booked for this week/.test(wk), 'Week: the week of the day on screen (w/e Sun 25 Oct, nobody booked)');
+  await jp.click('#bkwnext'); await jp.waitForFunction(() => /This week/i.test(document.querySelector('.bknav').textContent));
+  wk = await jp.innerText('#page');
+  ok(/Tue 27 Oct · today/i.test(wk) && /Wed 28 Oct · tomorrow/i.test(wk) && /Sam Carter/.test(wk) && wk.toLowerCase().indexOf('tue 27') < wk.toLowerCase().indexOf('wed 28') &&
+    (wk.match(/Ollie Grant/g) || []).length === 2 && await jp.$('.bkremw [data-bkrem="2026-10-28"]') && !(await jp.$('[data-bkrem="2026-10-27"]')),
+    '› this week in one go, like All: Tuesday then Wednesday, everyone booked, 📲 Remind on the days still to come');
+  await shot(jp, 'b1-week', true);
+  await jp.click('.bkdayh [data-bkday="2026-10-28"]'); await jp.waitForFunction(() => /Wednesday 28 October/.test(document.querySelector('.bknav').textContent));
+  ok(await jp.$('.bkmode .chip.on[data-bkmode=day]'), 'tap a day in the week → that day');
+  await jp.click('#bkprev'); await jp.waitForFunction(() => /Tuesday 27 October/.test(document.querySelector('.bknav').textContent));
   await jp.click('#bookNew'); await jp.waitForSelector('.bksheet #bkfn');
   await shot(jp, 'b2-book-form');
   await jp.fill('#bkfn', 'Leah'); await jp.fill('#bksn', 'Brown'); await jp.fill('#bkmob', '07700900126');
@@ -214,10 +235,10 @@ const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked 
   let leah = null; for (let i = 0; i < 25 && !(leah && leah.confirm_at); i++) { leah = (await api(jess, 'bookingList', {})).items.find(b => b.first_name === 'Leah'); if (!leah || !leah.confirm_at) await new Promise(r => setTimeout(r, 200)); }
   ok(leah && leah.confirm_by === 'Jess Grace' && leah.confirm_via === 'whatsapp' && leah.notes === 'Lives in Slough' && leah.slot_date === '2026-10-29', 'tapping Send saves it as sent (by Jess, WhatsApp)');
   await jp.click('#bkdone');
-  await jp.waitForSelector('[data-bkrem="2026-10-28"]');
+  await jp.click('#bknext'); await jp.waitForSelector('[data-bkrem="2026-10-28"]');
   await jp.click('[data-bkrem="2026-10-28"]'); await jp.waitForSelector('.bksheet [data-bks]');
   const rs = await jp.innerText('.bksheet');
-  ok(/TOMORROW · Wednesday 28 October/i.test(rs) && /0 of 1 sent/.test(rs) && /Ollie Grant/.test(rs), 'Coming up → 📲 Remind: tomorrow\'s send list ("0 of 1 sent")');
+  ok(/TOMORROW · Wednesday 28 October/i.test(rs) && /0 of 1 sent/.test(rs) && /Ollie Grant/.test(rs), 'Tomorrow → 📲 Send tomorrow\'s reminders: the send list ("0 of 1 sent")');
   const remTxt = textOf(await jp.getAttribute('.bksheet a.btn[data-bks]', 'href'));
   const ol2Tok = (await api(jess, 'bookingList', {})).items.find(b => b.first_name === 'Ollie' && b.slot_date === '2026-10-28').confirm_token;
   ok(remTxt === 'Hey Ollie! 👋\n\n*Tomorrow’s the day!* 🙌\nYour *Appointment Presentation* with *JUSS Marketing*\n\n📅 *Wednesday 28th October · 10:00 AM*\n' +
@@ -244,11 +265,14 @@ const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked 
   ok(lc.confirmed_by === 'CONFIRM' && to(await pushesSince(n0), jessId).some(p => p.body.headings.en === '✅ Leah confirmed Thursday\'s presentation'), 'confirmed in the app, and Jess gets "✅ Leah confirmed Thursday\'s presentation"');
   await lctx.close();
 
-  // Booked on another device (Angad, 23 Oct: booked Lucy on the laptop, couldn't open her on the phone): first and last name, one tap
+  // Booked on another device (Angad, 23 Oct: booked Lucy on the laptop, couldn't open her on the phone). It shows up on Jess's
+  // phone by itself (Angad, 23 Oct: "it should keep updating whenever someone books more people"), and opens with one tap
+  await jp.click('[data-bkmode=week]'); await jp.waitForSelector('#bkwprev');
   await api(angad, 'saveBooking', { booking: { first_name: 'Lucy', last_name: 'Smith', mobile: '07700900130', slot_date: '2026-10-28' } });
-  await jp.reload(); await jp.waitForSelector('.tabbar button[data-tab=book]'); await jp.click('.tabbar button[data-tab=book]'); await jp.waitForSelector('.bknames .nm:has-text("Lucy Smith")');
-  await jp.tap('.bknames .nm:has-text("Lucy Smith")'); await jp.waitForSelector('.bksheet .bkinfo');
-  ok(/Booked by Angad Oshan/.test(await jp.innerText('.bksheet')) && /Lucy Smith/.test(await jp.innerText('.bksheet')), 'Coming up shows first and last names; tapping one opens the booking made on another device');
+  const t0 = Date.now(); await jp.waitForSelector('.bkrow:has-text("Lucy Smith")', { timeout: 25000 });
+  ok(Date.now() - t0 < 20000, 'Week open on Jess\'s phone: Lucy, booked by Angad on his laptop, appears by itself (' + Math.round((Date.now() - t0) / 1000) + ' s, no refresh)');
+  await jp.tap('.bkrow:has-text("Lucy Smith") .name'); await jp.waitForSelector('.bksheet .bkinfo');
+  ok(/Booked by Angad Oshan/.test(await jp.innerText('.bksheet')) && /Lucy Smith/.test(await jp.innerText('.bksheet')), 'first and last name; tapping her opens the booking made on another device');
   await jp.click('#bkc'); await jp.waitForSelector('.bksheet .bksend2 a.btn.sms');
   ok(/Hey Lucy!/.test(textOf(await jp.getAttribute('.bksheet .bksend2 a.btn.sms', 'href'))), '→ 💬 Send the confirmation → 📱 Text: her confirmation by text from the phone');
   await jp.click('#bkdone');
@@ -309,8 +333,8 @@ const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked 
   const dctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, permissions: ['clipboard-read', 'clipboard-write'] });
   await dctx.addInitScript(t => { try { if (!localStorage.getItem('lr_tok')) localStorage.setItem('lr_tok', JSON.stringify(t)); } catch (e) {} }, angad);
   const dp = await dctx.newPage(); await dp.goto(APP + 'index.html'); await dp.waitForSelector('.tabbar button[data-tab=book]');
-  await dp.click('.tabbar button[data-tab=book]'); await dp.waitForSelector('.bknames .nm:has-text("Jake Hill")');
-  await dp.click('.bknames .nm:has-text("Jake Hill")'); await dp.waitForSelector('#bkc'); await dp.click('#bkc'); await dp.waitForSelector('.bksheet .bksend2 a.btn.wa');
+  await dp.click('.tabbar button[data-tab=book]'); await dp.click('[data-bkmode=week]'); await dp.waitForSelector('.bkrow:has-text("Jake Hill")');
+  await dp.click('.bkrow:has-text("Jake Hill") .name'); await dp.waitForSelector('#bkc'); await dp.click('#bkc'); await dp.waitForSelector('.bksheet .bksend2 a.btn.wa');
   ok(/opens the chat empty with the message copied: click the message box, press Ctrl\+V, then Send/.test(await dp.innerText('.bksheet .deskpaste')) && !/Opens with this ready/.test(await dp.innerText('#bksent')),
     'on a laptop the sheet says so before you press it: WhatsApp opens empty, press Ctrl+V (Angad, 23 Oct: "the whole details are wiped off")');
   const full = await dp.getAttribute('.bksheet .bksend2 a.btn.wa', 'href');
