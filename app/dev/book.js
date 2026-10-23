@@ -204,6 +204,20 @@ const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked 
     (wk.match(/Ollie Grant/g) || []).length === 2 && await jp.$('.bkremw [data-bkrem="2026-10-28"]') && !(await jp.$('[data-bkrem="2026-10-27"]')),
     '› this week in one go, like All: Tuesday then Wednesday, everyone booked, 📲 Remind on the days still to come');
   await shot(jp, 'b1-week', true);
+  // Like the All tab's (Angad, 23 Oct): the week as a PDF, who was booked and who came
+  ok((await jp.textContent('.bkpdf')).trim() === '📄 Booked appointments w/e Sun 1 Nov (PDF)', 'Week: "📄 Booked appointments w/e Sun 1 Nov (PDF)", like the All tab\'s');
+  await jp.click('.bkpdf'); await jp.waitForSelector('.pdfprev #pdfgo');
+  const bTitle = await jp.textContent('.pdfprev .display');
+  const [bdl] = await Promise.all([jp.waitForEvent('download'), jp.click('#pdfgo')]);
+  await jp.waitForFunction(() => !document.querySelector('.pdfprev'));
+  const bPath = `${SHOTS}/b10-booked-week.pdf`; await bdl.saveAs(bPath);
+  const bRaw = fs.readFileSync(bPath, 'latin1'), bHas = s => bRaw.includes('(' + s.replace(/[\\()]/g, '\\$&') + ') Tj');
+  ok(bTitle === 'Booked Appointments w-e 01.11.2026' && bdl.suggestedFilename() === 'Booked Appointments w-e 01.11.2026.pdf' && /\/Title \(Booked Appointments w-e 01\.11\.2026\)/.test(bRaw) &&
+    bHas('Booked appointments · week ending Sunday 1 November 2026') && bHas('Tuesday 27 October') && bHas('Wednesday 28 October') &&
+    bHas('Sam Carter') && bHas('Came 09:40') && bHas('Didn\'t come (rebooked)') && bHas('Expected') && bHas('Show-up') && bHas('Came?'),
+    '📄 → "Booked Appointments w-e 01.11.2026.pdf": a table per day, confirmed or not, Sam came 09:40, Ollie didn\'t come (rebooked), Wednesday\'s expected');
+  let bTxt = ''; try { bTxt = require('child_process').execFileSync('pdftotext', ['-layout', bPath, '-'], { encoding: 'utf8' }); } catch (e) { bTxt = ''; }
+  if (bTxt) fs.writeFileSync(`${SHOTS}/b10-booked-week.txt`, bTxt);
   await jp.click('.bkdayh [data-bkday="2026-10-28"]'); await jp.waitForFunction(() => /Wednesday 28 October/.test(document.querySelector('.bknav').textContent));
   ok(await jp.$('.bkmode .chip.on[data-bkmode=day]'), 'tap a day in the week → that day');
   await jp.click('#bkprev'); await jp.waitForFunction(() => /Tuesday 27 October/.test(document.querySelector('.bknav').textContent));

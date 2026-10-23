@@ -906,6 +906,7 @@ table.t td { padding: 9px 4px; border-bottom: 1px solid var(--line); vertical-al
 .bkrow .main[data-bk], .bkdayh [data-bkday] { cursor: pointer; }
 .bkmode { margin: 4px 2px 12px; }
 .bkremd { margin: 0 0 12px; }
+.bkpdf { margin: 0 0 12px; }
 .bkremw { display: flex; justify-content: flex-end; margin: -4px 2px 8px; }
 .bkrow .pills { margin-top: 6px; }
 .bkbtns { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; margin-top: 8px; }
