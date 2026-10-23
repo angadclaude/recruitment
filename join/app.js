@@ -1,4 +1,4 @@
-window.APP_VERSION = '582fbf95';
+window.APP_VERSION = '0f57a188';
 
 (function () {
 'use strict';
@@ -2784,7 +2784,7 @@ function msgWelcomeHeadsUp(c, fr) {
   const co = brandCo(c);
   return 'Hi ' + c.first_name + ' 👋 It\'s ' + S.me.user.name.split(' ')[0] + ' from ' + brandOf(c) + '.\n\n' +
     'I\'ve just emailed your starter pack to ' + c.email + ' 📧\n' +
-    '📲 FieldIQ (download before Day 1): ' + FIELDIQ_URL + '\n' + (co === 'LINK' ? '📝 Your Pre-Coaching Module\n' : '') +
+    '📲 FieldIQ (before Day 1): first tap the link in FieldIQ\'s invitation email or text (check Junk), then download the app and log in with that email: ' + FIELDIQ_URL + '\n' + (co === 'LINK' ? '📝 Your Pre-Coaching Module\n' : '') +
     '📘 Your ' + (co === 'JUSS' ? 'JUSS' : 'Link Org') + ' Playbook\n🗓️ Your Week 1 plan\n\n' +
     'It\'s from ' + (fr ? fr.email : 'us') + '. Can\'t see it? Check *Spam* or *Promotions* and tap *Not spam*, so nothing else goes missing.\n\n' +
     'Please reply *GOT IT* once you have it ✅';
@@ -2821,7 +2821,7 @@ function onboardCard(c) {
       '<div class="row" style="margin-top:10px"><a class="btn ghost sm" href="' + DATABYTE_URL + '" target="_blank" rel="noopener">Open Databyte ↗</a>' +
       (onDb ? '<button type="button" class="btn ghost sm" id="dbundo">Undo</button>' : '<button type="button" class="btn green sm grow" id="dbdone">✅ Added to Databyte</button>') + '</div></div>' +
     '<div class="onb-step' + (sent ? ' done' : '') + (onDb ? '' : ' locked') + '"><div class="onb-t"><b>2 · Send the welcome email</b>' + (sent ? '<span class="pill green">✓ Sent ' + by(c.onboard_email_by, c.onboard_email_at) + '</span>' : '') + '</div>' +
-      '<p class="small muted">"' + brand + ' - Your Brand Ambassador Journey Begins!" with FieldIQ and their Playbook, to <b>' + h(c.email) + '</b>.' +
+      '<p class="small muted">"' + brand + ' - Your Brand Ambassador Journey Begins!" with FieldIQ and their Playbook, to <b>' + h(c.email) + '</b>. FieldIQ sends them its own invite: they tap its link before they can log in.' +
       (onDb ? '' : ' 🔒 Unlocks once they\'re on Databyte: FieldIQ only works after that.') + '</p>' +
       (fr ? '<p class="small obfrom">📤 From <b>' + h(fr.name || fr.email) + '</b> · ' + h(fr.email) + (fr.ready ? '' : ' <span class="pill amber">not set up yet</span>') + '</p>' : '') +
       (sent && c.mobile ? '<a class="btn ' + (c.no_whatsapp ? 'sms' : 'wa') + ' block" id="obwa" target="_blank" rel="noopener" href="' + h(msgUrl(c, msgWelcomeHeadsUp(c, fr))) + '">' +
