@@ -112,7 +112,7 @@ async function fillEval(p) {
   await post('/dev/props', { ONESIGNAL_APP_ID: 'test-app', ONESIGNAL_API_KEY: 'test-key' });
   // Simulate Angad's live Sheet (15 Oct): created before the who-sent-it columns existed, with the presenter-question
   // headers written twice (two people opened the app the moment that version went live)
-  await post('/dev/eval', { js: "(() => { const h = SpreadsheetApp.getActive().getSheetByName('Candidates').data[0]; h.splice(-5); h.push('presented_by_id', 'presented_by'); return h.length; })()" });
+  await post('/dev/eval', { js: "(() => { const h = SpreadsheetApp.getActive().getSheetByName('Candidates').data[0]; h.splice(-7); h.push('presented_by_id', 'presented_by'); return h.length; })()" });
   await setTime('2026-10-12T09:30:00+01:00'); // Monday morning
   const admin = await loginApi('angad@linkmarketing.org.uk');
   const users = (await api(admin, 'listUsers')).users;
@@ -515,7 +515,7 @@ async function fillEval(p) {
   ok(/💡 Plays semi-pro football/.test(snap) && /Wants to earn on results, saving for a house/.test(snap), 'booker sees the room answers: 💡 ice-breaker + why sales');
   ok(/🎤 Presentation by Nathan Smith/.test(snap) && !/rated by/.test(snap), 'their page says who ran the presentation: "🎤 Presentation by Nathan Smith" (he rated the room too)');
   const hdr = (await getJson('/dev/sheet?name=Candidates'))[0];
-  ok(hdr.slice(-17).join() === 'recruit_source,databyte_at,databyte_by,onboard_email_at,onboard_email_by,brand,presented_by_id,presented_by,offer_by,offer_via,offer_co,thanks_via,thanks_co,outcome_log,callback_at,callback_by_id,callback_nudged' && new Set(hdr).size === hdr.length,
+  ok(hdr.slice(-19).join() === 'recruit_source,databyte_at,databyte_by,onboard_email_at,onboard_email_by,brand,presented_by_id,presented_by,offer_by,offer_via,offer_co,thanks_via,thanks_co,outcome_log,callback_at,callback_by_id,callback_nudged,booking_id,booking_note' && new Set(hdr).size === hdr.length,
     'live Sheet with the presenter headers written twice: the empty copies cleared, the new columns added in the right place (no data moved)');
   ok(!/unspent criminal convictions/i.test(snap), 'conviction answer hidden from bookers');
   ok(/A door gets shut in your face\. What's your first thought\?/.test(snap) && /Tell us about a time you kept going when things got tough\. What did you do\?/.test(snap) &&
