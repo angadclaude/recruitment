@@ -93,16 +93,17 @@ function relay(db) {
   // (the Gmail route is tried again every 10 minutes, so it starts by itself once allowed).
   let gmailBlockedUntil = 0;
   async function relayMail(m) {
-    m = emailSafe(m);  // emojis written so Google can't garble them (server/email.js)
+    // Emojis written so Google can't garble them (server/email.js), after the plain text is taken from the HTML (made safe
+    // first, the plain text read "&#128203;")
     const g = viaGmail(m);
     if (g && Date.now() >= gmailBlockedUntil) {
-      try { return await call('relayMail', { mail: g }); } catch (e) {
+      try { return await call('relayMail', { mail: emailSafe(g) }); } catch (e) {
         if (!/permission/i.test(String(e.message))) throw e;
         gmailBlockedUntil = Date.now() + 10 * 60000;
         console.error('Gmail route not allowed yet, MailApp instead');
       }
     }
-    return call('relayMail', { mail: m });
+    return call('relayMail', { mail: emailSafe(m) });
   }
   async function sendOne(id) {
     const row = (await db.sql`select payload, sent_at from jl.outbox where id = ${id}::bigint`)[0];
