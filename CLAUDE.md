@@ -16,7 +16,7 @@ The recruitment app for **LINK Marketing** and **JUSS Marketing** (Angad runs bo
   - Where the app lives is set in `app/site.json` (`url` + `movedFrom`); `CONFIG.PUBLIC_URL` in `Code.gs` must match `url`.
 - **Alerts:** OneSignal web push. The REST API key is a Script Property in Apps Script; it must never go in chat or GitHub.
 - **Sheet columns:** new columns append themselves (`readTable` plus `tidyHeaders`). Never reorder or insert columns by hand.
-- **The Supabase back end (built 18 Oct 2026, not live until switch day):** the same `Code.gs` runs on Vercel, unchanged.
+- **The Supabase back end (live since 19 Oct 2026, PR #79):** the same `Code.gs` runs on Vercel, unchanged. The app (`join/config.js` `API_URL: '/api/rpc'`) talks only to Vercel, and the data lives in Supabase, not the Sheet. Google's copy of `Code.gs` only runs the relay.
   - `server/worker.js` runs `Code.gs` in a worker thread with the Google services rebuilt on Postgres: each Sheet tab = `jl.tabs` + `jl.rows` (ordered), CacheService = `jl.cache`, PropertiesService = `jl.props`, LockService = a Postgres advisory lock. Code.gs is synchronous, so every database call waits on the main thread (`server/runtime.js`, Atomics).
   - `server/runtime.js`: one job = one transaction, one job at a time per instance. Emails go into `jl.outbox` and are sent after the commit.
   - `server/live.js` wires it to Supabase (the shared project; schema `jl`, next to FR's `public`, `leaders` and `hf`), OneSignal, and Google's **email relay**.
@@ -39,10 +39,9 @@ The recruitment app for **LINK Marketing** and **JUSS Marketing** (Angad runs bo
    - **On Angad's PC (PowerShell):** Playwright is installed in `%LOCALAPPDATA%\jl-recruitment-tools`, so first run `$env:NODE_PATH = "$env:LOCALAPPDATA\jl-recruitment-tools\node_modules"`. Run the harnesses one at a time: with `speed.js` running alongside, an e2e step (Chase → Nudge all) once timed out. Alone, e2e passes 379/379 on UK time and on UTC. Git is at `%LOCALAPPDATA%\Programs\Git\cmd\git.exe` (not on PATH in older shells). This clone has `core.autocrlf=false`: keep files LF, or the build's version hash changes. `private/` (ignored locally) holds files that must never go in this public repo.
    - **Test browser clocks** follow the fake server clock (`setTime`), so tests don't depend on today's real date.
 3. Commit, open a PR, merge. Vercel picks up `main` by itself within about a minute.
-4. **If `Code.gs` changed**, Angad has to paste it (there's no auto-deploy yet). Give him:
+4. **`Code.gs` changes go live on merge**, because Vercel runs it. Angad only pastes it into Apps Script when a `relay*` function (the Google-only part) changes. On 23 Oct he was asked to paste for a welcome-email wording change; it did no harm, but it wasn't needed. When a paste is needed, give him:
    - the commit-pinned link `https://raw.githubusercontent.com/angadclaude/recruitment/<merge-sha>/app/src/Code.gs`;
-   - the steps: Sheet → Extensions → Apps Script → `Code.gs` → select all → paste → Save → **Deploy → Manage deployments → ✏️ → New version → Deploy** → close and reopen the app.
-   - Verify with the Sheets connector where you can, e.g. new columns appearing.
+   - the steps: Sheet → Extensions → Apps Script → `Code.gs` → select all → paste → Save → **Deploy → Manage deployments → ✏️ → New version → Deploy**.
 5. The repo is **public**. Never commit secrets, passwords or internal business documents.
 
 ## Rules
