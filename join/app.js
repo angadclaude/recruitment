@@ -1,4 +1,4 @@
-window.APP_VERSION = 'a1eb6950';
+window.APP_VERSION = '470687a6';
 
 (function () {
 'use strict';
@@ -892,7 +892,9 @@ function renderBooked(w, keepScroll) {
   const days = Math.round((D(w.slot_date) - D(w.today || londonToday())) / 86400000);
   const when = days > 1 ? 'In ' + days + ' days' : days === 1 ? 'TOMORROW 👀' : days === 0 ? 'TODAY 🔥' : fmt(w.slot_date);
   const see = days === 0 ? 'today' : days === 1 ? 'tomorrow' : DAYS_LONG[D(w.slot_date).getUTCDay()];
-  const ymd = w.slot_date.replace(/-/g, ''), t0 = time.replace(':', '') + '00', t1 = String(Number(time.slice(0, 2)) + 2).padStart(2, '0') + time.slice(3) + '00';
+  // In their calendar for 90 minutes, the long end of "approximately 60–90 minutes"
+  const end = Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5)) + 90, pad = n => String(n).padStart(2, '0');
+  const ymd = w.slot_date.replace(/-/g, ''), t0 = time.replace(':', '') + '00', t1 = pad(Math.floor(end / 60)) + pad(end % 60) + '00';
   const gcal = 'https://calendar.google.com/calendar/render?action=TEMPLATE&text=' + encodeURIComponent('Appointment Presentation – ' + brand) +
     '&dates=' + ymd + 'T' + t0 + '/' + ymd + 'T' + t1 + '&ctz=Europe/London&location=' + encodeURIComponent(office.address) +
     '&details=' + encodeURIComponent('Office wear / smart casual. No documents needed. Arrive 10 minutes early.');
@@ -902,7 +904,7 @@ function renderBooked(w, keepScroll) {
     '<h1>You\'re booked in, <span class="gname">' + h(w.first_name) + '</span> 🎉</h1><p>Your <b>Appointment Presentation</b> with <b>' + h(brand) + '</b></p>' +
     '<span class="wl-pill">' + h(when) + '</span></div>' +
     sec('📅', 'When and where') + '<div class="qcard"><div class="wl-date">' + h(fmtLong(w.slot_date)) + '</div>' +
-    '<div class="wl-time">⏰ ' + h(fmt12(time)) + ' · about 1–2 hours</div><p>📍 ' + h(office.address) + '<br><span class="muted small">2 mins from Slough station · exit from platform 5</span></p>' +
+    '<div class="wl-time">⏰ ' + h(fmt12(time)) + ' · approximately 60–90 minutes</div><p>📍 ' + h(office.address) + '<br><span class="muted small">2 mins from Slough station · exit from platform 5</span></p>' +
     '<div class="row"><a class="btn sm" href="' + h(office.maps) + '" target="_blank" rel="noopener">🗺️ Google Maps</a>' +
     '<a class="btn ghost sm" href="' + h(gcal) + '" target="_blank" rel="noopener">📅 Add to calendar</a></div></div></section>' +
     sec('✅', 'Good to know') + '<div class="wl-bring"><div><span>👔</span>Office wear / smart casual</div><div><span>📄</span>No documents needed yet</div>' +
@@ -2592,7 +2594,7 @@ function msgBookConfirm(b) {
   return 'Hey ' + b.first_name + '! 👋\n\n' +
     'Great speaking with you! You’re *booked in* for your *Appointment Presentation* 🎉\n\n' +
     '📅 *' + fmtOrd(b.slot_date) + ' · ' + fmt12(b.slot_time || bookCfg().time) + '*\n' +
-    '⏱️ About 1–2 hours\n\n' +
+    '⏱️ Approximately 60–90 minutes\n\n' +  // Angad, 23 Oct (was "About 1–2 hours")
     '📍 *Where*\n' + co + ' Marketing, 2nd Floor East\nAutomotive House, Grays Place, Slough SL2 5AF\n' +
     '🗺️ ' + OFFICES[co].maps + '\n' +
     '🚗 Parking right outside the main entrance\n' +
