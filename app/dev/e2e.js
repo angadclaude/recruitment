@@ -1359,6 +1359,12 @@ async function fillEval(p) {
   ok(/New Starts List 19\.10\.2026/.test(pdfTxt) && /BA Academy Day 1 · Monday 19 October 2026 · 1:30pm/.test(pdfTxt) && /Adham Soliman/.test(pdfTxt) && /Jasraj Bhuller/.test(pdfTxt) &&
     /2 expected · JUSS 1 · LINK 1 · 2 confirmed/.test(pdfTxt) && /Arrived: ______ of 2/.test(pdfTxt) && /shred it after Day 1/.test(pdfTxt) && /Page 1 of 1/.test(pdfTxt),
     'the PDF is a real sign-in sheet: names, mobiles, booker, confirmed, an Arrived box to tick, totals, "shred after Day 1"');
+  // Closed by, right after Booked by (Angad, 25 Oct): whoever logged "Academy booked" on the call
+  const closer = c => { let l = []; try { l = JSON.parse(c.outcome_log || '[]'); } catch (e) { l = []; } const e = (Array.isArray(l) ? l : []).filter(x => x.o === 'Academy booked').pop(); return (e && e.by) || c.outcome_by || ''; };
+  const shortN = n => { const w = String(n).split(' '); return w[0] + (w[1] ? ' ' + w[1][0] + '.' : ''); };
+  const adC = await api(admin, 'getCandidate', { id: adham.id }), jaC = await api(admin, 'getCandidate', { id: jasId });
+  ok(closer(adC) && closer(jaC) && /Booked by\s+Closed by\s+Confirmed/.test(pdfTxt) && pdfTxt.includes(shortN(closer(adC))) && pdfTxt.includes(shortN(closer(jaC))),
+    'Closed by, right after Booked by: who logged "Academy booked" on the call (Adham: ' + closer(adC) + ', Jasraj: ' + closer(jaC) + ')');
   try { require('child_process').execFileSync('pdftoppm', ['-png', '-r', '70', '-singlefile', pdfPath, `${SHOTS}/30-day1-signin`]); } catch (e) { /* no renderer here */ }
   await jr.close();
 
@@ -1372,6 +1378,7 @@ async function fillEval(p) {
   await ap.goto(APP + 'index.html?c=academy');
   await ap.waitForSelector('[data-d1="arrived"][data-id="' + jasId + '"]');
   ok(/Monday 19 October · TODAY/i.test(await ap.innerText('#page')), 'on the day it says TODAY with Arrived / No-show for each starter');
+  ok((await ap.innerText('.trow[data-cand="' + jasId + '"] .sub')).includes('closed by ' + closer(jaC)), 'each starter on the Day 1 tab: "booked by … · closed by ' + closer(jaC) + '"');
   await ap.click('[data-d1="arrived"][data-id="' + jasId + '"]');
   await ap.waitForSelector('[data-d1="arrived"][data-id="' + jasId + '"].green');
   await ap.click('[data-d1="no_show"][data-id="' + adham.id + '"]');
