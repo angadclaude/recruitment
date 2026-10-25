@@ -18,6 +18,15 @@ function db() {
 /** Create the core tables once per server instance (several statements: a plain, unprepared query). */
 async function ready(exec) { if (!MIGRATED) { await exec(core.SCHEMA); MIGRATED = true; } }
 
+/** Sends through the recruitment app's Google relay with Gmail itself (GmailApp: saved in Sent like a normal email),
+ *  with a plain-text copy next to the designed one. Both keep the codes out of spam better than MailApp's html-only mail. */
+async function relayGmail(to, subject, htmlBody, body, name) {
+  const res = await fetch(process.env.RELAY_URL, { method: 'POST', headers: { 'content-type': 'text/plain' }, signal: AbortSignal.timeout(60000),
+    body: JSON.stringify({ action: 'relayMail', secret: process.env.RELAY_SECRET, mail: { via: 'gmail', to, subject, body, opts: { htmlBody, name } } }) });
+  const j = JSON.parse(await res.text());
+  if (!j.ok) throw new Error('relay: ' + j.error);
+}
+
 /** Login codes go out from Gmail through the recruitment app's Google relay. */
 async function sendCodeEmail(email, code) {
   const allow = String(process.env.MAIL_ALLOW || 'angad@linkmarketing.org.uk').toLowerCase().split(/[,\s]+/);
@@ -27,10 +36,8 @@ async function sendCodeEmail(email, code) {
     '<p style="font-size:15px;margin:22px 0 6px">Your LINK × JUSS login code:</p>' +
     '<p style="font-size:40px;letter-spacing:8px;font-weight:700;margin:0 0 18px">' + code + '</p>' +
     '<p style="font-size:13px;color:#6E6C78;margin:0">It works for 10 minutes. If you didn\'t ask for it, ignore this email.</p></div>';
-  const res = await fetch(process.env.RELAY_URL, { method: 'POST', headers: { 'content-type': 'text/plain' }, signal: AbortSignal.timeout(60000),
-    body: JSON.stringify({ action: 'relayMail', secret: process.env.RELAY_SECRET, mail: { via: 'mail', msg: { to: email, subject: code + ' is your LINK × JUSS login code', htmlBody: html, name: 'LINK × JUSS' } } }) });
-  const j = JSON.parse(await res.text());
-  if (!j.ok) throw new Error('relay: ' + j.error);
+  const text = 'Your LINK x JUSS login code: ' + code + '\n\nIt works for 10 minutes. If you didn\'t ask for it, ignore this email.\n\nLINK Marketing x JUSS Marketing';
+  await relayGmail(email, code + ' is your LINK × JUSS login code', html, text, 'LINK × JUSS');
 }
 
 /** "You're a Leader now": in their brand, from Gmail via the relay. Same launch rule as the codes. */
@@ -48,10 +55,10 @@ async function sendCongrats(email, name, company, opened) {
     (opened ? 'Stage 3 is open now in your ' + pb + '.' : 'Stage 3 opens in your ' + pb + ' as soon as your login is ready.') + '</p>' +
     '<p style="margin:0 0 18px"><a href="https://link-juss.vercel.app/" style="display:inline-block;background:#22222B;color:#fff;text-decoration:none;padding:13px 20px;border-radius:12px;font-weight:600">Open my apps</a></p>' +
     '<p style="font-size:13px;color:#6E6C78;margin:0">Sign in with this email address; we\'ll send you a code.</p></div>';
-  const res = await fetch(process.env.RELAY_URL, { method: 'POST', headers: { 'content-type': 'text/plain' }, signal: AbortSignal.timeout(60000),
-    body: JSON.stringify({ action: 'relayMail', secret: process.env.RELAY_SECRET, mail: { via: 'mail', msg: { to: email, subject: 'You\'re a Leader 🎉 Stage 3 is open', htmlBody: html, name: brand } } }) });
-  const j = JSON.parse(await res.text());
-  if (!j.ok) throw new Error('relay: ' + j.error);
+  const text = 'You\'re a Leader, ' + first + '!\n\nYou\'ve been moved on to Stage 3 · Leader at ' + brand + '. ' +
+    (opened ? 'Stage 3 is open now in your ' + pb + '.' : 'Stage 3 opens in your ' + pb + ' as soon as your login is ready.') +
+    '\n\nOpen my apps: https://link-juss.vercel.app/\n\nSign in with this email address; we\'ll send you a code.';
+  await relayGmail(email, 'You\'re a Leader 🎉 Stage 3 is open', html, text, brand);
 }
 
 function cookieToken(req) {
