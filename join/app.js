@@ -1,4 +1,4 @@
-window.APP_VERSION = '11fe1300';
+window.APP_VERSION = 'ec3396d2';
 
 (function () {
 'use strict';
@@ -1855,6 +1855,12 @@ function callLog(c) {
   }
   return l.reverse();
 }
+/** Who closed them (Angad, 25 Oct: "after Booked by, Closed by"): whoever logged "Academy booked" on the call, newest first
+ *  (their call log), else whoever logged the outcome. */
+function closedBy(c) {
+  const e = callLog(c).filter(x => x.o === 'Academy booked')[0];
+  return (e && e.by) || (c.outcome === 'Academy booked' && c.outcome_by) || '';
+}
 function callLogHtml(c) {
   return '<div class="sentlist calllog"><div class="sl-h">📞 Call log</div>' + callLog(c).map((e, i) =>
     '<div class="sl-r' + (i ? ' old' : '') + '"><span>' + (i ? '' : '<b>') + h(e.o) + (e.o === 'Academy booked' && e.d ? ' · Day 1 ' + fmt(e.d) : '') + (e.cb ? ' · call back ' + fmtTs(e.cb) : '') + (i ? '' : '</b>') + '</span>' +
@@ -2437,7 +2443,7 @@ function drawAcademy(r, quiet) {
         '<button class="btn sm ' + (c.day1_status === 'no_show' ? 'red' : 'ghost') + '" data-d1="no_show" data-id="' + h(c.id) + '">No-show</button>' + mvBtn + '</div>'
       : offer && !mvBtn ? '' : '<div class="d1btns">' + (offer ? '' : '<a class="btn ' + (c.no_whatsapp ? 'sms' : 'wa') + ' sm" data-rem1="' + h(c.id) + '" data-via="' + (c.no_whatsapp ? 'sms' : 'whatsapp') + '" target="_blank" rel="noopener" href="' + h(msgUrl(c, msgDay1Reminder(c))) + '">💬 Remind</a>') + mvBtn + '</div>';
     return '<div class="trow' + (q ? ' d1q' : '') + (c.day1_status === 'arrived' ? ' arrived' : '') + '" data-cand="' + h(c.id) + '">' + avatar(c) + '<div class="main"><div class="name">' + h(c.full_name) + ' <span class="co ' + h(c.company) + '">' + h(c.company) + '</span></div>' +
-      '<div class="sub">' + (c.booker_name ? 'booked by ' + h(c.booker_name) : 'no booker') + '</div>' +
+      '<div class="sub">' + (c.booker_name ? 'booked by ' + h(c.booker_name) : 'no booker') + (closedBy(c) ? ' · closed by ' + h(closedBy(c)) : '') + '</div>' +
       (c.offer_sent_at ? '<div class="sub d1by">🎉 Day 1 details ' + offerBy(c) + '</div>' : '') + '<div class="pills">' + pills + '</div></div>' + act + q + '</div>';
   };
   const block = x => {
@@ -3041,7 +3047,9 @@ function d1Days(dates) {
 /** The week's New Starts List: everyone starting that week (Monday and Tuesday), each with their start day and date. */
 function day1Pdf(mon, list) {
   const W = 595.28, H = 841.89, M = 36, RH = 24, PER = 24;
-  const cols = [['#', 20], ['Name', 116], ['Co', 36], ['Mobile', 78], ['Starts', 50], ['Booked by', 80], ['Confirmed', 52], ['Arrived', 46], ['Notes', 45]];
+  const cols = [['#', 18], ['Name', 104], ['Co', 32], ['Mobile', 66], ['Starts', 50], ['Booked by', 66], ['Closed by', 66], ['Confirmed', 48], ['Arrived', 42], ['Notes', 31]];
+  /** "Abdullahi A.": Booked by and Closed by side by side on A4 */
+  const who = n => { const w = String(n || '').trim().split(/\s+/); return w[0] ? w[0] + (w[1] ? ' ' + w[1][0] + '.' : '') : '-'; };
   // Same order and ticks as the Day 1 tab (Angad, 19 Oct): Monday's then Tuesday's, arrived rows light green, no-shows at the bottom
   const rows = d1Order(list), conf = rows.filter(c => c.academy_confirmed_at).length, nJuss = rows.filter(c => c.company === 'JUSS').length;
   const arr = rows.filter(c => c.day1_status === 'arrived').length, ns = rows.filter(c => c.day1_status === 'no_show').length, ticked = arr + ns > 0;
@@ -3072,12 +3080,13 @@ function day1Pdf(mon, list) {
       txt(at(2), y, c.company || '', 9);
       txt(at(3), y, c.mobile || '', 9);
       txt(at(4), y, fmt(c.academy_date), 9, D(c.academy_date).getUTCDay() !== 1);  // a Tuesday start in bold: it's the exception
-      txt(at(5), y, fit(c.booker_name || '-', cols[5][1] - 8, 9), 9);
-      txt(at(6), y, c.academy_confirmed_at ? 'Yes' : 'No', 9, !c.academy_confirmed_at);
+      txt(at(5), y, fit(who(c.booker_name), cols[5][1] - 8, 8.5), 8.5);
+      txt(at(6), y, fit(who(closedBy(c)), cols[6][1] - 8, 8.5), 8.5);
+      txt(at(7), y, c.academy_confirmed_at ? 'Yes' : 'No', 9, !c.academy_confirmed_at);
       // Arrived: what was ticked in the app, or an empty box to tick by hand
-      if (c.day1_status === 'arrived') txt(at(7), y, 'Yes', 9, true, false, '0.08 0.5 0.25');
-      else if (c.day1_status === 'no_show') txt(at(7), y, 'No-show', 9, true, false, '0.8 0.15 0.15');
-      else o.push('0.2 0.2 0.25 RG 0.8 w ' + (at(7) + 12).toFixed(2) + ' ' + (b + 6.5).toFixed(2) + ' 11 11 re S');
+      if (c.day1_status === 'arrived') txt(at(8), y, 'Yes', 9, true, false, '0.08 0.5 0.25');
+      else if (c.day1_status === 'no_show') txt(at(8), y, 'No-show', 9, true, false, '0.8 0.15 0.15');
+      else o.push('0.2 0.2 0.25 RG 0.8 w ' + (at(8) + 12).toFixed(2) + ' ' + (b + 6.5).toFixed(2) + ' 11 11 re S');
       o.push('0.85 0.84 0.82 RG 0.5 w ' + M + ' ' + b.toFixed(2) + ' m ' + (M + 523) + ' ' + b.toFixed(2) + ' l S');
     });
     if (!chunk.length) txt(M + 4, top - 38, 'Nobody booked for this week.', 10, false, true);
