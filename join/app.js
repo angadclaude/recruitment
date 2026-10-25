@@ -1,4 +1,4 @@
-window.APP_VERSION = 'be6f9a2e';
+window.APP_VERSION = '11fe1300';
 
 (function () {
 'use strict';
@@ -2369,10 +2369,11 @@ function viewAcademy(quiet) {
   }).catch(e => { if (S.viewId === id && !S.academy) paint('Day 1', '<div class="err">' + h(/Unknown action/.test(e.message) ? 'Paste the new Google code (Code.gs) into Apps Script first, then open this again.' : e.message) + '</div>', false, !isAdmin()); });
 }
 function remindedToday(c) { return String(c.day1_reminded_at || '').slice(0, 10) === ((S.academy && S.academy.today) || S.me.today); }
-/** One order for a Day 1 list on screen and in the week's PDF (Angad, 19 Oct): Monday's starters then Tuesday's, by name,
- *  the no-shows at the bottom. */
+/** One order for a Day 1 list on screen and in the week's New Starts List: JUSS on top, LINK below (Angad, 25 Oct: "always"),
+ *  then in each company Monday's starters then Tuesday's, by name, the no-shows at the bottom (19 Oct). */
 function d1Order(list) {
-  return list.slice().sort((a, b) => (a.day1_status === 'no_show') - (b.day1_status === 'no_show') || a.academy_date.localeCompare(b.academy_date) || a.full_name.localeCompare(b.full_name));
+  const co = c => c.company === 'JUSS' ? 0 : 1;
+  return list.slice().sort((a, b) => co(a) - co(b) || (a.day1_status === 'no_show') - (b.day1_status === 'no_show') || a.academy_date.localeCompare(b.academy_date) || a.full_name.localeCompare(b.full_name));
 }
 /** Some starters are booked for Tuesday instead of the usual Monday (Angad, 19 Oct): a Monday starter can move to
  *  Tuesday, a Tuesday one back to Monday (the undo), before the day or on it, while that day is still to come. */
@@ -3042,7 +3043,7 @@ function day1Pdf(mon, list) {
   const W = 595.28, H = 841.89, M = 36, RH = 24, PER = 24;
   const cols = [['#', 20], ['Name', 116], ['Co', 36], ['Mobile', 78], ['Starts', 50], ['Booked by', 80], ['Confirmed', 52], ['Arrived', 46], ['Notes', 45]];
   // Same order and ticks as the Day 1 tab (Angad, 19 Oct): Monday's then Tuesday's, arrived rows light green, no-shows at the bottom
-  const rows = d1Order(list), conf = rows.filter(c => c.academy_confirmed_at).length;
+  const rows = d1Order(list), conf = rows.filter(c => c.academy_confirmed_at).length, nJuss = rows.filter(c => c.company === 'JUSS').length;
   const arr = rows.filter(c => c.day1_status === 'arrived').length, ns = rows.filter(c => c.day1_status === 'no_show').length, ticked = arr + ns > 0;
   const dates = rows.map(c => c.academy_date).filter((x, i, a) => a.indexOf(x) === i).sort();
   const perDay = dates.length > 1 ? ' (' + dates.map(x => fmt(x) + ': ' + rows.filter(c => c.academy_date === x).length).join(' · ') + ')' : '';
@@ -3055,8 +3056,8 @@ function day1Pdf(mon, list) {
     o.push('0.95 0.42 0.11 rg 0 ' + (H - 10).toFixed(2) + ' ' + (W / 2).toFixed(2) + ' 10 re f', '0.05 0.6 0.6 rg ' + (W / 2).toFixed(2) + ' ' + (H - 10).toFixed(2) + ' ' + (W / 2).toFixed(2) + ' 10 re f');
     txt(M, H - 50, newStartsName(mon), 20, true);
     txt(M, H - 68, 'BA Academy Day 1 · ' + d1Days(dates.length ? dates : [mon]) + ' · 1:30pm · ' + (S.me.address || 'Automotive House, Grays Place, Slough SL2 5AF'), 10);
-    txt(M, H - 84, rows.length + ' expected' + perDay + ' · ' + conf + ' confirmed · ' + (rows.length - conf) + ' not confirmed' + (ticked ? ' · ' + arr + ' arrived · ' + ns + ' no-show' : ''), 8.5, false, true);
-    txt(M, H - 96, 'LINK Marketing & JUSS Marketing  |  printed ' + fmt(S.me.today) + ' ' + londonNow().slice(11) + ' by ' + S.me.user.name, 8.5, false, true);
+    txt(M, H - 84, rows.length + ' expected' + perDay + ' · JUSS ' + nJuss + ' · LINK ' + (rows.length - nJuss) + ' · ' + conf + ' confirmed · ' + (rows.length - conf) + ' not confirmed' + (ticked ? ' · ' + arr + ' arrived · ' + ns + ' no-show' : ''), 8.5, false, true);
+    txt(M, H - 96, 'JUSS Marketing & LINK Marketing  |  printed ' + fmt(S.me.today) + ' ' + londonNow().slice(11) + ' by ' + S.me.user.name, 8.5, false, true);
     const top = H - 110;
     o.push('0.94 0.93 0.91 rg ' + M + ' ' + (top - 20).toFixed(2) + ' 523 20 re f');
     let x = M; cols.forEach(c => { txt(x + 4, top - 14, c[0], 8.5, true); x += c[1]; });
@@ -3064,6 +3065,8 @@ function day1Pdf(mon, list) {
       const t = top - 20 - i * RH, b = t - RH, y = t - 15;
       const at = k => { let v = M; for (let j = 0; j < k; j++) v += cols[j][1]; return v + 4; };
       if (c.day1_status === 'arrived') o.push('0.88 0.96 0.9 rg ' + M + ' ' + b.toFixed(2) + ' 523 ' + RH + ' re f');  // light green, like the app
+      const prev = rows[p * PER + i - 1];  // JUSS on top, LINK below: a dark line where LINK starts
+      if (i && prev.company === 'JUSS' && c.company !== 'JUSS') o.push('0.2 0.2 0.25 RG 1.5 w ' + M + ' ' + t.toFixed(2) + ' m ' + (M + 523) + ' ' + t.toFixed(2) + ' l S');
       txt(at(0), y, String(p * PER + i + 1), 9, false, true);
       txt(at(1), y, fit(c.full_name, cols[1][1] - 8, 10), 10, true);
       txt(at(2), y, c.company || '', 9);

@@ -1357,7 +1357,7 @@ async function fillEval(p) {
   let pdfTxt = '';
   try { pdfTxt = require('child_process').execFileSync('pdftotext', ['-enc', 'UTF-8', '-layout', pdfPath, '-'], { encoding: 'utf8' }); } catch (e) { pdfTxt = pdfRaw; }
   ok(/New Starts List 19\.10\.2026/.test(pdfTxt) && /BA Academy Day 1 · Monday 19 October 2026 · 1:30pm/.test(pdfTxt) && /Adham Soliman/.test(pdfTxt) && /Jasraj Bhuller/.test(pdfTxt) &&
-    /2 expected · 2 confirmed/.test(pdfTxt) && /Arrived: ______ of 2/.test(pdfTxt) && /shred it after Day 1/.test(pdfTxt) && /Page 1 of 1/.test(pdfTxt),
+    /2 expected · JUSS 1 · LINK 1 · 2 confirmed/.test(pdfTxt) && /Arrived: ______ of 2/.test(pdfTxt) && /shred it after Day 1/.test(pdfTxt) && /Page 1 of 1/.test(pdfTxt),
     'the PDF is a real sign-in sheet: names, mobiles, booker, confirmed, an Arrived box to tick, totals, "shred after Day 1"');
   try { require('child_process').execFileSync('pdftoppm', ['-png', '-r', '70', '-singlefile', pdfPath, `${SHOTS}/30-day1-signin`]); } catch (e) { /* no renderer here */ }
   await jr.close();
@@ -1381,14 +1381,21 @@ async function fillEval(p) {
   ok(/1 arrived · 1 no-show/.test(await ap.innerText('#page')), 'the day\'s count updates: "… 1 arrived · 1 no-show"');
   const monIds = (await api(admin, 'academyList', {})).items.filter(c => c.academy_date === '2026-10-19').map(c => c.id);
   const monRows = (await ap.$$eval('.trow[data-cand]', els => els.map(e => ({ id: e.dataset.cand, green: e.classList.contains('arrived') })))).filter(x => monIds.includes(x.id));
-  ok(monRows.find(x => x.id === jasId).green && !monRows.find(x => x.id === adham.id).green && monRows[monRows.length - 1].id === adham.id,
-    'arrived rows turn light green (Jasraj); the no-show drops to the bottom of the day (Adham)');
+  ok(monRows.find(x => x.id === jasId).green && !monRows.find(x => x.id === adham.id).green && monRows[0].id === adham.id && monRows[monRows.length - 1].id === jasId,
+    'arrived rows turn light green (Jasraj); JUSS on top, LINK below (Angad, 25 Oct: "always"): Adham (JUSS, no-show) above Jasraj (LINK)');
+  // The rule itself, straight from the app's source (the page keeps its functions to itself)
+  const d1Order = new Function(fs.readFileSync(require('path').join(__dirname, '..', 'src', 'JS.html'), 'utf8').match(/function d1Order\(list\) \{[\s\S]*?\n\}/)[0] + '\nreturn d1Order;')();
+  const ord = d1Order([
+    { full_name: 'Lena Link', company: 'LINK', academy_date: '2026-10-19' }, { full_name: 'Zed Juss', company: 'JUSS', academy_date: '2026-10-20' },
+    { full_name: 'Amy Juss', company: 'JUSS', academy_date: '2026-10-19', day1_status: 'no_show' }, { full_name: 'Bob Juss', company: 'JUSS', academy_date: '2026-10-19' },
+    { full_name: 'Al Link', company: 'LINK', academy_date: '2026-10-20' }]).map(c => c.full_name).join(', ');
+  ok(ord === 'Bob Juss, Zed Juss, Amy Juss, Lena Link, Al Link', 'the order, always: JUSS then LINK; in each, Monday then Tuesday, by name, no-shows at the bottom (' + ord + ')');
   const pdl2 = await pdfDl(ap, '[data-pdf="2026-10-19"]');
   const pdf2 = `${SHOTS}/30-day1-ticked.pdf`; await pdl2.saveAs(pdf2);
   const raw2 = fs.readFileSync(pdf2, 'latin1');
-  ok(raw2.indexOf('(Jasraj Bhuller)') > 0 && raw2.indexOf('(Jasraj Bhuller)') < raw2.indexOf('(Adham Soliman)') && /\(No-show\) Tj/.test(raw2) && /0\.88 0\.96 0\.9 rg/.test(raw2) &&
-    /1 arrived · 1 no-show/.test(raw2) && /Arrived: 1 of 2  ·  No-show: 1/.test(raw2),
-    'the New Starts List PDF matches the screen: Jasraj highlighted green with "Yes", Adham at the bottom as "No-show", "Arrived: 1 of 2 · No-show: 1"');
+  ok(raw2.indexOf('(Adham Soliman)') > 0 && raw2.indexOf('(Adham Soliman)') < raw2.indexOf('(Jasraj Bhuller)') && /\(No-show\) Tj/.test(raw2) && /0\.88 0\.96 0\.9 rg/.test(raw2) &&
+    /JUSS 1 · LINK 1/.test(raw2) && /1\.5 w/.test(raw2) && /1 arrived · 1 no-show/.test(raw2) && /Arrived: 1 of 2  ·  No-show: 1/.test(raw2),
+    'the New Starts List PDF matches the screen: JUSS on top (Adham, "No-show"), a line, then LINK (Jasraj, green "Yes"); "JUSS 1 · LINK 1", "Arrived: 1 of 2 · No-show: 1"');
   try { require('child_process').execFileSync('pdftoppm', ['-png', '-r', '70', '-singlefile', pdf2, `${SHOTS}/30-day1-ticked`]); } catch (e) { /* no renderer here */ }
   await shot(ap, '28-day1-arrivals', true);
   const abdT = await loginApi('abdullahi@example.com');
@@ -1427,9 +1434,9 @@ async function fillEval(p) {
   ok((await ap.$$('[data-pdf]')).length === 1 && !(await ap.$('[data-pdf="2026-10-20"]')), 'one 📄 New Starts List for the week (not one per day)');
   const pMon = await wkPdf('2026-10-19');
   const facts = p => [p.name, /Monday 19 & Tuesday 20 October 2026/.test(p.raw), /2 expected \\\(Mon 19 Oct: 1 · Tue 20 Oct: 1\\\)/.test(p.raw),
-    /\(Starts\) Tj/.test(p.raw), /\(Mon 19 Oct\) Tj/.test(p.raw), /\(Tue 20 Oct\) Tj/.test(p.raw), p.raw.indexOf('(Jasraj Bhuller)') > 0 && p.raw.indexOf('(Jasraj Bhuller)') < p.raw.indexOf('(Adham Soliman)')].join('|');
+    /\(Starts\) Tj/.test(p.raw), /\(Mon 19 Oct\) Tj/.test(p.raw), /\(Tue 20 Oct\) Tj/.test(p.raw), p.raw.indexOf('(Adham Soliman)') > 0 && p.raw.indexOf('(Adham Soliman)') < p.raw.indexOf('(Jasraj Bhuller)')].join('|');
   ok(facts(pMon) === 'New Starts List 19.10.2026.pdf|true|true|true|true|true|true',
-    'the week\'s 📄 New Starts List has Monday\'s and Tuesday\'s starters: "Monday 19 & Tuesday 20 October 2026", "2 expected (Mon 19 Oct: 1 · Tue 20 Oct: 1)", a Starts column (Jasraj Mon 19 Oct, then Adham Tue 20 Oct)');
+    'the week\'s 📄 New Starts List has Monday\'s and Tuesday\'s starters: "Monday 19 & Tuesday 20 October 2026", "2 expected (Mon 19 Oct: 1 · Tue 20 Oct: 1)", a Starts column; JUSS first (Adham, Tue 20 Oct), then LINK (Jasraj, Mon 19 Oct)');
   try { require('child_process').execFileSync('pdftoppm', ['-png', '-r', '70', '-singlefile', pMon.pth, `${SHOTS}/31-week-starts`]); } catch (e) { /* no renderer here */ }
   const monB = '[data-d1="prev_day"][data-id="' + adham.id + '"]';
   await ap.waitForSelector(monB);

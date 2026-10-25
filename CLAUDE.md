@@ -49,6 +49,7 @@ The recruitment app for **LINK Marketing** and **JUSS Marketing** (Angad runs bo
 - **Onboarding** (Databyte, welcome email) is for admins only.
 - **The recruitment team** (`THANKS_TEAM` + `RECRUIT_TEAM` in `Code.gs`) send thank-yous, Day 1 details and follow-ups as LINK or JUSS, signed with their own name. Everyone else follows the candidate's company.
 - **Outcome deadline** is Friday 18:00 (later outcomes are marked LATE).
+- **Day 1 tab and New Starts List order (always, Angad 25 Oct):** JUSS on top, LINK below; in each company Monday's starters then Tuesday's, by name, no-shows at the bottom (`d1Order`).
 - **"Thinking it over"** needs a call-back time. **"No answer" / "Thinking it over"** older than 2 weeks shows as 🔴 Stale on Chase until a final answer is logged.
 - **GDPR:** full details for 12 weeks, then trimmed (notes and answers wiped, the call log's notes too). Everything is deleted after 6 months.
 - **Never:** paste passwords in chat; log into Cube; pull IQ Suite / Acwyre data without Angad's sign-off; recreate the old web-app mailer (welcome emails go through Gmail "send mail as" from Apps Script).
