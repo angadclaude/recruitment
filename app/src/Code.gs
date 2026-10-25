@@ -188,11 +188,12 @@ function include(name) {
 //  - the email relay: Vercel asks Google to send its emails, so they still go from Gmail ("send mail as" Jess / Rubal / Fiza);
 //  - the handover: the Sheet's tabs and settings, read once on switch day (relayExport);
 //  - the switch: FROZEN = saves wait ("Trying again…", phones retry by themselves) while the data is copied;
-//    MOVED_TO = every request from a phone that still has the old address open is passed on to Vercel. Undo = relaySwitch({ to: '' }).
+//    MOVED_TO = every request from a phone that still has the old address open is passed on to Vercel. Undo = relaySwitch({ to: '' });
+//  - the JUSS earnings summaries: Satpal's weekly email lands in this account, so the JUSS Playbook fetches them here (relayEarnings).
 // Every relay call carries Vercel's RELAY_SECRET (a long random key in Vercel's settings). Only its SHA-256 fingerprint
 // is here (safe to publish: it can't be turned back into the key), so nobody has to copy the key into Google.
 const RELAY_SECRET_SHA256 = 'f648c4393028bfc5db8e40b94fd30bb09f068d190d024534f9c9e88e076a3163';
-const RELAY_ACTIONS = { relayInfo: relayInfo, relayMail: relayMail, relayExport: relayExport, relayFreeze: relayFreeze, relaySwitch: relaySwitch, relayMirror: relayMirror };
+const RELAY_ACTIONS = { relayInfo: relayInfo, relayMail: relayMail, relayExport: relayExport, relayFreeze: relayFreeze, relaySwitch: relaySwitch, relayMirror: relayMirror, relayEarnings: relayEarnings };
 /** The live copy for the team (19 Oct): Vercel writes each tab here every 5 minutes when it changed, so the Sheet keeps
  *  showing today's people. Read-only: the app's data lives in Supabase, and edits made here are overwritten (each tab
  *  warns before an edit). Never the login tabs. Everything as plain text, so mobiles keep their leading 0. */
@@ -277,6 +278,29 @@ function relaySwitch(req) {
   }
   p.deleteProperty('FROZEN');
   return { movedTo: p.getProperty('MOVED_TO') || '' };
+}
+/** JUSS Playbook scorecard (Angad, 25 Oct 2026: "I don't want to be every week that email comes in… figure out a way for
+ *  you to open it up"). Satpal's "HF & GC ES WE dd.mm.yy - JUSS" email comes into this account every week; the JUSS
+ *  Playbook asks here for its HelloFresh and Green Chef earnings summaries. Read only: one fixed search, only Satpal's
+ *  messages, only the "… Earnings Summary … .xlsx" files; nothing in Gmail is marked, moved or changed.
+ *  seen = message ids the JUSS Playbook already has (they come back without their files); limit = new ones with files. */
+const EARNINGS_QUERY = 'from:satpal@jussmarketing.co.uk subject:ES subject:JUSS has:attachment filename:xlsx';
+function relayEarnings(req) {
+  relayCheck(req);
+  const seen = (req.seen || []).map(String), limit = Math.max(1, Math.min(4, Number(req.limit) || 1)), emails = [];
+  GmailApp.search(EARNINGS_QUERY, 0, 12).forEach(t => t.getMessages().forEach(m => {
+    if (!/satpal@jussmarketing\.co\.uk/i.test(m.getFrom())) return;
+    const files = m.getAttachments().filter(a => /earnings summary.*\.xlsx$/i.test(a.getName()));
+    if (files.length) emails.push({ id: m.getId(), date: m.getDate().toISOString(), subject: m.getSubject(), files: files });
+  }));
+  emails.sort((a, b) => (a.date < b.date ? 1 : -1));
+  let sent = 0;
+  return { emails: emails.map(e => {
+    const send = seen.indexOf(e.id) < 0 && sent < limit;
+    if (send) sent++;
+    return { id: e.id, date: e.date, subject: e.subject, names: e.files.map(a => a.getName()),
+      files: send ? e.files.map(a => ({ name: a.getName(), data: Utilities.base64Encode(a.getBytes()) })) : undefined };
+  }) };
 }
 function switchover(req) {
   if (onSupabase()) return null;

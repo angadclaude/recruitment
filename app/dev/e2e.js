@@ -2130,6 +2130,25 @@ async function fillEval(p) {
     ok((await post('/api', { action: 'publicConfig' })).ok === true, 'unfrozen: back to normal');
     ok((await relay('relaySwitch', { secret: RS, to: '' })).data.movedTo === '' &&
       JSON.parse((await post('/dev/eval', { js: 'JSON.stringify(ScriptApp.getProjectTriggers().map(t => t.fn))' })).out).includes('keepWarm'), 'undo the switch: Google\'s timers come back');
+
+    // The JUSS Playbook fetches Satpal's weekly earnings summaries from this inbox (25 Oct): only his "… Earnings Summary … .xlsx"
+    // files, newest first, a new one at a time; ones it already has come back as a name only.
+    const sat = 'Satpal Singh <satpal@jussmarketing.co.uk>';
+    const es = (we, d) => ({ name: `Hello Fresh Earnings Summary WE ${d} Juss.xlsx`, text: 'HF ' + we }), gc = (we, d) => ({ name: `Green Chef Earnings Summary WE ${d} Juss.xlsx`, text: 'GC ' + we });
+    await post('/dev/eval', { js: 'globalThis.__inbox = ' + JSON.stringify([
+      [{ id: 'm18', from: sat, date: '2026-10-21T14:38:11Z', subject: 'HF & GC ES WE 18.10.26 - JUSS', files: [es('18.10.26', '2026.10.18'), gc('18.10.26', '2026.10.18'), { name: 'Outlook-logo.png', text: 'png' }] },
+        { id: 'r18', from: 'jess@watfordhubs.co.uk', date: '2026-10-23T10:29:08Z', subject: 'Re: HF & GC ES WE 18.10.26 - JUSS', files: [] }],
+      [{ id: 'x1', from: 'someone@example.com', date: '2026-10-22T09:00:00Z', subject: 'Fwd: HF & GC ES WE 18.10.26 - JUSS', files: [es('fake', '2026.10.18')] }],
+      [{ id: 'm11', from: sat, date: '2026-10-14T14:28:26Z', subject: 'HF & GC ES WE 11.10.26 - JUSS', files: [es('11.10.26', '2026.10.11'), gc('11.10.26', '2026.10.11')] }],
+    ]) + '; "ok"' });
+    const e1 = (await relay('relayEarnings', { secret: RS })).data.emails;
+    const text = f => Buffer.from(f.data, 'base64').toString();
+    ok(e1.map(e => e.id).join() === 'm18,m11' && e1[0].files.length === 2 && text(e1[0].files[0]) === 'HF 18.10.26' && text(e1[0].files[1]) === 'GC 18.10.26' && !e1[1].files &&
+      e1[1].names.length === 2 && /from:satpal@jussmarketing\.co\.uk/.test(JSON.parse((await post('/dev/eval', { js: 'JSON.stringify(globalThis.__lastSearch)' })).out)),
+      'JUSS earnings: only Satpal\'s emails, newest first, the HelloFresh + Green Chef summaries (not the logo, not a forward from someone else)');
+    const e2 = (await relay('relayEarnings', { secret: RS, seen: ['m18'] })).data.emails;
+    ok(!e2[0].files && e2[1].files && text(e2[1].files[0]) === 'HF 11.10.26', 'JUSS earnings: a week it already has comes back as names only, the next new one with its files');
+    ok((await relay('relayEarnings', { secret: 'guess' })).error === 'Not allowed', 'JUSS earnings: refused without the key');
   }
 
   await browser.close();

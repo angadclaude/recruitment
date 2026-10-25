@@ -91,12 +91,21 @@ function load(opts) {
       getUuid: () => crypto.randomUUID(),
       DigestAlgorithm: { SHA_256: 'sha256' },
       computeDigest: (alg, s) => Array.from(crypto.createHash(alg).update(String(s), 'utf8').digest()).map(b => (b > 127 ? b - 256 : b)),
+      base64Encode: bytes => Buffer.from(bytes.map(b => b & 255)).toString('base64'),
     },
     MailApp: { sendEmail: o => { state.outbox.push(Object.assign({ at: new Date().toISOString() }, o)); }, getRemainingDailyQuota: () => 1500 - state.outbox.length },
     // The script owner's Gmail: globalThis.__sendAs = its "Send mail as" addresses (none until a test adds them)
     GmailApp: {
       getAliases: () => ctx.__sendAs || [],
       sendEmail: (to, subject, body, o) => { state.outbox.push(Object.assign({ at: new Date().toISOString(), to, subject, body, via: 'gmail' }, o)); },
+      // The inbox relayEarnings searches: globalThis.__inbox = threads [[{ id, from, date, subject, files: [{ name, text }] }, …], …]
+      search: (q, start, max) => {
+        ctx.__lastSearch = q;
+        return (ctx.__inbox || []).slice(start, start + max).map(thread => ({ getMessages: () => thread.map(m => ({
+          getId: () => m.id, getFrom: () => m.from, getDate: () => new Date(m.date), getSubject: () => m.subject,
+          getAttachments: () => (m.files || []).map(f => ({ getName: () => f.name, getBytes: () => Array.from(Buffer.from(f.text)) })),
+        })) }));
+      },
     },
     // Fake OneSignal: users listed in globalThis.__pushOff have no phone subscribed (200 with an empty id, like the real API).
     // Looking a user up (GET …/users/by/external_id/<id>): __pushNever → 404 (no record), __pushOff → no subscription, else one iPhone.
