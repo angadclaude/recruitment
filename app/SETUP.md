@@ -217,13 +217,13 @@ When a booker books someone onto the Academy (or an admin approves a 🔴 bookin
 2. **Welcome email:** **📧 Preview & send** shows the exact email ("LINK / JUSS Marketing - Your Brand Ambassador Journey Begins!"): their name, Day 1 date, Day 1 / Day 2 times, FieldIQ, pre-coaching (LINK), their Playbook (Link Org Playbook / JUSS Playbook), client, magazine, map and contact number. Tap **Send**.
    - It's locked until step 1, because FieldIQ only works once they're on Databyte.
    - **FieldIQ says "Your account isn't activated yet"?** They haven't tapped the link in FieldIQ's own invitation (email or text, it often lands in Junk). The welcome email and heads-up now say so as step 1. Can't find it at all? Check the email and mobile you typed into Databyte are right, then get the invitation sent again.
-   - **It only ever goes from the recruitment team's own addresses**, signed by whoever sends it: Jess from `jess@linkmarketing.org.uk`, Rubal from `rubal@jussmarketing.co.uk`, Fiza from `recruitment@jussmarketing.co.uk` (any of them can send either company's). Anyone else pressing Send (Angad, Satpal) sends from the company's person: LINK → Jess, JUSS → Rubal. Replies go to that address, and it gets a copy.
+   - **It only ever goes from the recruitment team's own addresses**, signed by whoever sends it: Jess from `jess@linkmarketing.org.uk`, Rubal from `rubal@jussmarketing.co.uk` (either can send either company's). Anyone else pressing Send (Angad, Satpal) sends from the company's person: LINK → Jess, JUSS → Rubal. Replies go to that address, and it gets a copy.
    - The card and preview say who it's from. If the app can't send as that address yet, Send stays off: it never falls back to another address.
 
-### LINK or JUSS: one tap (Jess, Rubal, Fiza)
-The recruitment team work for both companies, so for **Jess, Rubal** (`THANKS_TEAM` in Code.gs) **and everyone in `RECRUIT_TEAM`** (Fiza: `recruitment@jussmarketing.co.uk`) every thank-you and Day 1 details button comes as a pair, **LINK** and **JUSS**, in the companies' colours:
+### LINK or JUSS: one tap (Jess, Rubal)
+The recruitment team work for both companies, so for **Jess and Rubal** (`THANKS_TEAM` in Code.gs; **since 26 Oct only them**: Fiza was taken off, `RECRUIT_TEAM` is empty and adds anyone else by email) every thank-you and Day 1 details button comes as a pair, **LINK** and **JUSS**, in the companies' colours:
 - **Candidate page:** 💬 Thank-you **LINK | JUSS** and 🎉 Day 1 details **LINK | JUSS**. Under them, "📱 Text" / "✉️ Email" switch both buttons to that way of sending.
-- **Thank everyone 💬:** **LINK | JUSS** on every row (Fiza's list is every appointment, LINK and JUSS). Tap, send, come back, next one. "📱 Text instead" switches that row.
+- **Thank everyone 💬:** **LINK | JUSS** on every row (anyone added to `RECRUIT_TEAM` gets every appointment, LINK and JUSS). Tap, send, come back, next one. "📱 Text instead" switches that row.
 - **Lists and Chase:** 🎉 Day 1 **LINK | JUSS**.
 
 One tap opens WhatsApp (or their texts / email) with **that company's** message: wording, magazine, hearts, welcome page, pre-coaching (LINK), Google Maps pin, signed with the sender's own name. The company they tap is saved on the candidate, so everything after it follows (the welcome page they open, the welcome email, the Day 1 reminder), even when someone else sends it. Anyone else (Angad, Satpal, bookers) keeps one Send button, which follows the last choice, else the booker's company. **Pay, lists and reminders always follow the booker's company.**
@@ -241,7 +241,7 @@ Every send is recorded: **who** tapped it, **when**, **as LINK or JUSS**, and **
 ### Thinking it over / No answer: follow-ups
 - **Thinking it over:** pick **when they asked to be called back** (In 1 hour · Today 6pm · Tomorrow 12pm · Tomorrow 6pm · another day and time). It can't be saved without one. At that time, whoever logged it gets **"🔁 Call Pooja back now"** on their phone (once). Their pill shows **🔁 Call back Fri 16 Oct 18:00** (red once it's overdue), and their page has **🔁 Send "speak soon" + call-back time**: *"Take your time to think it over. As agreed, I'll call you back on Friday 16th October at 6:00 PM… call or text me on this number."*
 - **No answer:** **📞 Send "we tried calling you"**: *"…call or text me back on this number"*. On their page and on the list card.
-- Both are signed by **whoever sends them** (it's their number the candidate calls back), in the candidate's company (LINK / JUSS). Jess, Rubal and Fiza get **LINK | JUSS** buttons for both, like the thank-you and Day 1 details.
+- Both are signed by **whoever sends them** (it's their number the candidate calls back), in the candidate's company (LINK / JUSS). Jess and Rubal get **LINK | JUSS** buttons for both, like the thank-you and Day 1 details.
 
 ### Call log: every response, who and when
 The Outcome section shows the **📞 Call log**: every response logged on the call (No answer, Thinking it over, Academy booked…), newest first, each with **who**, **day and time**, **LATE** if after Friday 18:00, the Day 1 date and the notes. One response = the usual "Logged Thu 15 Oct 16:35 by Fiza Iqbal" line. An admin rejecting an Academy booking shows as "Not suitable · Academy booking rejected". Responses logged before this went live are rebuilt once from the Log (saved in the `outcome_log` column).
@@ -251,7 +251,6 @@ The app sends through the script owner's Gmail, so that Gmail has to be allowed 
 1. In that Gmail: ⚙️ → **See all settings** → **Accounts** → **Send mail as** → **Add another email address**.
 2. Name `Jess Grace`, email `jess@linkmarketing.org.uk`, untick **Treat as an alias** → **Next**. Google emails a code to that inbox: Jess reads it to you → **Verify**.
 3. Do the same for `Rubal Oshan`, `rubal@jussmarketing.co.uk`. If Gmail asks for an SMTP server (a different Google account): server `smtp.gmail.com`, port `587`, username `rubal@jussmarketing.co.uk`, password = an **app password** Rubal makes at myaccount.google.com → Security → App passwords (needs 2-Step Verification on). Then the code goes to Rubal's inbox.
-   And again for `Fiza Iqbal`, `recruitment@jussmarketing.co.uk` (same SMTP steps, with an app password made on that account).
 4. In Apps Script: pick **setupWelcomeEmail** in the function menu → **Run** → approve the Gmail permission. The log shows ✅ ready (or ❌ and what's missing) for each address.
 5. **Deploy → Manage deployments → ✏️ → New version** (as for any code change). The app picks it up within 10 minutes.
 

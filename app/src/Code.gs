@@ -28,7 +28,7 @@ const CONFIG = {
   THANKS_TEAM: { LINK: 'jess@linkmarketing.org.uk', JUSS: 'rubal@jussmarketing.co.uk' },  // recruitment team: thank-yous (either can send LINK or JUSS) + non-qualifier alerts
   // Also on the recruitment team (they work for both companies): send thank-yous, congratulations and welcome emails for either one,
   // choosing LINK or JUSS before they send. Jess and Rubal (above) are always on it and keep their reminders.
-  RECRUIT_TEAM: ['recruitment@jussmarketing.co.uk'],  // Fiza
+  RECRUIT_TEAM: [],  // anyone else who sends for both companies, by email. Empty: Jess and Rubal only (Angad, 26 Oct: Fiza off)
   THANKS_TIME: '12:00',           // every day: "N thank-you messages to send" to Jess / Rubal (only if there are any)
   DAY1_REMIND_TIME: '10:00',      // on a BA Academy Day 1: Jess / Rubal get "N starters to remind" (Day 1 tab → Send reminders)
   DIGEST_TIME: '18:00',           // Mon–Thu: each booker's round-up of their day
@@ -1209,7 +1209,7 @@ function thanksTeam() {
 }
 /** A candidate's company for the thank-you (no confirmed booker yet = LINK, like the message). */
 function thanksCo(c) { return c.company === 'JUSS' ? 'JUSS' : 'LINK'; }
-/** The recruitment team: Jess, Rubal (THANKS_TEAM) + RECRUIT_TEAM (Fiza). Any of them thanks / congratulates anyone, as LINK or JUSS. */
+/** The recruitment team: Jess, Rubal (THANKS_TEAM) + anyone in RECRUIT_TEAM (nobody since 26 Oct). Any of them thanks / congratulates anyone, as LINK or JUSS. */
 function recruitTeam() {
   const emails = Object.keys(CONFIG.THANKS_TEAM).map(k => CONFIG.THANKS_TEAM[k]).concat(CONFIG.RECRUIT_TEAM || []).map(e => String(e).toLowerCase());
   return usersAll().filter(x => truthy(x.active) && emails.indexOf(String(x.email).toLowerCase()) >= 0)
