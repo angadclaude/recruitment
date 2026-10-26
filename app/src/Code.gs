@@ -40,7 +40,8 @@ const CONFIG = {
   BOOK_TEAM: ['angad@linkmarketing.org.uk', 'jess@linkmarketing.org.uk', 'rubal@jussmarketing.co.uk'],
   // Someone who left: until the date, a check-in that names them (or picks them from an old list) is credited to who took
   // over, as if an admin had moved it (Angad, 26 Oct: Fiza left; anyone in for her that week is Angad's). After it: no booker.
-  HANDOVER: [{ from: 'Fiza Iqbal', also: ['Fiza', 'Fizza'], to: 'angad@linkmarketing.org.uk', until: '2026-11-01' }],
+  // open: once, everyone of theirs still in play moves over too (Angad: "LINK FR and under me").
+  HANDOVER: [{ from: 'Fiza Iqbal', also: ['Fiza', 'Fizza'], to: 'angad@linkmarketing.org.uk', until: '2026-11-01', open: true }],
   BOOK_CO: 'JUSS',                // every applicant applies to JUSS Marketing, whoever books them
   BOOK_TIME: '10:00',             // presentations: Mon–Fri at 10:00
   BOOK_REMIND_TIME: '18:00',      // the evening before (Sunday for Monday's): whoever booked them gets "N to remind for tomorrow"
@@ -1380,8 +1381,36 @@ function handovers(day) {
   return (CONFIG.HANDOVER || []).filter(x => day && day <= x.until).map(x => {
     const was = usersAll().filter(u => normName(u.name) === normName(x.from))[0];
     const to = usersAll().filter(u => normEmail(u.email) === normEmail(x.to) && truthy(u.active))[0];
-    return { was: was, to: to, names: [x.from].concat(x.also || [], was ? aliasesOf(was) : []) };
+    return { was: was, to: to, names: [x.from].concat(x.also || [], was ? aliasesOf(was) : []), open: !!x.open };
   }).filter(x => x.to && !(x.was && truthy(x.was.active)));
+}
+/** Still in play: no final answer yet (not a non-qualifier or walk out), or booked onto a Day 1 that hasn't happened. */
+function stillOpen(c, today) {
+  if (c.outcome === 'Academy booked' && c.admin_status !== 'rejected') return !c.day1_status && c.academy_date >= today;
+  if (noCallNeeded(c)) return false;
+  return !c.outcome || c.outcome === 'No answer' || c.outcome === 'Thinking it over';
+}
+/** Once per leaver with open: true (CONFIG.HANDOVER): everyone of theirs still in play moves to who took over, as if an admin
+ *  had moved each one (company too). Finished ones stay theirs. Each move is in the Log; who took over gets one alert. */
+function handoverOpen() {
+  const p = PropertiesService.getScriptProperties(), today = todayStr();
+  handovers(today).filter(h => h.open && h.was).forEach(h => {
+    const key = 'HANDOVER_OPEN_' + h.was.id;
+    if (p.getProperty(key)) return;
+    const moved = withLock(() => {
+      if (p.getProperty(key)) return [];
+      const out = readTable('Candidates').filter(c => c.booker_id === h.was.id && stillOpen(c, today));
+      out.forEach(c => {
+        c.booker_id = h.to.id; c.booker_name = h.to.name; c.company = h.to.company;
+        writeRow('Candidates', c);
+        log(null, 'reassign', c.id, h.was.name + ' → ' + h.to.name + ' (' + h.was.name.split(' ')[0] + ' left; still in play)');
+      });
+      p.setProperty(key, nowStr());
+      return out;
+    });
+    if (moved.length) notify([h.to], '📥 ' + moved.length + ' of ' + h.was.name.split(' ')[0] + '\'s candidates are now yours',
+      firstNames(moved, 8) + '. Still to close or start Day 1 (' + h.to.company + '). Tap → Chase.', 'chase');
+  });
 }
 /** Who gets the credit for a booker picked or found: themselves, or (switched off) whoever took over from them, else nobody. */
 function liveBooker(b, day) {
@@ -1702,6 +1731,7 @@ function keepWarm() {
   if (t >= '07' && t <= '20') usersAll();
   try { backfillSends(); } catch (e) { console.error(e); }  // once each, after this version goes live
   try { backfillOutcomes(); } catch (e) { console.error(e); }
+  try { handoverOpen(); } catch (e) { console.error(e); }  // once per leaver
   maybeDailyDigest();
   maybeThanksReminder();
   try { maybeCallbackReminders(); } catch (e) { console.error(e); }

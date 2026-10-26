@@ -1822,11 +1822,18 @@ async function fillEval(p) {
   // Someone who left: until the date, check-ins naming them (or picking them from an old list) go to who took over
   // (Angad, 26 Oct: Fiza left; anyone in for her that week is Angad's). After it: no booker, an admin sets it.
   const hoWas = (await post('/dev/eval', { js: 'JSON.stringify(CONFIG.HANDOVER)' })).out;
-  ok(/"from":"Fiza Iqbal".*"to":"angad@linkmarketing\.org\.uk","until":"2026-11-01"/.test(hoWas), 'the rule is set: Fiza → Angad until Sunday 1 Nov');
+  ok(/"from":"Fiza Iqbal".*"to":"angad@linkmarketing\.org\.uk","until":"2026-11-01","open":true/.test(hoWas), 'the rule is set: Fiza → Angad until Sunday 1 Nov, her open ones too');
   const leah = await mk('Leah Leaver', 'leah@example.com', 'JUSS', ['booker']), angadU = (await api(admin, 'me', {})).user;
-  const lc1 = await alc('Eighteen', 'Leah Leaver');
-  ok(await bOf(lc1) === leah.id && (await api(admin, 'deleteUser', { id: leah.id })).deactivated, 'Leah books one, then leaves: deleting her switches her off (she has a candidate)');
-  await post('/dev/eval', { js: "CONFIG.HANDOVER = [{ from: 'Leah Leaver', also: ['Leahh'], to: 'angad@linkmarketing.org.uk', until: '2026-10-20' }]; 'ok'" });
+  const lc1 = await alc('Eighteen', 'Leah Leaver'), lc0 = await alc('Nought', 'Leah Leaver');
+  await api(admin, 'saveOutcome', { id: lc0.id, outcome: 'Declined', notes: 'not for them' });
+  ok(await bOf(lc1) === leah.id && (await api(admin, 'deleteUser', { id: leah.id })).deactivated, 'Leah books two, then leaves: deleting her switches her off (she has candidates)');
+  await post('/dev/eval', { js: "CONFIG.HANDOVER = [{ from: 'Leah Leaver', also: ['Leahh'], to: 'angad@linkmarketing.org.uk', until: '2026-10-20', open: true }]; 'ok'" });
+  const pushH = (await getJson('/dev/pushes')).length;
+  await post('/dev/eval', { js: 'handoverOpen(); handoverOpen(); "ok"' });
+  const lc1c = await api(admin, 'getCandidate', { id: lc1.id }), hoPush = (await getJson('/dev/pushes')).slice(pushH).filter(x => /^📥 /.test(x.body.headings.en));
+  ok(lc1c.booker_id === angadU.id && lc1c.company === angadU.company && await bOf(lc0) === leah.id && hoPush.length === 1 && hoPush[0].body.headings.en === "📥 1 of Leah's candidates are now yours" &&
+    hoPush[0].body.include_aliases.external_id.includes(angadU.id) && (await getJson('/dev/sheet?name=Log')).some(r => r[2] === 'reassign' && /Leah Leaver → .*Leah left; still in play/.test(r[4])),
+    'once: her one still in play moves to ' + angadU.name + ' (' + angadU.company + '), the declined one stays hers; one alert "' + (hoPush[0] || { body: { headings: {} } }).body.headings.en + '"; each move in the Log');
   const pcH = await api('', 'publicConfig'), angB = pcH.bookers.find(b => b.id === angadU.id);
   ok(!pcH.bookers.some(b => b.id === leah.id) && angB && angB.aliases.includes('Leah Leaver'), 'check-in list: Leah is gone, and typing her name finds "Leah Leaver", credited to ' + angadU.name);
   const lc2 = await alc('Nineteen', 'Leahh'), lc3 = await alc('Twenty', 'leah'),
