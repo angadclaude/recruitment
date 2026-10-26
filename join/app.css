@@ -187,15 +187,13 @@ details.carry .list { margin-top: 8px; }
 .d1btns { display: flex; flex-direction: column; gap: 6px; flex: none; }
 /* Day 1: who's arrived stands out (light green, like the New Starts List PDF); "Move to Tue?" asks before moving a Day 1 */
 .trow.arrived { background: #E8F7EE; border-color: #B7E2C6; }
-/* Day 1: search, sort and campaign chips; FR | HF on each starter */
+/* Day 1: search, sort and campaign chips; FR / HF on each starter */
 .d1search { margin: 2px 0 8px; }
 .d1chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 2px 12px; }
 .d1chips { margin-bottom: 8px; }
 .d1chips + .d1chips { margin-bottom: 14px; }
 .d1lbl { font: 600 11px/1.2 var(--label); text-transform: uppercase; letter-spacing: .14em; color: var(--muted); min-width: 72px; }
-.campsel { display: inline-flex; border: 1.5px solid var(--line); border-radius: 999px; overflow: hidden; background: #fff; }
-.campsel button { border: 0; background: none; font: inherit; font-size: 12px; font-weight: 800; padding: 3px 9px; color: var(--muted); cursor: pointer; }
-.campsel button.on { background: var(--dark); color: #fff; }
+.pill.camp { background: var(--dark); color: #fff; }
 /* Dropped out before Day 1: faded, at the bottom of their company */
 .trow.dropped { background: #F3F2F0; }
 .trow.dropped .name, .trow.dropped .sub { opacity: .6; }
