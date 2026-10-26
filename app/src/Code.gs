@@ -757,7 +757,7 @@ function checkin(req) {
   const auto = !booker && f.booker_typed ? matchBooker(f.booker_typed) : null;
   if (auto) booker = auto;
   // Booked from the app after a call: the booking says who booked them (whoever they picked) and that they're JUSS's
-  const bk = bookingFor(mobile, today), bkBy = bk ? userById(bk.booked_by_id) : null;
+  const bk = bookingFor(mobile, today, name), bkBy = bk ? userById(bk.booked_by_id) : null;
   const picked = booker && bkBy && booker.id !== bkBy.id ? booker.name : '';
   if (bkBy) booker = bkBy;
   // Repeat check (last 6 months + old form history) before taking the lock: those rows don't change today.
@@ -789,7 +789,8 @@ function checkin(req) {
   });
   if (res.isNew) log(null, 'checkin', res.c.id, name);
   if (res.isNew && auto && !bk) log(null, 'auto_booker', res.c.id, '"' + res.c.booker_typed + '" → ' + auto.name);
-  if (res.isNew && bk) log(null, 'booking_came', res.c.id, 'booked by ' + bk.booked_by + ' for ' + bk.slot_date + (picked ? ' (they picked ' + picked + ')' : ''));
+  if (res.isNew && bk) log(null, 'booking_came', res.c.id, 'booked by ' + bk.booked_by + ' for ' + bk.slot_date + (picked ? ' (they picked ' + picked + ')' : '') +
+    (bk.mobile !== mobile ? ' (found by name: booked as ' + bk.mobile + ')' : ''));
   const nq = nonQualifier(res.c);
   if (res.isNew && nq) {
     // Straight to Jess + Rubal and the booker, so someone speaks to them before they leave
@@ -1985,10 +1986,16 @@ function bookingList(req, u) {
   return { items: readTable('Bookings').filter(b => b.status !== 'cancelled' && b.slot_date >= from).map(bookOut) };
 }
 /** The open booking a check-in on this mobile belongs to: the one nearest today (they may come on another day than booked). */
-function bookingFor(mobile, today) {
-  const near = b => Math.abs(daysBetween(today, b.slot_date));
-  return readTable('Bookings').filter(b => b.status === 'booked' && b.mobile === mobile && b.slot_date >= addDays(today, -14) && b.slot_date <= addDays(today, 60))
-    .sort((a, b) => near(a) - near(b) || a.slot_date.localeCompare(b.slot_date))[0] || null;
+function bookingFor(mobile, today, name) {
+  const open = readTable('Bookings').filter(b => b.status === 'booked'), near = b => Math.abs(daysBetween(today, b.slot_date));
+  const byMobile = open.filter(b => b.mobile === mobile && b.slot_date >= addDays(today, -14) && b.slot_date <= addDays(today, 60))
+    .sort((a, b) => near(a) - near(b) || a.slot_date.localeCompare(b.slot_date))[0];
+  if (byMobile || !name) return byMobile || null;
+  // Typed another number than the one on their booking (a second phone, a typo at booking): today's booking under the same
+  // full name, if it's the only one (Angad, 26 Oct: "make sure booked appointments go on the list properly")
+  const key = s => String(s || '').toLowerCase().replace(/[^a-z\s]/g, '').replace(/\s+/g, ' ').trim();
+  const same = open.filter(b => b.slot_date === today && key(b.first_name + ' ' + b.last_name) === key(name));
+  return same.length === 1 ? same[0] : null;
 }
 /** Check-in page: their mobile → "Found your booking: today 10:00, booked by Jess Grace" (who booked them, nothing about them). */
 function bookingByMobile(req) {
