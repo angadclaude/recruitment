@@ -1,4 +1,4 @@
-window.APP_VERSION = 'ec3396d2';
+window.APP_VERSION = '51945430';
 
 (function () {
 'use strict';
@@ -2350,18 +2350,19 @@ function chaseAdmin(list, carry, v) {
 /** "Monday 5th October" */
 function fmtOrd(ymd) { const d = D(ymd), n = d.getUTCDate(), v = n % 100, sx = ['th', 'st', 'nd', 'rd']; return DAYS_LONG[d.getUTCDay()] + ' ' + n + (sx[(v - 20) % 10] || sx[v] || sx[0]) + ' ' + MONTHS_LONG[d.getUTCMonth()]; }
 /** The Day 1 reminder (Jess / Rubal's wording). Jess / Rubal send it to every starter at 10:00 on the day (Day 1 tab → Send reminders).
- *  Fills in: first name, today / tomorrow + the date, their company's Google Maps pin, the sender's full name. */
+ *  Fills in: first name, today / tomorrow + the date, their company (one, the one their Day 1 details came from: Angad, 26 Oct,
+ *  not "Juss Marketing & Link Marketing") and its Google Maps pin, the sender's full name. */
 function msgDay1Reminder(c) {
   const days = Math.round((D(c.academy_date) - D(S.me.today)) / 86400000);
   const when = (days === 0 ? 'today, ' : days === 1 ? 'tomorrow, ' : 'on ') + fmtOrd(c.academy_date);
   return 'Hi ' + c.first_name + ',\n\n' +
     'Hope you are well.\n\n' +
-    'Just a quick reminder that you’re due to start your training ' + when + ' at 1:30 PM 🕜, with Juss Marketing & Link Marketing\n\n' +
+    'Just a quick reminder that you’re due to start your training ' + when + ' at 1:30 PM 🕜, with ' + brandOf(c) + '\n\n' +
     '📍 Address:\n2nd Floor East, Automotive House,\nGrays Place, Slough, SL2 5AF.\n' + OFFICES[brandCo(c)].maps + '\n\n' +
     'Please aim to arrive 10 minutes early ⏰ and let us know if you have any questions 😊\n\n' +
     'Kindly reply ‘Yes’ to confirm your attendance ✅\n' +
     'We look forward to seeing you! 👋\n\n' +
-    'Thanks\nKind Regards\n' + S.me.user.name + '\nIn Association with Juss Marketing and Link Marketing';
+    'Thanks\nKind Regards\n' + S.me.user.name + '\nIn Association with ' + brandOf(c);
 }
 /** Day 1: a tab for admins (Jess / Rubal tap through it on the day), a page for bookers (their own starters). */
 function viewAcademy(quiet) {
