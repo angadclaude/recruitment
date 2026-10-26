@@ -1675,8 +1675,8 @@ function viewToday(quiet) {
     // Non-qualifiers aren't rated, so "N of M rated" leaves them out; a walk out is nobody's call
     const toRate = items.filter(c => !noRating(c)), rated = toRate.filter(c => c.in_room).length;
     const toCall = items.filter(c => !c.limited && c.eval_at && !c.outcome && c.rag !== 'W').length;
-    // Non-qualifiers (under 18 / no right to work) next to who checked in (Angad, 26 Oct)
-    body = '<div class="hero">' + FX + top + kpis([[items.length, 'Checked in'], [items.filter(noRating).length, 'Non-qual'], [rated, 'Rated'], [items.filter(c => c.eval_at).length, 'Evaluated'], [toCall, 'To call', toCall > 0]]) + '</div>' +
+    // Non-qualifiers next to who checked in, the same number as the poster's (Angad, 26 Oct)
+    body = '<div class="hero">' + FX + top + kpis([[items.length, 'Checked in'], [items.filter(notCounting).length, 'Non-qual'], [rated, 'Rated'], [items.filter(c => c.eval_at).length, 'Evaluated'], [toCall, 'To call', toCall > 0]]) + '</div>' +
       (isAdmin() || canThank() ? thanksButton(items) : '') +
       (isAdmin() ? '<div class="bullbtns"><button class="btn" id="bullDaily">📣 ' + (isToday ? 'Today\'s' : DAYS[D(S.day).getUTCDay()]) + ' bulletin</button><button class="btn ghost" id="bullWeek">🏆 Week top 5</button></div>' : '') +
       (items.length ? '<div class="section-h"><b>In the room</b><span>' + rated + ' of ' + toRate.length + ' rated</span></div>' +
@@ -1911,6 +1911,9 @@ function joinAnd(a) { return a.length < 2 ? a.join('') : a.slice(0, -1).join(', 
 /** Attended, for the stats: rated in the room by the presenter, or a non-qualifier. They came, and are often not rated (the
  *  team speaks to them instead), so they went missing from the stats (Angad, 20 Oct). */
 function counted(c) { return inRoom(c) || !!c.non_qual; }
+/** A non-qualifier on the poster and in Today's summary, so both show the same number: came in but doesn't count (not
+ *  eligible, a repeat, removed by admin). A presenter's view of someone else's candidate only knows "no rating needed". */
+function notCounting(c) { return c.limited ? noRating(c) : counted(c) && !!c.pay_reason; }
 /** Poster numbers, on the same rules as the recruitment incentive: rated by the presenter (or a non-qualifier), Mon–Fri,
  *  and only people who count. "First appointments attended" and the Friday weekly total leave the non-qualifiers out:
  *  they have their own bubble (Angad, 26 Oct). */
@@ -1934,7 +1937,7 @@ function bulletinNumbers(items, day, prevItems) {
   const noBooker = list => list.filter(c => !c.pay_reason && !c.booker_name).length;
   return {
     day: day, weekday: D(day).getUTCDay(), target: (S.me && S.me.payTarget) || 5,
-    attended: today.filter(c => !c.pay_reason).length, nonQual: today.filter(c => c.pay_reason).length, walkOuts: today.filter(c => c.rag === 'W').length,
+    attended: today.filter(c => !c.pay_reason).length, nonQual: today.filter(notCounting).length, walkOuts: today.filter(c => c.rag === 'W').length,
     unrated: items.filter(c => c.attended_date === day && !counted(c)).length,
     noBooker: noBooker(today), weekNoBooker: noBooker(inWeek),
     today: tally(today), week: tally(inWeek), weekAttended: inWeek.filter(c => !c.pay_reason).length,
@@ -1976,12 +1979,12 @@ function viewBulletin() {
   const bar = barSet();
   const warn = [];
   if (kind === 'daily' && n.unrated) warn.push(n.unrated + ' checked in but not rated by the presenter yet, so not counted.');
-  if (kind === 'daily' ? n.noBooker : n.weekNoBooker) warn.push((kind === 'daily' ? n.noBooker : n.weekNoBooker) + ' with no confirmed booker, so not on the poster. Assign them in Incentive.');
+  if (kind === 'daily' ? n.noBooker : n.weekNoBooker) warn.push((kind === 'daily' ? n.noBooker : n.weekNoBooker) + ' with no confirmed booker' + (kind === 'daily' ? ' (on the poster as "No booker yet")' : ', so not on the poster') + '. Assign them in Incentive.');
   const field = (id, label, val, area) => '<label class="q">' + label + '</label>' + (area ? '<textarea id="' + id + '" rows="2">' + h(val) + '</textarea>' : '<input type="text" id="' + id + '" value="' + h(val) + '">');
   const edit = '<details class="card" id="bedit"><summary><b>✏️ Edit wording</b> <span class="small muted">· optional</span></summary>' +
     (kind === 'daily'
       ? field('btag', 'Message under the date', S.bull.tagline, true) +
-        (n.today.length ? '<label class="q">(BAR) BA referral</label><p class="hint" style="margin:0 0 8px">Set automatically when the candidate picked "BA referral" at check-in. Tap to change.</p><div class="chips" id="bbar">' + n.today.slice(0, 6).map(r => '<button class="chip' + (bar[r.key] ? ' on' : '') + '" data-k="' + h(r.key) + '">' + h(r.name) + '</button>').join('') + '</div>' : '')
+        (n.today.length ? '<label class="q">(BAR) BA referral</label><p class="hint" style="margin:0 0 8px">Set automatically when the candidate picked "BA referral" at check-in. Tap to change.</p><div class="chips" id="bbar">' + n.today.map(r => '<button class="chip' + (bar[r.key] ? ' on' : '') + '" data-k="' + h(r.key) + '">' + h(r.name) + '</button>').join('') + '</div>' : '')
       : field('bm0', '🏆 Yellow box', S.bull.msgs[0], true) + field('bm1', '🎯 Blue box', S.bull.msgs[1], true) + field('bm2', '🚀 Green box', S.bull.msgs[2], true) +
         '<p class="hint">Put {curly brackets} around words to colour them.</p>') +
     '<div class="bullopts">' + field('bmis', 'Mission', o.mission) + field('bhash', 'Hashtag', o.tag) + field('bcash', 'Cash £', o.cash) + '</div>' +
@@ -1995,7 +1998,7 @@ function viewBulletin() {
     const opts = Object.assign({}, BULL_DEFAULTS, store.get('bullOpts') || {}, { tagline: S.bull.tagline });
     const data = kind === 'daily'
       ? { day: day, weekday: n.weekday, target: n.target, attended: n.attended, nonQual: n.nonQual, walkOuts: n.walkOuts, weekTotal: n.weekday === 5 ? n.weekAttended : null,
-          rows: JLBulletin.dailyRows(n.today.map(r => Object.assign({}, r, { bar: !!barSet()[r.key] }))) }
+          rows: JLBulletin.dailyRows(n.today.map(r => Object.assign({}, r, { bar: !!barSet()[r.key] })), n.noBooker) }
       : { target: n.target, rows: JLBulletin.weeklyRows(n.week, n.target), msgs: S.bull.msgs };
     return JLBulletin.load('').then(assets => new Promise(res => {
       const cv = JLBulletin.draw(document.createElement('canvas'), kind, data, opts, assets);
