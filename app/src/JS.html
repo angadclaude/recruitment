@@ -2382,6 +2382,22 @@ function d1Order(list) {
   const co = c => c.company === 'JUSS' ? 0 : 1, out = c => c.day1_status === 'dropped' ? 2 : c.day1_status === 'no_show' ? 1 : 0;
   return list.slice().sort((a, b) => co(a) - co(b) || out(a) - out(b) || a.academy_date.localeCompare(b.academy_date) || a.full_name.localeCompare(b.full_name));
 }
+/** FR or HF: the campaign a starter joins (Angad, 26 Oct). Unless an admin picked one, their company's: LINK → FR, JUSS → HF. */
+function campaignOf(c) { return c.campaign === 'FR' || c.campaign === 'HF' ? c.campaign : c.company === 'JUSS' ? 'HF' : 'FR'; }
+/** The Day 1 list as chosen on the tab (Angad, 26 Oct): only FR or HF (or both), JUSS then LINK (d1Order, the default) or names
+ *  A–Z (no-shows, then dropped out, still at the bottom). The New Starts List follows it. */
+function d1View(list) {
+  const l = S.d1Camp ? list.filter(c => campaignOf(c) === S.d1Camp) : list;
+  if (S.d1Sort !== 'az') return d1Order(l);
+  const out = c => c.day1_status === 'dropped' ? 2 : c.day1_status === 'no_show' ? 1 : 0;
+  return l.slice().sort((a, b) => out(a) - out(b) || a.full_name.localeCompare(b.full_name));
+}
+/** The Day 1 search box: rows that don't match the name or mobile hide as you type (the list isn't rebuilt, so the box keeps its place). */
+function d1Search(root) {
+  const q = String(S.d1Q || '').trim().toLowerCase();
+  let digits = q.replace(/\D/g, ''); if (digits.indexOf('44') === 0) digits = '0' + digits.slice(2);
+  root.querySelectorAll('.trow[data-q]').forEach(r => { r.hidden = !!q && r.dataset.q.indexOf(q) < 0 && !(digits.length >= 3 && r.dataset.q.replace(/\D/g, '').indexOf(digits) >= 0); });
+}
 /** Some starters are booked for Tuesday instead of the usual Monday (Angad, 19 Oct): a Monday starter can move to
  *  Tuesday, a Tuesday one back to Monday (the undo), before the day or on it, while that day is still to come. */
 function d1Move(c, today) {
@@ -2407,6 +2423,7 @@ function loadD1Week(we) {
   }).catch(e => { S.d1Asking = ''; toast(e.message); });
 }
 function drawAcademy(r, quiet) {
+  if (quiet && document.activeElement && document.activeElement.id === 'd1q') { S.d1Later = true; return; }
   const today = r.today || S.me.today, admin = isAdmin(), thisWe = weekEndingOf(today), from = r.from || addDays(today, -7);
   // Week by week, like the All tab (Angad, 20 Oct): the week picked with ‹ › (until the day changes), else the default
   if (!S.d1Pick || S.d1Pick.on !== today) S.d1Pick = { on: today, auto: true };
@@ -2421,12 +2438,16 @@ function drawAcademy(r, quiet) {
   const row = c => {
     const started = c.academy_date <= today, dropped = c.day1_status === 'dropped';
     // Dropped out (Angad, 26 Oct): just that, and Undo; no reminders, Day 1 details or onboarding for them
-    if (dropped) return '<div class="trow dropped" data-cand="' + h(c.id) + '">' + avatar(c) + '<div class="main"><div class="name">' + h(c.full_name) + ' <span class="co ' + h(c.company) + '">' + h(c.company) + '</span></div>' +
+    const dq = ' data-q="' + h((c.full_name + ' ' + (c.mobile || '')).toLowerCase()) + '"', cp = campaignOf(c);
+    // FR | HF: admins switch it with one tap; everyone else sees which (Angad, 26 Oct)
+    const camp = admin ? '<span class="campsel" aria-label="Campaign">' + ['FR', 'HF'].map(k => '<button type="button" class="' + (k === cp ? 'on' : '') + '" data-camp="' + k + '" data-id="' + h(c.id) + '">' + k + '</button>').join('') + '</span>'
+      : '<span class="pill">' + cp + '</span>';
+    if (dropped) return '<div class="trow dropped" data-cand="' + h(c.id) + '"' + dq + '>' + avatar(c) + '<div class="main"><div class="name">' + h(c.full_name) + ' <span class="co ' + h(c.company) + '">' + h(c.company) + '</span></div>' +
       '<div class="sub">' + (c.booker_name ? 'booked by ' + h(c.booker_name) : 'no booker') + (closedBy(c) ? ' · closed by ' + h(closedBy(c)) : '') + '</div>' +
-      '<div class="pills"><span class="pill red">🚫 Dropped out</span>' + (c.day1_by ? '<span class="pill">' + h(String(c.day1_by).split(' ')[0]) + ' · ' + h(fmtTs(c.day1_at)) + '</span>' : '') + '</div></div>' +
+      '<div class="pills"><span class="pill">' + cp + '</span><span class="pill red">🚫 Dropped out</span>' + (c.day1_by ? '<span class="pill">' + h(String(c.day1_by).split(' ')[0]) + ' · ' + h(fmtTs(c.day1_at)) + '</span>' : '') + '</div></div>' +
       '<div class="d1btns"><button class="btn ghost sm" data-d1="dropped" data-id="' + h(c.id) + '">↩️ Undo</button></div></div>';
     // Two statuses only (⏳ / ✅) and one button to move them, so the button can't be read as a third status (Angad, 23 Oct)
-    const pills = (c.academy_confirmed_at ? '<span class="pill green">✅ Confirmed</span>' : '<span class="pill amber">⏳ Not confirmed yet</span>' +
+    const pills = camp + (c.academy_confirmed_at ? '<span class="pill green">✅ Confirmed</span>' : '<span class="pill amber">⏳ Not confirmed yet</span>' +
         (c.day1_status ? '' : '<button type="button" class="btn ghost sm markyes" data-yes="' + h(c.id) + '">✅ Mark as confirmed</button>')) +
       // Not for someone who has confirmed: they had the details, however they were sent (20 Oct: Jasraj confirmed, still "not sent")
       (c.offer_sent_at || c.academy_confirmed_at || started ? '' : '<span class="pill red">Day 1 text not sent</span>') +
@@ -2450,16 +2471,17 @@ function drawAcademy(r, quiet) {
       ? '<div class="d1btns"><button class="btn sm ' + (c.day1_status === 'arrived' ? 'green' : 'ghost') + '" data-d1="arrived" data-id="' + h(c.id) + '">Arrived</button>' +
         '<button class="btn sm ' + (c.day1_status === 'no_show' ? 'red' : 'ghost') + '" data-d1="no_show" data-id="' + h(c.id) + '">No-show</button>' + mvBtn + dropBtn + '</div>'
       : '<div class="d1btns">' + (offer ? '' : '<a class="btn ' + (c.no_whatsapp ? 'sms' : 'wa') + ' sm" data-rem1="' + h(c.id) + '" data-via="' + (c.no_whatsapp ? 'sms' : 'whatsapp') + '" target="_blank" rel="noopener" href="' + h(msgUrl(c, msgDay1Reminder(c))) + '">💬 Remind</a>') + mvBtn + dropBtn + '</div>';
-    return '<div class="trow' + (q ? ' d1q' : '') + (c.day1_status === 'arrived' ? ' arrived' : '') + '" data-cand="' + h(c.id) + '">' + avatar(c) + '<div class="main"><div class="name">' + h(c.full_name) + ' <span class="co ' + h(c.company) + '">' + h(c.company) + '</span></div>' +
+    return '<div class="trow' + (q ? ' d1q' : '') + (c.day1_status === 'arrived' ? ' arrived' : '') + '" data-cand="' + h(c.id) + '"' + dq + '>' + avatar(c) + '<div class="main"><div class="name">' + h(c.full_name) + ' <span class="co ' + h(c.company) + '">' + h(c.company) + '</span></div>' +
       '<div class="sub">' + (c.booker_name ? 'booked by ' + h(c.booker_name) : 'no booker') + (closedBy(c) ? ' · closed by ' + h(closedBy(c)) : '') + '</div>' +
       (c.offer_sent_at ? '<div class="sub d1by">🎉 Day 1 details ' + offerBy(c) + '</div>' : '') + '<div class="pills">' + pills + '</div></div>' + act + q + '</div>';
   };
   const block = x => {
-    const all = d1Order(items.filter(c => c.academy_date === x)), l = all.filter(c => c.day1_status !== 'dropped'), drop = all.length - l.length;
+    const all = d1View(items.filter(c => c.academy_date === x)), l = all.filter(c => c.day1_status !== 'dropped'), drop = all.length - l.length;
+    if (!all.length) return '';  // nobody on that campaign that day
     const conf = l.filter(c => c.academy_confirmed_at).length;
     const arr = l.filter(c => c.day1_status === 'arrived').length, ns = l.filter(c => c.day1_status === 'no_show').length;
     const toRemind = l.filter(c => !c.day1_status), rem = toRemind.filter(remindedToday).length;
-    const counts = l.length + ' expected · ' + conf + ' confirmed' + (l.length - conf ? ' · ' + (l.length - conf) + ' not' : '') + (drop ? ' · ' + drop + ' dropped out' : '') +
+    const counts = (S.d1Camp ? S.d1Camp + ' only · ' : '') + l.length + ' expected · ' + conf + ' confirmed' + (l.length - conf ? ' · ' + (l.length - conf) + ' not' : '') + (drop ? ' · ' + drop + ' dropped out' : '') +
       (x <= today ? ' · ' + arr + ' arrived' + (ns ? ' · ' + ns + ' no-show' : '') + (x < today && toRemind.length ? ' · ' + toRemind.length + ' not ticked' : '') : '');
     const tools = admin && x >= today && toRemind.length ? '<div class="bullbtns d1tools"><button class="btn ' + (rem < toRemind.length ? 'wa' : 'ghost') + '" data-remall="' + x + '">📲 Send reminders · ' + rem + '/' + toRemind.length + '</button></div>' : '';
     return '<div class="datehead">' + h(label(x)) + '</div><p class="hint" style="margin:-4px 4px 8px">' + h(counts) + '</p>' + tools + '<div class="list alist">' + all.map(row).join('') + '</div>';
@@ -2475,6 +2497,12 @@ function drawAcademy(r, quiet) {
     '<button class="iconbtn" id="d1next" aria-label="Next week"' + (we >= maxWe ? ' disabled' : '') + '>›</button></div>';
   // One New Starts List for the week: Monday's and Tuesday's starters together, each with their start day
   const weekTools = admin && items.length ? '<div class="bullbtns d1tools"><button class="btn ghost" data-pdf="' + mon + '">📄 New Starts List (PDF)</button></div>' : '';
+  // Find someone, sort by name, one campaign (Angad, 26 Oct). The PDF follows the sort and the campaign.
+  const live = items.filter(c => c.day1_status !== 'dropped'), nCamp = k => live.filter(c => campaignOf(c) === k).length;
+  const fchip = (attr, v, on, label) => '<button type="button" class="chip' + (on ? ' on' : '') + '" ' + attr + '="' + v + '">' + label + '</button>';
+  const filt = items.length ? '<div class="search d1search"><input type="search" id="d1q" placeholder="Search name or mobile" value="' + h(S.d1Q || '') + '"></div>' +
+    '<div class="chips d1chips"><span class="d1lbl">Sort</span>' + fchip('data-d1sort', '', S.d1Sort !== 'az', 'JUSS · LINK') + fchip('data-d1sort', 'az', S.d1Sort === 'az', 'Name A–Z') + '</div>' +
+    '<div class="chips d1chips"><span class="d1lbl">Campaign</span>' + fchip('data-d1camp', '', !S.d1Camp, 'All <b>' + live.length + '</b>') + fchip('data-d1camp', 'FR', S.d1Camp === 'FR', 'FR <b>' + nCamp('FR') + '</b>') + fchip('data-d1camp', 'HF', S.d1Camp === 'HF', 'HF <b>' + nCamp('HF') + '</b>') + '</div>' : '';
   const page = paint('Day 1',
     (pend.length ? '<div class="card needs"><b>⚖️ Waiting on your decision · ' + pend.length + '</b><p class="small muted" style="margin:4px 0 2px">Booked onto the Academy, but marked RED or not suitable before. Tap a name to approve or decline.</p>' +
       pend.map(c => '<button class="nm" data-cand="' + h(c.id) + '">' + h(c.first_name) + ' · ' + h(fmt(c.academy_date)) + '</button>').join('') + '</div>' : '') +
@@ -2483,7 +2511,7 @@ function drawAcademy(r, quiet) {
     (behind.length ? '<div class="card needs d1behind"><b>↩️ Still to sort from an earlier week · ' + behind.length + '</b><p class="small muted" style="margin:4px 0 2px">A no-show to rebook, or nobody ticked Arrived / No-show. Tap a name to go to that week.</p>' +
       behind.map(c => '<button class="nm" data-wk="' + weekEndingOf(c.academy_date) + '">' + h(c.first_name) + ' · ' + (c.day1_status === 'no_show' ? 'no-show' : 'not ticked') + '</button>').join('') + '</div>' : '') +
     (pend.length || toOnb.length || behind.length ? '<div style="height:14px"></div>' : '') +
-    weekNav1 + weekTools +
+    weekNav1 + weekTools + filt +
     (!wk ? skeleton(3) : dates.length ? dates.map(block).join('')
       : empty('🎓', we === thisWe ? 'Nobody booked to start this week.' : we > thisWe ? 'Nobody booked to start that week yet.' : 'Nobody started that week.')) +
     '<p class="hint">' + (admin ? '📲 Send reminders: the Day 1 reminder to every starter, signed by you (Jess / Rubal: you get a nudge at 10:00 on the day). ✅ Confirmed = they tapped CONFIRM on their welcome page. Said yes on WhatsApp instead? Tap "Mark as confirmed". 📄 New Starts List: the week\'s sign-in sheet for the room. ' : '💬 Remind sends them the Day 1 reminder (time, address, Maps pin). ✅ Confirmed = they tapped CONFIRM on their welcome page. Said yes on WhatsApp instead? Tap "Mark as confirmed". ') +
@@ -2501,7 +2529,24 @@ function drawAcademy(r, quiet) {
     if (c) { c.offer_sent_at = londonNow(); setTimeout(() => { if (S.view === 'academy') drawAcademy(r, true); }, 400); }
   }));
   page.querySelectorAll('[data-remall]').forEach(b => { b.onclick = () => day1Sheet(b.dataset.remall); });
-  page.querySelectorAll('[data-pdf]').forEach(b => { b.onclick = () => savePdf(day1Pdf(mon, items), newStartsName(mon) + '.pdf'); });
+  page.querySelectorAll('[data-pdf]').forEach(b => { b.onclick = () => savePdf(day1Pdf(mon, d1View(items), { line: S.d1Sort !== 'az', camp: S.d1Camp }), newStartsName(mon) + '.pdf'); });
+  page.querySelectorAll('[data-d1sort]').forEach(b => { b.onclick = () => { S.d1Sort = b.dataset.d1sort; drawAcademy(r, true); }; });
+  page.querySelectorAll('[data-d1camp]').forEach(b => { b.onclick = () => { S.d1Camp = b.dataset.d1camp; drawAcademy(r, true); }; });
+  const qbox = page.querySelector('#d1q');
+  if (qbox) {
+    qbox.oninput = () => { S.d1Q = qbox.value; d1Search(page); };
+    qbox.onblur = () => { if (S.d1Later) { S.d1Later = false; drawAcademy(S.academy || r, true); } };
+    d1Search(page);
+  }
+  page.querySelectorAll('[data-camp]').forEach(b => {
+    b.onclick = e => {
+      e.stopPropagation();
+      const c = pool.filter(x => x.id === b.dataset.id)[0]; if (!c || campaignOf(c) === b.dataset.camp) return;
+      const was = c.campaign; c.campaign = b.dataset.camp; drawAcademy(r, true);  // on screen straight away, saved behind it
+      call('setCampaign', { id: c.id, campaign: b.dataset.camp }).then(nc => { Object.assign(c, nc); upsert(nc); toast(c.first_name + ': ' + b.dataset.camp); })
+        .catch(ex => { c.campaign = was; drawAcademy(r, true); toast(/Unknown action/.test(ex.message) ? 'Update the app first.' : ex.message); });
+    };
+  });
   page.querySelectorAll('[data-rem1]').forEach(a => a.addEventListener('click', () => markReminded(pool.filter(x => x.id === a.dataset.rem1)[0], a.dataset.via)));
   page.querySelectorAll('[data-yes]').forEach(b => {
     b.onclick = e => {
@@ -3054,13 +3099,14 @@ function d1Days(dates) {
     : dates.map(fmtLong).join(' & ')) + ' ' + last.getUTCFullYear();
 }
 /** The week's New Starts List: everyone starting that week (Monday and Tuesday), each with their start day and date. */
-function day1Pdf(mon, list) {
+function day1Pdf(mon, list, opts) {
+  opts = opts || {};
   const W = 595.28, H = 841.89, M = 36, RH = 24, PER = 24;
-  const cols = [['#', 18], ['Name', 104], ['Co', 32], ['Mobile', 66], ['Starts', 50], ['Booked by', 66], ['Closed by', 66], ['Confirmed', 48], ['Arrived', 42], ['Notes', 31]];
+  const cols = [['#', 16], ['Name', 96], ['Co', 28], ['Camp', 28], ['Mobile', 58], ['Starts', 48], ['Booked by', 66], ['Closed by', 66], ['Confirmed', 50], ['Arrived', 40], ['Notes', 27]];
   /** "Abdullahi A.": Booked by and Closed by side by side on A4 */
   const who = n => { const w = String(n || '').trim().split(/\s+/); return w[0] ? w[0] + (w[1] ? ' ' + w[1][0] + '.' : '') : '-'; };
   // Same order and ticks as the Day 1 tab (Angad, 19 Oct): Monday's then Tuesday's, arrived rows light green, no-shows at the bottom
-  const rows = d1Order(list), live = rows.filter(c => c.day1_status !== 'dropped'), drop = rows.length - live.length;  // dropped out: listed, not expected
+  const rows = list, live = rows.filter(c => c.day1_status !== 'dropped'), drop = rows.length - live.length;  // dropped out: listed, not expected
   const conf = live.filter(c => c.academy_confirmed_at).length, nJuss = live.filter(c => c.company === 'JUSS').length;
   const arr = rows.filter(c => c.day1_status === 'arrived').length, ns = rows.filter(c => c.day1_status === 'no_show').length, ticked = arr + ns > 0;
   const dates = rows.map(c => c.academy_date).filter((x, i, a) => a.indexOf(x) === i).sort();
@@ -3074,31 +3120,32 @@ function day1Pdf(mon, list) {
     o.push('0.95 0.42 0.11 rg 0 ' + (H - 10).toFixed(2) + ' ' + (W / 2).toFixed(2) + ' 10 re f', '0.05 0.6 0.6 rg ' + (W / 2).toFixed(2) + ' ' + (H - 10).toFixed(2) + ' ' + (W / 2).toFixed(2) + ' 10 re f');
     txt(M, H - 50, newStartsName(mon), 20, true);
     txt(M, H - 68, 'BA Academy Day 1 · ' + d1Days(dates.length ? dates : [mon]) + ' · 1:30pm · ' + (S.me.address || 'Automotive House, Grays Place, Slough SL2 5AF'), 10);
-    txt(M, H - 84, live.length + ' expected' + perDay + ' · JUSS ' + nJuss + ' · LINK ' + (live.length - nJuss) + ' · ' + conf + ' confirmed · ' + (live.length - conf) + ' not confirmed' + (ticked ? ' · ' + arr + ' arrived · ' + ns + ' no-show' : '') + (drop ? ' · ' + drop + ' dropped out' : ''), 8.5, false, true);
+    txt(M, H - 84, live.length + ' expected' + perDay + ' · JUSS ' + nJuss + ' · LINK ' + (live.length - nJuss) + ' · ' + conf + ' confirmed · ' + (live.length - conf) + ' not confirmed' + (ticked ? ' · ' + arr + ' arrived · ' + ns + ' no-show' : '') + (drop ? ' · ' + drop + ' dropped out' : '') + (opts.camp ? ' · ' + opts.camp + ' only' : ''), 8.5, false, true);
     txt(M, H - 96, 'JUSS Marketing & LINK Marketing  |  printed ' + fmt(S.me.today) + ' ' + londonNow().slice(11) + ' by ' + S.me.user.name, 8.5, false, true);
     const top = H - 110;
     o.push('0.94 0.93 0.91 rg ' + M + ' ' + (top - 20).toFixed(2) + ' 523 20 re f');
-    let x = M; cols.forEach(c => { txt(x + 4, top - 14, c[0], 8.5, true); x += c[1]; });
+    let x = M; cols.forEach(c => { txt(x + 4, top - 14, c[0], 8, true); x += c[1]; });
     chunk.forEach((c, i) => {
       const t = top - 20 - i * RH, b = t - RH, y = t - 15;
       const at = k => { let v = M; for (let j = 0; j < k; j++) v += cols[j][1]; return v + 4; };
       if (c.day1_status === 'arrived') o.push('0.88 0.96 0.9 rg ' + M + ' ' + b.toFixed(2) + ' 523 ' + RH + ' re f');  // light green, like the app
       else if (c.day1_status === 'dropped') o.push('0.94 0.94 0.94 rg ' + M + ' ' + b.toFixed(2) + ' 523 ' + RH + ' re f');  // light grey: dropped out
       const prev = rows[p * PER + i - 1];  // JUSS on top, LINK below: a dark line where LINK starts
-      if (i && prev.company === 'JUSS' && c.company !== 'JUSS') o.push('0.2 0.2 0.25 RG 1.5 w ' + M + ' ' + t.toFixed(2) + ' m ' + (M + 523) + ' ' + t.toFixed(2) + ' l S');
+      if (opts.line !== false && i && prev.company === 'JUSS' && c.company !== 'JUSS') o.push('0.2 0.2 0.25 RG 1.5 w ' + M + ' ' + t.toFixed(2) + ' m ' + (M + 523) + ' ' + t.toFixed(2) + ' l S');
       txt(at(0), y, String(p * PER + i + 1), 9, false, true);
       txt(at(1), y, fit(c.full_name, cols[1][1] - 8, 10), 10, true);
       txt(at(2), y, c.company || '', 9);
-      txt(at(3), y, c.mobile || '', 9);
-      txt(at(4), y, fmt(c.academy_date), 9, D(c.academy_date).getUTCDay() !== 1);  // a Tuesday start in bold: it's the exception
-      txt(at(5), y, fit(who(c.booker_name), cols[5][1] - 8, 8.5), 8.5);
-      txt(at(6), y, fit(who(closedBy(c)), cols[6][1] - 8, 8.5), 8.5);
-      txt(at(7), y, c.academy_confirmed_at ? 'Yes' : 'No', 9, !c.academy_confirmed_at);
+      txt(at(3), y, campaignOf(c), 9, true);
+      txt(at(4), y, c.mobile || '', 8.5);
+      txt(at(5), y, fmt(c.academy_date), 8, D(c.academy_date).getUTCDay() !== 1);  // a Tuesday start in bold: it's the exception
+      txt(at(6), y, fit(who(c.booker_name), cols[6][1] - 8, 8.5), 8.5);
+      txt(at(7), y, fit(who(closedBy(c)), cols[7][1] - 8, 8.5), 8.5);
+      txt(at(8), y, c.academy_confirmed_at ? 'Yes' : 'No', 9, !c.academy_confirmed_at);
       // Arrived: what was ticked in the app, or an empty box to tick by hand
-      if (c.day1_status === 'arrived') txt(at(8), y, 'Yes', 9, true, false, '0.08 0.5 0.25');
-      else if (c.day1_status === 'no_show') txt(at(8), y, 'No-show', 9, true, false, '0.8 0.15 0.15');
-      else if (c.day1_status === 'dropped') txt(at(8), y, 'Dropped', 8.5, true, false, '0.8 0.15 0.15');
-      else o.push('0.2 0.2 0.25 RG 0.8 w ' + (at(8) + 12).toFixed(2) + ' ' + (b + 6.5).toFixed(2) + ' 11 11 re S');
+      if (c.day1_status === 'arrived') txt(at(9), y, 'Yes', 9, true, false, '0.08 0.5 0.25');
+      else if (c.day1_status === 'no_show') txt(at(9), y, 'No-show', 8.5, true, false, '0.8 0.15 0.15');
+      else if (c.day1_status === 'dropped') txt(at(9), y, 'Dropped', 8.5, true, false, '0.8 0.15 0.15');
+      else o.push('0.2 0.2 0.25 RG 0.8 w ' + (at(9) + 12).toFixed(2) + ' ' + (b + 6.5).toFixed(2) + ' 11 11 re S');
       o.push('0.85 0.84 0.82 RG 0.5 w ' + M + ' ' + b.toFixed(2) + ' m ' + (M + 523) + ' ' + b.toFixed(2) + ' l S');
     });
     if (!chunk.length) txt(M + 4, top - 38, 'Nobody booked for this week.', 10, false, true);

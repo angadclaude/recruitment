@@ -439,7 +439,8 @@ async function fillEval(p) {
   await pp.goBack(); await pp.waitForSelector('.kpis');
   // Non-qualifiers in the day's summary, next to Checked in (Angad, 26 Oct): from what the presenter sees (no_rating) too
   const dayAll = (await api(admin, 'listDay', {})).items, nqToday = dayAll.filter(c => c.non_qual).length;
-  await pp.waitForFunction(n => (document.querySelector('.hero .kpi b') || {}).dataset && document.querySelector('.hero .kpi b').dataset.n === String(n), dayAll.length, { timeout: 15000 });  // its copy refreshed
+  await pp.waitForFunction(([n, q]) => { const b = document.querySelectorAll('.hero .kpi b'); return b.length === 5 && b[0].dataset.n === String(n) && b[1].dataset.n === String(q); },
+    [dayAll.length, nqToday], { timeout: 20000 });  // its copy has caught up with the admin's change (Young Person no longer a non-qualifier)
   const heroK = await pp.$$eval('.hero .kpi', k => k.map(x => x.querySelector('span').textContent + '=' + x.querySelector('b').dataset.n));
   ok(nqToday > 0 && heroK.join() === 'Checked in=' + dayAll.length + ',Non-qual=' + nqToday + ',' + heroK.slice(2).join() && /^Rated=/.test(heroK[2]) && heroK.length === 5,
     'the day\'s summary: Checked in · Non-qual · Rated · Evaluated · To call (' + heroK.join(' · ') + ')');
@@ -526,7 +527,7 @@ async function fillEval(p) {
   ok(/💡 Plays semi-pro football/.test(snap) && /Wants to earn on results, saving for a house/.test(snap), 'booker sees the room answers: 💡 ice-breaker + why sales');
   ok(/🎤 Presentation by Nathan Smith/.test(snap) && !/rated by/.test(snap), 'their page says who ran the presentation: "🎤 Presentation by Nathan Smith" (he rated the room too)');
   const hdr = (await getJson('/dev/sheet?name=Candidates'))[0];
-  ok(hdr.slice(-19).join() === 'recruit_source,databyte_at,databyte_by,onboard_email_at,onboard_email_by,brand,presented_by_id,presented_by,offer_by,offer_via,offer_co,thanks_via,thanks_co,outcome_log,callback_at,callback_by_id,callback_nudged,booking_id,booking_note' && new Set(hdr).size === hdr.length,
+  ok(hdr.slice(-20).join() === 'recruit_source,databyte_at,databyte_by,onboard_email_at,onboard_email_by,brand,presented_by_id,presented_by,offer_by,offer_via,offer_co,thanks_via,thanks_co,outcome_log,callback_at,callback_by_id,callback_nudged,booking_id,booking_note,campaign' && new Set(hdr).size === hdr.length,
     'live Sheet with the presenter headers written twice: the empty copies cleared, the new columns added in the right place (no data moved)');
   ok(!/unspent criminal convictions/i.test(snap), 'conviction answer hidden from bookers');
   ok(/A door gets shut in your face\. What's your first thought\?/.test(snap) && /Tell us about a time you kept going when things got tough\. What did you do\?/.test(snap) &&
@@ -1466,6 +1467,43 @@ async function fillEval(p) {
   await ap.waitForFunction(() => !/Tuesday 20 October/i.test(document.getElementById('page').innerText));
   const backMon = await api(admin, 'getCandidate', { id: adham.id });
   ok(backMon.academy_date === '2026-10-19' && !backMon.day1_status, '📅 Monday (twice) puts him back on Monday\'s list');
+
+  // ── Day 1: campaign (FR / HF), search, sort by name, one campaign (Angad, 26 Oct) ──
+  const campOn = id => ap.$eval('.trow[data-cand="' + id + '"] .campsel button.on', b => b.textContent);
+  const soon = async f => { for (let i = 0; i < 30; i++) { if (await f()) return true; await new Promise(r => setTimeout(r, 200)); } return false; };
+  ok(await campOn(jasId) === 'FR' && await campOn(adham.id) === 'HF', 'each starter shows their campaign: LINK → FR (Jasraj), JUSS → HF (Adham), as FR | HF');
+  await ap.click('[data-camp="HF"][data-id="' + jasId + '"]'); await ap.waitForFunction(id => (document.querySelector('.trow[data-cand="' + id + '"] .campsel button.on') || {}).textContent === 'HF', jasId);
+  ok(await soon(async () => (await api(admin, 'getCandidate', { id: jasId })).campaign === 'HF'), 'one tap on HF: Jasraj (LINK) joins HF, saved');
+  await ap.click('[data-d1camp="FR"]'); await ap.waitForSelector('[data-d1camp="FR"].on');
+  ok(!(await ap.$('.trow[data-cand="' + jasId + '"]')) && !(await ap.$('.trow[data-cand="' + adham.id + '"]')), 'the FR chip: only FR starters (neither of them now)');
+  await ap.click('[data-d1camp="HF"]'); await ap.waitForSelector('[data-d1camp="HF"].on');
+  ok(await ap.$('.trow[data-cand="' + jasId + '"]') && await ap.$('.trow[data-cand="' + adham.id + '"]') && /HF only · 2 expected/.test(await ap.innerText('#page')) && /HF\s*2/.test(await ap.textContent('[data-d1camp="HF"]')),
+    'the HF chip: both, "HF only · 2 expected" (the chip says how many: HF 2)');
+  await ap.click('[data-d1camp=""]'); await ap.click('[data-camp="FR"][data-id="' + jasId + '"]');
+  ok(await soon(async () => (await api(admin, 'getCandidate', { id: jasId })).campaign === 'FR'), 'All again; Jasraj back to FR');
+  await ap.fill('#d1q', 'jas');
+  ok(await ap.isVisible('.trow[data-cand="' + jasId + '"]') && await ap.isHidden('.trow[data-cand="' + adham.id + '"]'), 'search "jas": only Jasraj');
+  await ap.fill('#d1q', '0770 0900 300');
+  ok(await ap.isHidden('.trow[data-cand="' + jasId + '"]') && await ap.isVisible('.trow[data-cand="' + adham.id + '"]'), 'search by mobile ("0770 0900 300"): only Adham');
+  await ap.fill('#d1q', ''); ok(await ap.isVisible('.trow[data-cand="' + jasId + '"]') && await ap.isVisible('.trow[data-cand="' + adham.id + '"]'), 'cleared: everyone');
+  await ap.evaluate(() => { const d = document.querySelector('.d1search'); if (d) d.scrollIntoView({ block: 'start' }); window.scrollBy(0, -80); });
+  await ap.screenshot({ path: SHOTS + '/31c-day1-tools.png' });
+  await ap.click('[data-d1sort="az"]'); await ap.waitForSelector('[data-d1sort="az"].on');
+  const azDl = await pdfDl(ap, '[data-pdf="2026-10-19"]'), azPath = `${SHOTS}/31-az.pdf`; await azDl.saveAs(azPath);
+  const azRaw = fs.readFileSync(azPath, 'latin1');
+  ok(/\(Camp\) Tj/.test(azRaw) && /\(FR\) Tj/.test(azRaw) && /\(HF\) Tj/.test(azRaw) && !/1\.5 w/.test(azRaw) && azRaw.indexOf('(Adham Soliman)') < azRaw.indexOf('(Jasraj Bhuller)'),
+    'Name A–Z → the New Starts List follows it (no JUSS / LINK line), with a Camp column (FR / HF)');
+  await ap.click('[data-d1sort=""]');
+  // The rules, with starters that tell the orders apart
+  const jsSrc = fs.readFileSync(require('path').join(__dirname, '..', 'src', 'JS.html'), 'utf8');
+  const grab = re => jsSrc.match(re)[0];
+  const viewWith = new Function('S', grab(/function campaignOf\(c\) \{[^\n]*\}/) + '\n' + grab(/function d1Order\(list\) \{[\s\S]*?\n\}/) + '\n' + grab(/function d1View\(list\) \{[\s\S]*?\n\}/) + '\nreturn d1View;');
+  const four = [{ full_name: 'Zed Juss', company: 'JUSS', academy_date: '2026-10-19' }, { full_name: 'Amy Link', company: 'LINK', academy_date: '2026-10-19' },
+    { full_name: 'Bob Juss', company: 'JUSS', academy_date: '2026-10-19', campaign: 'FR' }, { full_name: 'Cal Link', company: 'LINK', academy_date: '2026-10-19', day1_status: 'no_show' }];
+  const nm = l => l.map(c => c.full_name).join(', ');
+  ok(nm(viewWith({})(four)) === 'Bob Juss, Zed Juss, Amy Link, Cal Link' && nm(viewWith({ d1Sort: 'az' })(four)) === 'Amy Link, Bob Juss, Zed Juss, Cal Link' &&
+    nm(viewWith({ d1Camp: 'FR' })(four)) === 'Bob Juss, Amy Link, Cal Link' && nm(viewWith({ d1Camp: 'HF' })(four)) === 'Zed Juss',
+    'the rules: JUSS · LINK (default) / Name A–Z (no-shows still last) / FR (LINK, or picked: Bob) / HF (JUSS unless picked)');
   let gone = null; try { await api(admin, 'markDay1', { id: jasId, status: 'prev_day' }); } catch (e) { gone = e.message; }
   ok(/already gone/.test(gone), 'never onto a day that has gone (Monday → Sunday refused)');
   await api(admin, 'markDay1', { id: adham.id, status: 'arrived' });
