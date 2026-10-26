@@ -720,12 +720,16 @@ async function fillEval(p) {
   ok(true, 'tapping the 12:00 alert opens Jess\'s send list straight away');
   await j12.close();
 
-  // ── The recruitment team: Jess, Rubal + Fiza (recruitment@jussmarketing.co.uk) work for both companies.
+  // ── The recruitment team: Jess and Rubal work for both companies (Fiza until 26 Oct, Angad: "only Jess and Rubal").
   //    They tap Send (thank-you or Day 1 details), choose LINK or JUSS, and everything after follows that choice ──
   console.log('recruitment team: which company?');
   await mk('Zara Iqbal', 'recruitment@jussmarketing.co.uk', 'JUSS', ['booker', 'admin']);
   const zaraT = await loginApi('recruitment@jussmarketing.co.uk');
-  ok((await api(zaraT, 'me')).recruitTeam.map(x => x.name).sort().join() === 'Jess Grace,Rubal Oshan,Zara Iqbal', 'recruitment team = Jess, Rubal + recruitment@jussmarketing.co.uk (Fiza), from RECRUIT_TEAM');
+  ok((await api(zaraT, 'me')).recruitTeam.map(x => x.name).sort().join() === 'Jess Grace,Rubal Oshan',
+    'the recruitment team is Jess and Rubal only (Angad, 26 Oct): Fiza\'s address (recruitment@jussmarketing.co.uk) isn\'t on it any more');
+  // RECRUIT_TEAM still adds anyone else who sends for both companies: from here on recruitment@ is on it again, to test that
+  await post('/dev/eval', { js: "CONFIG.RECRUIT_TEAM = ['recruitment@jussmarketing.co.uk']; 1" });
+  ok((await api(zaraT, 'me')).recruitTeam.map(x => x.name).sort().join() === 'Jess Grace,Rubal Oshan,Zara Iqbal', 'RECRUIT_TEAM still works for whoever is added next (recruitment@ again, for the tests below)');
   const rtc = await browser.newContext(PHONE), rtp = await rtc.newPage();
   await loginUi(rtp, 'recruitment@jussmarketing.co.uk', APP + 'index.html?c=thanks');
   await rtp.waitForSelector('.sheet .trow [data-thanks]');

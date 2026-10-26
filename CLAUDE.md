@@ -1,6 +1,6 @@
 # J&L Recruitment App: handover for Claude
 
-The recruitment app for **LINK Marketing** and **JUSS Marketing** (Angad runs both). It covers check-in QR, the presenter's room rating and notes, the candidate's evaluation, the booker's call outcomes and call log, Chase, Day 1 (New Starts List, reminders, arrivals), new-starter onboarding, the incentive, and phone alerts. About 80 people use it: admins (Angad, Jess, Satpal, Rubal), the recruitment team (Jess, Rubal, Fiza), bookers and presenters. Built in a Claude Code cloud session from 12 to 18 Oct 2026, then handed to Angad's Windows PC: since 18 Oct 2026 it's looked after from the folder `Desktop\Claude playground\J&L Recruitment App` (this repo's clone).
+The recruitment app for **LINK Marketing** and **JUSS Marketing** (Angad runs both). It covers check-in QR, the presenter's room rating and notes, the candidate's evaluation, the booker's call outcomes and call log, Chase, Day 1 (New Starts List, reminders, arrivals), new-starter onboarding, the incentive, and phone alerts. About 80 people use it: admins (Angad, Jess, Satpal, Rubal), the recruitment team (Jess, Rubal; Fiza until 26 Oct), bookers and presenters. Built in a Claude Code cloud session from 12 to 18 Oct 2026, then handed to Angad's Windows PC: since 18 Oct 2026 it's looked after from the folder `Desktop\Claude playground\J&L Recruitment App` (this repo's clone).
 
 **Working with Angad:** he's not technical and usually on his phone. Give plain English, the exact clicks, and links. Be direct. Stress-test his ideas and tell him if one is weak. Show the data. Never send him code to edit by hand except pasting `Code.gs` (below).
 
@@ -47,7 +47,7 @@ The recruitment app for **LINK Marketing** and **JUSS Marketing** (Angad runs bo
 ## Rules
 - **Bookers** see only their own candidates. **Admins** see everyone. **Presenters** see everyone else's candidates as name, who booked them and room rating only.
 - **Onboarding** (Databyte, welcome email) is for admins only.
-- **The recruitment team** (`THANKS_TEAM` + `RECRUIT_TEAM` in `Code.gs`) send thank-yous, Day 1 details and follow-ups as LINK or JUSS, signed with their own name. Everyone else follows the candidate's company.
+- **The recruitment team** (`THANKS_TEAM` + `RECRUIT_TEAM` in `Code.gs`) send thank-yous, Day 1 details and follow-ups as LINK or JUSS, signed with their own name, and the welcome emails. Everyone else follows the candidate's company. **Only Jess and Rubal since 26 Oct** (Angad: Fiza off): `RECRUIT_TEAM` is empty; e2e puts an address back in it to keep testing it.
 - **Outcome deadline** is Friday 18:00 (later outcomes are marked LATE).
 - **Day 1 tab and New Starts List order (always, Angad 25 Oct):** JUSS on top, LINK below; in each company Monday's starters then Tuesday's, by name, no-shows at the bottom (`d1Order`).
 - **"Thinking it over"** needs a call-back time. **"No answer" / "Thinking it over"** older than 2 weeks shows as 🔴 Stale on Chase until a final answer is logged.
@@ -108,7 +108,5 @@ Old links keep working through the forward, so nothing has to be reprinted.
 Jess, Rubal and Angad (`CONFIG.BOOK_TEAM`) book Teamtailor applicants into a Mon–Fri 10:00 presentation from the **Book Appts** tab (`viewBook`; for them Team moves into the menu, 7 tabs don't fit a phone). Data: the **Bookings** tab (made by itself the first time it's needed, `newTab`). The app writes three WhatsApp messages in the thank-you's style, no hearts, signed by the sender, "In association with JUSS Marketing Ltd" (`msgBookConfirm`, `msgBookRemind`, `msgBookMissed` in `JS.html`; Angad approved the wording). Alerts: 18:00 the evening before (`maybeBookingReminders`, `?c=bookrem` opens the send list) and 10:30 on the day (`maybeMissedBookings`). Check-in matches the booking by mobile (`bookingFor`): the booking's booker wins, `brand` = JUSS, `booking_note` shows to the presenter. Show-up card on Appts Attended (admins, `showupFor`). On a computer every wa.me button copies the message and opens the chat empty (`IS_DESKTOP` listener next to `waUrl`): WhatsApp's desktop app turns pre-filled emojis into "�". CONFIRM like Day 1: each booking has a `confirm_token`; the messages link to `booked.html?t=…&n=…&d=…` (`startBooked` / `renderBooked`, public `bookingInfo` / `confirmBooking`, the booker gets an alert). The office robot (`office-texting` branch) is on hold.
 
 ## Open items (ask Angad when relevant)
-- Should Fiza (`recruitment@jussmarketing.co.uk`) get the new-starter / 12:00 / 10:00 alerts that Jess and Rubal get?
-- Fiza's Gmail "Send mail as" plus running `setupWelcomeEmail`, so she can send welcome emails.
 - **Optional:** auto-deploy `Code.gs` from GitHub with `clasp`, to remove the paste step. It needs the Apps Script API turned on and a `CLASPRC_JSON` GitHub secret, which he sets himself and never pastes in chat.
 - The full team guide is `app/SETUP.md`.
