@@ -803,7 +803,7 @@ async function fillEval(p) {
   await post('/dev/run', { fn: 'keepWarm' });
   const digests = (await getJson('/dev/pushes')).slice(before18);
   const dFiza = digests.find(p => p.body.include_aliases.external_id.includes(fiza.id));
-  ok(dFiza && /^📊 Today: \d+ in · \d+ evaluations?/.test(dFiza.body.headings.en) && /Week: \d+\/5 net attended/.test(dFiza.body.contents.en),
+  ok(dFiza && /^📊 Today: \d+ attended · \d+ evaluations?/.test(dFiza.body.headings.en) && /Week: \d+\/5 net attended/.test(dFiza.body.contents.en),
     '18:00 round-up → Fiza: "' + (dFiza ? dFiza.body.headings.en + ' | ' + dFiza.body.contents.en.replace(/\n/g, ' | ') : 'none') + '"');
 
   ok(!digests.some(p => p.body.include_aliases.external_id.includes(jessId)), 'no round-up for someone with no appointments (no spam)');
@@ -821,7 +821,7 @@ async function fillEval(p) {
   ok(rFiza && /^🏁 Week roundup: \d+ appointments? · \d+ booked$/.test(rFiza.body.headings.en) && /✅ Booked: /.test(rFiza.body.contents.en) && /Day 1 text/.test(rFiza.body.contents.en),
     'Friday 15:00 → Fiza: "' + (rFiza ? rFiza.body.headings.en + ' | ' + rFiza.body.contents.en.replace(/\n/g, ' | ') : 'none') + '"');
   const rTeam = fri.find(p => p.body.include_aliases.external_id.includes(angadId) && /^📋 Team week/.test(p.body.headings.en));
-  ok(rTeam && /Fiza Iqbal: \d+ in/.test(rTeam.body.contents.en) && /Day 1 texts sent \d+\/\d+/.test(rTeam.body.contents.en),
+  ok(rTeam && /Fiza Iqbal: \d+ attended/.test(rTeam.body.contents.en) && /Day 1 texts sent \d+\/\d+/.test(rTeam.body.contents.en),
     'Friday 15:00 → admins get the team roundup: "' + (rTeam ? rTeam.body.headings.en + ' | ' + rTeam.body.contents.en.replace(/\n/g, ' | ') : 'none') + '"');
   ok(rTeam && /Tap to chase them in one go/.test(rTeam.body.contents.en) && /\?c=chase$/.test(rTeam.body.web_url), 'the team roundup opens the Chase tab when tapped');
   ok(rFiza && /\?c=chase$/.test(rFiza.body.web_url), "each booker's roundup opens their own Chase tab");
@@ -961,14 +961,15 @@ async function fillEval(p) {
   const inR = c => c.in_room === true || c.in_room === 'TRUE', cnt = c => inR(c) || !!c.non_qual, wkDays = ['2026-10-12', '2026-10-13', '2026-10-14', '2026-10-15', '2026-10-16'];
   const attW = (await api(admin, 'listWeek', { weekEnding: '2026-10-18' })).items.filter(c => cnt(c) && wkDays.includes(c.attended_date));
   const big = n => new RegExp('BT /F2 12 Tf [\\d.]+ [\\d.]+ Td \\(' + n + '\\) Tj').test(ipRaw);
+  const attN = attW.filter(c => !c.pay_reason);  // attended = minus the non-qualifiers, as on the poster (Angad, 26 Oct)
   const hitN = pay.rows.filter(r => r.net >= pay.target).length, greensP = (ipRaw.match(/0\.47 0\.66 0\.36 rg/g) || []).length;
   ok(ipd.suggestedFilename() === 'Appointments Total w-e 18.10.2026.pdf' && /\/Title \(Appointments Total w-e 18\.10\.2026\)/.test(ipRaw) && /Appointments total · week ending Sunday 18 October 2026/.test(ipRaw) &&
     /📄 Appointments total w\/e /.test(await ap.textContent('#payPdf')) &&
     ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', '12/10/2026', '16/10/2026', 'APPTS', 'QUALIFIERS', 'Appointments Attended'].every(t => ipRaw.includes('(' + t + ') Tj')) &&
-    pay.rows.every(r => ipRaw.includes('(' + r.name + ') Tj')) && big(attW.length) && wkDays.every(x => big(attW.filter(c => c.attended_date === x).length)) &&
+    pay.rows.every(r => ipRaw.includes('(' + r.name + ') Tj')) && big(attN.length) && wkDays.every(x => big(attN.filter(c => c.attended_date === x).length)) &&
     new RegExp('0\\.83 0\\.18 0\\.16 rg BT /F2 12 Tf [\\d.]+ [\\d.]+ Td \\(' + attW.filter(c => c.pay_reason).length + '\\) Tj').test(ipRaw) && greensP === hitN + 1 &&
     !/\(\d+\. /.test(ipRaw) && !/\(No: /.test(ipRaw),
-    '📄 "Appointments total" PDF ("Appointments Total w-e 18.10.2026.pdf") is one grid like the old sheet: every BA, Mon-Fri with dates, ' + attW.length + ' appointments attended (each day adds up), ' +
+    '📄 "Appointments total" PDF ("Appointments Total w-e 18.10.2026.pdf") is one grid like the old sheet: every BA, Mon-Fri with dates, ' + attN.length + ' appointments attended (' + attW.length + ' came in, non-qualifiers left out; each day adds up), ' +
     attW.filter(c => c.pay_reason).length + ' non-qualifiers in red, ' + hitN + ' hit the incentive (green); no per-person detail');
   const nqWhy = /\(Non qualifiers: ([^)]*)\) Tj/.exec(ipRaw);
   ok(nqWhy && /\d+ not eligible/.test(nqWhy[1]) && /\d+ repeat/.test(nqWhy[1]), 'under the grid, what the non qualifiers are: "Non qualifiers: ' + (nqWhy ? nqWhy[1] : '?') + '"');
@@ -1064,6 +1065,74 @@ async function fillEval(p) {
   const [dl] = await Promise.all([ap.waitForEvent('download'), ap.click('#bshare')]);
   ok(dl.suggestedFilename() === 'JL-top5-2026-10-18.jpg', 'Share → image ready for WhatsApp (saved where sharing isn\'t available)');
   await ap.click('#abBack'); await ap.waitForSelector('#bullDaily');
+
+  // ── The numbers agree everywhere (Angad, 26 Oct: "make sure I don't have to explain this again"). One week, every place
+  //    a figure shows: Today's summary, each daily poster, Friday's weekly total, Week top 5, Appts Attended, its PDF and
+  //    the Friday team roundup. Came in = attended + non-qualifiers + not rated yet; attended never includes a non-qualifier.
+  const figuresAgree = async (WE, DD) => {
+    console.log('figures agree w/e ' + WE);
+    await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button[data-tab=today]');
+    await ap.click('.tabbar button[data-tab=today]'); await ap.waitForSelector('#bullDaily');
+    const all = (await api(admin, 'listWeek', { weekEnding: WE })).items, prW = await api(admin, 'payReport', { weekEnding: WE });
+    const cntd = c => c.in_room === true || c.in_room === 'TRUE' || !!c.non_qual, net = c => cntd(c) && !c.pay_reason;
+    const long = d => new Date(d + 'T12:00:00Z').toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+    const span = Array.from({ length: 14 }, (_, i) => new Date(Date.parse(WE + 'T12:00:00Z') - (13 - i) * 864e5).toISOString().slice(0, 10));
+    const heroOf = {};
+    for (const day of DD) {  // Today, walked day by day with its ‹ › arrows
+      for (let i = 0; i < 14; i++) {
+        const t = await ap.textContent('.hero-date'), cur = span.findIndex(x => t.includes(long(x)));
+        if (span[cur] === day) break;
+        await ap.click(cur < span.indexOf(day) ? '#dnext' : '#dprev');
+        await ap.waitForFunction(was => document.querySelector('.hero-date') && document.querySelector('.hero-date').textContent !== was, t);
+      }
+      await ap.waitForFunction(() => document.querySelectorAll('.hero .kpi b').length === 5);
+      heroOf[day] = await ap.$$eval('.hero .kpi', k => k.map(x => Number(x.querySelector('b').dataset.n)));
+    }
+    await ap.click('#bullDaily'); await ap.waitForSelector('#bimg[data-info]', { timeout: 15000 });
+    const posterOf = {};
+    for (const day of DD) {
+      await ap.click('.daybar .dchip[data-d="' + day + '"]');
+      await ap.waitForFunction(d => { const i = document.getElementById('bimg'); return i && (i.dataset.info || '').includes('"day":"' + d + '"'); }, day, { timeout: 15000 });
+      posterOf[day] = JSON.parse(await ap.getAttribute('#bimg', 'data-info'));
+    }
+    await ap.click('#bkind button[data-k=weekly]');
+    await ap.waitForFunction(() => /"kind":"weekly"/.test((document.getElementById('bimg') || { dataset: {} }).dataset.info || ''), null, { timeout: 10000 });
+    const top5 = JSON.parse(await ap.getAttribute('#bimg', 'data-info')).rows;
+    await ap.click('#abBack'); await ap.waitForSelector('#bullDaily');
+    await ap.click('.tabbar button[data-tab=pay]'); await ap.waitForSelector('#payPdf');
+    const payHero = await ap.$$eval('.hero .kpi', k => k.map(x => x.querySelector('span').textContent + '=' + x.querySelector('b').dataset.n));
+    const paySum = await ap.$eval('#paySum', e => e.textContent).catch(() => '');
+    if (paySum) { await ap.locator('#paySum').scrollIntoViewIfNeeded(); await shot(ap, '14f-appts-attended-sum'); }
+    const tpd = await pdfDl(ap, '#payPdf'), tpPath = `${SHOTS}/14e-figures.pdf`; await tpd.saveAs(tpPath);
+    const big12 = [...fs.readFileSync(tpPath, 'latin1').matchAll(/BT \/F2 12 Tf [\d.]+ [\d.]+ Td \((\d+)\) Tj/g)].map(m => Number(m[1]));
+    const roundup = (await post('/dev/eval', { js: `(() => { const rows = readTable('Candidates').filter(c => c.week_ending === '${WE}'); return teamRoundup(usersAll().filter(u => truthy(u.active) && has(u, 'booker')).map(u => weekStats(u, rows)).filter(s => s.all.length), rows).title; })()` })).out;
+    const rowSum2 = rows => rows.reduce((t, r) => t + Number(/ (\d+)(?: BAR)?$/.exec(r)[1]), 0);
+    const bad = [];
+    DD.forEach((day, i) => {
+      const dayAll = all.filter(c => c.attended_date === day), p = posterOf[day], hro = heroOf[day], unrated = dayAll.filter(c => !cntd(c)).length;
+      if (p.attended !== dayAll.filter(net).length) bad.push(day + ': poster attended ' + p.attended);
+      if (rowSum2(p.rows) !== p.attended) bad.push(day + ': top performers ' + rowSum2(p.rows) + ' ≠ attended ' + p.attended);
+      if (hro[0] !== p.attended + p.nonQual + unrated) bad.push(day + ': Today checked in ' + hro[0] + ' ≠ ' + p.attended + ' + ' + p.nonQual + ' + ' + unrated);
+      if (hro[1] !== p.nonQual) bad.push(day + ': Today non-qual ' + hro[1] + ' ≠ poster ' + p.nonQual);
+      if (big12[i] !== p.attended) bad.push(day + ': PDF day ' + big12[i] + ' ≠ poster ' + p.attended);
+      if (p.rows.some(r => !/^(👏|❓)/.test(r) && Number(/ (\d+)(?: BAR)?$/.exec(r)[1]) < 2)) bad.push(day + ': someone named with 1');
+    });
+    const wkAtt = DD.reduce((t, d) => t + posterOf[d].attended, 0), wkNq = DD.reduce((t, d) => t + posterOf[d].nonQual, 0);
+    const fri = DD[4];  // Friday's poster carries the week's total (only once Friday has come)
+    if (fri && posterOf[fri].weekTotal !== wkAtt) bad.push('Friday weekly total ' + posterOf[fri].weekTotal + ' ≠ the days ' + wkAtt);
+    if (big12[5] !== wkAtt || big12[6] !== wkNq) bad.push('PDF total ' + big12[5] + ' / non-qual ' + big12[6] + ' ≠ ' + wkAtt + ' / ' + wkNq);
+    if (payHero[0] !== 'Attended=' + wkAtt) bad.push('Appts Attended hero ' + payHero[0] + ' ≠ ' + wkAtt);
+    const bookersNet = prW.rows.reduce((t, r) => t + r.net, 0), sumParts = /Bookers (\d+)(?: \+ booked by admins (\d+))?(?: \+ no booker yet (\d+))? = (\d+) attended/.exec(paySum);
+    if (bookersNet !== wkAtt && !(sumParts && Number(sumParts[1]) === bookersNet && Number(sumParts[1]) + Number(sumParts[2] || 0) + Number(sumParts[3] || 0) === wkAtt && Number(sumParts[4]) === wkAtt))
+      bad.push('Appts Attended list ' + bookersNet + ' doesn\'t add up to ' + wkAtt + ' (' + paySum + ')');
+    if (!new RegExp('Team week: ' + wkAtt + ' appointments').test(roundup)) bad.push('roundup "' + roundup + '" ≠ ' + wkAtt);
+    const netBy = {}; all.filter(c => net(c) && DD.includes(c.attended_date) && c.booker_name).forEach(c => { const f = c.booker_name.split(' ')[0]; netBy[f] = (netBy[f] || 0) + 1; });
+    top5.forEach(r => { const m = /^\S+ (.+) (\d+)$/.exec(r); if (m && !/×|more/.test(m[1]) && netBy[m[1]] !== Number(m[2])) bad.push('Week top 5 ' + r + ' ≠ ' + netBy[m[1]]); if (m && Number(m[2]) < 2) bad.push('Week top 5 names ' + r); });
+    ok(!bad.length, 'the numbers agree everywhere, w/e ' + WE + ' (' + DD.length + ' days): each day Today\'s checked in = attended + non-qual + not rated, poster = top performers = the PDF\'s day; ' +
+      wkAtt + ' attended = ' + (fri ? 'Friday\'s weekly total = ' : '') + 'the PDF = Appts Attended (' + payHero[0] + (paySum ? ', ' + paySum : '') + ') = the roundup; ' + wkNq + ' non-qualifiers; Week top 5 = each person\'s net' + (bad.length ? ' ✗ ' + bad.join(' | ') : ''));
+    return { wkAtt: wkAtt, paySum: paySum };
+  };
+  await figuresAgree('2026-10-18', ['2026-10-12', '2026-10-13', '2026-10-14', '2026-10-15', '2026-10-16']);
 
   // ── The week's appointments as a PDF (All tab, admins): everyone who checked in, by day, with evaluation + outcome ──
   await ap.click('.tabbar button[data-tab=all]'); await ap.waitForSelector('#weekPdf');
@@ -1771,6 +1840,8 @@ async function fillEval(p) {
   ok(!(await bOf(lc5)) && !lc6c.booker_id && lc6c.booker_typed === 'Leah Leaver' && !(await api('', 'publicConfig')).bookers.find(b => b.id === angadU.id).aliases.includes('Leah Leaver'),
     'after the date: no booker (Jess + Rubal pick one); someone switched off is never credited, and the check-in keeps the name they picked');
   await post('/dev/eval', { js: 'CONFIG.HANDOVER = ' + hoWas + '; "ok"' });
+  const fa2 = await figuresAgree('2026-10-25', ['2026-10-19', '2026-10-20']);
+  ok(/^Bookers \d+ \+ booked by admins \d+ = \d+ attended$/.test(fa2.paySum), 'Appts Attended shows how its list adds up when admins booked some (they\'re not on the incentive): "' + fa2.paySum + '"');
   await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button'); await openTeam(ap);
   await ap.click('.item[data-u="' + mo.id + '"]'); await ap.waitForSelector('#ual');
   ok(await ap.inputValue('#ual') === 'Ramis - Ali Abbas', 'Team → Mo: "Other names they use" shows what he has');
@@ -2110,10 +2181,10 @@ async function fillEval(p) {
   const gd = await pdfDl(ap, '#payPdf'), gPath = `${SHOTS}/14e-grid-walkout.pdf`; await gd.saveAs(gPath);
   const gRaw = fs.readFileSync(gPath, 'latin1');
   const wkAtt = (await api(admin, 'listWeek', {})).items.filter(c => (c.in_room === 'TRUE' || c.non_qual) && !['0', '6'].includes(String(new Date(c.attended_date + 'T00:00:00Z').getUTCDay())));
-  ok(new RegExp('BT /F2 12 Tf [\\d.]+ [\\d.]+ Td \\(' + wkAtt.length + '\\) Tj').test(gRaw) && new RegExp('0\\.83 0\\.18 0\\.16 rg BT /F2 12 Tf [\\d.]+ [\\d.]+ Td \\(' + wkAtt.filter(c => c.pay_reason).length + '\\) Tj').test(gRaw) &&
+  ok(new RegExp('BT /F2 12 Tf [\\d.]+ [\\d.]+ Td \\(' + wkAtt.filter(c => !c.pay_reason).length + '\\) Tj').test(gRaw) && new RegExp('0\\.83 0\\.18 0\\.16 rg BT /F2 12 Tf [\\d.]+ [\\d.]+ Td \\(' + wkAtt.filter(c => c.pay_reason).length + '\\) Tj').test(gRaw) &&
     /\(Non qualifiers: 1 not eligible\.\) Tj/.test(gRaw) && /\(WALK\) Tj/.test(gRaw) && /\(OUTS\) Tj/.test(gRaw) &&
     (gRaw.match(/0\.83 0\.18 0\.16 rg BT \/F2 12 Tf [\d.]+ [\d.]+ Td \(1\) Tj/g) || []).length === 2,
-    'Appointments total PDF: ' + wkAtt.length + ' attended (Nadia and the walk out included), ' + wkAtt.filter(c => c.pay_reason).length + ' non qualifier in red, then a WALK OUTS column (1), and under the grid "Non qualifiers: 1 not eligible."');
+    'Appointments total PDF: ' + wkAtt.filter(c => !c.pay_reason).length + ' attended (the walk out included; Nadia, a non-qualifier, in her own column), ' + wkAtt.filter(c => c.pay_reason).length + ' non qualifier in red, then a WALK OUTS column (1), and under the grid "Non qualifiers: 1 not eligible."');
   try { require('child_process').execFileSync('pdftoppm', ['-png', '-r', '70', '-singlefile', gPath, `${SHOTS}/14e-grid-walkout`]); } catch (e) { /* no renderer here */ }
 
   // ── Day 1 tab, week by week (Angad, 20 Oct: "week ending wise similar to All tab") ──

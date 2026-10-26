@@ -1,4 +1,4 @@
-window.APP_VERSION = '5bf61163';
+window.APP_VERSION = '3204e3c2';
 
 (function () {
 'use strict';
@@ -1712,9 +1712,9 @@ function viewMine(quiet) {
     const toSend = items.filter(c => toCall.indexOf(c) < 0 && c.outcome === 'Academy booked' && c.welcome_url && !c.offer_sent_at && !c.academy_confirmed_at && c.admin_status !== 'pending' && c.admin_status !== 'rejected');
     const left = Math.max(0, d.pay.target - r.net);
     // Admins can book people but don't earn the recruitment incentive: their numbers, no target
-    body = '<div class="hero">' + FX + top + (isAdmin() ? kpis([[items.filter(c => c.in_room).length, 'Attended'], [items.filter(c => c.outcome === 'Academy booked' && c.admin_status !== 'rejected').length, 'Booked'], [toCall.length, 'To call', toCall.length > 0]]) :
+    body = '<div class="hero">' + FX + top + (isAdmin() ? kpis([[items.filter(c => counted(c) && !c.pay_reason).length, 'Attended'], [items.filter(c => c.outcome === 'Academy booked' && c.admin_status !== 'rejected').length, 'Booked'], [toCall.length, 'To call', toCall.length > 0]]) :
       '<div class="hero-body">' + ring(r.net, d.pay.target) + '<div class="hero-txt"><b>' + (left ? left + ' more to hit ' + d.pay.target : 'Target smashed 🔥') + '</b>' +
-      '<span>' + r.attended + ' attended · ' + r.excluded.length + ' don\'t count</span>' +
+      '<span>' + r.attended + ' checked in · ' + r.excluded.length + ' don\'t count</span>' +
       (r.excluded.length ? '<span class="small">' + r.excluded.map(x => h(x.name) + ' (' + h(x.why) + ')').join(' · ') + '</span>' : '') + '</div></div>') + '</div>' +
       (toCall.length ? '<div class="section-h"><b>📞 To call · ' + toCall.length + '</b><span>log by ' + h(S.me.deadlineLabel || 'Sat ' + S.me.deadlineTime) + '</span></div><div class="list">' + toCall.map(c => item(c, true, 'call')).join('') + '</div>' : '') +
       (toSend.length ? '<div class="section-h"><b>🎉 Send Day 1 details · ' + toSend.length + '</b></div><div class="list">' + toSend.map(c => item(c, true, 'offer')).join('') + '</div>' : '') +
@@ -1774,15 +1774,20 @@ function viewPay(quiet) {
     const rows = p.rows.filter(r => r.attended > 0 || isAdmin());
     const hit = rows.filter(r => r.net >= p.target).length;
     const late = rows.reduce((n, r) => n + r.late, 0), missing = rows.reduce((n, r) => n + r.missing, 0);
-    body = (isAdmin() ? '<div class="hero">' + FX + '<div class="label">Team this week</div>' + kpis([[rows.reduce((n, r) => n + r.net, 0), 'Net'], [hit + '/' + rows.filter(r => r.attended).length, 'Hit ' + p.target],
+    // Attended this week = the Friday poster's weekly total and the PDF's: the bookers' net, plus anyone booked by an admin
+    // (no incentive) or with no booker yet. Under the list, the sum that gets there (Angad, 26 Oct: the numbers add up).
+    const wk = (d.items || []).filter(c => counted(c) && !c.pay_reason), onBoard = {}; p.rows.forEach(r => { onBoard[r.booker_id] = 1; });
+    const byAdmin = wk.filter(c => c.booker_id && !onBoard[c.booker_id]).length, noBk = wk.filter(c => !c.booker_id).length, bookersNet = rows.reduce((n, r) => n + r.net, 0);
+    body = (isAdmin() ? '<div class="hero">' + FX + '<div class="label">Team this week</div>' + kpis([[wk.length, 'Attended'], [hit + '/' + rows.filter(r => r.attended).length, 'Hit ' + p.target],
       [late, 'Late', late > 0], [missing, 'No outcome', missing > 0]]) + '</div>' +
       '<button class="btn ghost block" id="payPdf" style="margin:12px 0">📄 Appointments total w/e ' + h(fmt(S.week)) + ': per BA per day (PDF)</button>' : '') +
       '<div class="list">' + (rows.length ? rows.map((r, i) => '<div class="payrow" data-i="' + i + '"><div class="rank' + (i < 3 && r.net ? ' top' + (i + 1) : '') + '">' + (i + 1) + '</div>' +
         '<div class="main"><div class="name">' + h(r.name) + ' <span class="co ' + h(r.company) + '">' + h(r.company) + '</span></div>' +
         '<div class="bar' + (r.net >= p.target ? ' done' : '') + '"><i style="width:' + Math.min(100, r.net / p.target * 100) + '%"></i></div>' +
-        '<div class="pills">' + (r.late ? '<span class="pill amber">' + r.late + ' late</span>' : '') + (r.missing ? '<span class="pill red">' + r.missing + ' no outcome</span>' : '') + '<span class="pill">' + r.attended + ' attended</span></div>' +
+        '<div class="pills">' + (r.late ? '<span class="pill amber">' + r.late + ' late</span>' : '') + (r.missing ? '<span class="pill red">' + r.missing + ' no outcome</span>' : '') + '<span class="pill">' + r.attended + ' checked in</span></div>' +
         '<div class="small muted excl" hidden>' + (r.excluded.length ? r.excluded.map(x => h(x.name) + ': ' + h(x.why)).join('<br>') : 'Nothing excluded') + '</div></div>' +
         '<div class="net"><b>' + r.net + '</b><span>/' + p.target + '</span></div></div>').join('') : empty('💷', 'No appointments this week.')) + '</div>' +
+      (isAdmin() && (byAdmin || noBk) ? '<p class="small addsup" id="paySum">Bookers ' + bookersNet + (byAdmin ? ' + booked by admins ' + byAdmin : '') + (noBk ? ' + no booker yet ' + noBk : '') + ' = <b>' + wk.length + ' attended</b></p>' : '') +
       '<p class="hint">Net ' + p.target + ' attended, Mon–Fri, rated by the presenter. Doesn\'t count: under 18, not eligible to work self-employed, seen in the last 6 months, removed by admin (a walk out still counts). ' +
         (isAdmin() ? 'Admins don\'t earn the incentive, so people you book aren\'t on here. ' : '') + 'Tap a row for details. Outcomes due ' + fmtTs(p.deadline) + '.</p>' +
       (p.unassigned.length ? '<div class="section-h">No confirmed booker <span>' + p.unassigned.length + '</span></div><div class="list">' + p.unassigned.map(x => '<button class="item" data-id="' + h(x.id) + '"><span class="av">?</span><div class="main"><div class="name">' + h(x.name) + '</div><div class="sub">Typed "' + h(x.typed || '—') + '" · tap to assign</div></div><span class="chev">›</span></button>').join('') + '</div>' : '') +
@@ -1996,6 +2001,8 @@ function viewBulletin() {
     '<div class="bullimg"><img id="bimg" alt="Bulletin"><div class="loading" id="bload"><span class="spinner inline"></span> Making your bulletin…</div></div>' + edit, false, true);
   bindBullSeg(page, day);
   const draw = () => {
+    // Only the latest drawing lands: tap Tue then Fri quickly and a slow Tue mustn't replace Fri's poster (found 26 Oct)
+    const tok = S.bullTok = (S.bullTok || 0) + 1;
     const opts = Object.assign({}, BULL_DEFAULTS, store.get('bullOpts') || {}, { tagline: S.bull.tagline });
     const data = kind === 'daily'
       ? { day: day, weekday: n.weekday, target: n.target, attended: n.attended, nonQual: n.nonQual, walkOuts: n.walkOuts, weekTotal: n.weekday === 5 ? n.weekAttended : null,
@@ -2004,7 +2011,7 @@ function viewBulletin() {
     return JLBulletin.load('').then(assets => new Promise(res => {
       const cv = JLBulletin.draw(document.createElement('canvas'), kind, data, opts, assets);
       cv.toBlob(blob => {
-        if (S.view !== 'bulletin') return;
+        if (S.view !== 'bulletin' || S.bullTok !== tok) return res();
         const name = kind === 'daily' ? 'JL-stats-' + day + '.jpg' : 'JL-top5-' + we + '.jpg';
         S.bullFile = new File([blob], name, { type: 'image/jpeg' });
         const img = document.getElementById('bimg'), sv = document.getElementById('bsave');
@@ -2012,7 +2019,7 @@ function viewBulletin() {
         if (S.bullUrl) URL.revokeObjectURL(S.bullUrl);
         S.bullUrl = URL.createObjectURL(blob);
         img.src = S.bullUrl;
-        img.dataset.info = JSON.stringify({ kind: kind, attended: data.attended, nonQual: data.nonQual, walkOuts: data.walkOuts, weekTotal: data.weekTotal, rows: data.rows.map(r => r.medal + ' ' + r.name + (r.who && r.who.length ? ' [' + r.who.join(', ') + ']' : '') + ' ' + r.n + (r.bar ? ' BAR' : '')) });
+        img.dataset.info = JSON.stringify({ kind: kind, day: kind === 'daily' ? day : we, attended: data.attended, nonQual: data.nonQual, walkOuts: data.walkOuts, weekTotal: data.weekTotal, rows: data.rows.map(r => r.medal + ' ' + r.name + (r.who && r.who.length ? ' [' + r.who.join(', ') + ']' : '') + ' ' + r.n + (r.bar ? ' BAR' : '')) });
         document.getElementById('bload').hidden = true;
         document.getElementById('bshare').disabled = false;
         sv.href = S.bullUrl; sv.download = name; sv.hidden = false;
@@ -3311,7 +3318,7 @@ function weekPdf(we, list) {
   y -= 66;
   const late = items.filter(c => c.outcome_late).length, co = k => items.filter(c => c.company === k).length;
   txt(M, y, 'Late outcomes ' + late + '  ·  Non-qualifiers ' + count(items, 'nq') + '  ·  Walk outs ' + items.filter(c => c.rag === 'W').length + '  ·  LINK ' + co('LINK') + '  ·  JUSS ' + co('JUSS') +
-    (days.length ? '  ·  ' + days.map(d => DAYS[D(d).getUTCDay()] + ' ' + items.filter(c => c.attended_date === d).length).join(', ') : ''), 8.5, false, 'grey');
+    (days.length ? '  ·  Checked in ' + days.map(d => DAYS[D(d).getUTCDay()] + ' ' + items.filter(c => c.attended_date === d).length).join(', ') : ''), 8.5, false, 'grey');
   y -= 8;
   if (!items.length) { y -= 24; txt(M, y, 'Nobody checked in this week.', 11, false, 'grey'); }
   days.forEach(d => {
@@ -3477,15 +3484,15 @@ function payPdf(we, d) {
   const cols = [['BA NAME', 122], ['MC', 32]].concat(days.map(x => [DAYS_LONG[D(x).getUTCDay()].toUpperCase(), 49])).concat([['APPTS TOTAL', 42], ['NON QUALIFIERS', 42], ['WALK OUTS', 40]]);
   const colL = []; cols.reduce((x, c) => { colL.push(x); return x + c[1]; }, M);
   const mid = i => colL[i] + cols[i][1] / 2;
-  // Attended = rated in the room by the presenter (a walk out too), or a non-qualifier (same as the bulletin), Monday to
-  // Friday. Non qualifiers = attended but don't count for the incentive (not eligible, repeat, removed by admin), as on
-  // the poster: so the total less the non qualifiers is the net the incentive goes on.
+  // Came in = rated in the room by the presenter (a walk out too), or a non-qualifier, Monday to Friday. Attended = came in
+  // minus the non qualifiers (not eligible, repeat, removed by admin), the same number as the poster and the incentive's net
+  // (Angad, 26 Oct). The non qualifiers have their own column, so attended + non qualifiers = everyone who came in.
   const att = items.filter(c => counted(c) && days.indexOf(c.attended_date) >= 0);
   const netOf = {}; p.rows.forEach(r => { netOf[r.booker_id] = r.net; });
   const line = (id, name, co, group) => {
-    const l = att.filter(c => (c.booker_id || '') === id);
-    return { name: name, co: co, group: group, per: days.map(x => l.filter(c => c.attended_date === x).length), total: l.length,
-      nq: l.filter(c => c.pay_reason).length, wo: l.filter(c => c.rag === 'W').length, hit: id && netOf[id] !== undefined && netOf[id] >= p.target };
+    const l = att.filter(c => (c.booker_id || '') === id), net = l.filter(c => !c.pay_reason);
+    return { name: name, co: co, group: group, per: days.map(x => net.filter(c => c.attended_date === x).length), total: net.length,
+      nq: l.length - net.length, wo: l.filter(c => c.rag === 'W').length, hit: id && netOf[id] !== undefined && netOf[id] >= p.target };
   };
   const bookers = p.rows.map(r => line(r.booker_id, r.name, r.company, r.company === 'JUSS' ? 0 : r.company === 'LINK' ? 1 : 2));
   // People booked by admins (no incentive) and check-ins with no confirmed booker: on the grid too, so every day adds up
@@ -3510,7 +3517,7 @@ function payPdf(we, d) {
     y = H - 34;
     if (first) {
       txt(M, H - 50, 'Appointments total · week ending ' + fmtLong(we) + ' ' + we.slice(0, 4), 17, true);
-      txt(M, H - 66, 'Attended per BA per day, Mon-Fri (rated in the room, or a non-qualifier)  |  green = hit the incentive (net ' + p.target + ')', 9);
+      txt(M, H - 66, 'Attended per BA per day, Mon-Fri (rated in the room; non qualifiers in their own column)  |  green = hit the incentive (' + p.target + ')', 9);
       txt(M, H - 80, 'Printed ' + fmt(S.me.today) + ' ' + londonNow().slice(11) + ' by ' + S.me.user.name + '. Outcomes due ' + fmtTs(p.deadline) + '.  LINK Marketing & JUSS Marketing', 8, false, 'grey');
       y = H - 92;
     }
@@ -3537,7 +3544,7 @@ function payPdf(we, d) {
     txt(colL[0] + 5, yy, pdfFit(r.name, cols[0][1] - 10, 9, true), 9, true, r.total ? '' : 'grey');
     if (r.co) ctr(1, yy, r.co, 7.5, true, r.co);
     r.per.forEach((n, i) => { if (n) ctr(i + 2, yy, String(n), 9.5); });
-    ctr(7, yy, String(r.total), 9.5, true, r.total ? '' : 'grey');
+    ctr(7, yy, String(r.total), 9.5, true, r.total ? '' : 'grey');  // an admin's or no-booker row can be all non qualifiers: 0
     if (r.nq) ctr(8, yy, String(r.nq), 9.5, true, 'red');
     if (r.wo) ctr(9, yy, String(r.wo), 9.5, true, 'red');
     y -= RH; hline(y);

@@ -272,6 +272,32 @@ The app sends through the script owner's Gmail, so that Gmail has to be allowed 
 
 **Changing the email:** the links, numbers, playbooks, sending addresses (`from`) and wording are in `ONBOARD` and `onboardEmail` at the top of `Code.gs`. The Sheet keeps `recruit_source`, `databyte_at/by` and `onboard_email_at/by`.
 
+## The numbers: one meaning everywhere (Angad, 26 Oct)
+Every screen, PDF and alert counts the same way, so they always agree:
+
+- **Checked in:** everyone who checked in (Today).
+- **Attended** (also "appointments", "first appointments attended"): rated in the room by the presenter (a walk out too), Monday to Friday, **minus the non-qualifiers**. This is the incentive's *net*.
+- **Non-qualifiers:** came in but don't count: under 18 / no right to work, seen in the last 6 months, or removed by an admin.
+- **Checked in = attended + non-qualifiers + not rated yet.**
+
+Where you'll see them, all equal:
+- **Each day:**
+  - Today's *Checked in* and *Non-qual*;
+  - the daily poster's two bubbles;
+  - the poster's Top performers (2+ named, the 1s on one line, *No booker yet*), which add up to *attended*;
+  - that day's column on the **Appointments total** PDF.
+- **Each week:**
+  - Friday's poster's *Weekly total*;
+  - the PDF's *Appointments Attended* total and its *Non qualifiers* column;
+  - **Appts Attended → Team this week → Attended**. Under the list: *Bookers N + booked by admins N + no booker yet N = attended*, because admins aren't on the incentive;
+  - the Friday **Team week** alert;
+  - each booker's Friday **Week roundup**, their *net*, and their row on Appts Attended.
+- **Week top 5:** each person's week net.
+- **The bookers' 18:00 alert:** "Today: N attended".
+- **Rows on Appts Attended:** say *N checked in*, meaning everyone who came for that booker; the big number is their net.
+
+The test suite checks all of this on every change (`figuresAgree` in `app/dev/e2e.js`): if two places ever disagree, nothing ships.
+
 ## Bookers' other names (team members, their company)
 Some bookers recruit under other names: a team member ("Daniel Thompson"), their company ("Stones Recruitment"), or both ("Sophie - Skye Promotions"). Candidates type whichever name they know.
 
