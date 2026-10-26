@@ -1912,7 +1912,8 @@ function joinAnd(a) { return a.length < 2 ? a.join('') : a.slice(0, -1).join(', 
  *  team speaks to them instead), so they went missing from the stats (Angad, 20 Oct). */
 function counted(c) { return inRoom(c) || !!c.non_qual; }
 /** Poster numbers, on the same rules as the recruitment incentive: rated by the presenter (or a non-qualifier), Mon–Fri,
- *  and only people who count. */
+ *  and only people who count. "First appointments attended" and the Friday weekly total leave the non-qualifiers out:
+ *  they have their own bubble (Angad, 26 Oct). */
 function bulletinNumbers(items, day, prevItems) {
   const we = weekEndingOf(day), week = [6, 5, 4, 3, 2].map(n => addDays(we, -n));
   const att = items.filter(counted), today = att.filter(c => c.attended_date === day), inWeek = att.filter(c => week.indexOf(c.attended_date) >= 0);
@@ -1933,10 +1934,10 @@ function bulletinNumbers(items, day, prevItems) {
   const noBooker = list => list.filter(c => !c.pay_reason && !c.booker_name).length;
   return {
     day: day, weekday: D(day).getUTCDay(), target: (S.me && S.me.payTarget) || 5,
-    attended: today.length, nonQual: today.filter(c => c.pay_reason).length, walkOuts: today.filter(c => c.rag === 'W').length,
+    attended: today.filter(c => !c.pay_reason).length, nonQual: today.filter(c => c.pay_reason).length, walkOuts: today.filter(c => c.rag === 'W').length,
     unrated: items.filter(c => c.attended_date === day && !counted(c)).length,
     noBooker: noBooker(today), weekNoBooker: noBooker(inWeek),
-    today: tally(today), week: tally(inWeek), weekAttended: inWeek.length,
+    today: tally(today), week: tally(inWeek), weekAttended: inWeek.filter(c => !c.pay_reason).length,
     bars2w: tally(twoWeeks).filter(r => r.bars).sort((a, b) => b.bars - a.bars), twoWeeksKnown: !!prevItems,
   };
 }
