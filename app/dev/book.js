@@ -379,6 +379,26 @@ const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked 
   let jk = null; for (let i = 0; i < 25 && !(jk && jk.confirm_at); i++) { jk = (await api(angad, 'bookingList', {})).items.find(b => b.id === jake.id); if (!jk.confirm_at) await new Promise(r => setTimeout(r, 200)); }
   ok(jk.confirm_via === 'whatsapp' && jk.confirm_by === 'Angad Oshan', 'and it still counts as sent on WhatsApp');
   await dctx.close();
+
+  // A booked person types another mobile than the one on their booking (Angad, 26 Oct: "make sure booked appointments,
+  // when they check in, go on the list properly"): today's booking under the same full name, only if it's the only one
+  console.log('check-in: a different mobile from the booking');
+  await setTime('2026-11-02T09:45:00+00:00');  // Monday
+  const form = (nm, mob) => ({ form: { full_name: nm, mobile: mob, email: mob + '@example.com', over18: 'Yes', rtw: 'British or Irish citizen', privacy_ok: true, source: 'Indeed' } });
+  const priya = await api(rubal, 'saveBooking', { booking: { first_name: 'Priya', last_name: 'Patel', mobile: '07700900140', slot_date: '2026-11-02', notes: 'Retail background' } });
+  const pci = await api('', 'checkin', form('  priya   PATEL ', '07700900199'));
+  const pc = await api(angad, 'getCandidate', { id: pci.id }), pb = (await api(rubal, 'bookingList', {})).items.find(b => b.id === priya.id);
+  ok(pci.company === 'JUSS' && pc.booker_id === rubalId && pc.booking_id === priya.id && pc.booking_note === 'Retail background' && pb.status === 'came' && pb.candidate_id === pci.id,
+    'Priya types 07700900199 (booked as 07700900140): her booking is found by her name, credited to Rubal, the notes from the call, booking → came');
+  const other = await api('', 'checkin', form('Priyanka Patel', '07700900198'));
+  ok(!(await api(angad, 'getCandidate', { id: other.id })).booking_id, 'someone else (Priyanka Patel, no booking) isn\'t matched to anyone\'s booking');
+  await api(jess, 'saveBooking', { booking: { first_name: 'Ali', last_name: 'Khan', mobile: '07700900150', slot_date: '2026-11-02' } });
+  await api(angad, 'saveBooking', { booking: { first_name: 'Ali', last_name: 'Khan', mobile: '07700900151', slot_date: '2026-11-02' } });
+  const ali = await api('', 'checkin', form('Ali Khan', '07700900152'));
+  ok(!(await api(angad, 'getCandidate', { id: ali.id })).booking_id, 'two Ali Khans booked today and a third number: no guessing (by mobile only)');
+  await api(jess, 'saveBooking', { booking: { first_name: 'Tom', last_name: 'Reed', mobile: '07700900160', slot_date: '2026-11-03' } });
+  const tom = await api('', 'checkin', form('Tom Reed', '07700900161'));
+  ok(!(await api(angad, 'getCandidate', { id: tom.id })).booking_id, 'by name only for today\'s bookings (Tom is booked for tomorrow)');
   await browser.close();
 
   console.log('GDPR');
