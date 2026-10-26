@@ -1822,18 +1822,31 @@ async function fillEval(p) {
   // Someone who left: until the date, check-ins naming them (or picking them from an old list) go to who took over
   // (Angad, 26 Oct: Fiza left; anyone in for her that week is Angad's). After it: no booker, an admin sets it.
   const hoWas = (await post('/dev/eval', { js: 'JSON.stringify(CONFIG.HANDOVER)' })).out;
-  ok(/"from":"Fiza Iqbal".*"to":"angad@linkmarketing\.org\.uk","until":"2026-11-01","open":true/.test(hoWas), 'the rule is set: Fiza → Angad until Sunday 1 Nov, her open ones too');
+  ok(/"from":"Fiza Iqbal".*"to":"angad@linkmarketing\.org\.uk","until":"2026-11-01"\}/.test(hoWas), 'the rule is set: Fiza → Angad until Sunday 1 Nov');
   const leah = await mk('Leah Leaver', 'leah@example.com', 'JUSS', ['booker']), angadU = (await api(admin, 'me', {})).user;
   const lc1 = await alc('Eighteen', 'Leah Leaver'), lc0 = await alc('Nought', 'Leah Leaver');
   await api(admin, 'saveOutcome', { id: lc0.id, outcome: 'Declined', notes: 'not for them' });
+  // The week as it stood, to prove nobody's past appointments move when someone leaves (Angad, 27 Oct: w/e 25 Oct showed him
+  // with appointments he never had, after Fiza's were moved to him)
+  const weekNow = async () => { const r = await api(admin, 'payReport', {}), w = (await api(admin, 'listWeek', {})).items;
+    return JSON.stringify([r.rows.map(x => [x.name, x.attended, x.net]), w.map(c => [c.id, c.booker_id, c.company]).sort()]); };
+  const wkBefore = await weekNow();
   ok(await bOf(lc1) === leah.id && (await api(admin, 'deleteUser', { id: leah.id })).deactivated, 'Leah books two, then leaves: deleting her switches her off (she has candidates)');
-  await post('/dev/eval', { js: "CONFIG.HANDOVER = [{ from: 'Leah Leaver', also: ['Leahh'], to: 'angad@linkmarketing.org.uk', until: '2026-10-20', open: true }]; 'ok'" });
-  const pushH = (await getJson('/dev/pushes')).length;
-  await post('/dev/eval', { js: 'handoverOpen(); handoverOpen(); "ok"' });
-  const lc1c = await api(admin, 'getCandidate', { id: lc1.id }), hoPush = (await getJson('/dev/pushes')).slice(pushH).filter(x => /^📥 /.test(x.body.headings.en));
-  ok(lc1c.booker_id === angadU.id && lc1c.company === angadU.company && await bOf(lc0) === leah.id && hoPush.length === 1 && hoPush[0].body.headings.en === "📥 1 of Leah's candidates are now yours" &&
-    hoPush[0].body.include_aliases.external_id.includes(angadU.id) && (await getJson('/dev/sheet?name=Log')).some(r => r[2] === 'reassign' && /Leah Leaver → .*Leah left; still in play/.test(r[4])),
-    'once: her one still in play moves to ' + angadU.name + ' (' + angadU.company + '), the declined one stays hers; one alert "' + (hoPush[0] || { body: { headings: {} } }).body.headings.en + '"; each move in the Log');
+  await post('/dev/eval', { js: "CONFIG.HANDOVER = [{ from: 'Leah Leaver', also: ['Leahh'], to: 'angad@linkmarketing.org.uk', until: '2026-10-20' }]; undoHandoverOpen(); 'ok'" });
+  ok(await weekNow() === wkBefore && await bOf(lc1) === leah.id && await bOf(lc0) === leah.id, 'her appointments stay hers: the week reads exactly as before she left (who booked, company, every incentive row)');
+  const pushL = (await getJson('/dev/pushes')).length;
+  await post('/dev/eval', { js: "notify([usersAll().filter(u => u.name === 'Leah Leaver')[0]], '📞 Call Alias back', 'test', ''); 'ok'" });
+  const lPush = (await getJson('/dev/pushes')).slice(pushL);
+  ok(lPush.length === 1 && lPush[0].body.include_aliases.external_id.join() === angadU.id, 'an alert about one of hers goes to ' + angadU.name + ' (who took over), never to her');
+  // PR #140's move, put back once: who booked, company and the week's figures as they were
+  await post('/dev/eval', { js: `(() => { const c = readRow('Candidates', rowOfId('Candidates', '${lc1.id}')), a = usersAll().filter(u => u.email === 'angad@linkmarketing.org.uk')[0];
+    c.booker_id = a.id; c.booker_name = a.name; c.company = a.company; writeRow('Candidates', c); log(null, 'reassign', c.id, 'Leah Leaver → ' + a.name + ' (Leah left; still in play)');
+    PropertiesService.getScriptProperties().deleteProperty('HANDOVER_OPEN_UNDONE'); return 'ok'; })()` });
+  ok(await bOf(lc1) === angadU.id && await weekNow() !== wkBefore, '(as PR #140 left it: one of hers under ' + angadU.name + ', the week reads differently)');
+  await post('/dev/eval', { js: 'undoHandoverOpen(); undoHandoverOpen(); "ok"' });
+  const putBack = (await getJson('/dev/sheet?name=Log')).filter(r => r[2] === 'reassign' && /→ Leah Leaver \(put back: who booked an appointment never changes\)/.test(r[4]));
+  ok(await weekNow() === wkBefore && (await api(admin, 'getCandidate', { id: lc1.id })).company === 'JUSS' && putBack.length === 1,
+    'put back once: hers again (JUSS, her company), the week reads exactly as before, one "put back" line in the Log');
   const pcH = await api('', 'publicConfig'), angB = pcH.bookers.find(b => b.id === angadU.id);
   ok(!pcH.bookers.some(b => b.id === leah.id) && angB && angB.aliases.includes('Leah Leaver'), 'check-in list: Leah is gone, and typing her name finds "Leah Leaver", credited to ' + angadU.name);
   const lc2 = await alc('Nineteen', 'Leahh'), lc3 = await alc('Twenty', 'leah'),
