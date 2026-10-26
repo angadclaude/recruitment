@@ -437,6 +437,13 @@ async function fillEval(p) {
   await pp.waitForSelector('.profile h1:has-text("Adham Soliman")');
   ok(tCand < 500, 'candidate page opens instantly from the phone\'s copy (' + tCand + 'ms)');
   await pp.goBack(); await pp.waitForSelector('.kpis');
+  // Non-qualifiers in the day's summary, next to Checked in (Angad, 26 Oct): from what the presenter sees (no_rating) too
+  const dayAll = (await api(admin, 'listDay', {})).items, nqToday = dayAll.filter(c => c.non_qual).length;
+  await pp.waitForFunction(n => (document.querySelector('.hero .kpi b') || {}).dataset && document.querySelector('.hero .kpi b').dataset.n === String(n), dayAll.length, { timeout: 15000 });  // its copy refreshed
+  const heroK = await pp.$$eval('.hero .kpi', k => k.map(x => x.querySelector('span').textContent + '=' + x.querySelector('b').dataset.n));
+  ok(nqToday > 0 && heroK.join() === 'Checked in=' + dayAll.length + ',Non-qual=' + nqToday + ',' + heroK.slice(2).join() && /^Rated=/.test(heroK[2]) && heroK.length === 5,
+    'the day\'s summary: Checked in · Non-qual · Rated · Evaluated · To call (' + heroK.join(' · ') + ')');
+  await pp.locator('.hero').screenshot({ path: SHOTS + '/05b-today-nonqual.png' });
   ok(!(await pp.$('#bullDaily')), "presenters don't see the bulletin buttons (admins only)");
   await post('/dev/delay', { ms: 0 });
   ok(true, 'phone back button returns to the list');

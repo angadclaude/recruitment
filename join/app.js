@@ -1,4 +1,4 @@
-window.APP_VERSION = 'e0b85068';
+window.APP_VERSION = '82dd82dd';
 
 (function () {
 'use strict';
@@ -1651,7 +1651,7 @@ function bindWeekNav() {
 function empty(icon_, text) { return '<div class="empty"><div class="big-emoji">' + icon_ + '</div><p>' + text + '</p></div>'; }
 /** [value, label, alert?]: plain numbers count up; anything else (e.g. "2/3") shows as it is. */
 function kpis(list) {
-  return '<div class="kpis">' + list.map(k => '<div class="kpi' + (k[2] ? ' alert' : '') + '"><b' + (typeof k[0] === 'number' ? ' data-n="' + k[0] + '"' : '') + '>' + h(k[0]) + '</b><span>' + h(k[1]) + '</span></div>').join('') + '</div>';
+  return '<div class="kpis' + (list.length === 5 ? ' k5' : '') + '">' + list.map(k => '<div class="kpi' + (k[2] ? ' alert' : '') + '"><b' + (typeof k[0] === 'number' ? ' data-n="' + k[0] + '"' : '') + '>' + h(k[0]) + '</b><span>' + h(k[1]) + '</span></div>').join('') + '</div>';
 }
 function ring(n, target) {
   const pct = Math.min(1, n / target), r = 42, c = 2 * Math.PI * r;
@@ -1676,7 +1676,8 @@ function viewToday(quiet) {
     // Non-qualifiers aren't rated, so "N of M rated" leaves them out; a walk out is nobody's call
     const toRate = items.filter(c => !noRating(c)), rated = toRate.filter(c => c.in_room).length;
     const toCall = items.filter(c => !c.limited && c.eval_at && !c.outcome && c.rag !== 'W').length;
-    body = '<div class="hero">' + FX + top + kpis([[items.length, 'Checked in'], [rated, 'Rated'], [items.filter(c => c.eval_at).length, 'Evaluated'], [toCall, 'To call', toCall > 0]]) + '</div>' +
+    // Non-qualifiers (under 18 / no right to work) next to who checked in (Angad, 26 Oct)
+    body = '<div class="hero">' + FX + top + kpis([[items.length, 'Checked in'], [items.filter(noRating).length, 'Non-qual'], [rated, 'Rated'], [items.filter(c => c.eval_at).length, 'Evaluated'], [toCall, 'To call', toCall > 0]]) + '</div>' +
       (isAdmin() || canThank() ? thanksButton(items) : '') +
       (isAdmin() ? '<div class="bullbtns"><button class="btn" id="bullDaily">📣 ' + (isToday ? 'Today\'s' : DAYS[D(S.day).getUTCDay()]) + ' bulletin</button><button class="btn ghost" id="bullWeek">🏆 Week top 5</button></div>' : '') +
       (items.length ? '<div class="section-h"><b>In the room</b><span>' + rated + ' of ' + toRate.length + ' rated</span></div>' +
