@@ -1095,8 +1095,8 @@ async function fillEval(p) {
   ok(/Confirmed/.test(jasD1Row) && !/Day 1 text not sent/.test(jasD1Row), 'someone who has confirmed never shows "Day 1 text not sent" (they had the details, however they were sent)');
   const remind = decodeURIComponent((await ap.$eval('.trow[data-cand="' + jasId + '"] a.btn', a => a.href)).split('?text=')[1]);
   ok(/^Hi Jasraj,\n\nHope you are well\.\n\nJust a quick reminder that you’re due to start your training tomorrow, Monday 19th October at 1:30 PM 🕜/.test(remind) &&
-    /https:\/\/maps\.app\.goo\.gl\/f4pkh222EHHTyQSM9/.test(remind) && /Kind Regards\nAngad Oshan\nIn Association with Juss Marketing and Link Marketing$/.test(remind),
-    '💬 Remind: Jess / Rubal\'s wording, "…due to start your training tomorrow, Monday 19th October at 1:30 PM", LINK Maps pin, signed by the sender');
+    /https:\/\/maps\.app\.goo\.gl\/f4pkh222EHHTyQSM9/.test(remind) && /Kind Regards\nAngad Oshan\nIn Association with LINK Marketing$/.test(remind) && /at 1:30 PM 🕜, with LINK Marketing\n/.test(remind) && !/JUSS|Juss/.test(remind),
+    '💬 Remind: Jess / Rubal\'s wording, "…due to start your training tomorrow, Monday 19th October at 1:30 PM", with LINK Marketing only (Angad, 26 Oct: one company, not both), LINK Maps pin, signed by the sender');
   ok(!(await ap.$('[data-d1="arrived"], [data-d1="no_show"]')), 'no Arrived / No-show buttons before Day 1');
   await shot(ap, '27-day1-list', true);
   let early = null; try { await api(admin, 'markDay1', { id: jasId, status: 'arrived' }); } catch (e) { early = e.message; }
@@ -1325,14 +1325,17 @@ async function fillEval(p) {
   const remSheet = await jrp.innerText('.sheet');
   ok(/0 of 2 sent/.test(remSheet) && remSheet.indexOf('Jasraj') < remSheet.indexOf('Adham') && /TODAY · Monday 19 October/i.test(remSheet), 'send list: "0 of 2 sent", her LINK starters first');
   const remMsg = decodeURIComponent((await jrp.getAttribute('.sheet a.btn[data-r1="' + jasId + '"]', 'href')).split('?text=')[1]);
-  ok(remMsg === 'Hi Jasraj,\n\nHope you are well.\n\nJust a quick reminder that you’re due to start your training today, Monday 19th October at 1:30 PM 🕜, with Juss Marketing & Link Marketing\n\n' +
+  ok(remMsg === 'Hi Jasraj,\n\nHope you are well.\n\nJust a quick reminder that you’re due to start your training today, Monday 19th October at 1:30 PM 🕜, with LINK Marketing\n\n' +
     '📍 Address:\n2nd Floor East, Automotive House,\nGrays Place, Slough, SL2 5AF.\nhttps://maps.app.goo.gl/f4pkh222EHHTyQSM9\n\n' +
     'Please aim to arrive 10 minutes early ⏰ and let us know if you have any questions 😊\n\nKindly reply ‘Yes’ to confirm your attendance ✅\nWe look forward to seeing you! 👋\n\n' +
-    'Thanks\nKind Regards\nJess Grace\nIn Association with Juss Marketing and Link Marketing',
+    'Thanks\nKind Regards\nJess Grace\nIn Association with LINK Marketing',
     'the reminder in Jess / Rubal\'s words: "' + remMsg.replace(/\n+/g, ' | ') + '"');
   const adhamSend = await jrp.getAttribute('.sheet a.btn[data-r1="' + adham.id + '"]', 'href');
   ok(/^sms:/.test(adhamSend) && /maps\.app\.goo\.gl\/zeP4MjS2hMJzB9V9A/.test(decodeURIComponent(adhamSend)) && /Kindly reply ‘Yes’/.test(decodeURIComponent(adhamSend)) &&
     (await jrp.textContent('.sheet a.btn[data-r1="' + adham.id + '"]')).trim() === '📱 Text', 'Adham isn\'t on WhatsApp → 📱 Text, with the JUSS Maps pin');
+  const adhamRem = decodeURIComponent(adhamSend);
+  ok(/at 1:30 PM 🕜, with JUSS Marketing\n/.test(adhamRem) && /In Association with JUSS Marketing$/.test(adhamRem) && !/LINK|Link Marketing/.test(adhamRem),
+    'Adham\'s reminder names JUSS Marketing only (his company), Jasraj\'s LINK only: never both');
   await shot(jrp, '29-day1-reminders');
   for (const id of [jasId, adham.id]) await jrp.$eval('.sheet a.btn[data-r1="' + id + '"]', a => { a.addEventListener('click', e => e.preventDefault()); a.click(); });
   await jrp.waitForFunction(() => /2 of 2 sent/.test(document.getElementById('d1prog').textContent));
