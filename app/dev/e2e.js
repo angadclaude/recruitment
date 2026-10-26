@@ -993,8 +993,8 @@ async function fillEval(p) {
   const bInfo = async () => JSON.parse(await ap.getAttribute('#bimg', 'data-info'));
   const monday = (await api(admin, 'listWeek', { weekEnding: '2026-10-18' })).items.filter(c => c.attended_date === '2026-10-12' && (c.in_room === true || c.in_room === 'TRUE' || c.non_qual));
   let bi = await bInfo();
-  ok(bi.kind === 'daily' && bi.attended === monday.length && bi.nonQual === monday.filter(c => c.pay_reason).length && bi.nonQual > 0,
-    'daily bulletin: ' + bi.attended + ' attended, ' + bi.nonQual + ' non-qualifiers (rated in the room or a non-qualifier, same rules as the incentive)');
+  ok(bi.kind === 'daily' && bi.attended === monday.filter(c => !c.pay_reason).length && bi.nonQual === monday.filter(c => c.pay_reason).length && bi.nonQual > 0,
+    'daily bulletin: ' + bi.attended + ' attended (' + monday.length + ' came in, minus the non-qualifiers), ' + bi.nonQual + ' non-qualifiers (same rules as the incentive)');
   const expRows = pay.rows.filter(r => r.net > 0).sort((a, b) => b.net - a.net).map(r => r.name.split(' ')[0] + ' ' + r.net);
   ok(JSON.stringify(bi.rows.map(r => r.replace(/^\S+ /, '').replace(/ BAR$/, ''))) === JSON.stringify(expRows) && /^🥇 /.test(bi.rows[0]), 'top performers match the incentive, gold for #1: ' + bi.rows.join(' · '));
   ok(await ap.$eval('#bimg', i => i.complete && i.naturalWidth === 1536 && i.naturalHeight === 2304), 'poster image made on the phone (1536×2304)');
@@ -1012,6 +1012,10 @@ async function fillEval(p) {
   ok(true, '‹ jumps to the same day last week');
   await ap.click('#bwnext'); await ap.waitForSelector('.daybar .dchip.on[data-d="2026-10-13"]');
   ok(await ap.$('#bwnext[disabled]'), "› stops at this week (can't go into the future)");
+  await ap.click('.daybar .dchip[data-d="2026-10-16"]'); await infoIs('"weekTotal":\\d');
+  const friWk = (await api(admin, 'listWeek', { weekEnding: '2026-10-18' })).items.filter(c => c.attended_date >= '2026-10-12' && c.attended_date <= '2026-10-16' && (c.in_room === true || c.in_room === 'TRUE' || c.non_qual));
+  ok((await bInfo()).weekTotal === friWk.filter(c => !c.pay_reason).length && friWk.some(c => c.pay_reason),
+    'Friday poster: "Weekly total appointments" ' + (await bInfo()).weekTotal + ' (' + friWk.length + ' came in, minus the non-qualifiers)');
   await ap.click('.daybar .dchip[data-d="2026-10-12"]'); await infoIs('"attended":[1-9]');
   await ap.click('#bkind button[data-k=weekly]');
   await ap.waitForFunction(() => /weekly/.test((document.getElementById('bimg') || {}).dataset ? document.getElementById('bimg').dataset.info || '' : ''), null, { timeout: 10000 });
@@ -2031,15 +2035,15 @@ async function fillEval(p) {
   ok(/\(Walk out: do not book/.test(wpRaw) && (wpRaw.match(/0\.99 0\.88 0\.88 rg/g) || []).length === 2 && /1 walk out/.test(wpRaw),
     'the week\'s Appointments PDF: the whole row in light red for the walk out ("Walk out: do not book") and the non-qualifier; "1 walk out" in the day\'s line');
   try { require('child_process').execFileSync('pdftoppm', ['-png', '-r', '70', '-singlefile', wpPath, `${SHOTS}/42-week-walk-out`]); } catch (e) { /* no renderer here */ }
-  // The poster: Nadia (not eligible, never rated: the team spoke to her) now counts as attended and as a non-qualifier
+  // The poster: Nadia (not eligible, never rated: the team spoke to her) counts as a non-qualifier, not in "attended"
   await ap.click('.tabbar button[data-tab=today]'); await ap.waitForSelector('#bullDaily');
   await ap.click('#bullDaily'); await ap.waitForSelector('#bimg[data-info]', { timeout: 15000 });
   const tueAll = (await api(admin, 'listWeek', {})).items.filter(c => c.attended_date === '2026-10-27');
   const tueCnt = tueAll.filter(c => c.in_room === 'TRUE' || c.non_qual);
   const bw = await bInfo();
-  ok(tueCnt.some(c => c.id === nadia.id && c.in_room !== 'TRUE') && tueCnt.some(c => c.id === wally.id && !c.pay_reason) && bw.attended === tueCnt.length &&
+  ok(tueCnt.some(c => c.id === nadia.id && c.in_room !== 'TRUE' && c.pay_reason) && tueCnt.some(c => c.id === wally.id && !c.pay_reason) && bw.attended === tueCnt.filter(c => !c.pay_reason).length &&
     bw.nonQual === tueCnt.filter(c => c.pay_reason).length && bw.nonQual >= 1 && !/not rated by the presenter/.test(await ap.innerText('#page')) && bw.walkOuts === 1,
-    'daily stats poster: the unrated non-qualifier (Nadia) is in "attended" (' + bw.attended + ', with the walk out) and "non qualifiers" (' + bw.nonQual + '), and isn\'t "not rated"; then "🚶 WALK OUTS ' + bw.walkOuts + '"');
+    'daily stats poster: the unrated non-qualifier (Nadia) is in "non qualifiers" (' + bw.nonQual + ') and not in "attended" (' + bw.attended + ', with the walk out), and isn\'t "not rated"; then "🚶 WALK OUTS ' + bw.walkOuts + '"');
   await saveImg('15c-bulletin-walk-outs.jpg');
   // The Appointments total grid: the same, and what the non qualifiers are
   await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button[data-tab=pay]');
