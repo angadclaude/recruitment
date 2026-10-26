@@ -50,7 +50,7 @@ The recruitment app for **LINK Marketing** and **JUSS Marketing** (Angad runs bo
 - **The recruitment team** (`THANKS_TEAM` + `RECRUIT_TEAM` in `Code.gs`) send thank-yous, Day 1 details and follow-ups as LINK or JUSS, signed with their own name, and the welcome emails. Everyone else follows the candidate's company. **Only Jess and Rubal since 26 Oct** (Angad: Fiza off): `RECRUIT_TEAM` is empty; e2e puts an address back in it to keep testing it.
 - **Outcome deadline** is Friday 18:00 (later outcomes are marked LATE).
 - **Day 1 tab and New Starts List order (always, Angad 25 Oct):** JUSS on top, LINK below; in each company Monday's starters then Tuesday's, by name, no-shows at the bottom (`d1Order`). That's the default; the tab can also sort *Name A–Z* and show one campaign (`d1View`), and the PDF follows what's on screen.
-- **Campaign (Angad, 26 Oct):** each starter is **FR** or **HF** (`campaign` column; empty = their company's: LINK → FR, JUSS → HF, `campaignOf`). Admins switch it on the Day 1 tab (`setCampaign`).
+- **Campaign (Angad, 26 Oct): JUSS = HF, LINK = FR, always** (`campaignOf`, from the company; nothing to switch). The `campaign` column in Candidates is unused but stays: columns are by position.
 - **"Thinking it over"** needs a call-back time. **"No answer" / "Thinking it over"** older than 2 weeks shows as 🔴 Stale on Chase until a final answer is logged.
 - **GDPR:** full details for 12 weeks, then trimmed (notes and answers wiped, the call log's notes too). Everything is deleted after 6 months.
 - **Never:** paste passwords in chat; log into Cube; pull IQ Suite / Acwyre data without Angad's sign-off; recreate the old web-app mailer (welcome emails go through Gmail "send mail as" from Apps Script).

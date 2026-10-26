@@ -133,7 +133,7 @@ const SHEETS = {
     'outcome_log',  // every call outcome logged, oldest first: [{at, by, o: outcome, d: Day 1 date, cb: call back at, late: 1, n: notes}]
     'callback_at', 'callback_by_id', 'callback_nudged',  // "Thinking it over": when they asked to be called back, who logged it (gets the reminder), reminder sent for
     'booking_id', 'booking_note',  // booked from the app after a call (Bookings tab): which booking, and the notes for the presenter
-    'campaign',  // FR / HF: the campaign a starter joins (Angad, 26 Oct). Empty = their company's (LINK → FR, JUSS → HF)
+    'campaign',  // not used: the campaign always follows the company, JUSS = HF, LINK = FR (Angad, 26 Oct). Kept: columns are by position
   ],
   // Presentations booked after a call. status: booked · came (checked in) · no_show (rebooked after missing it) · cancelled.
   // Each message sent (confirmation, reminder, "sorry we missed you"): when, by whom, how.
@@ -1475,7 +1475,7 @@ const STAFF_ACTIONS = {
   adminDecision: adminDecision, setPayExcluded: setPayExcluded, fixEligibility: fixEligibility, reassignBooker: reassignBooker,
   markSent: markSent, payReport: payReport, listUsers: listUsers, saveUser: saveUser, deleteUser: deleteUser,
   alertsCheck: alertsCheck, testAlert: testAlert, sendSetupEmails: sendSetupEmails, adminCode: adminCode,
-  chaseOutcomes: chaseOutcomes, chaseList: chaseList, academyList: academyList, markDay1: markDay1, markConfirmed: markConfirmed, setCampaign: setCampaign,
+  chaseOutcomes: chaseOutcomes, chaseList: chaseList, academyList: academyList, markDay1: markDay1, markConfirmed: markConfirmed,
   onboardStep: onboardStep, onboardPreview: onboardPreview, onboardSend: onboardSend, setBrand: setBrand,
   saveBooking: saveBooking, bookingAction: bookingAction, bookingList: bookingList,
 };
@@ -1902,17 +1902,6 @@ function markDay1(req, u) {
     c.day1_status = req.status; c.day1_by = req.status ? u.name : ''; c.day1_at = req.status ? nowStr() : '';
     writeRow('Candidates', c);
     log(u, 'day1_' + (req.status || 'cleared'), c.id, '');
-    return shape(c, u);
-  });
-}
-/** A starter's campaign, FR or HF (Angad, 26 Oct). Admins; '' goes back to their company's (LINK → FR, JUSS → HF). */
-function setCampaign(req, u) {
-  if (!isAdmin(u)) throw new Error('Admin only');
-  if (['FR', 'HF', ''].indexOf(req.campaign) < 0) throw new Error('Choose FR or HF');
-  return withLock(() => {
-    const c = getC(req.id);
-    if (c.outcome !== 'Academy booked') throw new Error('They aren\'t booked onto the Academy.');
-    if (c.campaign !== req.campaign) { c.campaign = req.campaign; writeRow('Candidates', c); log(u, 'campaign', c.id, req.campaign || 'company default'); }
     return shape(c, u);
   });
 }

@@ -1469,18 +1469,16 @@ async function fillEval(p) {
   ok(backMon.academy_date === '2026-10-19' && !backMon.day1_status, '📅 Monday (twice) puts him back on Monday\'s list');
 
   // ── Day 1: campaign (FR / HF), search, sort by name, one campaign (Angad, 26 Oct) ──
-  const campOn = id => ap.$eval('.trow[data-cand="' + id + '"] .campsel button.on', b => b.textContent);
-  const soon = async f => { for (let i = 0; i < 30; i++) { if (await f()) return true; await new Promise(r => setTimeout(r, 200)); } return false; };
-  ok(await campOn(jasId) === 'FR' && await campOn(adham.id) === 'HF', 'each starter shows their campaign: LINK → FR (Jasraj), JUSS → HF (Adham), as FR | HF');
-  await ap.click('[data-camp="HF"][data-id="' + jasId + '"]'); await ap.waitForFunction(id => (document.querySelector('.trow[data-cand="' + id + '"] .campsel button.on') || {}).textContent === 'HF', jasId);
-  ok(await soon(async () => (await api(admin, 'getCandidate', { id: jasId })).campaign === 'HF'), 'one tap on HF: Jasraj (LINK) joins HF, saved');
+  const campOf = id => ap.$eval('.trow[data-cand="' + id + '"] .pill.camp', b => b.textContent);
+  ok(await campOf(jasId) === 'FR' && await campOf(adham.id) === 'HF' && !(await ap.$('[data-camp]')),
+    'each starter shows their campaign, always their company\'s (Angad, 26 Oct: "JUSS = HF, LINK = FR"): Jasraj (LINK) FR, Adham (JUSS) HF; nothing to switch');
   await ap.click('[data-d1camp="FR"]'); await ap.waitForSelector('[data-d1camp="FR"].on');
-  ok(!(await ap.$('.trow[data-cand="' + jasId + '"]')) && !(await ap.$('.trow[data-cand="' + adham.id + '"]')), 'the FR chip: only FR starters (neither of them now)');
+  ok(await ap.$('.trow[data-cand="' + jasId + '"]') && !(await ap.$('.trow[data-cand="' + adham.id + '"]')) && /FR only · 1 expected/.test(await ap.innerText('#page')),
+    'the FR chip: only the FR starters (Jasraj), "FR only · 1 expected"');
   await ap.click('[data-d1camp="HF"]'); await ap.waitForSelector('[data-d1camp="HF"].on');
-  ok(await ap.$('.trow[data-cand="' + jasId + '"]') && await ap.$('.trow[data-cand="' + adham.id + '"]') && /HF only · 2 expected/.test(await ap.innerText('#page')) && /HF\s*2/.test(await ap.textContent('[data-d1camp="HF"]')),
-    'the HF chip: both, "HF only · 2 expected" (the chip says how many: HF 2)');
-  await ap.click('[data-d1camp=""]'); await ap.click('[data-camp="FR"][data-id="' + jasId + '"]');
-  ok(await soon(async () => (await api(admin, 'getCandidate', { id: jasId })).campaign === 'FR'), 'All again; Jasraj back to FR');
+  ok(!(await ap.$('.trow[data-cand="' + jasId + '"]')) && await ap.$('.trow[data-cand="' + adham.id + '"]') && /HF\s*1/.test(await ap.textContent('[data-d1camp="HF"]')),
+    'the HF chip: only Adham (the chip says how many: HF 1)');
+  await ap.click('[data-d1camp=""]'); await ap.waitForSelector('[data-d1camp=""].on');
   await ap.fill('#d1q', 'jas');
   ok(await ap.isVisible('.trow[data-cand="' + jasId + '"]') && await ap.isHidden('.trow[data-cand="' + adham.id + '"]'), 'search "jas": only Jasraj');
   await ap.fill('#d1q', '0770 0900 300');
@@ -1499,11 +1497,11 @@ async function fillEval(p) {
   const grab = re => jsSrc.match(re)[0];
   const viewWith = new Function('S', grab(/function campaignOf\(c\) \{[^\n]*\}/) + '\n' + grab(/function d1Order\(list\) \{[\s\S]*?\n\}/) + '\n' + grab(/function d1View\(list\) \{[\s\S]*?\n\}/) + '\nreturn d1View;');
   const four = [{ full_name: 'Zed Juss', company: 'JUSS', academy_date: '2026-10-19' }, { full_name: 'Amy Link', company: 'LINK', academy_date: '2026-10-19' },
-    { full_name: 'Bob Juss', company: 'JUSS', academy_date: '2026-10-19', campaign: 'FR' }, { full_name: 'Cal Link', company: 'LINK', academy_date: '2026-10-19', day1_status: 'no_show' }];
+    { full_name: 'Bob Juss', company: 'JUSS', academy_date: '2026-10-19', campaign: 'FR' /* an old value in the column: ignored */ }, { full_name: 'Cal Link', company: 'LINK', academy_date: '2026-10-19', day1_status: 'no_show' }];
   const nm = l => l.map(c => c.full_name).join(', ');
   ok(nm(viewWith({})(four)) === 'Bob Juss, Zed Juss, Amy Link, Cal Link' && nm(viewWith({ d1Sort: 'az' })(four)) === 'Amy Link, Bob Juss, Zed Juss, Cal Link' &&
-    nm(viewWith({ d1Camp: 'FR' })(four)) === 'Bob Juss, Amy Link, Cal Link' && nm(viewWith({ d1Camp: 'HF' })(four)) === 'Zed Juss',
-    'the rules: JUSS · LINK (default) / Name A–Z (no-shows still last) / FR (LINK, or picked: Bob) / HF (JUSS unless picked)');
+    nm(viewWith({ d1Camp: 'FR' })(four)) === 'Amy Link, Cal Link' && nm(viewWith({ d1Camp: 'HF' })(four)) === 'Bob Juss, Zed Juss',
+    'the rules: JUSS · LINK (default) / Name A–Z (no-shows still last) / FR = the LINK starters / HF = the JUSS ones (always)');
   let gone = null; try { await api(admin, 'markDay1', { id: jasId, status: 'prev_day' }); } catch (e) { gone = e.message; }
   ok(/already gone/.test(gone), 'never onto a day that has gone (Monday → Sunday refused)');
   await api(admin, 'markDay1', { id: adham.id, status: 'arrived' });

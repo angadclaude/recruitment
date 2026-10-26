@@ -1,4 +1,4 @@
-window.APP_VERSION = '3d0ea69a';
+window.APP_VERSION = '3192211d';
 
 (function () {
 'use strict';
@@ -2383,8 +2383,8 @@ function d1Order(list) {
   const co = c => c.company === 'JUSS' ? 0 : 1, out = c => c.day1_status === 'dropped' ? 2 : c.day1_status === 'no_show' ? 1 : 0;
   return list.slice().sort((a, b) => co(a) - co(b) || out(a) - out(b) || a.academy_date.localeCompare(b.academy_date) || a.full_name.localeCompare(b.full_name));
 }
-/** FR or HF: the campaign a starter joins (Angad, 26 Oct). Unless an admin picked one, their company's: LINK → FR, JUSS → HF. */
-function campaignOf(c) { return c.campaign === 'FR' || c.campaign === 'HF' ? c.campaign : c.company === 'JUSS' ? 'HF' : 'FR'; }
+/** FR or HF: the campaign a starter joins, always their company's (Angad, 26 Oct): JUSS = HF, LINK = FR. */
+function campaignOf(c) { return c.company === 'JUSS' ? 'HF' : 'FR'; }
 /** The Day 1 list as chosen on the tab (Angad, 26 Oct): only FR or HF (or both), JUSS then LINK (d1Order, the default) or names
  *  A–Z (no-shows, then dropped out, still at the bottom). The New Starts List follows it. */
 function d1View(list) {
@@ -2440,9 +2440,7 @@ function drawAcademy(r, quiet) {
     const started = c.academy_date <= today, dropped = c.day1_status === 'dropped';
     // Dropped out (Angad, 26 Oct): just that, and Undo; no reminders, Day 1 details or onboarding for them
     const dq = ' data-q="' + h((c.full_name + ' ' + (c.mobile || '')).toLowerCase()) + '"', cp = campaignOf(c);
-    // FR | HF: admins switch it with one tap; everyone else sees which (Angad, 26 Oct)
-    const camp = admin ? '<span class="campsel" aria-label="Campaign">' + ['FR', 'HF'].map(k => '<button type="button" class="' + (k === cp ? 'on' : '') + '" data-camp="' + k + '" data-id="' + h(c.id) + '">' + k + '</button>').join('') + '</span>'
-      : '<span class="pill">' + cp + '</span>';
+    const camp = '<span class="pill camp">' + cp + '</span>';  // JUSS = HF, LINK = FR (Angad, 26 Oct)
     if (dropped) return '<div class="trow dropped" data-cand="' + h(c.id) + '"' + dq + '>' + avatar(c) + '<div class="main"><div class="name">' + h(c.full_name) + ' <span class="co ' + h(c.company) + '">' + h(c.company) + '</span></div>' +
       '<div class="sub">' + (c.booker_name ? 'booked by ' + h(c.booker_name) : 'no booker') + (closedBy(c) ? ' · closed by ' + h(closedBy(c)) : '') + '</div>' +
       '<div class="pills"><span class="pill">' + cp + '</span><span class="pill red">🚫 Dropped out</span>' + (c.day1_by ? '<span class="pill">' + h(String(c.day1_by).split(' ')[0]) + ' · ' + h(fmtTs(c.day1_at)) + '</span>' : '') + '</div></div>' +
@@ -2539,15 +2537,6 @@ function drawAcademy(r, quiet) {
     qbox.onblur = () => { if (S.d1Later) { S.d1Later = false; drawAcademy(S.academy || r, true); } };
     d1Search(page);
   }
-  page.querySelectorAll('[data-camp]').forEach(b => {
-    b.onclick = e => {
-      e.stopPropagation();
-      const c = pool.filter(x => x.id === b.dataset.id)[0]; if (!c || campaignOf(c) === b.dataset.camp) return;
-      const was = c.campaign; c.campaign = b.dataset.camp; drawAcademy(r, true);  // on screen straight away, saved behind it
-      call('setCampaign', { id: c.id, campaign: b.dataset.camp }).then(nc => { Object.assign(c, nc); upsert(nc); toast(c.first_name + ': ' + b.dataset.camp); })
-        .catch(ex => { c.campaign = was; drawAcademy(r, true); toast(/Unknown action/.test(ex.message) ? 'Update the app first.' : ex.message); });
-    };
-  });
   page.querySelectorAll('[data-rem1]').forEach(a => a.addEventListener('click', () => markReminded(pool.filter(x => x.id === a.dataset.rem1)[0], a.dataset.via)));
   page.querySelectorAll('[data-yes]').forEach(b => {
     b.onclick = e => {
