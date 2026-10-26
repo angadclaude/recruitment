@@ -1984,7 +1984,7 @@ function viewBulletin() {
   const edit = '<details class="card" id="bedit"><summary><b>✏️ Edit wording</b> <span class="small muted">· optional</span></summary>' +
     (kind === 'daily'
       ? field('btag', 'Message under the date', S.bull.tagline, true) +
-        (n.today.length ? '<label class="q">(BAR) BA referral</label><p class="hint" style="margin:0 0 8px">Set automatically when the candidate picked "BA referral" at check-in. Tap to change.</p><div class="chips" id="bbar">' + n.today.map(r => '<button class="chip' + (bar[r.key] ? ' on' : '') + '" data-k="' + h(r.key) + '">' + h(r.name) + '</button>').join('') + '</div>' : '')
+        (n.today.some(r => r.n >= 2) ? '<label class="q">(BAR) BA referral</label><p class="hint" style="margin:0 0 8px">Set automatically when the candidate picked "BA referral" at check-in. Tap to change.</p><div class="chips" id="bbar">' + n.today.filter(r => r.n >= 2).map(r => '<button class="chip' + (bar[r.key] ? ' on' : '') + '" data-k="' + h(r.key) + '">' + h(r.name) + '</button>').join('') + '</div>' : '')
       : field('bm0', '🏆 Yellow box', S.bull.msgs[0], true) + field('bm1', '🎯 Blue box', S.bull.msgs[1], true) + field('bm2', '🚀 Green box', S.bull.msgs[2], true) +
         '<p class="hint">Put {curly brackets} around words to colour them.</p>') +
     '<div class="bullopts">' + field('bmis', 'Mission', o.mission) + field('bhash', 'Hashtag', o.tag) + field('bcash', 'Cash £', o.cash) + '</div>' +
@@ -2011,7 +2011,7 @@ function viewBulletin() {
         if (S.bullUrl) URL.revokeObjectURL(S.bullUrl);
         S.bullUrl = URL.createObjectURL(blob);
         img.src = S.bullUrl;
-        img.dataset.info = JSON.stringify({ kind: kind, attended: data.attended, nonQual: data.nonQual, walkOuts: data.walkOuts, weekTotal: data.weekTotal, rows: data.rows.map(r => r.medal + ' ' + r.name + ' ' + r.n + (r.bar ? ' BAR' : '')) });
+        img.dataset.info = JSON.stringify({ kind: kind, attended: data.attended, nonQual: data.nonQual, walkOuts: data.walkOuts, weekTotal: data.weekTotal, rows: data.rows.map(r => r.medal + ' ' + r.name + (r.who && r.who.length ? ' [' + r.who.join(', ') + ']' : '') + ' ' + r.n + (r.bar ? ' BAR' : '')) });
         document.getElementById('bload').hidden = true;
         document.getElementById('bshare').disabled = false;
         sv.href = S.bullUrl; sv.download = name; sv.hidden = false;

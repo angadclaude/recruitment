@@ -11,36 +11,33 @@
   let X;  // the canvas context being drawn
 
   // ── Format rules (same as the hand-made posters) ──
-  /** Daily list: gold for the top booker, silver/bronze only with 2+, a 💪 for everyone else. 🔔 = 2, gong (💿) = 3+.
-   *  Everyone who counts is on it, so it adds up to "first appointments attended" (Angad, 26 Oct). More bookers than
-   *  lines: the ones on the lowest score share the last line, names listed, with their total. No booker yet: a line too. */
-  const DAILY_LINES = 6;
+  /** Daily list: gold for the top booker, then silver/bronze, a 💪 for everyone else. 🔔 = 2, gong (💿) = 3+.
+   *  Recognition is for 2 and above (Angad, 26 Oct): only they're named. Everyone with 1 is still counted, on one line
+   *  with their total, so the list always adds up to "first appointments attended". No booker yet: a line too. */
+  const DAILY_LINES = 7;
   function dailyRows(list, noBooker) {
-    const slots = DAILY_LINES - (noBooker ? 1 : 0);
-    let solo = list, rest = [];
-    if (list.length > slots) {
-      const cut = list[slots - 1].n;  // the score of the first one who can't have a line of their own
-      solo = list.slice(0, slots - 1).filter(r => r.n > cut);
-      rest = list.slice(solo.length);
-    }
-    const rows = solo.map(r => {
+    const ones = list.filter(r => r.n < 2), budget = DAILY_LINES - (noBooker ? 1 : 0);
+    let named = list.filter(r => r.n >= 2), spill = [];
+    // More 2+ bookers than fit: the lowest share the last line by name (two lines high)
+    while (named.length && named.length + (spill.length ? 2 : ones.length ? 1 : 0) > budget) spill.unshift(named.pop());
+    const rows = named.map(r => {
       const rank = list.filter(o => o.n > r.n).length + 1;
-      const medal = rank === 1 ? '🥇' : rank === 2 && r.n >= 2 ? '🥈' : rank === 3 && r.n >= 2 ? '🥉' : '💪';
-      let icons;
-      if (r.n >= 3) icons = ['💿'].concat(alt(['🔥', '💥'], Math.min(r.n, 5)));
-      else if (r.n === 2) icons = ['🔔', '👏', '👏'];
-      else icons = ['👏'];
+      const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : '💪';
+      const icons = r.n >= 3 ? ['💿'].concat(alt(['🔥', '💥'], Math.min(r.n, 5))) : ['🔔', '👏', '👏'];
       return Object.assign({}, r, { medal: medal, icons: icons });
     });
-    if (rest.length) {
-      const names = rest.map(r => r.name + (r.n > 1 ? ' ×' + r.n : '') + (r.bar ? ' (BAR)' : ''));
-      rows.push({ group: true, names: names, name: names.join(', '), n: rest.reduce((t, r) => t + r.n, 0), medal: '👏', icons: [] });
+    if (spill.length || ones.length) {
+      const k = ones.length, parts = spill.map(r => r.name + ' ×' + r.n + (r.bar ? ' (BAR)' : ''));
+      if (k) parts.push((rows.length || spill.length ? '+ ' + k + ' more' : k) + ' booker' + (k > 1 ? 's, 1 each' : ''));
+      rows.push({ group: true, wide: spill.length > 0, names: parts, name: parts.join(', '), who: ones.map(r => r.name),
+        n: spill.concat(ones).reduce((t, r) => t + r.n, 0), medal: '👏', icons: [] });
     }
     if (noBooker) rows.push({ name: 'No booker yet', n: noBooker, medal: '❓', icons: [], muted: true });
     return rows;
   }
   /** Weekly top 5 (ties share a medal) plus a 💪 row for anyone one short of the incentive. */
   function weeklyRows(list, target) {
+    list = list.filter(r => r.n >= 2);  // recognition is for 2 and above (Angad, 26 Oct)
     const top = list.slice(0, 5);
     const rows = top.map(r => {
       const pos = list.filter(o => o.n > r.n).length;  // people strictly ahead
@@ -267,7 +264,7 @@
     // Walk outs: a strip straight under the two bubbles, after the non-qualifiers (Angad, 20 Oct)
     const walk = d.walkOuts != null, WALK_H = 62;
     const rows = d.rows, avail = FOOT - 14 - y - 14, row2Min = 330;
-    const units = rows.reduce((t, r) => t + (r.group ? 2 : 1), 0);  // the shared line is two lines high
+    const units = rows.reduce((t, r) => t + (r.wide ? 2 : 1), 0);  // a shared line with names on it is two lines high
     const need1 = Math.max((d.weekTotal != null ? 440 : 400) + (walk ? WALK_H : 0), 120 + units * 54);
     let h1 = Math.max(need1, avail - 400), h2 = avail - h1;
     if (h2 > 400) { h1 += (h2 - 400) / 2; h2 = avail - h1; }
@@ -320,9 +317,9 @@
     if (!rows.length) text('First results coming soon…', rx + rw / 2, y + h1 / 2 + 50, { size: 30, weight: 500, italic: true, align: 'center', color: '#6b7280' });
     let ry = top;
     rows.forEach((r, i) => {
-      const rhi = r.group ? rh * 2 : rh, mid = ry + rhi / 2, k = Math.min(1.3, rh / 62);
+      const rhi = r.wide ? rh * 2 : rh, mid = ry + rhi / 2, k = Math.min(1.3, rh / 62);
       if (i) { X.fillStyle = '#e7e9ef'; X.fillRect(rx + 18, ry, rw - 36, 2); }
-      if (!i && rows.length <= 3) { rr(rx + 14, ry + 4, rw - 28, rh - 8, 14); X.fillStyle = '#fff8e1'; X.fill(); X.lineWidth = 2; X.strokeStyle = '#f6d27a'; X.stroke(); }
+      if (!i && rows.length <= 3 && !r.group && !r.muted) { rr(rx + 14, ry + 4, rw - 28, rh - 8, 14); X.fillStyle = '#fff8e1'; X.fill(); X.lineWidth = 2; X.strokeStyle = '#f6d27a'; X.stroke(); }
       ry += rhi;
       emoji(r.medal, rx + 44, mid, 40 * k);
       const right = rx + rw - 22, barW = r.bar ? 66 : 0, nsize = 46 * k, ink = r.muted ? '#6b7280' : NAVY;
@@ -330,7 +327,7 @@
       if (r.bar) { rr(right - 58, mid - 15, 58, 30, 8); X.fillStyle = NAVY; X.fill(); text('(BAR)', right - 29, mid + 7, { size: 18, weight: 700, align: 'center', color: '#fff' }); }
       const nx = rx + 54 + 26 * k;
       if (r.group) {
-        // The shared line: every name, wrapped (never mid-name), as big as fits in two lines' height
+        // The shared line: wrapped (never mid-name), as big as fits
         const maxW = right - measure(String(r.n), nsize, 700) - 18 - nx;
         let f = Math.round(32 * k), lines;
         for (;;) {
