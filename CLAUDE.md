@@ -51,12 +51,26 @@ The recruitment app for **LINK Marketing** and **JUSS Marketing** (Angad runs bo
 - **Outcome deadline** is Friday 18:00 (later outcomes are marked LATE).
 - **Day 1 tab and New Starts List order (always, Angad 25 Oct):** JUSS on top, LINK below; in each company Monday's starters then Tuesday's, by name, no-shows at the bottom (`d1Order`). That's the default; the tab can also sort *Name A–Z* and show one campaign (`d1View`), and the PDF follows what's on screen.
 - **Campaign (Angad, 26 Oct): JUSS = HF, LINK = FR, always** (`campaignOf`, from the company; nothing to switch). The `campaign` column in Candidates is unused but stays: columns are by position.
+- **The numbers mean one thing everywhere (Angad, 26 Oct: "I don't want to explain this again"):**
+  - **Checked in** = everyone.
+  - **Attended / appointments** = rated in the room (walk outs too), Mon–Fri, **minus non-qualifiers**, the incentive's net (`counted(c) && !c.pay_reason`).
+  - **Non-qualifiers** = came in but don't count (`notCounting`: not eligible, repeat, removed by admin).
+  - **Checked in = attended + non-qualifiers + not rated.**
+  - Applies to Today, the daily poster and its Top performers, the Friday weekly total, Week top 5, Appts Attended (hero *Attended*, the *Bookers + booked by admins + no booker yet* line, rows say *checked in*), the Appointments total PDF (cells and total net, non-qualifiers in their own column), the 18:00 booker alert, and the Friday week and team roundups.
+  - `figuresAgree` in e2e checks every one of them against each other for two weeks. Any new figure must use these definitions and join that check.
 - **Bulletin (Angad, 26 Oct; he doesn't want to repeat these):**
   - **Recognition is always 2 and above.** Only bookers with 2+ are named on Top performers, daily and Week top 5 (`dailyRows`, `weeklyRows`).
   - **The numbers always add up.** *First appointments attended* = counted minus non-qualifiers = the sum of the Top performers lines. Everyone with 1 is counted on one unnamed line (*+ 8 more bookers, 1 each*), plus *❓ No booker yet*.
   - *Non-qualifiers* = Today's **Non-qual** (`notCounting`).
   - e2e checks all of this.
 - **Someone who leaves (Angad, 26 Oct):** `CONFIG.HANDOVER` credits their check-ins to whoever took over, until a date, as if an admin had moved them: typed names (`matchBooker(typed, day)`), picks from an out-of-date list (`liveBooker`), and their name in the check-in list. After the date: no booker, and an admin sets it. Nobody switched off is ever credited. **Now: Fiza → Angad until Sun 1 Nov 2026** (company = Angad's, the same as moving them by hand).
+- **Other things Angad has settled (don't re-ask):**
+  - **Day 1 reminders** name one company, the candidate's (`brandOf`), never "LINK Marketing and JUSS Marketing".
+  - **Day 1** has a **Dropped out** option (two taps, Undo), left out of counts and onboarding.
+  - **New Starts List:** *Closed by* comes after *Booked by*.
+  - **Today's summary:** Checked in · Non-qual · Rated · Evaluated · To call.
+  - **The booking confirmation** says "approximately 60–90 minutes". There's one confirmed state (⏳ Not confirmed yet / ✅ Mark as confirmed).
+  - **Book Appts:** day by day with ‹ ›, or the week. Each has PDFs: who was booked and who came. Chase has a week PDF of who hasn't responded.
 - **"Thinking it over"** needs a call-back time. **"No answer" / "Thinking it over"** older than 2 weeks shows as 🔴 Stale on Chase until a final answer is logged.
 - **GDPR:** full details for 12 weeks, then trimmed (notes and answers wiped, the call log's notes too). Everything is deleted after 6 months.
 - **Never:** paste passwords in chat; log into Cube; pull IQ Suite / Acwyre data without Angad's sign-off; recreate the old web-app mailer (welcome emails go through Gmail "send mail as" from Apps Script).

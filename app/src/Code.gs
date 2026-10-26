@@ -2467,7 +2467,7 @@ function dailyDigests(today) {
 function digestFor(u, rows, today) {
   const mine = rows.filter(c => c.booker_id === u.id);
   const names = list => firstNames(list, 3);
-  const came = mine.filter(c => c.attended_date === today && truthy(c.in_room));
+  const came = mine.filter(c => c.attended_date === today && !payExclusion(c));  // attended, as on the poster: non-qualifiers left out
   const evals = mine.filter(c => c.attended_date === today && c.eval_at);
   // Still to close: in the room this week, no outcome yet (evaluated ones first: they're the hottest)
   const toClose = mine.filter(c => truthy(c.in_room) && !c.outcome && !noCallNeeded(c)).sort((a, b) => (b.eval_at ? 1 : 0) - (a.eval_at ? 1 : 0));
@@ -2475,7 +2475,7 @@ function digestFor(u, rows, today) {
   const toConfirm = mine.filter(c => c.outcome === 'Academy booked' && c.offer_sent_at && !c.academy_confirmed_at);
   if (!came.length && !evals.length && !toClose.length && !toSend.length) return null;  // nothing to say: no message
   const net = mine.filter(c => !payExclusion(c)).length, target = CONFIG.PAY_TARGET;
-  const day = 'Today: ' + came.length + ' in · ' + plural(evals.length, 'evaluation');
+  const day = 'Today: ' + came.length + ' attended · ' + plural(evals.length, 'evaluation');
   const title = came.length || evals.length ? '📊 ' + day + (toClose.length ? ' · ' + toClose.length + ' to close' : '')
     : '📞 ' + toClose.length + ' still to close this week';
   const lines = [];
@@ -2506,7 +2506,7 @@ function weeklyRoundups(today) {
   const stats = users.filter(u => has(u, 'booker')).map(u => weekStats(u, rows)).filter(s => s.all.length);
   stats.forEach(s => { const r = roundupFor(s); notify([s.user], r.title, r.body, 'chase'); });
   const admins = users.filter(isAdmin);
-  if (CONFIG.TEAM_ROUNDUP && admins.length && stats.length) { const t = teamRoundup(stats); notify(admins, t.title, t.body + '\nTap to chase them in one go.', 'chase'); }
+  if (CONFIG.TEAM_ROUNDUP && admins.length && stats.length) { const t = teamRoundup(stats, rows); notify(admins, t.title, t.body + '\nTap to chase them in one go.', 'chase'); }
 }
 function roundupFor(s) {
   const target = CONFIG.PAY_TARGET, lines = [];
@@ -2516,9 +2516,10 @@ function roundupFor(s) {
   if (s.sent.length) lines.push('📲 Day 1 text sent: ' + firstNames(s.sent));
   if (s.unsent.length) lines.push('⚠️ Day 1 text NOT sent: ' + firstNames(s.unsent));
   if (!isAdmin(s.user)) lines.push('Net ' + s.net + '/' + target + (s.net >= target ? ' ✅ target hit 🔥' : ' · ' + (target - s.net) + ' short'));
-  return { title: '🏁 Week roundup: ' + plural(s.all.length, 'appointment') + ' · ' + s.booked.length + ' booked', body: lines.join('\n') };
+  return { title: '🏁 Week roundup: ' + plural(s.net, 'appointment') + ' · ' + s.booked.length + ' booked', body: lines.join('\n') };  // = their net, as on the poster
 }
-function teamRoundup(stats) {
+/** Appointments = attended, the same number as the Friday poster's weekly total (everyone, non-qualifiers left out). */
+function teamRoundup(stats, rows) {
   const sum = k => stats.reduce((n, s) => n + s[k].length, 0);
   const lines = [
     '✅ Booked ' + sum('booked') + ' · ❌ Not booked ' + sum('notBooked') + ' · 📞 No outcome ' + sum('open'),
@@ -2527,10 +2528,10 @@ function teamRoundup(stats) {
   // Anyone with loose ends first, then the rest by appointments
   stats.slice().sort((a, b) => (b.open.length + b.unsent.length > 0) - (a.open.length + a.unsent.length > 0) || b.all.length - a.all.length).forEach(s => {
     const loose = s.open.length + s.unsent.length > 0;
-    lines.push((loose ? '⚠️ ' : '') + s.name + ': ' + s.all.length + ' in · ' + s.booked.length + ' booked · ' + s.notBooked.length + ' not' +
+    lines.push((loose ? '⚠️ ' : '') + s.name + ': ' + s.net + ' attended · ' + s.booked.length + ' booked · ' + s.notBooked.length + ' not' +
       (s.open.length ? ' · ' + s.open.length + ' no outcome' : '') + ' · texts ' + s.sent.length + '/' + s.booked.length);
   });
-  return { title: '📋 Team week: ' + sum('all') + ' appointments · ' + sum('booked') + ' booked', body: lines.join('\n') };
+  return { title: '📋 Team week: ' + rows.filter(c => !payExclusion(c)).length + ' appointments · ' + sum('booked') + ' booked', body: lines.join('\n') };
 }
 
 /** Daily 02:00 — GDPR, as promised on the check-in page: full details for 12 weeks, then only the basics,
