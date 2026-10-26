@@ -1,6 +1,6 @@
 # J&L Recruitment App: handover for Claude
 
-The recruitment app for **LINK Marketing** and **JUSS Marketing** (Angad runs both). It covers check-in QR, the presenter's room rating and notes, the candidate's evaluation, the booker's call outcomes and call log, Chase, Day 1 (New Starts List, reminders, arrivals), new-starter onboarding, the incentive, and phone alerts. About 80 people use it: admins (Angad, Jess, Satpal, Rubal), the recruitment team (Jess, Rubal; Fiza until 26 Oct), bookers and presenters. Built in a Claude Code cloud session from 12 to 18 Oct 2026, then handed to Angad's Windows PC: since 18 Oct 2026 it's looked after from the folder `Desktop\Claude playground\J&L Recruitment App` (this repo's clone).
+The recruitment app for **LINK Marketing** and **JUSS Marketing** (Angad runs both). It covers check-in QR, the presenter's room rating and notes, the candidate's evaluation, the booker's call outcomes and call log, Chase, Day 1 (New Starts List, reminders, arrivals), new-starter onboarding, the incentive, and phone alerts. About 80 people use it: admins (Angad, Jess, Satpal, Rubal), the recruitment team (Jess and Rubal), bookers and presenters. **Fiza Iqbal left the business on 26 Oct 2026**: Angad is deleting her account (the app switches it off instead, because she has candidates, so her history stays in pay and All). Don't add her back to anything. Built in a Claude Code cloud session from 12 to 18 Oct 2026, then handed to Angad's Windows PC: since 18 Oct 2026 it's looked after from the folder `Desktop\Claude playground\J&L Recruitment App` (this repo's clone).
 
 **Working with Angad:** he's not technical and usually on his phone. Give plain English, the exact clicks, and links. Be direct. Stress-test his ideas and tell him if one is weak. Show the data. Never send him code to edit by hand except pasting `Code.gs` (below).
 
@@ -51,7 +51,11 @@ The recruitment app for **LINK Marketing** and **JUSS Marketing** (Angad runs bo
 - **Outcome deadline** is Friday 18:00 (later outcomes are marked LATE).
 - **Day 1 tab and New Starts List order (always, Angad 25 Oct):** JUSS on top, LINK below; in each company Monday's starters then Tuesday's, by name, no-shows at the bottom (`d1Order`). That's the default; the tab can also sort *Name A–Z* and show one campaign (`d1View`), and the PDF follows what's on screen.
 - **Campaign (Angad, 26 Oct): JUSS = HF, LINK = FR, always** (`campaignOf`, from the company; nothing to switch). The `campaign` column in Candidates is unused but stays: columns are by position.
-- **The daily bulletin adds up (Angad, 26 Oct):** *first appointments attended* = counted minus non-qualifiers = the sum of the top performers (`dailyRows` puts the lowest scorers on one shared line, plus *No booker yet*); *non-qualifiers* = Today's **Non-qual** (`notCounting`). e2e checks both.
+- **Bulletin (Angad, 26 Oct; he doesn't want to repeat these):**
+  - **Recognition is always 2 and above.** Only bookers with 2+ are named on Top performers, daily and Week top 5 (`dailyRows`, `weeklyRows`).
+  - **The numbers always add up.** *First appointments attended* = counted minus non-qualifiers = the sum of the Top performers lines. Everyone with 1 is counted on one unnamed line (*+ 8 more bookers, 1 each*), plus *❓ No booker yet*.
+  - *Non-qualifiers* = Today's **Non-qual** (`notCounting`).
+  - e2e checks all of this.
 - **"Thinking it over"** needs a call-back time. **"No answer" / "Thinking it over"** older than 2 weeks shows as 🔴 Stale on Chase until a final answer is logged.
 - **GDPR:** full details for 12 weeks, then trimmed (notes and answers wiped, the call log's notes too). Everything is deleted after 6 months.
 - **Never:** paste passwords in chat; log into Cube; pull IQ Suite / Acwyre data without Angad's sign-off; recreate the old web-app mailer (welcome emails go through Gmail "send mail as" from Apps Script).
@@ -108,6 +112,9 @@ Old links keep working through the forward, so nothing has to be reprinted.
 
 ## Done: booking a presentation after the call (23 Oct 2026)
 Jess, Rubal and Angad (`CONFIG.BOOK_TEAM`) book Teamtailor applicants into a Mon–Fri 10:00 presentation from the **Book Appts** tab (`viewBook`; for them Team moves into the menu, 7 tabs don't fit a phone). Data: the **Bookings** tab (made by itself the first time it's needed, `newTab`). The app writes three WhatsApp messages in the thank-you's style, no hearts, signed by the sender, "In association with JUSS Marketing Ltd" (`msgBookConfirm`, `msgBookRemind`, `msgBookMissed` in `JS.html`; Angad approved the wording). Alerts: 18:00 the evening before (`maybeBookingReminders`, `?c=bookrem` opens the send list) and 10:30 on the day (`maybeMissedBookings`). Check-in matches the booking by mobile (`bookingFor`): the booking's booker wins, `brand` = JUSS, `booking_note` shows to the presenter. Show-up card on Appts Attended (admins, `showupFor`). On a computer every wa.me button copies the message and opens the chat empty (`IS_DESKTOP` listener next to `waUrl`): WhatsApp's desktop app turns pre-filled emojis into "�". CONFIRM like Day 1: each booking has a `confirm_token`; the messages link to `booked.html?t=…&n=…&d=…` (`startBooked` / `renderBooked`, public `bookingInfo` / `confirmBooking`, the booker gets an alert). The office robot (`office-texting` branch) is on hold.
+
+## Data fixes Angad asked for
+- **26 Oct 2026:** Fiza's 2 appointments that day were Angad's (he entered them under her by mistake). Admins move each one: candidate → **Booker** → Angad → **Save** (`reassignBooker`; this also moves the candidate's company to the booker's).
 
 ## Open items (ask Angad when relevant)
 - **Optional:** auto-deploy `Code.gs` from GitHub with `clasp`, to remove the paste step. It needs the Apps Script API turned on and a `CLASPRC_JSON` GitHub secret, which he sets himself and never pastes in chat.

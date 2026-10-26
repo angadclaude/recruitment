@@ -1002,34 +1002,44 @@ async function fillEval(p) {
   const rowSum = rows => rows.reduce((t, r) => t + Number(/ (\d+)(?: BAR)?$/.exec(r)[1]), 0);
   ok(rowSum(bi.rows) === bi.attended && monHero[1] === bi.nonQual && monHero[0] === bi.attended + bi.nonQual + (monAll.length - monday.length),
     'it adds up: top performers ' + bi.rows.map(r => / (\d+)(?: BAR)?$/.exec(r)[1]).join(' + ') + ' = ' + bi.attended + ' attended; Today\'s Checked in ' + monHero[0] + ' = ' + bi.attended + ' + ' + bi.nonQual + ' non-qual (same as Today\'s ' + monHero[1] + ') + ' + (monAll.length - monday.length) + ' not rated');
-  // A busy day like 26 Oct (13 bookers, 23 attended): only 6 lines fit, so it dropped 7 people. Now the 1s share the last line.
+  // A busy day like 26 Oct (13 bookers, 23 attended; Fiza's 2 were Angad's): only 6 lines fitted, so 7 people went missing.
+  // Recognition is for 2 and above (Angad, 26 Oct): the 1s aren't named but are counted on one line, so it adds up.
   const busy = await ap.evaluate(() => {
-    const L = [['Hasini', 5], ['Mamadou', 5], ['Fiza', 2], ['Samuel', 2], ['Angad', 1], ['Martin', 1], ['Nathan', 1], ['Priya', 1], ['Rubal', 1], ['Sam', 1], ['Tia', 1], ['Usman', 1], ['Zara', 1]]
-      .map(x => ({ key: x[0], name: x[0], n: x[1], bars: 0, bar: x[0] === 'Tia' }));
-    const sum = r => r.reduce((t, x) => t + x.n, 0);
-    const a = JLBulletin.dailyRows(L, 0), b = JLBulletin.dailyRows(L, 2), c = JLBulletin.dailyRows(L.slice(4), 0), d = JLBulletin.dailyRows(L.slice(0, 6), 0);
-    return { a: a.map(r => r.medal + ' ' + r.name + ' ' + r.n), sa: sum(a), b: b.map(r => r.medal + ' ' + r.name + ' ' + r.n), sb: sum(b), c: c.map(r => r.name + ' ' + r.n), sc: sum(c), d: d.length };
+    const mk = a => a.map(x => ({ key: x[0], name: x[0], n: x[1], bars: 0, bar: x[0] === 'Tia' }));
+    const L = mk([['Hasini', 5], ['Mamadou', 5], ['Angad', 3], ['Samuel', 2], ['Martin', 1], ['Nathan', 1], ['Priya', 1], ['Rubal', 1], ['Sam', 1], ['Tia', 1], ['Usman', 1], ['Zara', 1]]);
+    const M = mk([['A1', 2], ['B2', 2], ['C3', 2], ['D4', 2], ['E5', 2], ['F6', 2], ['G7', 2], ['H8', 2], ['Tia', 2], ['X', 1], ['Y', 1], ['Z', 1]]);
+    const sum = r => r.reduce((t, x) => t + x.n, 0), txt = r => r.map(x => x.medal + ' ' + x.name + ' ' + x.n);
+    const a = JLBulletin.dailyRows(L, 0), b = JLBulletin.dailyRows(L, 2), c = JLBulletin.dailyRows(L.slice(4), 0), d = JLBulletin.dailyRows(M, 0);
+    return { a: txt(a), sa: sum(a), b: txt(b), sb: sum(b), c: txt(c), sc: sum(c), d: txt(d), sd: sum(d), w: JLBulletin.weeklyRows(L, 5).map(x => x.name) };
   });
-  ok(busy.sa === 23 && busy.a.length === 5 && busy.a[4] === '👏 Angad, Martin, Nathan, Priya, Rubal, Sam, Tia (BAR), Usman, Zara 9' && busy.sb === 25 && busy.b[busy.b.length - 1] === '❓ No booker yet 2' &&
-    busy.b.length <= 6 && busy.sc === 9 && busy.c.length === 1 && busy.d === 6,
-    'a busy day adds up: ' + busy.a.join(' · ') + ' (= ' + busy.sa + '); with 2 not assigned yet: "' + busy.b[busy.b.length - 1] + '"; six bookers still get a line each');
+  ok(busy.sa === 23 && JSON.stringify(busy.a) === JSON.stringify(['🥇 Hasini 5', '🥇 Mamadou 5', '🥉 Angad 3', '💪 Samuel 2', '👏 + 8 more bookers, 1 each 8']) &&
+    busy.sb === 25 && busy.b[busy.b.length - 1] === '❓ No booker yet 2' && busy.sc === 8 && JSON.stringify(busy.c) === JSON.stringify(['👏 8 bookers, 1 each 8']),
+    'a busy day adds up, only 2+ named: ' + busy.a.join(' · ') + ' (= ' + busy.sa + '); with 2 not assigned yet: "' + busy.b[busy.b.length - 1] + '"; a day of 1s: "' + busy.c[0] + '"');
+  ok(busy.sd === 21 && busy.d.length === 6 && busy.d[5] === '👏 F6 ×2, G7 ×2, H8 ×2, Tia ×2 (BAR), + 3 more bookers, 1 each 11',
+    'nine bookers on 2: five get a line, the rest share the last one by name (never dropped): "' + busy.d[5] + '" (= ' + busy.sd + ')');
+  ok(JSON.stringify(busy.w) === JSON.stringify(['Hasini', 'Mamadou', 'Angad', 'Samuel']), 'Week top 5 names 2 and above only: ' + busy.w.join(', '));
   const busyJpg = await ap.evaluate(() => JLBulletin.load('').then(assets => new Promise(res => {
-    const L = [['Hasini', 5], ['Mamadou', 5], ['Fiza', 2], ['Samuel', 2], ['Angad', 1], ['Martin', 1], ['Nathan', 1], ['Priya', 1], ['Rubal', 1], ['Sam', 1], ['Tia', 1], ['Usman', 1], ['Zara', 1]]
-      .map(x => ({ key: x[0], name: x[0], n: x[1], bars: 0, bar: x[0] === 'Tia' }));
+    const L = [['Hasini', 5], ['Mamadou', 5], ['Angad', 3], ['Samuel', 2], ['Martin', 1], ['Nathan', 1], ['Priya', 1], ['Rubal', 1], ['Sam', 1], ['Tia', 1], ['Usman', 1], ['Zara', 1]]
+      .map(x => ({ key: x[0], name: x[0], n: x[1], bars: 0 }));
     const cv = JLBulletin.draw(document.createElement('canvas'), 'daily', { day: '2026-10-26', weekday: 1, target: 5, attended: 23, nonQual: 6, walkOuts: 0, weekTotal: null, rows: JLBulletin.dailyRows(L, 0) },
       { mission: 200, tag: '#PLAN1', cash: 50, tagline: 'Great energy today, team! Let\'s keep the momentum rolling!' }, assets);
     cv.toBlob(b => b.arrayBuffer().then(x => res(Array.from(new Uint8Array(x)))), 'image/jpeg', 0.9);
   })));
   fs.writeFileSync(`${SHOTS}/15d-bulletin-busy-day.jpg`, Buffer.from(busyJpg));
   ok(busyJpg.length > 50000, 'the busy-day poster draws (15d-bulletin-busy-day.jpg)');
-  const expRows = pay.rows.filter(r => r.net > 0).sort((a, b) => b.net - a.net).map(r => r.name.split(' ')[0] + ' ' + r.net);
-  ok(JSON.stringify(bi.rows.map(r => r.replace(/^\S+ /, '').replace(/ BAR$/, ''))) === JSON.stringify(expRows) && /^🥇 /.test(bi.rows[0]), 'top performers match the incentive, gold for #1: ' + bi.rows.join(' · '));
+  const payDay = pay.rows.filter(r => r.net > 0).sort((a, b) => b.net - a.net);
+  const expRows = payDay.filter(r => r.net >= 2).map(r => r.name.split(' ')[0] + ' ' + r.net), expOnes = payDay.filter(r => r.net === 1).map(r => r.name.split(' ')[0]).sort();
+  ok(JSON.stringify(bi.rows.filter(r => !/^👏/.test(r)).map(r => r.replace(/^\S+ /, '').replace(/ BAR$/, ''))) === JSON.stringify(expRows) && /^🥇 /.test(bi.rows[0]) &&
+    expOnes.length === 1 && bi.rows[bi.rows.length - 1] === '👏 + 1 more booker [' + expOnes[0] + '] 1',
+    'top performers match the incentive, gold for #1, 2+ named and the 1s counted on one line: ' + bi.rows.join(' · '));
   ok(await ap.$eval('#bimg', i => i.complete && i.naturalWidth === 1536 && i.naturalHeight === 2304), 'poster image made on the phone (1536×2304)');
   const saveImg = async f => fs.writeFileSync(`${SHOTS}/${f}`, Buffer.from(await ap.$eval('#bimg', i => fetch(i.src).then(r => r.arrayBuffer()).then(b => Array.from(new Uint8Array(b))))));
   await saveImg('15-bulletin-daily.jpg');
   await shot(ap, '15b-bulletin-screen');
-  ok(/Abdullahi 1 BAR$/.test(bi.rows[1]) && !/BAR/.test(bi.rows[0]), '(BAR) added automatically for a "BA referral" check-in (Adham → Abdullahi)');
-  await ap.click('#bedit summary'); await ap.click('#bbar .chip');
+  ok(!bi.rows.some(r => /Abdullahi \d/.test(r)) && !/BAR/.test(bi.rows[0]), 'recognition is 2 and above: Abdullahi (1, a BA referral) is counted on the shared line, not named');
+  await ap.click('#bedit summary');
+  ok((await ap.$$eval('#bbar .chip', c => c.map(x => x.textContent))).join() === 'Fiza', '(BAR) tags only for the named bookers (Fiza)');
+  await ap.click('#bbar .chip');
   await ap.waitForFunction(() => /Fiza 3 BAR/.test(document.getElementById('bimg').dataset.info), null, { timeout: 5000 });
   ok(/BAR$/.test((await bInfo()).rows[0]), 'admin can still tap a name to add/remove (BAR)');
   const infoIs = (re) => ap.waitForFunction(r => { const i = document.getElementById('bimg'); return i && new RegExp(r).test(i.dataset.info || ''); }, re, { timeout: 10000 });
@@ -1618,8 +1628,8 @@ async function fillEval(p) {
   await ap.click('.tabbar button[data-tab=today]'); await ap.waitForSelector('#bullDaily'); await ap.click('#bullDaily');
   await ap.waitForSelector('#bimg[data-info]', { timeout: 15000 });
   const bi2 = JSON.parse(await ap.getAttribute('#bimg', 'data-info'));
-  ok(bi2.rows.some(r => / Jess 1$/.test(r)) && !bi2.rows.some(r => /Abdullahi/.test(r)) && bi2.nonQual >= 1,
-    'bulletin: admins are on it (Jess 1); a non-qualifier is never credited to the booker, only in the Non-qualifiers number');
+  ok(bi2.rows.some(r => /\[[^\]]*\bJess\b[^\]]*\] \d+$/.test(r)) && !bi2.rows.some(r => /Abdullahi/.test(r)) && bi2.nonQual >= 1,
+    'bulletin: admins count too (Jess, 1: on the shared line); a non-qualifier is never credited to the booker, only in the Non-qualifiers number');
   await ap.click('#abBack');
   await post('/dev/eval', { js: `globalThis.__pushOff = ['${abd.id}']` });
   const mailBefore = (await getJson('/dev/mail')).length;
@@ -1682,7 +1692,7 @@ async function fillEval(p) {
   await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button[data-tab=today]');
   await ap.click('.tabbar button[data-tab=today]'); await ap.waitForSelector('#bullDaily'); await ap.click('#bullDaily');
   await ap.waitForSelector('#bimg[data-info]', { timeout: 15000 });
-  ok(JSON.parse(await ap.getAttribute('#bimg', 'data-info')).rows.some(r => / Priya 1$/.test(r)), 'Priya gets her recognition on the daily bulletin (Priya 1)');
+  ok(JSON.parse(await ap.getAttribute('#bimg', 'data-info')).rows.some(r => /\[[^\]]*\bPriya\b[^\]]*\] \d+$/.test(r)), 'Priya is counted on the daily bulletin (1: on the shared line; named from 2)');
   await ap.click('#abBack');
   const mb2 = (await getJson('/dev/mail')).length;
   await api(admin, 'saveUser', { user: Object.assign({}, priya, { email: 'priya@example.com' }) });
