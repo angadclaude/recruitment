@@ -1750,6 +1750,27 @@ async function fillEval(p) {
   ok((await getJson('/dev/sheet?name=Log')).some(r => r[2] === 'auto_booker' && /"Daniel Thompson" → Fiza Iqbal/.test(r[4])), 'each automatic match is in the Log ("Daniel Thompson" → Fiza Iqbal)');
   const al7 = await alc('Seventeen', 'Zuzanna Sroda');
   ok(!(await bOf(al7)), 'typed "Zuzanna Sroda" (nobody\'s other name yet) → no booker');
+  // Someone who left: until the date, check-ins naming them (or picking them from an old list) go to who took over
+  // (Angad, 26 Oct: Fiza left; anyone in for her that week is Angad's). After it: no booker, an admin sets it.
+  const hoWas = (await post('/dev/eval', { js: 'JSON.stringify(CONFIG.HANDOVER)' })).out;
+  ok(/"from":"Fiza Iqbal".*"to":"angad@linkmarketing\.org\.uk","until":"2026-11-01"/.test(hoWas), 'the rule is set: Fiza → Angad until Sunday 1 Nov');
+  const leah = await mk('Leah Leaver', 'leah@example.com', 'JUSS', ['booker']), angadU = (await api(admin, 'me', {})).user;
+  const lc1 = await alc('Eighteen', 'Leah Leaver');
+  ok(await bOf(lc1) === leah.id && (await api(admin, 'deleteUser', { id: leah.id })).deactivated, 'Leah books one, then leaves: deleting her switches her off (she has a candidate)');
+  await post('/dev/eval', { js: "CONFIG.HANDOVER = [{ from: 'Leah Leaver', also: ['Leahh'], to: 'angad@linkmarketing.org.uk', until: '2026-10-20' }]; 'ok'" });
+  const pcH = await api('', 'publicConfig'), angB = pcH.bookers.find(b => b.id === angadU.id);
+  ok(!pcH.bookers.some(b => b.id === leah.id) && angB && angB.aliases.includes('Leah Leaver'), 'check-in list: Leah is gone, and typing her name finds "Leah Leaver", credited to ' + angadU.name);
+  const lc2 = await alc('Nineteen', 'Leahh'), lc3 = await alc('Twenty', 'leah'),
+    lc4 = await ci({ full_name: 'Alias Old List', mobile: '077009008' + (alN++), email: 'aloldlist@example.com', booker_id: leah.id, booker_typed: '' });
+  ok(await bOf(lc2) === angadU.id && await bOf(lc3) === angadU.id && await bOf(lc4) === angadU.id,
+    'that week: typed "Leahh" or "leah", or picked Leah on an old list on the office tablet → all credited to ' + angadU.name);
+  ok((await getJson('/dev/sheet?name=Log')).some(r => r[2] === 'auto_booker' && /picked Leah Leaver \(switched off\) → /.test(r[4])), 'the Log says why: "picked Leah Leaver (switched off) → ' + angadU.name + '"');
+  await post('/dev/eval', { js: "CONFIG.HANDOVER[0].until = '2026-10-19'; 'ok'" });
+  const lc5 = await alc('TwentyOne', 'Leah Leaver'), lc6 = await ci({ full_name: 'Alias Older List', mobile: '077009008' + (alN++), email: 'alolderlist@example.com', booker_id: leah.id, booker_typed: '' });
+  const lc6c = await api(admin, 'getCandidate', { id: lc6.id });
+  ok(!(await bOf(lc5)) && !lc6c.booker_id && lc6c.booker_typed === 'Leah Leaver' && !(await api('', 'publicConfig')).bookers.find(b => b.id === angadU.id).aliases.includes('Leah Leaver'),
+    'after the date: no booker (Jess + Rubal pick one); someone switched off is never credited, and the check-in keeps the name they picked');
+  await post('/dev/eval', { js: 'CONFIG.HANDOVER = ' + hoWas + '; "ok"' });
   await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button'); await openTeam(ap);
   await ap.click('.item[data-u="' + mo.id + '"]'); await ap.waitForSelector('#ual');
   ok(await ap.inputValue('#ual') === 'Ramis - Ali Abbas', 'Team → Mo: "Other names they use" shows what he has');

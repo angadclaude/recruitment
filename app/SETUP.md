@@ -282,6 +282,7 @@ Some bookers recruit under other names: a team member ("Daniel Thompson"), their
   - a first name only one booker uses ("Daniel"; "Amin Musa" → Amin);
   - a small typo ("Linas Rakaukas").
 - **If two bookers fit** (e.g. "Ali": Ali Milad or Ali Abbas), nobody is guessed. Jess and Rubal get the **❓ No booker** alert and pick.
+- **Someone who leaves:** their check-ins can go to whoever takes over, until a date (`HANDOVER` at the top of `Code.gs`). Until then, their name still shows at check-in, and a typed name or a pick from an old list on the office tablet credits the person who took over, exactly as if an admin had moved it. After the date, it comes in with no booker for an admin to set. Nobody switched off is ever credited. **Now: Fiza → Angad until Sunday 1 November 2026.**
 - **Credit follows automatically:** bulletin, recruitment incentive, the booker's alerts, Chase. The candidate page shows *(they said "Daniel Thompson")* so you can see why, and the Log has an `auto_booker` line for each one.
 - **One name, one booker:** a name already used by someone else is refused. Adding a new person whose name is someone's other name asks *"Same person?"*.
 - Stored in the **Users** tab, column `aliases`, separated by `|`.
