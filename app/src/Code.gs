@@ -40,8 +40,9 @@ const CONFIG = {
   BOOK_TEAM: ['angad@linkmarketing.org.uk', 'jess@linkmarketing.org.uk', 'rubal@jussmarketing.co.uk'],
   // Someone who left: until the date, a check-in that names them (or picks them from an old list) is credited to who took
   // over, as if an admin had moved it (Angad, 26 Oct: Fiza left; anyone in for her that week is Angad's). After it: no booker.
-  // open: once, everyone of theirs still in play moves over too (Angad: "LINK FR and under me").
-  HANDOVER: [{ from: 'Fiza Iqbal', also: ['Fiza', 'Fizza'], to: 'angad@linkmarketing.org.uk', until: '2026-11-01', open: true }],
+  // Their earlier appointments stay theirs (who booked an appointment never changes after the fact: Angad, 27 Oct); the alerts
+  // about them go to who took over instead (successorOf), with no end date.
+  HANDOVER: [{ from: 'Fiza Iqbal', also: ['Fiza', 'Fizza'], to: 'angad@linkmarketing.org.uk', until: '2026-11-01' }],
   BOOK_CO: 'JUSS',                // every applicant applies to JUSS Marketing, whoever books them
   BOOK_TIME: '10:00',             // presentations: Mon–Fri at 10:00
   BOOK_REMIND_TIME: '18:00',      // the evening before (Sunday for Monday's): whoever booked them gets "N to remind for tomorrow"
@@ -1381,35 +1382,34 @@ function handovers(day) {
   return (CONFIG.HANDOVER || []).filter(x => day && day <= x.until).map(x => {
     const was = usersAll().filter(u => normName(u.name) === normName(x.from))[0];
     const to = usersAll().filter(u => normEmail(u.email) === normEmail(x.to) && truthy(u.active))[0];
-    return { was: was, to: to, names: [x.from].concat(x.also || [], was ? aliasesOf(was) : []), open: !!x.open };
+    return { was: was, to: to, names: [x.from].concat(x.also || [], was ? aliasesOf(was) : []) };
   }).filter(x => x.to && !(x.was && truthy(x.was.active)));
 }
-/** Still in play: no final answer yet (not a non-qualifier or walk out), or booked onto a Day 1 that hasn't happened. */
-function stillOpen(c, today) {
-  if (c.outcome === 'Academy booked' && c.admin_status !== 'rejected') return !c.day1_status && c.academy_date >= today;
-  if (noCallNeeded(c)) return false;
-  return !c.outcome || c.outcome === 'No answer' || c.outcome === 'Thinking it over';
+/** Who takes someone's alerts once they're switched off: whoever took over from them (CONFIG.HANDOVER, any date), else nobody. */
+function successorOf(u) {
+  const x = (CONFIG.HANDOVER || []).filter(h => normName(h.from) === normName(u.name))[0];
+  return x ? usersAll().filter(v => normEmail(v.email) === normEmail(x.to) && truthy(v.active))[0] || null : null;
 }
-/** Once per leaver with open: true (CONFIG.HANDOVER): everyone of theirs still in play moves to who took over, as if an admin
- *  had moved each one (company too). Finished ones stay theirs. Each move is in the Log; who took over gets one alert. */
-function handoverOpen() {
-  const p = PropertiesService.getScriptProperties(), today = todayStr();
-  handovers(today).filter(h => h.open && h.was).forEach(h => {
-    const key = 'HANDOVER_OPEN_' + h.was.id;
-    if (p.getProperty(key)) return;
-    const moved = withLock(() => {
-      if (p.getProperty(key)) return [];
-      const out = readTable('Candidates').filter(c => c.booker_id === h.was.id && stillOpen(c, today));
-      out.forEach(c => {
-        c.booker_id = h.to.id; c.booker_name = h.to.name; c.company = h.to.company;
-        writeRow('Candidates', c);
-        log(null, 'reassign', c.id, h.was.name + ' → ' + h.to.name + ' (' + h.was.name.split(' ')[0] + ' left; still in play)');
-      });
-      p.setProperty(key, nowStr());
-      return out;
+/** Once (Angad, 27 Oct): PR #140 moved Fiza's candidates still in play to Angad by changing who booked them, which put her
+ *  past appointments under his name (w/e 25 Oct showed Angad with appointments he never had). Each one goes back to her,
+ *  company too: who booked an appointment never changes after the fact. Their alerts reach Angad through successorOf. */
+function undoHandoverOpen() {
+  const p = PropertiesService.getScriptProperties();
+  if (p.getProperty('HANDOVER_OPEN_UNDONE')) return;
+  withLock(() => {
+    if (p.getProperty('HANDOVER_OPEN_UNDONE')) return;
+    let n = 0;
+    readTable('Log').filter(l => l.action === 'reassign' && / left; still in play\)$/.test(l.detail)).forEach(l => {
+      const m = /^(.+) → (.+) \(\S+ left; still in play\)$/.exec(l.detail), r = rowOfId('Candidates', l.candidate_id);
+      const was = m && usersAll().filter(u => u.name === m[1])[0], to = m && usersAll().filter(u => u.name === m[2])[0];
+      if (!was || !to || !r) return;
+      const c = readRow('Candidates', r);
+      if (c.booker_id !== to.id) return;  // changed again since then: leave it
+      c.booker_id = was.id; c.booker_name = was.name; c.company = was.company;
+      writeRow('Candidates', c); n++;
+      log(null, 'reassign', c.id, to.name + ' → ' + was.name + ' (put back: who booked an appointment never changes)');
     });
-    if (moved.length) notify([h.to], '📥 ' + moved.length + ' of ' + h.was.name.split(' ')[0] + '\'s candidates are now yours',
-      firstNames(moved, 8) + '. Still to close or start Day 1 (' + h.to.company + '). Tap → Chase.', 'chase');
+    p.setProperty('HANDOVER_OPEN_UNDONE', nowStr() + ' · ' + n);
   });
 }
 /** Who gets the credit for a booker picked or found: themselves, or (switched off) whoever took over from them, else nobody. */
@@ -1592,7 +1592,9 @@ function pushTo(userIds, title, body, url) {
 
 /** Send an alert: phone push when set up; email to anyone the push didn't reach (or everyone, if EMAIL_ALERTS is on). */
 function notify(users, title, body, cid) {
-  const list = users.filter(u => u && truthy(u.active) && u.email);  // no email = added by name only, not in the app yet
+  // Someone switched off: whoever took over from them gets it instead (CONFIG.HANDOVER), else nobody. Never twice.
+  const list = users.map(u => u && !truthy(u.active) ? successorOf(u) : u)
+    .filter((u, i, a) => u && truthy(u.active) && u.email && a.findIndex(v => v && v.id === u.id) === i);  // no email = added by name only
   if (!list.length) return;
   const url = staffUrl(cid || '');
   const reached = pushTo(list.map(u => u.id), title, body, url);
@@ -1731,7 +1733,7 @@ function keepWarm() {
   if (t >= '07' && t <= '20') usersAll();
   try { backfillSends(); } catch (e) { console.error(e); }  // once each, after this version goes live
   try { backfillOutcomes(); } catch (e) { console.error(e); }
-  try { handoverOpen(); } catch (e) { console.error(e); }  // once per leaver
+  try { undoHandoverOpen(); } catch (e) { console.error(e); }  // once
   maybeDailyDigest();
   maybeThanksReminder();
   try { maybeCallbackReminders(); } catch (e) { console.error(e); }
