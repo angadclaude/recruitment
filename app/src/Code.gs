@@ -38,6 +38,9 @@ const CONFIG = {
   // Booking a presentation straight after the call (Angad, 23 Oct): these three book applicants (Teamtailor CVs) from the app,
   // which writes the confirmation, the evening-before reminder and "sorry we missed you", and check-in finds the booking.
   BOOK_TEAM: ['angad@linkmarketing.org.uk', 'jess@linkmarketing.org.uk', 'rubal@jussmarketing.co.uk'],
+  // Someone who left: until the date, a check-in that names them (or picks them from an old list) is credited to who took
+  // over, as if an admin had moved it (Angad, 26 Oct: Fiza left; anyone in for her that week is Angad's). After it: no booker.
+  HANDOVER: [{ from: 'Fiza Iqbal', also: ['Fiza', 'Fizza'], to: 'angad@linkmarketing.org.uk', until: '2026-11-01' }],
   BOOK_CO: 'JUSS',                // every applicant applies to JUSS Marketing, whoever books them
   BOOK_TIME: '10:00',             // presentations: Mon–Fri at 10:00
   BOOK_REMIND_TIME: '18:00',      // the evening before (Sunday for Monday's): whoever booked them gets "N to remind for tomorrow"
@@ -732,8 +735,10 @@ function unlockPlaybook(c, co, u) {
 
 // ───────────────────────── PUBLIC (candidate) ─────────────────────────
 function publicConfig(req) {
+  // Anyone who left (CONFIG.HANDOVER) can still be picked by name, as an other name of who took over (typed spellings: matchBooker)
+  const hand = handovers(todayStr());
   const bookers = usersAll().filter(u => truthy(u.active) && has(u, 'booker'))
-    .map(u => ({ id: u.id, name: u.name, company: u.company, aliases: aliasesOf(u) }))
+    .map(u => ({ id: u.id, name: u.name, company: u.company, aliases: aliasesOf(u).concat(hand.filter(x => x.to.id === u.id).map(x => x.names[0])) }))
     .sort((a, b) => a.name.localeCompare(b.name));
   // For "Who ran today's presentation?" on the evaluation: everyone with the Presenter role
   const presenters = usersAll().filter(u => truthy(u.active) && rolesOf(u).indexOf('presenter') >= 0)  // not admins: tick Presenter on anyone who presents
@@ -753,12 +758,14 @@ function checkin(req) {
   if (!f.rtw) throw new Error('Please choose your right to work status.');
   if (!truthy(f.privacy_ok)) throw new Error('Please tick the privacy notice to continue.');
   const today = todayStr();
-  let booker = f.booker_id ? userById(f.booker_id) : null;
+  // Picked from a list that's out of date (someone since switched off): whoever took over from them, else nobody
+  const pick = f.booker_id ? userById(f.booker_id) : null, gone = pick && !truthy(pick.active) ? pick : null;
+  let booker = liveBooker(pick, today);
   // Typed rather than picked ("Daniel Thompson", "Skye Promotions", "Hasini"): credit the booker it clearly means
-  const auto = !booker && f.booker_typed ? matchBooker(f.booker_typed) : null;
+  const auto = !booker && f.booker_typed ? matchBooker(f.booker_typed, today) : null;
   if (auto) booker = auto;
   // Booked from the app after a call: the booking says who booked them (whoever they picked) and that they're JUSS's
-  const bk = bookingFor(mobile, today, name), bkBy = bk ? userById(bk.booked_by_id) : null;
+  const bk = bookingFor(mobile, today, name), bkBy = bk ? liveBooker(userById(bk.booked_by_id), today) : null;
   const picked = booker && bkBy && booker.id !== bkBy.id ? booker.name : '';
   if (bkBy) booker = bkBy;
   // Repeat check (last 6 months + old form history) before taking the lock: those rows don't change today.
@@ -772,7 +779,7 @@ function checkin(req) {
       id: uid(), created_at: nowStr(), attended_date: today, week_ending: weekEnding(today),
       resume_token: token().slice(0, 24),
       full_name: name, mobile: mobile, email: email, over18: f.over18,
-      booker_typed: String(f.booker_typed || '').trim().slice(0, 60),
+      booker_typed: String(f.booker_typed || (gone ? gone.name : '')).trim().slice(0, 60),
       booker_id: booker ? booker.id : '', booker_name: booker ? booker.name : '',
       company: booker ? booker.company : '',
       source: String(f.source || '').slice(0, 40), rtw: f.rtw,
@@ -790,6 +797,7 @@ function checkin(req) {
   });
   if (res.isNew) log(null, 'checkin', res.c.id, name);
   if (res.isNew && auto && !bk) log(null, 'auto_booker', res.c.id, '"' + res.c.booker_typed + '" → ' + auto.name);
+  if (res.isNew && gone && !bk) log(null, 'auto_booker', res.c.id, 'picked ' + gone.name + ' (switched off) → ' + (booker ? booker.name : 'no booker'));
   if (res.isNew && bk) log(null, 'booking_came', res.c.id, 'booked by ' + bk.booked_by + ' for ' + bk.slot_date + (picked ? ' (they picked ' + picked + ')' : '') +
     (bk.mobile !== mobile ? ' (found by name: booked as ' + bk.mobile + ')' : ''));
   const nq = nonQualifier(res.c);
@@ -1367,10 +1375,26 @@ function bookerKeys(u) {
 /** The booker a typed name clearly means, or null. Tried in order: exact ("Daniel Thompson", "MSA", "Amin"), inside what they
  *  typed ("Sophie from Skye Promotions"), first name ("Daniel"; "Amin Musa" → Amin), typo ("Linas Rakaukas"). Two bookers fit = nobody:
  *  Jess / Rubal get the "No booker" alert and pick. */
-function matchBooker(typed) {
+/** CONFIG.HANDOVER on this day, once the leaver is switched off or deleted: [{ was (their record, if kept), names, to }]. */
+function handovers(day) {
+  return (CONFIG.HANDOVER || []).filter(x => day && day <= x.until).map(x => {
+    const was = usersAll().filter(u => normName(u.name) === normName(x.from))[0];
+    const to = usersAll().filter(u => normEmail(u.email) === normEmail(x.to) && truthy(u.active))[0];
+    return { was: was, to: to, names: [x.from].concat(x.also || [], was ? aliasesOf(was) : []) };
+  }).filter(x => x.to && !(x.was && truthy(x.was.active)));
+}
+/** Who gets the credit for a booker picked or found: themselves, or (switched off) whoever took over from them, else nobody. */
+function liveBooker(b, day) {
+  if (!b || truthy(b.active)) return b || null;
+  const h = handovers(day).filter(x => x.was && x.was.id === b.id)[0];
+  return h ? h.to : null;
+}
+/** day: a check-in's day, so the names of anyone who left (CONFIG.HANDOVER) credit who took over from them. */
+function matchBooker(typed, day) {
   const t = normName(typed); if (!t) return null;
   const tt = t.split(' '), w = k => k.split(' ');
-  const people = usersAll().filter(u => truthy(u.active) && has(u, 'booker')).map(u => ({ u: u, keys: bookerKeys(u) }));
+  const people = usersAll().filter(u => truthy(u.active) && has(u, 'booker')).map(u => ({ u: u, keys: bookerKeys(u) }))
+    .concat(handovers(day).map(x => ({ u: x.to, keys: bookerKeys({ name: x.names[0], aliases: x.names.slice(1).join(' | ') }) })));
   const rules = [
     k => k === t,
     k => w(k).length >= 2 && w(k).every(x => tt.indexOf(x) >= 0),
@@ -1378,8 +1402,8 @@ function matchBooker(typed) {
     k => Math.min(k.length, t.length) >= 6 && editDistance(k, t) <= 2,
   ];
   for (let i = 0; i < rules.length; i++) {
-    const hit = people.filter(p => p.keys.some(rules[i]));
-    if (hit.length === 1) return hit[0].u;
+    const hit = people.filter(p => p.keys.some(rules[i])).map(p => p.u).filter((u, j, a) => a.indexOf(u) === j);
+    if (hit.length === 1) return hit[0];
     if (hit.length > 1) return null;
   }
   return null;
