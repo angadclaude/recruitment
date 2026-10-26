@@ -988,13 +988,40 @@ async function fillEval(p) {
   // ── Bulletins: one tap for admins, same numbers as Pay ──
   await ap.click('.tabbar button[data-tab=today]'); await ap.waitForSelector('#bullDaily');
   for (let i = 0; i < 6; i++) await ap.click('#dprev');
+  await ap.waitForFunction(() => document.querySelectorAll('.hero .kpi b').length === 5 && /Monday/.test(document.querySelector('.hero').innerText));
+  const monHero = await ap.$$eval('.hero .kpi', k => k.map(x => Number(x.querySelector('b').dataset.n)));
   await ap.click('#bullDaily');
   await ap.waitForSelector('#bimg[data-info]', { timeout: 15000 });
   const bInfo = async () => JSON.parse(await ap.getAttribute('#bimg', 'data-info'));
-  const monday = (await api(admin, 'listWeek', { weekEnding: '2026-10-18' })).items.filter(c => c.attended_date === '2026-10-12' && (c.in_room === true || c.in_room === 'TRUE' || c.non_qual));
+  const monAll = (await api(admin, 'listWeek', { weekEnding: '2026-10-18' })).items.filter(c => c.attended_date === '2026-10-12');
+  const monday = monAll.filter(c => c.in_room === true || c.in_room === 'TRUE' || c.non_qual);
   let bi = await bInfo();
   ok(bi.kind === 'daily' && bi.attended === monday.filter(c => !c.pay_reason).length && bi.nonQual === monday.filter(c => c.pay_reason).length && bi.nonQual > 0,
     'daily bulletin: ' + bi.attended + ' attended (' + monday.length + ' came in, minus the non-qualifiers), ' + bi.nonQual + ' non-qualifiers (same rules as the incentive)');
+  // The numbers add up (Angad, 26 Oct): top performers = attended; Today's Checked in = attended + non-qualifiers + not rated yet
+  const rowSum = rows => rows.reduce((t, r) => t + Number(/ (\d+)(?: BAR)?$/.exec(r)[1]), 0);
+  ok(rowSum(bi.rows) === bi.attended && monHero[1] === bi.nonQual && monHero[0] === bi.attended + bi.nonQual + (monAll.length - monday.length),
+    'it adds up: top performers ' + bi.rows.map(r => / (\d+)(?: BAR)?$/.exec(r)[1]).join(' + ') + ' = ' + bi.attended + ' attended; Today\'s Checked in ' + monHero[0] + ' = ' + bi.attended + ' + ' + bi.nonQual + ' non-qual (same as Today\'s ' + monHero[1] + ') + ' + (monAll.length - monday.length) + ' not rated');
+  // A busy day like 26 Oct (13 bookers, 23 attended): only 6 lines fit, so it dropped 7 people. Now the 1s share the last line.
+  const busy = await ap.evaluate(() => {
+    const L = [['Hasini', 5], ['Mamadou', 5], ['Fiza', 2], ['Samuel', 2], ['Angad', 1], ['Martin', 1], ['Nathan', 1], ['Priya', 1], ['Rubal', 1], ['Sam', 1], ['Tia', 1], ['Usman', 1], ['Zara', 1]]
+      .map(x => ({ key: x[0], name: x[0], n: x[1], bars: 0, bar: x[0] === 'Tia' }));
+    const sum = r => r.reduce((t, x) => t + x.n, 0);
+    const a = JLBulletin.dailyRows(L, 0), b = JLBulletin.dailyRows(L, 2), c = JLBulletin.dailyRows(L.slice(4), 0), d = JLBulletin.dailyRows(L.slice(0, 6), 0);
+    return { a: a.map(r => r.medal + ' ' + r.name + ' ' + r.n), sa: sum(a), b: b.map(r => r.medal + ' ' + r.name + ' ' + r.n), sb: sum(b), c: c.map(r => r.name + ' ' + r.n), sc: sum(c), d: d.length };
+  });
+  ok(busy.sa === 23 && busy.a.length === 5 && busy.a[4] === '👏 Angad, Martin, Nathan, Priya, Rubal, Sam, Tia (BAR), Usman, Zara 9' && busy.sb === 25 && busy.b[busy.b.length - 1] === '❓ No booker yet 2' &&
+    busy.b.length <= 6 && busy.sc === 9 && busy.c.length === 1 && busy.d === 6,
+    'a busy day adds up: ' + busy.a.join(' · ') + ' (= ' + busy.sa + '); with 2 not assigned yet: "' + busy.b[busy.b.length - 1] + '"; six bookers still get a line each');
+  const busyJpg = await ap.evaluate(() => JLBulletin.load('').then(assets => new Promise(res => {
+    const L = [['Hasini', 5], ['Mamadou', 5], ['Fiza', 2], ['Samuel', 2], ['Angad', 1], ['Martin', 1], ['Nathan', 1], ['Priya', 1], ['Rubal', 1], ['Sam', 1], ['Tia', 1], ['Usman', 1], ['Zara', 1]]
+      .map(x => ({ key: x[0], name: x[0], n: x[1], bars: 0, bar: x[0] === 'Tia' }));
+    const cv = JLBulletin.draw(document.createElement('canvas'), 'daily', { day: '2026-10-26', weekday: 1, target: 5, attended: 23, nonQual: 6, walkOuts: 0, weekTotal: null, rows: JLBulletin.dailyRows(L, 0) },
+      { mission: 200, tag: '#PLAN1', cash: 50, tagline: 'Great energy today, team! Let\'s keep the momentum rolling!' }, assets);
+    cv.toBlob(b => b.arrayBuffer().then(x => res(Array.from(new Uint8Array(x)))), 'image/jpeg', 0.9);
+  })));
+  fs.writeFileSync(`${SHOTS}/15d-bulletin-busy-day.jpg`, Buffer.from(busyJpg));
+  ok(busyJpg.length > 50000, 'the busy-day poster draws (15d-bulletin-busy-day.jpg)');
   const expRows = pay.rows.filter(r => r.net > 0).sort((a, b) => b.net - a.net).map(r => r.name.split(' ')[0] + ' ' + r.net);
   ok(JSON.stringify(bi.rows.map(r => r.replace(/^\S+ /, '').replace(/ BAR$/, ''))) === JSON.stringify(expRows) && /^🥇 /.test(bi.rows[0]), 'top performers match the incentive, gold for #1: ' + bi.rows.join(' · '));
   ok(await ap.$eval('#bimg', i => i.complete && i.naturalWidth === 1536 && i.naturalHeight === 2304), 'poster image made on the phone (1536×2304)');
@@ -2044,6 +2071,7 @@ async function fillEval(p) {
   ok(tueCnt.some(c => c.id === nadia.id && c.in_room !== 'TRUE' && c.pay_reason) && tueCnt.some(c => c.id === wally.id && !c.pay_reason) && bw.attended === tueCnt.filter(c => !c.pay_reason).length &&
     bw.nonQual === tueCnt.filter(c => c.pay_reason).length && bw.nonQual >= 1 && !/not rated by the presenter/.test(await ap.innerText('#page')) && bw.walkOuts === 1,
     'daily stats poster: the unrated non-qualifier (Nadia) is in "non qualifiers" (' + bw.nonQual + ') and not in "attended" (' + bw.attended + ', with the walk out), and isn\'t "not rated"; then "🚶 WALK OUTS ' + bw.walkOuts + '"');
+  ok(rowSum(bw.rows) === bw.attended, 'and its top performers add up to ' + bw.attended + ': ' + bw.rows.join(' · '));
   await saveImg('15c-bulletin-walk-outs.jpg');
   // The Appointments total grid: the same, and what the non qualifiers are
   await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button[data-tab=pay]');

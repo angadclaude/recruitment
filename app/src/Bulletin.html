@@ -11,9 +11,19 @@
   let X;  // the canvas context being drawn
 
   // ── Format rules (same as the hand-made posters) ──
-  /** Daily list: gold for the top booker, silver/bronze only with 2+, a 💪 for everyone else. 🔔 = 2, gong (💿) = 3+. */
-  function dailyRows(list) {
-    return list.slice(0, 6).map(r => {
+  /** Daily list: gold for the top booker, silver/bronze only with 2+, a 💪 for everyone else. 🔔 = 2, gong (💿) = 3+.
+   *  Everyone who counts is on it, so it adds up to "first appointments attended" (Angad, 26 Oct). More bookers than
+   *  lines: the ones on the lowest score share the last line, names listed, with their total. No booker yet: a line too. */
+  const DAILY_LINES = 6;
+  function dailyRows(list, noBooker) {
+    const slots = DAILY_LINES - (noBooker ? 1 : 0);
+    let solo = list, rest = [];
+    if (list.length > slots) {
+      const cut = list[slots - 1].n;  // the score of the first one who can't have a line of their own
+      solo = list.slice(0, slots - 1).filter(r => r.n > cut);
+      rest = list.slice(solo.length);
+    }
+    const rows = solo.map(r => {
       const rank = list.filter(o => o.n > r.n).length + 1;
       const medal = rank === 1 ? '🥇' : rank === 2 && r.n >= 2 ? '🥈' : rank === 3 && r.n >= 2 ? '🥉' : '💪';
       let icons;
@@ -22,6 +32,12 @@
       else icons = ['👏'];
       return Object.assign({}, r, { medal: medal, icons: icons });
     });
+    if (rest.length) {
+      const names = rest.map(r => r.name + (r.n > 1 ? ' ×' + r.n : '') + (r.bar ? ' (BAR)' : ''));
+      rows.push({ group: true, names: names, name: names.join(', '), n: rest.reduce((t, r) => t + r.n, 0), medal: '👏', icons: [] });
+    }
+    if (noBooker) rows.push({ name: 'No booker yet', n: noBooker, medal: '❓', icons: [], muted: true });
+    return rows;
   }
   /** Weekly top 5 (ties share a medal) plus a 💪 row for anyone one short of the incentive. */
   function weeklyRows(list, target) {
@@ -251,10 +267,11 @@
     // Walk outs: a strip straight under the two bubbles, after the non-qualifiers (Angad, 20 Oct)
     const walk = d.walkOuts != null, WALK_H = 62;
     const rows = d.rows, avail = FOOT - 14 - y - 14, row2Min = 330;
-    const need1 = Math.max((d.weekTotal != null ? 440 : 400) + (walk ? WALK_H : 0), 120 + rows.length * 54);
+    const units = rows.reduce((t, r) => t + (r.group ? 2 : 1), 0);  // the shared line is two lines high
+    const need1 = Math.max((d.weekTotal != null ? 440 : 400) + (walk ? WALK_H : 0), 120 + units * 54);
     let h1 = Math.max(need1, avail - 400), h2 = avail - h1;
     if (h2 > 400) { h1 += (h2 - 400) / 2; h2 = avail - h1; }
-    if (h2 < row2Min) { h1 = Math.max(120 + rows.length * 50, avail - row2Min); h2 = avail - h1; }
+    if (h2 < row2Min) { h1 = Math.max(120 + units * 50, avail - row2Min); h2 = avail - h1; }
     const lx = 22, lw = 460, rx = 496, rw = 506;
     panel(lx, y, lw, h1, TEAL);
     ribbon(lx + 26, y + 16, lw - 52, 66, grad(0, y + 16, 0, y + 82, ['#25a5b8', TEAL]));
@@ -298,19 +315,39 @@
     const th = 'TOP PERFORMERS', thw = measure(th, 42, 700);
     emoji('🏆', rx + rw / 2 - thw / 2 - 30, y + 50, 40);
     text(th, rx + rw / 2 + 14, y + 66, { size: 42, weight: 700, align: 'center' });
-    const space = h1 - 118, rh = Math.max(48, Math.min(84, space / Math.max(rows.length, 1)));
-    const top = y + 104 + Math.max(0, (space - rh * rows.length) * 0.3);
+    const space = h1 - 118, rh = Math.max(48, Math.min(84, space / Math.max(units, 1)));
+    const top = y + 104 + Math.max(0, (space - rh * units) * 0.3);
     if (!rows.length) text('First results coming soon…', rx + rw / 2, y + h1 / 2 + 50, { size: 30, weight: 500, italic: true, align: 'center', color: '#6b7280' });
+    let ry = top;
     rows.forEach((r, i) => {
-      const ry = top + i * rh, mid = ry + rh / 2, k = Math.min(1.3, rh / 62);
+      const rhi = r.group ? rh * 2 : rh, mid = ry + rhi / 2, k = Math.min(1.3, rh / 62);
       if (i) { X.fillStyle = '#e7e9ef'; X.fillRect(rx + 18, ry, rw - 36, 2); }
       if (!i && rows.length <= 3) { rr(rx + 14, ry + 4, rw - 28, rh - 8, 14); X.fillStyle = '#fff8e1'; X.fill(); X.lineWidth = 2; X.strokeStyle = '#f6d27a'; X.stroke(); }
+      ry += rhi;
       emoji(r.medal, rx + 44, mid, 40 * k);
-      const right = rx + rw - 22, barW = r.bar ? 66 : 0, nsize = 46 * k;
-      text(String(r.n), right - barW, mid + nsize * 0.37, { size: nsize, weight: 700, align: 'right' });
+      const right = rx + rw - 22, barW = r.bar ? 66 : 0, nsize = 46 * k, ink = r.muted ? '#6b7280' : NAVY;
+      text(String(r.n), right - barW, mid + nsize * 0.37, { size: nsize, weight: 700, align: 'right', color: ink });
       if (r.bar) { rr(right - 58, mid - 15, 58, 30, 8); X.fillStyle = NAVY; X.fill(); text('(BAR)', right - 29, mid + 7, { size: 18, weight: 700, align: 'center', color: '#fff' }); }
-      const nx = rx + 54 + 26 * k, nsz = fit(r.name, 38 * k, 600, 210), nw = measure(r.name, nsz, 600);
-      text(r.name, nx, mid + nsz * 0.37, { size: nsz, weight: 600 });
+      const nx = rx + 54 + 26 * k;
+      if (r.group) {
+        // The shared line: every name, wrapped (never mid-name), as big as fits in two lines' height
+        const maxW = right - measure(String(r.n), nsize, 700) - 18 - nx;
+        let f = Math.round(32 * k), lines;
+        for (;;) {
+          font(f, 600); lines = [''];
+          r.names.forEach((nm, j) => {
+            const add = nm + (j < r.names.length - 1 ? ',' : ''), cur = lines[lines.length - 1], next = cur ? cur + ' ' + add : add;
+            if (cur && X.measureText(next).width > maxW) lines.push(add); else lines[lines.length - 1] = next;
+          });
+          if (lines.length * f * 1.2 <= rhi - 12 || f <= 14) break;
+          f--;
+        }
+        const lh = f * 1.2, ly = mid - lines.length * lh / 2;
+        lines.forEach((l, j) => text(l, nx, ly + lh * j + lh / 2 + f * 0.37, { size: f, weight: 600, maxW: maxW }));
+        return;
+      }
+      const nsz = fit(r.name, 38 * k, 600, 210), nw = measure(r.name, nsz, 600);
+      text(r.name, nx, mid + nsz * 0.37, { size: nsz, weight: 600, color: ink });
       const iconsRoom = right - barW - measure(String(r.n), nsize, 700) - 16 - (nx + nw + 14);
       const isz = Math.max(14, Math.min(30 * k, iconsRoom / Math.max(r.icons.length, 1)));
       r.icons.forEach((e, j) => emoji(e, nx + nw + 14 + isz / 2 + j * isz, mid, isz * 0.95));
