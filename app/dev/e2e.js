@@ -1872,6 +1872,30 @@ async function fillEval(p) {
   await ap.unroute('**/api');
   ok(await pollFor(async () => (await api(admin, 'getCandidate', { id: tia.id })).academy_date === '2026-11-09'), 'and the new date reaches Google');
 
+  // ── 🚫 Dropped out (Angad, 26 Oct): any time before they've arrived, two taps; off the reminders, onboarding and the
+  //    expected count, at the bottom of the list and the New Starts List; ↩️ Undo puts them back ──
+  await ap.goto(APP + 'index.html?c=academy'); await ap.waitForSelector('#d1next');
+  const dropB = '[data-d1="dropped"][data-id="' + tia.id + '"]';
+  for (let i = 0; i < 6 && !(await ap.$(dropB)); i++) { await ap.click('#d1next'); await ap.waitForTimeout(500); }
+  ok(/🚫 Dropped out/.test(await ap.textContent(dropB)) && await ap.$('.quick[data-for="' + tia.id + '"]'), 'Tia (Day 1 Mon 9 Nov, details not sent yet): 🚫 Dropped out on her row, before the day too');
+  await ap.click(dropB);
+  ok(/Dropped out\?/.test(await ap.textContent(dropB)) && !(await api(admin, 'getCandidate', { id: tia.id })).day1_status, 'the first tap asks ("Dropped out?"); nothing saved yet');
+  await ap.click(dropB); await ap.waitForSelector('.trow.dropped[data-cand="' + tia.id + '"]');
+  const tD = await api(admin, 'getCandidate', { id: tia.id }), tRow = await ap.innerText('.trow.dropped[data-cand="' + tia.id + '"]');
+  ok(tD.day1_status === 'dropped' && tD.day1_by === 'Angad Oshan' && /🚫 Dropped out/.test(tRow) && /↩️ Undo/.test(tRow) && !(await ap.$('.quick[data-for="' + tia.id + '"]')) && !(await ap.$('[data-rem1="' + tia.id + '"]')) &&
+    /0 expected · 0 confirmed · 1 dropped out/.test(await ap.innerText('#page')) && !(await ap.$$eval('.onbq .nm', b => b.map(x => x.dataset.cand))).includes(tia.id),
+    'the second tap saves it (by Angad): "🚫 Dropped out" with ↩️ Undo, no Day 1 details or Remind to send, off 🚀 To onboard, the day says "0 expected · 0 confirmed · 1 dropped out"');
+  await ap.locator('.trow.dropped[data-cand="' + tia.id + '"]').screenshot({ path: SHOTS + '/31-dropped-row.png' });
+  const tPdl = await pdfDl(ap, '[data-pdf="2026-11-09"]'), tPath = `${SHOTS}/31-dropped.pdf`; await tPdl.saveAs(tPath);
+  const tRaw = fs.readFileSync(tPath, 'latin1');
+  ok(tRaw.includes('(Tia ') && /\(Dropped\) Tj/.test(tRaw) && /0 expected · JUSS 0 · LINK 0 · 0 confirmed · 0 not confirmed · 1 dropped out/.test(tRaw) && /Arrived: ______ of 0/.test(tRaw),
+    'the New Starts List: still listed, "Dropped" in light grey, not expected ("0 expected … · 1 dropped out")');
+  const p18 = (await getJson('/dev/pushes')).length;
+  await setTime('2026-11-08T18:05:00+00:00'); await post('/dev/run', { fn: 'maybeAcademyBriefing' });
+  ok(!(await getJson('/dev/pushes')).slice(p18).some(x => /Tia/.test(x.body.contents.en) || /Tomorrow/.test(x.body.headings.en)), 'the evening before: no "Tomorrow\'s BA Academy" briefing for her');
+  await ap.click(dropB); await ap.waitForSelector('.quick[data-for="' + tia.id + '"]');
+  ok(!(await api(admin, 'getCandidate', { id: tia.id })).day1_status && !(await ap.$('.trow.dropped[data-cand="' + tia.id + '"]')), '↩️ Undo (one tap) puts her back: her Day 1 details to send again, expected again');
+
   // ── Stale: "No answer" / "Thinking it over" never just drop off Chase after 2 weeks ──
   await setTime('2026-10-27T10:00:00+00:00');  // Ali (in on Mon 12 Oct, "No answer") is now over 2 weeks old
   await api(admin, 'saveOutcome', { id: kid.id, outcome: 'Thinking it over', callback_at: '2026-10-29 18:00', outcome_notes: 'call me Thursday' });

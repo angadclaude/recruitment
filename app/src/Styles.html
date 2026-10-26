@@ -187,6 +187,9 @@ details.carry .list { margin-top: 8px; }
 .d1btns { display: flex; flex-direction: column; gap: 6px; flex: none; }
 /* Day 1: who's arrived stands out (light green, like the New Starts List PDF); "Move to Tue?" asks before moving a Day 1 */
 .trow.arrived { background: #E8F7EE; border-color: #B7E2C6; }
+/* Dropped out before Day 1: faded, at the bottom of their company */
+.trow.dropped { background: #F3F2F0; }
+.trow.dropped .name, .trow.dropped .sub { opacity: .6; }
 .d1btns .btn.sure { background: #FFF3DC; border-color: #F0B44C; color: #8A5300; }
 .trow[data-cand] .main { cursor: pointer; }
 /* Alerts check (admin) */
