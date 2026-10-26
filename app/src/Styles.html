@@ -231,7 +231,7 @@ details.carry .list { margin-top: 8px; }
 .empty { text-align: center; color: var(--muted); padding: 30px 20px; background: rgba(255,255,255,.6); border: 1.5px dashed var(--line); border-radius: var(--radius); }
 .empty .big-emoji { font-size: 44px; margin: 0 0 6px; }
 .toast { position: fixed; left: 50%; bottom: calc(var(--tabbar-h) + 26px + env(safe-area-inset-bottom)); transform: translateX(-50%); background: var(--dark); color: #fff; padding: 11px 18px;
-  border-radius: 999px; z-index: 50; font-size: 14px; font-weight: 700; max-width: 90vw; box-shadow: 0 14px 30px -10px rgba(0,0,0,.5); animation: toastIn .25s cubic-bezier(.2,.9,.3,1.3); }
+  border-radius: 999px; z-index: 50; font-size: 14px; font-weight: 700; max-width: 90vw; box-shadow: 0 14px 30px -10px rgba(0,0,0,.5); animation: toastIn .25s cubic-bezier(.2,.9,.3,1.3); pointer-events: none; }  /* just a message: a finger on it reaches what's underneath (26 Oct: a tap on a row behind it was lost) */
 
 /* ══════════ Staff app ══════════ */
 .appbar { position: sticky; top: 0; z-index: 10; margin: 0 -16px; padding-top: env(safe-area-inset-top);
@@ -298,6 +298,10 @@ details.carry .list { margin-top: 8px; }
 
 /* KPIs (big numbers) */
 .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 0 0 14px; }
+.kpis.k5 { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 5px; }
+.kpis.k5 .kpi { padding: 12px 2px 10px; }
+.kpis.k5 .kpi span { letter-spacing: .06em; }
+.hero .kpis.k5 .kpi b { font-size: 34px; }
 .kpi { position: relative; text-align: center; padding: 12px 4px 10px; border-radius: 18px; background: #fff; border: 1px solid var(--line); box-shadow: var(--shadow); }
 .kpi b { display: block; font-family: var(--display); font-weight: 400; font-size: 34px; line-height: 1; color: var(--ink2); }
 .kpi b::after { content: ''; display: block; width: 22px; height: 3px; border-radius: 3px; margin: 7px auto 6px; background: var(--grad); }
