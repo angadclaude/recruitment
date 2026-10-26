@@ -1,4 +1,4 @@
-window.APP_VERSION = '51945430';
+window.APP_VERSION = 'e0b85068';
 
 (function () {
 'use strict';
@@ -2377,10 +2377,10 @@ function viewAcademy(quiet) {
 }
 function remindedToday(c) { return String(c.day1_reminded_at || '').slice(0, 10) === ((S.academy && S.academy.today) || S.me.today); }
 /** One order for a Day 1 list on screen and in the week's New Starts List: JUSS on top, LINK below (Angad, 25 Oct: "always"),
- *  then in each company Monday's starters then Tuesday's, by name, the no-shows at the bottom (19 Oct). */
+ *  then in each company Monday's starters then Tuesday's, by name, the no-shows at the bottom (19 Oct), dropped out below them. */
 function d1Order(list) {
-  const co = c => c.company === 'JUSS' ? 0 : 1;
-  return list.slice().sort((a, b) => co(a) - co(b) || (a.day1_status === 'no_show') - (b.day1_status === 'no_show') || a.academy_date.localeCompare(b.academy_date) || a.full_name.localeCompare(b.full_name));
+  const co = c => c.company === 'JUSS' ? 0 : 1, out = c => c.day1_status === 'dropped' ? 2 : c.day1_status === 'no_show' ? 1 : 0;
+  return list.slice().sort((a, b) => co(a) - co(b) || out(a) - out(b) || a.academy_date.localeCompare(b.academy_date) || a.full_name.localeCompare(b.full_name));
 }
 /** Some starters are booked for Tuesday instead of the usual Monday (Angad, 19 Oct): a Monday starter can move to
  *  Tuesday, a Tuesday one back to Monday (the undo), before the day or on it, while that day is still to come. */
@@ -2419,7 +2419,12 @@ function drawAcademy(r, quiet) {
   dates.sort();
   const label = x => { const n = Math.round((D(x) - D(today)) / 86400000); return fmtLong(x) + (n === 0 ? ' · TODAY' : n === 1 ? ' · TOMORROW' : ''); };
   const row = c => {
-    const started = c.academy_date <= today;
+    const started = c.academy_date <= today, dropped = c.day1_status === 'dropped';
+    // Dropped out (Angad, 26 Oct): just that, and Undo; no reminders, Day 1 details or onboarding for them
+    if (dropped) return '<div class="trow dropped" data-cand="' + h(c.id) + '">' + avatar(c) + '<div class="main"><div class="name">' + h(c.full_name) + ' <span class="co ' + h(c.company) + '">' + h(c.company) + '</span></div>' +
+      '<div class="sub">' + (c.booker_name ? 'booked by ' + h(c.booker_name) : 'no booker') + (closedBy(c) ? ' · closed by ' + h(closedBy(c)) : '') + '</div>' +
+      '<div class="pills"><span class="pill red">🚫 Dropped out</span>' + (c.day1_by ? '<span class="pill">' + h(String(c.day1_by).split(' ')[0]) + ' · ' + h(fmtTs(c.day1_at)) + '</span>' : '') + '</div></div>' +
+      '<div class="d1btns"><button class="btn ghost sm" data-d1="dropped" data-id="' + h(c.id) + '">↩️ Undo</button></div></div>';
     // Two statuses only (⏳ / ✅) and one button to move them, so the button can't be read as a third status (Angad, 23 Oct)
     const pills = (c.academy_confirmed_at ? '<span class="pill green">✅ Confirmed</span>' : '<span class="pill amber">⏳ Not confirmed yet</span>' +
         (c.day1_status ? '' : '<button type="button" class="btn ghost sm markyes" data-yes="' + h(c.id) + '">✅ Mark as confirmed</button>')) +
@@ -2436,27 +2441,30 @@ function drawAcademy(r, quiet) {
     // before the day or on it: their Day 1 moves there
     const mv = d1Move(c, today);
     // "Move to Tue?" (the first of the two taps) stays put if the list refreshes in the background before the second
-    const sure = mv && S.d1Sure && S.d1Sure.id === c.id && Date.now() < S.d1Sure.until;
+    const sureOf = act => S.d1Sure && S.d1Sure.id === c.id && S.d1Sure.act === act && Date.now() < S.d1Sure.until, sure = mv && sureOf('move');
     const mvBtn = mv ? '<button class="btn sm ' + (sure ? 'ghost sure' : 'ghost') + '" data-d1="' + mv.st + '" data-day="' + mv.day + '" data-id="' + h(c.id) + '">' +
       (sure ? 'Move to ' + mv.day.slice(0, 3) + '?' : '📅 ' + mv.day) + '</button>' : '';
+    // 🚫 Dropped out (Angad, 26 Oct): any time until they've arrived, two taps like a move
+    const dropBtn = c.day1_status === 'arrived' ? '' : '<button class="btn sm ghost' + (sureOf('drop') ? ' sure' : '') + '" data-d1="dropped" data-id="' + h(c.id) + '">' + (sureOf('drop') ? 'Dropped out?' : '🚫 Dropped out') + '</button>';
     const act = started
       ? '<div class="d1btns"><button class="btn sm ' + (c.day1_status === 'arrived' ? 'green' : 'ghost') + '" data-d1="arrived" data-id="' + h(c.id) + '">Arrived</button>' +
-        '<button class="btn sm ' + (c.day1_status === 'no_show' ? 'red' : 'ghost') + '" data-d1="no_show" data-id="' + h(c.id) + '">No-show</button>' + mvBtn + '</div>'
-      : offer && !mvBtn ? '' : '<div class="d1btns">' + (offer ? '' : '<a class="btn ' + (c.no_whatsapp ? 'sms' : 'wa') + ' sm" data-rem1="' + h(c.id) + '" data-via="' + (c.no_whatsapp ? 'sms' : 'whatsapp') + '" target="_blank" rel="noopener" href="' + h(msgUrl(c, msgDay1Reminder(c))) + '">💬 Remind</a>') + mvBtn + '</div>';
+        '<button class="btn sm ' + (c.day1_status === 'no_show' ? 'red' : 'ghost') + '" data-d1="no_show" data-id="' + h(c.id) + '">No-show</button>' + mvBtn + dropBtn + '</div>'
+      : '<div class="d1btns">' + (offer ? '' : '<a class="btn ' + (c.no_whatsapp ? 'sms' : 'wa') + ' sm" data-rem1="' + h(c.id) + '" data-via="' + (c.no_whatsapp ? 'sms' : 'whatsapp') + '" target="_blank" rel="noopener" href="' + h(msgUrl(c, msgDay1Reminder(c))) + '">💬 Remind</a>') + mvBtn + dropBtn + '</div>';
     return '<div class="trow' + (q ? ' d1q' : '') + (c.day1_status === 'arrived' ? ' arrived' : '') + '" data-cand="' + h(c.id) + '">' + avatar(c) + '<div class="main"><div class="name">' + h(c.full_name) + ' <span class="co ' + h(c.company) + '">' + h(c.company) + '</span></div>' +
       '<div class="sub">' + (c.booker_name ? 'booked by ' + h(c.booker_name) : 'no booker') + (closedBy(c) ? ' · closed by ' + h(closedBy(c)) : '') + '</div>' +
       (c.offer_sent_at ? '<div class="sub d1by">🎉 Day 1 details ' + offerBy(c) + '</div>' : '') + '<div class="pills">' + pills + '</div></div>' + act + q + '</div>';
   };
   const block = x => {
-    const l = d1Order(items.filter(c => c.academy_date === x)), conf = l.filter(c => c.academy_confirmed_at).length;
+    const all = d1Order(items.filter(c => c.academy_date === x)), l = all.filter(c => c.day1_status !== 'dropped'), drop = all.length - l.length;
+    const conf = l.filter(c => c.academy_confirmed_at).length;
     const arr = l.filter(c => c.day1_status === 'arrived').length, ns = l.filter(c => c.day1_status === 'no_show').length;
     const toRemind = l.filter(c => !c.day1_status), rem = toRemind.filter(remindedToday).length;
-    const counts = l.length + ' expected · ' + conf + ' confirmed' + (l.length - conf ? ' · ' + (l.length - conf) + ' not' : '') +
+    const counts = l.length + ' expected · ' + conf + ' confirmed' + (l.length - conf ? ' · ' + (l.length - conf) + ' not' : '') + (drop ? ' · ' + drop + ' dropped out' : '') +
       (x <= today ? ' · ' + arr + ' arrived' + (ns ? ' · ' + ns + ' no-show' : '') + (x < today && toRemind.length ? ' · ' + toRemind.length + ' not ticked' : '') : '');
     const tools = admin && x >= today && toRemind.length ? '<div class="bullbtns d1tools"><button class="btn ' + (rem < toRemind.length ? 'wa' : 'ghost') + '" data-remall="' + x + '">📲 Send reminders · ' + rem + '/' + toRemind.length + '</button></div>' : '';
-    return '<div class="datehead">' + h(label(x)) + '</div><p class="hint" style="margin:-4px 4px 8px">' + h(counts) + '</p>' + tools + '<div class="list alist">' + l.map(row).join('') + '</div>';
+    return '<div class="datehead">' + h(label(x)) + '</div><p class="hint" style="margin:-4px 4px 8px">' + h(counts) + '</p>' + tools + '<div class="list alist">' + all.map(row).join('') + '</div>';
   };
-  const toOnb = admin ? r.items.filter(c => c.academy_date >= today && !c.onboard_email_at) : [];
+  const toOnb = admin ? r.items.filter(c => c.academy_date >= today && !c.onboard_email_at && c.day1_status !== 'dropped') : [];
   const pend = admin ? r.pending || [] : [];  // Academy bookings waiting on an admin (moved here from Chase)
   // Left over from an earlier week (a no-show to rebook, a Day 1 nobody ticked): so it isn't lost when the tab moves on
   const behind = r.items.filter(c => c.academy_date < mon && (c.day1_status === 'no_show' || (!c.day1_status && c.academy_date < today)));
@@ -2479,7 +2487,7 @@ function drawAcademy(r, quiet) {
     (!wk ? skeleton(3) : dates.length ? dates.map(block).join('')
       : empty('🎓', we === thisWe ? 'Nobody booked to start this week.' : we > thisWe ? 'Nobody booked to start that week yet.' : 'Nobody started that week.')) +
     '<p class="hint">' + (admin ? '📲 Send reminders: the Day 1 reminder to every starter, signed by you (Jess / Rubal: you get a nudge at 10:00 on the day). ✅ Confirmed = they tapped CONFIRM on their welcome page. Said yes on WhatsApp instead? Tap "Mark as confirmed". 📄 New Starts List: the week\'s sign-in sheet for the room. ' : '💬 Remind sends them the Day 1 reminder (time, address, Maps pin). ✅ Confirmed = they tapped CONFIRM on their welcome page. Said yes on WhatsApp instead? Tap "Mark as confirmed". ') +
-    'On Day 1, tap Arrived or No-show for everyone: that\'s your show-up rate. Booked for Tuesday instead of Monday? Tap 📅 Tuesday (twice), before the day or on it: they move to Tuesday\'s list (📅 Monday moves them back). The PDF shows the same ticks. ‹ › go week by week.</p>', quiet, !admin);
+    'Pulled out? Tap 🚫 Dropped out (twice), any time: they leave the reminders and the expected count (↩️ Undo puts them back). On Day 1, tap Arrived or No-show for everyone: that\'s your show-up rate. Booked for Tuesday instead of Monday? Tap 📅 Tuesday (twice), before the day or on it: they move to Tuesday\'s list (📅 Monday moves them back). The PDF shows the same ticks. ‹ › go week by week.</p>', quiet, !admin);
   const go = w => { S.d1Pick = { on: today, auto: false, we: w }; drawAcademy(r, true); window.scrollTo(0, 0); };
   page.querySelector('#d1prev').onclick = () => go(addDays(we, -7));
   page.querySelector('#d1next').onclick = () => go(addDays(we, 7));
@@ -2505,22 +2513,22 @@ function drawAcademy(r, quiet) {
   page.querySelectorAll('[data-d1]').forEach(b => {
     b.onclick = () => {
       const c = pool.filter(x => x.id === b.dataset.id)[0]; if (!c) return;
-      const move = b.dataset.d1 === 'next_day' || b.dataset.d1 === 'prev_day';
-      // Moving their Day 1 is a bigger change than a tick: the first tap asks, the second (within 4 s) does it. Kept in
-      // S.d1Sure, not just on the button, so a background refresh of the list between the two taps doesn't undo the first.
-      const asked = S.d1Sure && S.d1Sure.id === c.id && Date.now() < S.d1Sure.until;
-      if (move && !asked) {
-        const mine = S.d1Sure = { id: c.id, until: Date.now() + 4000 };
-        b.classList.add('sure'); b.textContent = 'Move to ' + b.dataset.day.slice(0, 3) + '?';
+      const move = b.dataset.d1 === 'next_day' || b.dataset.d1 === 'prev_day', drop = b.dataset.d1 === 'dropped' && c.day1_status !== 'dropped';
+      // Moving their Day 1 (or marking them dropped out) is a bigger change than a tick: the first tap asks, the second (within
+      // 4 s) does it. Kept in S.d1Sure, not just on the button, so a background refresh of the list between the two taps doesn't undo the first.
+      const kind = move ? 'move' : drop ? 'drop' : '', asked = S.d1Sure && S.d1Sure.id === c.id && S.d1Sure.act === kind && Date.now() < S.d1Sure.until;
+      if (kind && !asked) {
+        const mine = S.d1Sure = { id: c.id, act: kind, until: Date.now() + 4000 };
+        b.classList.add('sure'); b.textContent = move ? 'Move to ' + b.dataset.day.slice(0, 3) + '?' : 'Dropped out?';
         setTimeout(() => { if (S.d1Sure === mine) { S.d1Sure = null; if (S.view === 'academy' && S.academy) drawAcademy(S.academy, true); } }, 4000);
         return;
       }
-      if (move) S.d1Sure = null;
+      if (kind) S.d1Sure = null;
       const st = move ? b.dataset.d1 : c.day1_status === b.dataset.d1 ? '' : b.dataset.d1;  // tap again to clear
       busy(b, true, '…');
       call('markDay1', { id: c.id, status: st }).then(nc => {
         Object.assign(c, nc); upsert(nc); drawAcademy(r, true);
-        toast(move ? '📅 ' + c.first_name + ' starts ' + fmtLong(nc.academy_date) + ' instead' : st === 'arrived' ? '🎓 ' + c.first_name + ' arrived' : st === 'no_show' ? c.first_name + ': no-show' : 'Cleared');
+        toast(move ? '📅 ' + c.first_name + ' starts ' + fmtLong(nc.academy_date) + ' instead' : st === 'arrived' ? '🎓 ' + c.first_name + ' arrived' : st === 'no_show' ? c.first_name + ': no-show' : st === 'dropped' ? '🚫 ' + c.first_name + ': dropped out' : 'Cleared');
       }).catch(e => { busy(b, false); toast(e.message); });
     };
   });
@@ -3052,10 +3060,11 @@ function day1Pdf(mon, list) {
   /** "Abdullahi A.": Booked by and Closed by side by side on A4 */
   const who = n => { const w = String(n || '').trim().split(/\s+/); return w[0] ? w[0] + (w[1] ? ' ' + w[1][0] + '.' : '') : '-'; };
   // Same order and ticks as the Day 1 tab (Angad, 19 Oct): Monday's then Tuesday's, arrived rows light green, no-shows at the bottom
-  const rows = d1Order(list), conf = rows.filter(c => c.academy_confirmed_at).length, nJuss = rows.filter(c => c.company === 'JUSS').length;
+  const rows = d1Order(list), live = rows.filter(c => c.day1_status !== 'dropped'), drop = rows.length - live.length;  // dropped out: listed, not expected
+  const conf = live.filter(c => c.academy_confirmed_at).length, nJuss = live.filter(c => c.company === 'JUSS').length;
   const arr = rows.filter(c => c.day1_status === 'arrived').length, ns = rows.filter(c => c.day1_status === 'no_show').length, ticked = arr + ns > 0;
   const dates = rows.map(c => c.academy_date).filter((x, i, a) => a.indexOf(x) === i).sort();
-  const perDay = dates.length > 1 ? ' (' + dates.map(x => fmt(x) + ': ' + rows.filter(c => c.academy_date === x).length).join(' · ') + ')' : '';
+  const perDay = dates.length > 1 ? ' (' + dates.map(x => fmt(x) + ': ' + live.filter(c => c.academy_date === x).length).join(' · ') + ')' : '';
   const fit = (s, w, size) => { s = String(s || ''); const max = Math.floor(w / (size * 0.55)); return s.length <= max ? s : s.slice(0, Math.max(1, max - 2)) + '...'; };
   const pages = [];
   for (let p = 0; p === 0 || p * PER < rows.length; p++) pages.push(rows.slice(p * PER, (p + 1) * PER));
@@ -3065,7 +3074,7 @@ function day1Pdf(mon, list) {
     o.push('0.95 0.42 0.11 rg 0 ' + (H - 10).toFixed(2) + ' ' + (W / 2).toFixed(2) + ' 10 re f', '0.05 0.6 0.6 rg ' + (W / 2).toFixed(2) + ' ' + (H - 10).toFixed(2) + ' ' + (W / 2).toFixed(2) + ' 10 re f');
     txt(M, H - 50, newStartsName(mon), 20, true);
     txt(M, H - 68, 'BA Academy Day 1 · ' + d1Days(dates.length ? dates : [mon]) + ' · 1:30pm · ' + (S.me.address || 'Automotive House, Grays Place, Slough SL2 5AF'), 10);
-    txt(M, H - 84, rows.length + ' expected' + perDay + ' · JUSS ' + nJuss + ' · LINK ' + (rows.length - nJuss) + ' · ' + conf + ' confirmed · ' + (rows.length - conf) + ' not confirmed' + (ticked ? ' · ' + arr + ' arrived · ' + ns + ' no-show' : ''), 8.5, false, true);
+    txt(M, H - 84, live.length + ' expected' + perDay + ' · JUSS ' + nJuss + ' · LINK ' + (live.length - nJuss) + ' · ' + conf + ' confirmed · ' + (live.length - conf) + ' not confirmed' + (ticked ? ' · ' + arr + ' arrived · ' + ns + ' no-show' : '') + (drop ? ' · ' + drop + ' dropped out' : ''), 8.5, false, true);
     txt(M, H - 96, 'JUSS Marketing & LINK Marketing  |  printed ' + fmt(S.me.today) + ' ' + londonNow().slice(11) + ' by ' + S.me.user.name, 8.5, false, true);
     const top = H - 110;
     o.push('0.94 0.93 0.91 rg ' + M + ' ' + (top - 20).toFixed(2) + ' 523 20 re f');
@@ -3074,6 +3083,7 @@ function day1Pdf(mon, list) {
       const t = top - 20 - i * RH, b = t - RH, y = t - 15;
       const at = k => { let v = M; for (let j = 0; j < k; j++) v += cols[j][1]; return v + 4; };
       if (c.day1_status === 'arrived') o.push('0.88 0.96 0.9 rg ' + M + ' ' + b.toFixed(2) + ' 523 ' + RH + ' re f');  // light green, like the app
+      else if (c.day1_status === 'dropped') o.push('0.94 0.94 0.94 rg ' + M + ' ' + b.toFixed(2) + ' 523 ' + RH + ' re f');  // light grey: dropped out
       const prev = rows[p * PER + i - 1];  // JUSS on top, LINK below: a dark line where LINK starts
       if (i && prev.company === 'JUSS' && c.company !== 'JUSS') o.push('0.2 0.2 0.25 RG 1.5 w ' + M + ' ' + t.toFixed(2) + ' m ' + (M + 523) + ' ' + t.toFixed(2) + ' l S');
       txt(at(0), y, String(p * PER + i + 1), 9, false, true);
@@ -3087,13 +3097,14 @@ function day1Pdf(mon, list) {
       // Arrived: what was ticked in the app, or an empty box to tick by hand
       if (c.day1_status === 'arrived') txt(at(8), y, 'Yes', 9, true, false, '0.08 0.5 0.25');
       else if (c.day1_status === 'no_show') txt(at(8), y, 'No-show', 9, true, false, '0.8 0.15 0.15');
+      else if (c.day1_status === 'dropped') txt(at(8), y, 'Dropped', 8.5, true, false, '0.8 0.15 0.15');
       else o.push('0.2 0.2 0.25 RG 0.8 w ' + (at(8) + 12).toFixed(2) + ' ' + (b + 6.5).toFixed(2) + ' 11 11 re S');
       o.push('0.85 0.84 0.82 RG 0.5 w ' + M + ' ' + b.toFixed(2) + ' m ' + (M + 523) + ' ' + b.toFixed(2) + ' l S');
     });
     if (!chunk.length) txt(M + 4, top - 38, 'Nobody booked for this week.', 10, false, true);
     if (p === pages.length - 1) {
       const y = top - 20 - Math.max(chunk.length, 1) * RH - 34;
-      txt(M, y, (ticked ? 'Arrived: ' + arr + ' of ' + rows.length + (ns ? '  ·  No-show: ' + ns : '') : 'Arrived: ______ of ' + rows.length) + '          Checked by: ___________________________', 10);
+      txt(M, y, (ticked ? 'Arrived: ' + arr + ' of ' + live.length + (ns ? '  ·  No-show: ' + ns : '') : 'Arrived: ______ of ' + live.length) + '          Checked by: ___________________________', 10);
     }
     txt(M, 24, 'Personal data: keep this sheet safe and shred it after Day 1.', 8, false, true);
     txt(W - M - 52, 24, 'Page ' + (p + 1) + ' of ' + pages.length, 8, false, true);

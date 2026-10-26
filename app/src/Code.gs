@@ -1880,15 +1880,16 @@ function backfillOutcomes() {
 /** On Day 1: arrived / no-show (or clear it). Admins, or the person who booked them. Gives the real show-up rate.
  *  next_day / prev_day: some starters are booked for Tuesday instead of the usual Monday (Angad, 19 Oct). Their Day 1
  *  moves a day (still confirmed), before the day or on it, so they're on that day's list and its PDF, never a Monday
- *  no-show. prev_day undoes it. */
+ *  no-show. prev_day undoes it. dropped: they've pulled out (Angad, 26 Oct), before the day or on it: off the reminders and the
+ *  expected count, at the bottom of the list; '' puts them back. */
 function markDay1(req, u) {
-  if (['arrived', 'no_show', 'next_day', 'prev_day', ''].indexOf(req.status) < 0) throw new Error('Choose arrived or no-show');
+  if (['arrived', 'no_show', 'dropped', 'next_day', 'prev_day', ''].indexOf(req.status) < 0) throw new Error('Choose arrived, no-show or dropped out');
   const move = req.status === 'next_day' || req.status === 'prev_day';
   return withLock(() => {
     const c = getC(req.id);
     if (!fullAccess(u, c)) throw new Error('No access');
     if (c.outcome !== 'Academy booked') throw new Error('They aren\'t booked onto the Academy.');
-    if (req.status && !move && c.academy_date > todayStr()) throw new Error('Their Day 1 hasn\'t happened yet.');
+    if (req.status && !move && req.status !== 'dropped' && c.academy_date > todayStr()) throw new Error('Their Day 1 hasn\'t happened yet.');
     if (move) {
       const from = c.academy_date, to = addDays(from, req.status === 'next_day' ? 1 : -1);
       if (to < todayStr()) throw new Error('That day has already gone.');
@@ -1922,7 +1923,8 @@ function maybeAcademyBriefing() {
   if (p.getProperty('ACADEMY_BRIEF') === today) return;
   p.setProperty('ACADEMY_BRIEF', today);  // claim it first so an overlapping run can't send twice
   const tomorrow = addDays(today, 1);
-  const rows = readTable('Candidates').filter(c => c.outcome === 'Academy booked' && c.academy_date === tomorrow && c.admin_status !== 'rejected' && c.admin_status !== 'pending');
+  const rows = readTable('Candidates').filter(c => c.outcome === 'Academy booked' && c.academy_date === tomorrow && c.admin_status !== 'rejected' && c.admin_status !== 'pending' &&
+    c.day1_status !== 'dropped');
   if (!rows.length) return;
   const tag = c => c.full_name.split(' ')[0] + (c.academy_confirmed_at ? ' ✅' : ' ⏳');
   const by = {};
