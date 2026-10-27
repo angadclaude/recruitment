@@ -902,9 +902,9 @@ async function fillEval(p) {
   const fizaPipe = (await api(fizaTok, 'chaseList', {})).items;
   const fNow = fizaPipe.filter(c => chaseWk(c) <= cw), fThis = fNow.filter(c => chaseWk(c) === cw), fCarry = fNow.filter(c => chaseWk(c) < cw);
   ok(fizaPipe.length && fizaPipe.every(c => c.booker_id === fiza.id && BL.includes(c.leak)), 'a booker\'s Chase list is their own people only');
-  ok(await fcp.$('.tabbar button.on[data-tab=chase]') && JSON.stringify(await fcp.$$eval('.tabbar button', b => b.map(x => x.dataset.tab))) === '["mine","chase","pay"]' &&
+  ok(await fcp.$('.tabbar button.on[data-tab=chase]') && JSON.stringify(await fcp.$$eval('.tabbar button', b => b.map(x => x.dataset.tab))) === '["mine","chase","avail","pay"]' &&
     new RegExp('^' + fThis.length + ' to chase this week').test(await fcp.innerText('.card .display')) && await fcp.textContent('.tabbar button[data-tab=chase] .tbadge') === badgeOf(fNow.length, fCarry.length),
-    'Fiza taps it → her Chase tab: "' + fThis.length + ' to chase this week" (tabs: Mine · Chase · Appts Attended)');
+    'Fiza taps it → her Chase tab: "' + fThis.length + ' to chase this week" (tabs: Mine · Chase · New starts · Appts Attended)');
   ok(/📞 Log the call · \d+/i.test(await fcp.innerText('#page')) && await fcp.$('.ccard .quick [data-out]'), 'grouped by what to do, with Call / WhatsApp / Log outcome on each');
   ok(!(await fcp.$('#chasePdf')), 'no Chase PDF for a booker (admins only, like the All tab\'s)');
   await shot(fcp, '26-chase-booker', true);
@@ -2072,6 +2072,18 @@ async function fillEval(p) {
     await api(admin, 'saveAvail', { id: mira.id, w1: '-------', w2: '-------', driver: '' });
     for (const r of [zara, ben]) await api(admin, 'removeStarter', { id: r.id });
     await setTime('2026-10-20T10:00:00+01:00');
+    // Every booker has a New starts tab (Angad, 27 Oct: Hasini, coaching in the BA Academy, couldn't find hers; "they can see the
+    // entire availability for everyone"): every new starter in the office, read-only, no back arrow
+    await bp.goto(APP + 'index.html'); await bp.waitForSelector('.tabbar button[data-tab=avail]');
+    const bTabs = await bp.$$eval('.tabbar button', e => e.map(x => x.innerText.trim().replace(/\s+/g, ' ')));
+    await bp.click('.tabbar button[data-tab=avail]'); await bp.waitForSelector('.avrow');
+    const allNow = (await api(admin, 'availWeek', { weekEnding: WE })).rows;
+    const nsNames = await bp.$$eval('.avrow .name', e => e.map(x => x.textContent));
+    ok(bTabs.includes('New starts') && (await bp.textContent('#abTitle')) === 'New starts' && (await bp.$eval('#abBack', b => b.hidden)) &&
+      nsNames.length === allNow.length && allNow.every(r => nsNames.includes(r.full_name)) && nsNames.includes('Adham Soliman') &&
+      !(await bp.$('.avA')) && !(await bp.$('button.avrow')) && !(await bp.$('#avadd')) && (await ap.$$('.tabbar button[data-tab=avail]')).length === 0,
+      'every booker has a New starts tab (' + bTabs.join(' · ') + '): all ' + nsNames.length + ' new starters in the office, anyone\'s coach (Adham is Abdullahi\'s), read-only; admins keep it in Day 1');
+    await shot(bp, '50d-booker-new-starts');
     // On the phone: Day 1 → 🗓️ Availability
     await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button[data-tab=academy]');
     await ap.click('.tabbar button[data-tab=academy]'); await ap.waitForSelector('#goAvail');
@@ -2160,6 +2172,10 @@ async function fillEval(p) {
     const noteTxt = noteAt < 0 ? '' : pdfLines.slice(noteAt).filter((l, i, a) => i === 0 || !/^Notes: |^\d+$/.test(l)).slice(0, 4).join(' ');
     ok(noteTxt.startsWith('Notes: ' + MIRA_NOTE) && pdfLines.slice(noteAt, noteAt + 3).every(l => !/\.\.\.$/.test(l)) && !pdfLines.includes('Notes'),
       'every note in full on the PDF, under the starter, across the table (no Notes column cutting it short): "' + pdfLines.slice(noteAt, noteAt + 2).join(' / ') + '"');
+    // An A (best new start) shows on the PDF as their name highlighted in HelloFresh green (Angad, 27 Oct), with a key
+    const greens = [...apRaw.matchAll(/0\.5 0\.66 0\.18 rg ([\d.]+) ([\d.]+) 133 19 re f\n[^\n]*\n[^\n]*\(([^)]*)\) Tj/g)].map(m => m[3]);
+    ok(greens.join() === s1.full_name && pdfLines.some(l => /Name in green = A, one of the best new starts/.test(l)),
+      'an A on availability = their name highlighted in HelloFresh green on the PDF (' + greens.join() + '), and a key: "Name in green = A, one of the best new starts"');
     try { require('child_process').execFileSync('pdftoppm', ['-png', '-r', '70', '-singlefile', apPath, `${SHOTS}/52-availability`]); } catch (e) { /* no renderer here */ }
     // 📸 The poster (Angad, 27 Oct): the app's welcome header, HELLO FRESH and FUNDRAISING ribbons and Mission footer, with each
     // starter as on the team's Canva pages: photo, NAME, then "OFFICE" (booked from the office) or "<COACH> - PR". 🏢 Office can be the coach.

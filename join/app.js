@@ -1,4 +1,4 @@
-window.APP_VERSION = '9fd6b2e7';
+window.APP_VERSION = '007585d9';
 
 (function () {
 'use strict';
@@ -1297,6 +1297,7 @@ const ICONS = {
   academy: '<path d="M22 10 12 5 2 10l10 5 10-5z"/><path d="M6 12v5c3 2 9 2 12 0v-5"/><path d="M22 10v6"/>',
   pay: '<path d="M17 7.5A4.5 4.5 0 0 0 9 10v9M6 13.5h8M6 19h12"/>',
   book: '<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4M12 13.5v5M9.5 16h5"/>',
+  avail: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 11.5l2 2 4-4.5"/>',
   team: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17.5" cy="9" r="2.5"/><path d="M16.5 14.6A5 5 0 0 1 21.5 19.5"/>',
   back: '<path d="M15 5l-7 7 7 7"/>',
   phone: '<path d="M5 4h3.5l2 5-2.4 1.6a11 11 0 0 0 5.3 5.3L15 13.5l5 2V19a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/>',
@@ -1311,6 +1312,7 @@ function tabs() {
   if (canBook()) t.push(['book', 'Book Appts']);  // Jess, Rubal, Angad: book after the call, send the details (Angad, 23 Oct)
   if (isBooker()) t.push(['mine', 'Mine']);
   if (isAdmin() || isBooker()) t.push(['chase', 'Chase']);
+  if (isBooker() && !isAdmin()) t.push(['avail', 'New starts']);  // every new starter in the office, read-only (Angad, 27 Oct); admins have it in Day 1
   if (isAdmin()) t.push(['academy', 'Day 1']);
   if (isAdmin()) t.push(['all', 'All']);
   t.push(['pay', 'Appts Attended']);  // was "Incentive" (Angad, 20 Oct)
@@ -1427,7 +1429,7 @@ function toggleMenu() {
   document.getElementById('mRefresh').onclick = () => { m.hidden = true; pullRefresh(); };
   const mt = document.getElementById('mTeam'); if (mt) mt.onclick = () => { m.hidden = true; nav('team', {}, true); };
   const mm = document.getElementById('mMine'); if (mm) mm.onclick = () => { m.hidden = true; nav('mine', {}, true); };
-  document.getElementById('mAvail').onclick = () => { m.hidden = true; nav('avail', {}, true); };
+  document.getElementById('mAvail').onclick = () => { m.hidden = true; nav('avail', {}, !tabs().some(t => t[0] === 'avail')); };
   document.getElementById('mLogout').onclick = () => {
     if (outbox().length && !navigator.onLine) { toast('Wait for signal first: you have changes that haven\'t synced'); return; }
     store.del('outbox'); store.del('tok'); store.del('cache'); S.token = ''; S.me = null; S.data = {}; S.users = null; S.chase = null; S.chaseN = 0; S.chaseCarry = 0; S.academy = null; S.d1Old = null; S.d1Pick = null; S.booted = false; S.tab = '';
@@ -2184,17 +2186,18 @@ function loadAvail(we) {
   });
 }
 function viewAvail(quiet) {
+  const asTab = S.tab === 'avail', title = asTab ? 'New starts' : 'Availability';
   const today = S.me.today, thisWe = weekEndingOf(today), we = S.params.we || thisWe, wk = S.params.wk === 2 ? 2 : 1, id = S.viewId;
   const d = (S.avail || {})[we];
   if (!d || Date.now() - d.at > STALE_MS) loadAvail(we).then(() => { if (S.viewId === id && !document.querySelector('.sheet-back')) render(true); })
-    .catch(e => { if (S.viewId === id && !(S.avail || {})[we]) paint('Availability', '<div class="err">' + h(e.message) + '</div>', false, true); });
+    .catch(e => { if (S.viewId === id && !(S.avail || {})[we]) paint(title, '<div class="err">' + h(e.message) + '</div>', false, !asTab); });
   const mon = addDays(we, -6 + (wk === 2 ? 7 : 0)), days = AV_DAY.map((x, i) => addDays(mon, i));
   const go = p => { S.params = Object.assign({ we: we, wk: wk }, p); hist('replace', { v: 'avail', p: S.params }); render(); };
   const top = '<div class="seg bullseg" id="avwk"><button data-wk="1" class="' + (wk === 1 ? 'on' : '') + '">Week 1</button><button data-wk="2" class="' + (wk === 2 ? 'on' : '') + '">Week 2</button></div>' +
     '<div class="seg-nav"><div class="lbl"><span>' + (we === thisWe ? 'Started this week · Day 1 w/e' : we === addDays(thisWe, -7) ? 'Started last week · Day 1 w/e' : 'Started · Day 1 w/e') + '</span><b>' + fmt(we) + '</b></div>' +
     '<button class="iconbtn" id="avprev" aria-label="Previous week">‹</button><button class="iconbtn" id="avnext" aria-label="Next week"' + (we >= thisWe ? ' disabled' : '') + '>›</button></div>' +
     '<p class="small muted avrange">Week ' + wk + ': ' + fmt(days[0]) + ' – ' + fmt(days[6]) + '</p>';
-  if (!d) { bindAvail(paint('Availability', top + skeleton(4), quiet, true), go, we); return; }
+  if (!d) { bindAvail(paint(title, top + skeleton(4), quiet, !asTab), go, we); return; }
   const rows = avOrder(d.rows), edit = d.canEdit, key = wk === 2 ? 'w2' : 'w1';
   const pre = (r, i) => wk === 1 && days[i] < r.day1_date;  // before their Day 1
   const inOn = i => rows.filter(r => r[key][i] === 'I'), drivers = i => inOn(i).filter(r => r.driver === 'Yes').length;
@@ -2231,11 +2234,11 @@ function viewAvail(quiet) {
     '<p class="muted" style="margin:6px 0 0">Each starter goes under New Starts (name and coach in capitals, OFFICE if there\'s no coach) by themselves, from ' + h(bl.time) +
       ' the day after their Day 1, once their Week 1 days are in. FR → FR bell sheet, HF → HF bell sheet. You get an alert.</p>' +
     '<button type="button" class="linkbtn" id="avbellset">🔗 ' + (bl.sheets.some(x => x.url) ? 'Change the links' : 'Add the bell sheets\' links') + '</button></div>' : '';
-  const page = paint('Availability', top + strip + warn + tools + gone +
+  const page = paint(title, top + strip + warn + tools + gone +
     (rows.length ? group('JUSS', 'HelloFresh') + group('LINK', 'Fundraising') : empty('🗓️', we > addDays(thisWe, -7) && we >= thisWe ? 'Nobody\'s started this week yet. Starters appear here when they\'re ticked Arrived on Day 1.' : 'Nobody started that week.')) + bell +
     '<p class="hint">' + (edit ? 'Tap a starter to fill in their days (tap a day: in → out → not said), driver, notes and photo, or to remove them. ' : '') +
       'Week 1 is their Day 1 week, Week 2 the week after. Everyone who started is here as soon as they\'re ticked Arrived on Day 1, with the photo taken there (📷 on the Day 1 list); their coach is whoever booked them. Days stay blank until the one-to-one (Tuesday afternoon); at 18:00 you hear it\'s ready, or who\'s missing. ' +
-      (edit ? 'Days changed after the one-to-one? Their coach gets an alert. Tap <b>A</b> on your best new starts: it goes green (only the people who do the one-to-ones see it). ' : 'Only Angad, Satpal and the people they pick can change it. ') + 'Every week is kept: ‹ › to go back.</p>', quiet, true);
+      (edit ? 'Days changed after the one-to-one? Their coach gets an alert. Tap <b>A</b> on your best new starts: it goes green (only the people who do the one-to-ones see it). ' : 'Only Angad, Satpal and the people they pick can change it. ') + 'Every week is kept: ‹ › to go back.</p>', quiet, !asTab);
   bindAvail(page, go, we);
   page.querySelectorAll('[data-av]').forEach(b => { if (edit) b.onclick = () => availSheet(rows.filter(r => r.id === b.dataset.av)[0], we, wk); });
   page.querySelectorAll('[data-ava]').forEach(b => {
@@ -2512,13 +2515,14 @@ function addStarterSheet(we, coaches) {
 /** The week as the old sheet looked: a table per campaign, Monday to Sunday IN / OUT, in the Appointments PDF's look. */
 function availPdf(we, wk, rows) {
   const mon = addDays(we, -6 + (wk === 2 ? 7 : 0)), key = wk === 2 ? 'w2' : 'w1', inN = i => rows.filter(r => r[key][i] === 'I').length;
-  const row = r => ({ fill: /[IO]/.test(r[key]) ? '' : 'amber', note: r.notes || '', cells: [r.full_name, r.mobile || '', (r.coach_name || '').split(' ')[0], r.driver || ''].concat(
+  // A = one of the best new starts (Angad, 27 Oct): their name highlighted in HelloFresh green
+  const row = r => ({ fill: /[IO]/.test(r[key]) ? '' : 'amber', mark: r.grade === 'A' ? 'hf' : '', note: r.notes || '', cells: [r.full_name, r.mobile || '', (r.coach_name || '').split(' ')[0], r.driver || ''].concat(
     r[key].split('').map((x, i) => wk === 1 && addDays(mon, i) < r.day1_date ? ['-', 'grey'] : x === 'I' ? ['IN', 'green', true] : x === 'O' ? ['OUT', 'grey'] : '')) });
   const g = (co, head) => { const l = rows.filter(r => avCamp(r) === (co === 'JUSS' ? 'HF' : 'FR')); return { head: head + ' · ' + l.length, rows: l.map(row) }; };
   return listPdf({
     name: avName(we, wk), heading: 'NS Availability · Week ' + wk, sub: 'Started week ending ' + fmtLong(we) + ' ' + we.slice(0, 4) + '  ·  Week ' + wk + ': ' + fmt(mon) + ' – ' + fmt(addDays(mon, 6)) + '  ·  LINK Marketing & JUSS Marketing',
     boxes: [[rows.length, 'Starters'], [rows.filter(r => r.driver === 'Yes').length, 'Drivers', 'green'], [rows.filter(r => !/[IO]/.test(r[key])).length, 'No days yet', rows.some(r => !/[IO]/.test(r[key])) ? 'amber' : '']],
-    line: 'In each day: ' + AV_DAY.map((d, i) => d + ' ' + inN(i)).join(' · '),
+    line: 'In each day: ' + AV_DAY.map((d, i) => d + ' ' + inN(i)).join(' · ') + (rows.some(r => r.grade === 'A') ? '   ·   Name in green = A, one of the best new starts' : ''),
     cols: [['#', 16], ['Name', 133], ['Contact', 68], ['Coach', 70], ['Driver', 40]].concat(AV_DAY.map(d => [d, 28])),  // notes in full under each row
     groups: [g('JUSS', 'HelloFresh'), g('LINK', 'Fundraising')], empty: 'Nobody started that week.',
   });
@@ -3865,12 +3869,13 @@ function weekPdf(we, list) {
 // they stand. ─────
 /** o: { name (title + file name), heading, sub, boxes [[n, label, ink]], line, cols [[head, width]] ('#' first, 523 in all),
  *  groups [{ head, note, rows [{ cells [text or [text, ink, bold]], fill: green / red / amber, note }] }], empty }
- *  A row's note is printed in full under it, across the table (Angad, 27 Oct: "I want to see all the notes"). */
+ *  A row's note is printed in full under it, across the table (Angad, 27 Oct: "I want to see all the notes").
+ *  A row's mark highlights its name: 'hf' = HelloFresh green (an A on availability). */
 function listPdf(o) {
   const W = 595.28, H = 841.89, M = 36, RH = 19, BOTTOM = 48, TW = 523, cols = o.cols;
   const colX = []; cols.reduce((x, c) => { colX.push(x + 4); return x + c[1]; }, M);
   const INK = { grey: '0.42 0.42 0.47', green: '0.05 0.5 0.3', amber: '0.75 0.38 0.02', red: '0.75 0.15 0.15' };
-  const FILL = { green: '0.88 0.96 0.9', red: '0.99 0.88 0.88', amber: '1 0.95 0.86' };
+  const FILL = { green: '0.88 0.96 0.9', red: '0.99 0.88 0.88', amber: '1 0.95 0.86' }, MARK = { hf: '0.5 0.66 0.18' };  // #7FA82E, the app's HelloFresh green
   const shrink = (s, i, size, min, bold) => { let z = size; while (z > min && pdfTextW(s, z, bold) > cols[i][1] - 7) z -= 0.5; return [pdfFit(s, cols[i][1] - 7, z, bold), z]; };
   const pages = [];
   let out, y;
@@ -3898,6 +3903,7 @@ function listPdf(o) {
   const row = (r, i) => {
     const yy = y - 13, rh = rowH(r);
     if (r.fill) out.push(FILL[r.fill] + ' rg ' + M + ' ' + (y - rh).toFixed(2) + ' ' + TW + ' ' + rh.toFixed(2) + ' re f');
+    if (MARK[r.mark]) out.push(MARK[r.mark] + ' rg ' + (colX[1] - 4).toFixed(2) + ' ' + (y - RH).toFixed(2) + ' ' + cols[1][1] + ' ' + RH + ' re f');
     txt(colX[0], yy, String(i + 1), 8, false, 'grey');
     r.cells.forEach((c, j) => {
       const v = Array.isArray(c) ? c : [c], z = shrink(String(v[0] == null ? '' : v[0]), j + 1, j ? 8.5 : 9, 6.5, j === 0 || v[2]);

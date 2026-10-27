@@ -298,6 +298,8 @@ No more highlighters on the printed list:
 ## New starters' availability: Week 1 and Week 2 (replaces the NS Availability sheet)
 **Day 1 → 🗓️ Availability · Week 1 & Week 2** (or the menu → **🗓️ New starters' availability**).
 
+**Bookers and leaders:** tap **New starts** in the bottom bar: every new starter in the office, with their days, coach and notes (view only). Turn on alerts to hear at 18:00 when your own starters' days are in.
+
 - **The week:**
   - **Monday (Jess / Rubal):** on the Day 1 list, tick **Arrived**, then tap **📷 Photo** on the same row. That's their availability photo; it shows as their picture.
   - **Tuesday 2–3pm:** the one-to-one. Fill in their days (blank until then).
@@ -326,7 +328,7 @@ No more highlighters on the printed list:
   - **Coach → 🏢 Office** makes someone show as OFFICE (bookings by admins already do).
 - **🗑️ Remove someone:** tap them → **🗑️ Remove from availability** → tap again. They come off the list, the poster, the PDF and the alerts. Changed your mind? **↩️ Put back** at the top of the list.
 - **Pictures:** everyone's picture on the list is cropped to their face, so you can see who's who.
-- **🟢 A = one of your best new starts:** tap the round **A** at the top right of their card and it goes green. Tap again to take it off. Only the people who do the one-to-ones (admins and anyone ticked **Availability**) see it; it's not on the poster or the PDF.
+- **🟢 A = one of your best new starts:** tap the round **A** at the top right of their card and it goes green. Tap again to take it off. Only the people who do the one-to-ones (admins and anyone ticked **Availability**) see it. On the **📄 PDF** their name is highlighted in HelloFresh green. It's not on the poster.
 - **📄 PDF:** the old sheet's layout, Monday to Sunday IN / OUT, a table per campaign. Everyone's notes are printed in full under their name.
 
 ## 🔔 Bell sheets: new starters go on by themselves (replaces copying names across)
