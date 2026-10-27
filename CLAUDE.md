@@ -58,11 +58,11 @@ The recruitment app for **LINK Marketing** and **JUSS Marketing** (Angad runs bo
   - **Attended / appointments** = rated in the room (walk outs too), Mon–Fri, **minus non-qualifiers**, the incentive's net (`counted(c) && !c.pay_reason`).
   - **Non-qualifiers** = came in but don't count (`notCounting`: not eligible, repeat, removed by admin).
   - **Checked in = attended + non-qualifiers + not rated.**
-  - Applies to Today, the daily poster and its Top performers, the Friday weekly total, Week top 5, Appts Attended (hero *Attended*, the *Bookers + booked by admins + no booker yet* line, rows say *checked in*), the Appointments total PDF (cells and total net, non-qualifiers in their own column), the 18:00 booker alert, and the Friday week and team roundups.
+  - Applies to Today, the daily poster's *attended*, the Friday weekly total, Week top 5, Appts Attended (hero *Attended*, the *Bookers + booked by admins + no booker yet* line, rows say *checked in*), the Appointments total PDF (cells and total net, non-qualifiers in their own column), the 18:00 booker alert, and the Friday week and team roundups.
   - `figuresAgree` in e2e checks every one of them against each other for two weeks. Any new figure must use these definitions and join that check.
-- **Bulletin (Angad, 26 Oct; he doesn't want to repeat these):**
-  - **Recognition is always 2 and above.** Only bookers with 2+ are named on Top performers, daily and Week top 5 (`dailyRows`, `weeklyRows`).
-  - **The numbers always add up.** *First appointments attended* = counted minus non-qualifiers = the sum of the Top performers lines. Everyone with 1 is counted on one unnamed line (*+ 8 more bookers, 1 each*), plus *❓ No booker yet*.
+- **Bulletin (Angad, 26 + 27 Oct; "basic rules", he doesn't want to repeat them):**
+  - **Two is a bell 🔔, three is a gong 💿.** Only bookers on **2 or more** are on the bulletin at all, daily Top performers and Week top 5 (`dailyRows`, `weeklyRows`). **Anyone on 1 is not on it**: no name, no "1 each" line, no "No booker yet" line. (26 Oct I'd put the 1s on a shared unnamed line so the names added up; on 27 Oct Angad said no: "anyone that gets one appointment in should not be on the bulletin".)
+  - So the names **don't** add up to the headline, by design. *First appointments attended* = counted minus non-qualifiers (everyone's, 1s included). Top performers = the bookers on 2+, each with their net. More 2+ bookers than fit: the lowest share the last line by name.
   - *Non-qualifiers* = Today's **Non-qual** (`notCounting`).
   - e2e checks all of this.
 - **Someone who leaves (Angad, 26 Oct):** `CONFIG.HANDOVER` credits their *new* check-ins to whoever took over, until a date: typed names (`matchBooker(typed, day)`), picks from an out-of-date list (`liveBooker`), and their name in the check-in list. After the date: no booker, and an admin sets it. Nobody switched off is ever credited. **Alerts** about their candidates go to whoever took over (`successorOf` in `notify`, no end date). **Now: Fiza → Angad until Sun 1 Nov 2026** (company = Angad's, LINK, so FR).
@@ -146,8 +146,8 @@ This replaces the "Juss & Link - NS Availability - 2026" Google Sheet (a W1 / Pi
   - **Monday, Day 1:** Jess and Rubal (admins) tick **Arrived**, then tap **📷 Photo** on the same Day 1 row (`day1Photo`, back camera). The photo is their availability photo and shows as their picture on the Day 1 list.
   - **Tuesday around 2–3pm:** the one-to-one where they commit to their days. Days stay **blank until then** (not pre-filled).
   - **17:00 from the day after their Day 1** (`maybeAvailReminder`, `AVAIL_REMIND_TIME`):
-    - the editors get "🗓️ Availability: 12 of 15 done · Still to fill in: …" daily until everyone has Week 1 days, then "✅ Availability ready: 15 new starters · Week 1 in: Tue 13 · … · 🚗 4 drive · tap for the poster and the PDF" once a week;
-    - each coach gets "🗓️ Your new starters this week" with their starters' days, once.
+    - **Satpal, Rubal, Jess and Angad (the admins, Angad 27 Oct)** get all the new starters, done vs missing: "🗓️ Availability: 12 of 15 done · Still to fill in: …" daily until everyone has Week 1 days, then "✅ Availability ready: 15 new starters · Week 1 in: Tue 13 · … · 🚗 4 drive · tap for the poster and the PDF" once a week. Delegates ticked **Availability** don't get it (he named the four);
+    - **each coach** (non-admin, active) gets their own new starters, done vs missing: "🗓️ Your new starters: 1 of 2 done" with a line each ("Jasraj: Mon Tue Wed Thu Fri", "Adham: not filled in yet") daily while any are missing, then "✅ Your new starters' days" once (`AVAIL_COACH_READY_<week>`).
   - **Tuesday he wants ready:** the poster in the team WhatsApp, who's in each day, that alert, and the PDF.
 - **Extras:**
   - per-day headcount with 🚗 drivers;

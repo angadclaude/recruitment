@@ -110,7 +110,7 @@ Put the two QR codes on the presentation once. They never change:
    - **Question 1: "Who ran today's presentation?"** One tap on a presenter's first name (everyone with the **Presenter** role: Team → tap them → tick Presenter, admins included if they present), or **Someone else** (they type the name) or **Not sure**. Saved in the Sheet as `presented_by` (+ `presented_by_id`), shown on their page as *"🎤 Presentation by Nathan Mcgrath"*, and on **Incentive** (admins) as **🎤 Presenters this week**: in the room → evaluated → booked → started (arrived on Day 1), per presenter.
 4. **Booker** gets *"📋 Jasraj's evaluation is in"* → one-page snapshot → call → log outcome → tap **🎉 Send BA Academy Day 1 details**.
 5. Candidate taps the link in WhatsApp → their **personal welcome page** (Week 1 plan, poster, directions, add to calendar) → taps **🔒 Confirm I'm coming** → booker gets *"✅ Jasraj confirmed Day 1!"*
-6. **Admins, end of day:** **Today → 📣 Today's bulletin → 📤 Share to WhatsApp**. The stats poster is built from the app: attended, non-qualifiers and top performers, on the same rules as the recruitment incentive. **First appointments attended** leaves the non-qualifiers out (29 came in, 6 non-qualifiers → 23), and so does the weekly total it adds on Fridays. **Recognition is for 2 and above:** only bookers with 2+ are named (daily and Week top 5). **It always adds up:** everyone with 1 is still counted on one line (*+ 8 more bookers, 1 each*), anyone without a booker yet shows as *❓ No booker yet*, so the top performers add up to *first appointments attended*; and *non-qualifiers* is the same number as **Non-qual** on Today; tap **🏆 Week top 5** for the leaderboard. **✏️ Edit wording** lets you change the messages, tag someone as (BAR), and change the Mission / Plan numbers or the cash amount.
+6. **Admins, end of day:** **Today → 📣 Today's bulletin → 📤 Share to WhatsApp**. The stats poster is built from the app: attended, non-qualifiers and top performers, on the same rules as the recruitment incentive. **First appointments attended** leaves the non-qualifiers out (29 came in, 6 non-qualifiers → 23), and so does the weekly total it adds on Fridays. **Two is a bell 🔔, three is a gong 💿:** only bookers on 2 or more are on the poster (daily and Week top 5). Anyone on 1 isn't on it at all, so the names won't add up to *first appointments attended* (which counts everyone); *non-qualifiers* is the same number as **Non-qual** on Today; tap **🏆 Week top 5** for the leaderboard. **✏️ Edit wording** lets you change the messages, tag someone as (BAR), and change the Mission / Plan numbers or the cash amount.
 
 ## Push alerts
 | When | Who |
@@ -286,7 +286,7 @@ No more highlighters on the printed list:
 - **The week:**
   - **Monday (Jess / Rubal):** on the Day 1 list, tick **Arrived**, then tap **📷 Photo** on the same row. That's their availability photo; it shows as their picture.
   - **Tuesday 2–3pm:** the one-to-one. Fill in their days (blank until then).
-  - **17:00:** you hear "✅ Availability ready" (who's in each day, drivers), or who's still missing, every day until it's done. Each coach gets their own starters' days.
+  - **17:00:** Satpal, Rubal, Jess and Angad hear who's still missing ("🗓️ Availability: 12 of 15 done"), every day until it's done, then "✅ Availability ready" (who's in each day, drivers). Each coach hears about their own new starters the same way: done vs missing, then "✅ Your new starters' days".
   - **Then:** **📸 Poster** → Share to the team WhatsApp, and **📄 PDF**.
 - **Who's on it:** everyone ticked **Arrived** on Day 1 appears by themselves, grouped HelloFresh then Fundraising (their FR / HF from Day 1). Their coach is whoever booked them.
   - Someone started without coming through the app? **＋ Add someone**.
@@ -319,7 +319,7 @@ Where you'll see them, all equal:
 - **Each day:**
   - Today's *Checked in* and *Non-qual*;
   - the daily poster's two bubbles;
-  - the poster's Top performers (2+ named, the 1s on one line, *No booker yet*), which add up to *attended*;
+  - the poster's Top performers: the bookers on 2+ only, each with their own number (nobody on 1);
   - that day's column on the **Appointments total** PDF.
 - **Each week:**
   - Friday's poster's *Weekly total*;

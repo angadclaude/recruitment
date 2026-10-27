@@ -999,30 +999,33 @@ async function fillEval(p) {
   let bi = await bInfo();
   ok(bi.kind === 'daily' && bi.attended === monday.filter(c => !c.pay_reason).length && bi.nonQual === monday.filter(c => c.pay_reason).length && bi.nonQual > 0,
     'daily bulletin: ' + bi.attended + ' attended (' + monday.length + ' came in, minus the non-qualifiers), ' + bi.nonQual + ' non-qualifiers (same rules as the incentive)');
-  // The numbers add up (Angad, 26 Oct): top performers = attended; Today's Checked in = attended + non-qualifiers + not rated yet
+  // The headline adds up (Angad, 26 Oct): Today's Checked in = attended + non-qualifiers + not rated yet.
+  // Top performers = bookers on 2+ only (Angad, 27 Oct: "anyone that gets one appointment in should not be on the bulletin").
   const rowSum = rows => rows.reduce((t, r) => t + Number(/ (\d+)(?: BAR)?$/.exec(r)[1]), 0);
-  ok(rowSum(bi.rows) === bi.attended && monHero[1] === bi.nonQual && monHero[0] === bi.attended + bi.nonQual + (monAll.length - monday.length),
-    'it adds up: top performers ' + bi.rows.map(r => / (\d+)(?: BAR)?$/.exec(r)[1]).join(' + ') + ' = ' + bi.attended + ' attended; Today\'s Checked in ' + monHero[0] + ' = ' + bi.attended + ' + ' + bi.nonQual + ' non-qual (same as Today\'s ' + monHero[1] + ') + ' + (monAll.length - monday.length) + ' not rated');
-  // A busy day like 26 Oct (13 bookers, 23 attended; Fiza's 2 were Angad's): only 6 lines fitted, so 7 people went missing.
-  // Recognition is for 2 and above (Angad, 26 Oct): the 1s aren't named but are counted on one line, so it adds up.
+  const monNet = {}; monday.filter(c => !c.pay_reason && c.booker_name).forEach(c => { const k = c.booker_id || c.booker_name; monNet[k] = (monNet[k] || 0) + 1; });
+  const mon2 = Object.values(monNet).filter(n => n >= 2);
+  ok(rowSum(bi.rows) === mon2.reduce((t, n) => t + n, 0) && bi.rows.every(r => Number(/ (\d+)(?: BAR)?$/.exec(r)[1]) >= 2) && monHero[1] === bi.nonQual && monHero[0] === bi.attended + bi.nonQual + (monAll.length - monday.length),
+    'it adds up: Today\'s Checked in ' + monHero[0] + ' = ' + bi.attended + ' attended + ' + bi.nonQual + ' non-qual (same as Today\'s ' + monHero[1] + ') + ' + (monAll.length - monday.length) + ' not rated; top performers = the ' + mon2.length + ' bookers on 2+ (' + rowSum(bi.rows) + ' of the ' + bi.attended + ')');
+  // A busy day like 26 Oct (13 bookers, 23 attended; Fiza's 2 were Angad's). Two is a bell, three is a gong (Angad, 27 Oct):
+  // only bookers on 2+ are on the bulletin at all. Nobody on 1, no "1 each" line, no "no booker yet" line.
   const busy = await ap.evaluate(() => {
     const mk = a => a.map(x => ({ key: x[0], name: x[0], n: x[1], bars: 0, bar: x[0] === 'Tia' }));
     const L = mk([['Hasini', 5], ['Mamadou', 5], ['Angad', 3], ['Samuel', 2], ['Martin', 1], ['Nathan', 1], ['Priya', 1], ['Rubal', 1], ['Sam', 1], ['Tia', 1], ['Usman', 1], ['Zara', 1]]);
     const M = mk([['A1', 2], ['B2', 2], ['C3', 2], ['D4', 2], ['E5', 2], ['F6', 2], ['G7', 2], ['H8', 2], ['Tia', 2], ['X', 1], ['Y', 1], ['Z', 1]]);
     const sum = r => r.reduce((t, x) => t + x.n, 0), txt = r => r.map(x => x.medal + ' ' + x.name + ' ' + x.n);
-    const a = JLBulletin.dailyRows(L, 0), b = JLBulletin.dailyRows(L, 2), c = JLBulletin.dailyRows(L.slice(4), 0), d = JLBulletin.dailyRows(M, 0);
-    return { a: txt(a), sa: sum(a), b: txt(b), sb: sum(b), c: txt(c), sc: sum(c), d: txt(d), sd: sum(d), w: JLBulletin.weeklyRows(L, 5).map(x => x.name) };
+    const a = JLBulletin.dailyRows(L), c = JLBulletin.dailyRows(L.slice(4)), d = JLBulletin.dailyRows(M);
+    return { a: txt(a), sa: sum(a), c: txt(c), d: txt(d), sd: sum(d), icons: a.map(x => x.icons[0]), w: JLBulletin.weeklyRows(L, 5).map(x => x.name) };
   });
-  ok(busy.sa === 23 && JSON.stringify(busy.a) === JSON.stringify(['🥇 Hasini 5', '🥇 Mamadou 5', '🥉 Angad 3', '💪 Samuel 2', '👏 + 8 more bookers, 1 each 8']) &&
-    busy.sb === 25 && busy.b[busy.b.length - 1] === '❓ No booker yet 2' && busy.sc === 8 && JSON.stringify(busy.c) === JSON.stringify(['👏 8 bookers, 1 each 8']),
-    'a busy day adds up, only 2+ named: ' + busy.a.join(' · ') + ' (= ' + busy.sa + '); with 2 not assigned yet: "' + busy.b[busy.b.length - 1] + '"; a day of 1s: "' + busy.c[0] + '"');
-  ok(busy.sd === 21 && busy.d.length === 6 && busy.d[5] === '👏 F6 ×2, G7 ×2, H8 ×2, Tia ×2 (BAR), + 3 more bookers, 1 each 11',
+  ok(busy.sa === 15 && JSON.stringify(busy.a) === JSON.stringify(['🥇 Hasini 5', '🥇 Mamadou 5', '🥉 Angad 3', '💪 Samuel 2']) && busy.c.length === 0,
+    'a busy day: only the bookers on 2+ are on it (' + busy.a.join(' · ') + '); the eight on 1 are not on it at all, and a day of 1s has nobody');
+  ok(JSON.stringify(busy.icons) === JSON.stringify(['💿', '💿', '💿', '🔔']), 'three is a gong (💿), two is a bell (🔔)');
+  ok(busy.sd === 18 && busy.d.length === 6 && busy.d[5] === '💪 F6 ×2, G7 ×2, H8 ×2, Tia ×2 (BAR) 8',
     'nine bookers on 2: five get a line, the rest share the last one by name (never dropped): "' + busy.d[5] + '" (= ' + busy.sd + ')');
   ok(JSON.stringify(busy.w) === JSON.stringify(['Hasini', 'Mamadou', 'Angad', 'Samuel']), 'Week top 5 names 2 and above only: ' + busy.w.join(', '));
   const busyJpg = await ap.evaluate(() => JLBulletin.load('').then(assets => new Promise(res => {
     const L = [['Hasini', 5], ['Mamadou', 5], ['Angad', 3], ['Samuel', 2], ['Martin', 1], ['Nathan', 1], ['Priya', 1], ['Rubal', 1], ['Sam', 1], ['Tia', 1], ['Usman', 1], ['Zara', 1]]
       .map(x => ({ key: x[0], name: x[0], n: x[1], bars: 0 }));
-    const cv = JLBulletin.draw(document.createElement('canvas'), 'daily', { day: '2026-10-26', weekday: 1, target: 5, attended: 23, nonQual: 6, walkOuts: 0, weekTotal: null, rows: JLBulletin.dailyRows(L, 0) },
+    const cv = JLBulletin.draw(document.createElement('canvas'), 'daily', { day: '2026-10-26', weekday: 1, target: 5, attended: 23, nonQual: 6, walkOuts: 0, weekTotal: null, rows: JLBulletin.dailyRows(L) },
       { mission: 200, tag: '#PLAN1', cash: 50, tagline: 'Great energy today, team! Let\'s keep the momentum rolling!' }, assets);
     cv.toBlob(b => b.arrayBuffer().then(x => res(Array.from(new Uint8Array(x)))), 'image/jpeg', 0.9);
   })));
@@ -1030,14 +1033,14 @@ async function fillEval(p) {
   ok(busyJpg.length > 50000, 'the busy-day poster draws (15d-bulletin-busy-day.jpg)');
   const payDay = pay.rows.filter(r => r.net > 0).sort((a, b) => b.net - a.net);
   const expRows = payDay.filter(r => r.net >= 2).map(r => r.name.split(' ')[0] + ' ' + r.net), expOnes = payDay.filter(r => r.net === 1).map(r => r.name.split(' ')[0]).sort();
-  ok(JSON.stringify(bi.rows.filter(r => !/^👏/.test(r)).map(r => r.replace(/^\S+ /, '').replace(/ BAR$/, ''))) === JSON.stringify(expRows) && /^🥇 /.test(bi.rows[0]) &&
-    expOnes.length === 1 && bi.rows[bi.rows.length - 1] === '👏 + 1 more booker [' + expOnes[0] + '] 1',
-    'top performers match the incentive, gold for #1, 2+ named and the 1s counted on one line: ' + bi.rows.join(' · '));
+  ok(JSON.stringify(bi.rows.map(r => r.replace(/^\S+ /, '').replace(/ BAR$/, ''))) === JSON.stringify(expRows) && /^🥇 /.test(bi.rows[0]) &&
+    expOnes.length === 1 && !bi.rows.some(r => /^👏|1 each|No booker/.test(r)),
+    'top performers match the incentive, gold for #1, only 2+ on it (' + expOnes[0] + ' on 1 is not): ' + bi.rows.join(' · '));
   ok(await ap.$eval('#bimg', i => i.complete && i.naturalWidth === 1536 && i.naturalHeight === 2304), 'poster image made on the phone (1536×2304)');
   const saveImg = async f => fs.writeFileSync(`${SHOTS}/${f}`, Buffer.from(await ap.$eval('#bimg', i => fetch(i.src).then(r => r.arrayBuffer()).then(b => Array.from(new Uint8Array(b))))));
   await saveImg('15-bulletin-daily.jpg');
   await shot(ap, '15b-bulletin-screen');
-  ok(!bi.rows.some(r => /Abdullahi \d/.test(r)) && !/BAR/.test(bi.rows[0]), 'recognition is 2 and above: Abdullahi (1, a BA referral) is counted on the shared line, not named');
+  ok(!bi.rows.some(r => /Abdullahi/.test(r)) && !/BAR/.test(bi.rows[0]), 'recognition is 2 and above: Abdullahi (1, a BA referral) is not on the bulletin');
   await ap.click('#bedit summary');
   ok((await ap.$$eval('#bbar .chip', c => c.map(x => x.textContent))).join() === 'Fiza', '(BAR) tags only for the named bookers (Fiza)');
   await ap.click('#bbar .chip');
@@ -1111,11 +1114,14 @@ async function fillEval(p) {
     DD.forEach((day, i) => {
       const dayAll = all.filter(c => c.attended_date === day), p = posterOf[day], hro = heroOf[day], unrated = dayAll.filter(c => !cntd(c)).length;
       if (p.attended !== dayAll.filter(net).length) bad.push(day + ': poster attended ' + p.attended);
-      if (rowSum2(p.rows) !== p.attended) bad.push(day + ': top performers ' + rowSum2(p.rows) + ' ≠ attended ' + p.attended);
+      // Top performers = the bookers on 2+ that day, each with their net (two is a bell, three is a gong; nobody on 1)
+      const nb = {}; dayAll.filter(c => net(c) && c.booker_name).forEach(c => { const k = c.booker_id || c.booker_name; nb[k] = (nb[k] || 0) + 1; });
+      const two = Object.values(nb).filter(n => n >= 2).reduce((t, n) => t + n, 0);
+      if (rowSum2(p.rows) !== two) bad.push(day + ': top performers ' + rowSum2(p.rows) + ' ≠ the bookers on 2+ ' + two);
       if (hro[0] !== p.attended + p.nonQual + unrated) bad.push(day + ': Today checked in ' + hro[0] + ' ≠ ' + p.attended + ' + ' + p.nonQual + ' + ' + unrated);
       if (hro[1] !== p.nonQual) bad.push(day + ': Today non-qual ' + hro[1] + ' ≠ poster ' + p.nonQual);
       if (big12[i] !== p.attended) bad.push(day + ': PDF day ' + big12[i] + ' ≠ poster ' + p.attended);
-      if (p.rows.some(r => !/^(👏|❓)/.test(r) && Number(/ (\d+)(?: BAR)?$/.exec(r)[1]) < 2)) bad.push(day + ': someone named with 1');
+      if (p.rows.some(r => /^(👏|❓)|1 each|No booker/.test(r) || (!/×/.test(r) && Number(/ (\d+)(?: BAR)?$/.exec(r)[1]) < 2))) bad.push(day + ': someone on 1 (or a 1s / no-booker line) on the poster');
     });
     const wkAtt = DD.reduce((t, d) => t + posterOf[d].attended, 0), wkNq = DD.reduce((t, d) => t + posterOf[d].nonQual, 0);
     const fri = DD[4];  // Friday's poster carries the week's total (only once Friday has come)
@@ -1128,7 +1134,7 @@ async function fillEval(p) {
     if (!new RegExp('Team week: ' + wkAtt + ' appointments').test(roundup)) bad.push('roundup "' + roundup + '" ≠ ' + wkAtt);
     const netBy = {}; all.filter(c => net(c) && DD.includes(c.attended_date) && c.booker_name).forEach(c => { const f = c.booker_name.split(' ')[0]; netBy[f] = (netBy[f] || 0) + 1; });
     top5.forEach(r => { const m = /^\S+ (.+) (\d+)$/.exec(r); if (m && !/×|more/.test(m[1]) && netBy[m[1]] !== Number(m[2])) bad.push('Week top 5 ' + r + ' ≠ ' + netBy[m[1]]); if (m && Number(m[2]) < 2) bad.push('Week top 5 names ' + r); });
-    ok(!bad.length, 'the numbers agree everywhere, w/e ' + WE + ' (' + DD.length + ' days): each day Today\'s checked in = attended + non-qual + not rated, poster = top performers = the PDF\'s day; ' +
+    ok(!bad.length, 'the numbers agree everywhere, w/e ' + WE + ' (' + DD.length + ' days): each day Today\'s checked in = attended + non-qual + not rated, poster = the PDF\'s day, top performers = the bookers on 2+ only; ' +
       wkAtt + ' attended = ' + (fri ? 'Friday\'s weekly total = ' : '') + 'the PDF = Appts Attended (' + payHero[0] + (paySum ? ', ' + paySum : '') + ') = the roundup; ' + wkNq + ' non-qualifiers; Week top 5 = each person\'s net' + (bad.length ? ' ✗ ' + bad.join(' | ') : ''));
     return { wkAtt: wkAtt, paySum: paySum };
   };
@@ -1704,8 +1710,9 @@ async function fillEval(p) {
   await ap.click('.tabbar button[data-tab=today]'); await ap.waitForSelector('#bullDaily'); await ap.click('#bullDaily');
   await ap.waitForSelector('#bimg[data-info]', { timeout: 15000 });
   const bi2 = JSON.parse(await ap.getAttribute('#bimg', 'data-info'));
-  ok(bi2.rows.some(r => /\[[^\]]*\bJess\b[^\]]*\] \d+$/.test(r)) && !bi2.rows.some(r => /Abdullahi/.test(r)) && bi2.nonQual >= 1,
-    'bulletin: admins count too (Jess, 1: on the shared line); a non-qualifier is never credited to the booker, only in the Non-qualifiers number');
+  const jessToday = (await api(admin, 'listWeek', {})).items.filter(c => c.attended_date === bi2.day && c.booker_id === jessId && !c.pay_reason && (c.in_room === true || c.in_room === 'TRUE' || c.non_qual)).length;
+  ok(bi2.attended >= jessToday && jessToday === 1 && !bi2.rows.some(r => /Jess|Abdullahi/.test(r)) && bi2.nonQual >= 1,
+    'bulletin: admins count too (Jess\'s 1 is in "attended", but on 1 she\'s not on the poster); a non-qualifier is never credited to the booker, only in the Non-qualifiers number');
   await ap.click('#abBack');
   await post('/dev/eval', { js: `globalThis.__pushOff = ['${abd.id}']` });
   const mailBefore = (await getJson('/dev/mail')).length;
@@ -1768,7 +1775,8 @@ async function fillEval(p) {
   await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button[data-tab=today]');
   await ap.click('.tabbar button[data-tab=today]'); await ap.waitForSelector('#bullDaily'); await ap.click('#bullDaily');
   await ap.waitForSelector('#bimg[data-info]', { timeout: 15000 });
-  ok(JSON.parse(await ap.getAttribute('#bimg', 'data-info')).rows.some(r => /\[[^\]]*\bPriya\b[^\]]*\] \d+$/.test(r)), 'Priya is counted on the daily bulletin (1: on the shared line; named from 2)');
+  const biP = JSON.parse(await ap.getAttribute('#bimg', 'data-info'));
+  ok(!biP.rows.some(r => /Priya/.test(r)) && biP.attended >= 1, 'Priya\'s 1 counts in "attended" on the daily bulletin, but she\'s not on it until she has 2 (two is a bell)');
   await ap.click('#abBack');
   const mb2 = (await getJson('/dev/mail')).length;
   await api(admin, 'saveUser', { user: Object.assign({}, priya, { email: 'priya@example.com' }) });
@@ -1918,29 +1926,44 @@ async function fillEval(p) {
     await api(admin, 'saveUser', { user: Object.assign({}, abdU, { roles: ['booker'] }) });
     ok(deleg.canEdit && deleg.coaches.length > 0, 'Team → tick "Availability" on a BA (Abdullahi): he can fill it in; untick and he can\'t');
     await api(admin, 'saveAvail', { id: mira.id, w1: '-------', w2: '-------', driver: '', notes: '' });
-    // 17:00 from the day after Day 1 (Angad, 27 Oct: the one-to-one is Tuesday 2-3pm): who's still missing → the people who fill
-    // it in, then "✅ ready" once; each coach gets their own starters' days once
+    // 17:00 from the day after Day 1 (Angad, 27 Oct: the one-to-one is Tuesday 2-3pm). Satpal, Rubal, Jess and Angad (the admins)
+    // get all the new starters, done vs missing, then "✅ ready" once; each coach gets their own starters, done vs missing
     const blanks = (await api(admin, 'availWeek', { weekEnding: WE })).rows.filter(r => r.day1_date <= '2026-10-20' && !/[IO]/.test(r.w1)), bNames = blanks.map(r => r.full_name.split(' ')[0]);
     const due = (await api(admin, 'availWeek', { weekEnding: WE })).rows.filter(r => r.day1_date < '2026-10-20'), dueBlank = due.filter(r => !/[IO]/.test(r.w1));
     const runRem = async () => { const n0 = (await getJson('/dev/pushes')).length; await post('/dev/run', { fn: 'maybeAvailReminder' }); return (await getJson('/dev/pushes')).slice(n0); };
+    const adminIds = (await api(admin, 'listUsers')).users.filter(u => u.active && u.roles.includes('admin')).map(u => u.id), isAdm = id => adminIds.includes(id);
+    const to = x => x.body.include_aliases.external_id, ttl = x => x.body.headings.en;
+    const coachIds = [...new Set(due.map(r => r.coach_id).filter(id => id && !isAdm(id)))];
+    const coachMsg = (id, rows) => { const mine = rows.filter(r => r.coach_id === id), left = mine.filter(r => !/[IO]/.test(r.w1));
+      return { title: left.length ? '🗓️ Your new starters: ' + (mine.length - left.length) + ' of ' + mine.length + ' done' : '✅ Your new starters\' days',
+        body: mine.map(r => r.full_name.split(' ')[0] + ': ' + (/[IO]/.test(r.w1) ? r.w1.split('').map((x, i) => x === 'I' ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][i] : '').filter(Boolean).join(' ') || 'none' : 'not filled in yet')).join('\n') }; };
+    const coachOk = (pushes, ids, rows) => ids.every(id => { const got = pushes.filter(x => to(x).includes(id)), m = coachMsg(id, rows); return got.length === 1 && ttl(got[0]) === m.title && got[0].body.contents.en === m.body; });
     await setTime('2026-10-20T17:05:00+01:00');
     const rem = await runRem(), again = await runRem();
-    const miss = rem.filter(x => /^🗓️ Availability: /.test(x.body.headings.en)), coachP = rem.filter(x => x.body.headings.en === '🗓️ Your new starters this week');
-    ok(dueBlank.length >= 1 && !due.some(r => r.full_name === 'Mira Manual') && miss.length >= 1 && miss[0].body.headings.en === '🗓️ Availability: ' + (due.length - dueBlank.length) + ' of ' + due.length + ' done' &&
-      miss[0].body.contents.en.startsWith('Still to fill in: ' + dueBlank.map(r => r.full_name.split(' ')[0]).join(', ') + '.') && miss.some(x => x.body.include_aliases.external_id.includes(angadU.id)) && !again.length,
-      '17:00 the day after Day 1: "' + (miss[0] ? miss[0].body.headings.en + ' · ' + miss[0].body.contents.en : 'none') + '" to the people who fill it in, once a day (Mira, Day 1 today, isn\'t due yet)');
-    ok(coachP.length === 1 && coachP[0].body.include_aliases.external_id.join() === s1.coach_id && /^Jasraj: Mon Tue Wed Thu Fri$/.test(coachP[0].body.contents.en),
-      '…and Jasraj\'s coach gets his days: "' + (coachP[0] ? coachP[0].body.contents.en : 'none') + '"');
+    const miss = rem.filter(x => /^🗓️ Availability: /.test(ttl(x))), coachP = rem.filter(x => /Your new starters/.test(ttl(x)));
+    ok(dueBlank.length >= 1 && !due.some(r => r.full_name === 'Mira Manual') && miss.length === adminIds.length && adminIds.every(id => miss.some(x => to(x).join() === id)) &&
+      ttl(miss[0]) === '🗓️ Availability: ' + (due.length - dueBlank.length) + ' of ' + due.length + ' done' &&
+      miss[0].body.contents.en.startsWith('Still to fill in: ' + dueBlank.map(r => r.full_name.split(' ')[0]).join(', ') + '.') && !again.length,
+      '17:00 the day after Day 1: "' + (miss[0] ? ttl(miss[0]) + ' · ' + miss[0].body.contents.en : 'none') + '" to the ' + adminIds.length + ' admins only (Satpal, Rubal, Jess and Angad in real life), once a day (Mira, Day 1 today, isn\'t due yet)');
+    const jasCoach = coachP.find(x => to(x).join() === s1.coach_id), blankCoach = coachIds.find(id => due.some(r => r.coach_id === id && !/[IO]/.test(r.w1)));
+    ok(coachIds.length >= 2 && coachP.length === coachIds.length && coachP.every(x => to(x).length === 1 && !isAdm(to(x)[0])) && coachOk(coachP, coachIds, due) &&
+      jasCoach && ttl(jasCoach) === '✅ Your new starters\' days' && /^Jasraj: Mon Tue Wed Thu Fri$/m.test(jasCoach.body.contents.en) && !!blankCoach,
+      '…and each coach gets their own, done vs missing: "' + (jasCoach ? ttl(jasCoach) + ' · ' + jasCoach.body.contents.en : 'none') + '"; "' +
+      coachP.filter(x => to(x).join() === blankCoach).map(x => ttl(x) + ' · ' + x.body.contents.en.replace(/\n/g, ' · ')).join() + '"');
     for (const r of dueBlank) await api(admin, 'saveAvail', { id: r.id, w1: 'IIIIIOO', w2: '-------', driver: '' });
+    const dueNow = (await api(admin, 'availWeek', { weekEnding: WE })).rows.filter(r => r.day1_date < '2026-10-20');
     await post('/dev/props', { AVAIL_REMINDED: '' });
-    const rem2 = await runRem(), ready = rem2.filter(x => /^✅ Availability ready/.test(x.body.headings.en)), coach2 = rem2.filter(x => x.body.headings.en === '🗓️ Your new starters this week');
+    const rem2 = await runRem(), ready = rem2.filter(x => /^✅ Availability ready/.test(ttl(x))), coach2 = rem2.filter(x => /Your new starters/.test(ttl(x)));
     await post('/dev/props', { AVAIL_REMINDED: '' });
     const rem3 = await runRem();
     for (const r of dueBlank) await api(admin, 'saveAvail', { id: r.id, w1: '-------', w2: '-------', driver: '' });
     await setTime('2026-10-20T10:00:00+01:00');
-    ok(ready.length >= 1 && ready[0].body.headings.en === '✅ Availability ready: ' + due.length + ' new starters' && /^Week 1 in: Mon \d+ · Tue \d+ · Wed \d+ · Thu \d+ · Fri \d+ · 🚗 \d+ drive\nTap for the poster/.test(ready[0].body.contents.en) &&
-      coach2.every(x => x.body.include_aliases.external_id.join() !== s1.coach_id) && !rem3.some(x => /^✅ Availability ready/.test(x.body.headings.en)),
-      'all done → "' + (ready[0] ? ready[0].body.headings.en + ' · ' + ready[0].body.contents.en.replace(/\n/g, ' · ') : 'none') + '" once (not again the next day); coaches aren\'t told twice');
+    const lateIds = coachIds.filter(id => id !== s1.coach_id && dueBlank.some(r => r.coach_id === id));
+    ok(ready.length === adminIds.length && ready.every(x => isAdm(to(x)[0])) && ttl(ready[0]) === '✅ Availability ready: ' + due.length + ' new starters' && /^Week 1 in: Mon \d+ · Tue \d+ · Wed \d+ · Thu \d+ · Fri \d+ · 🚗 \d+ drive\nTap for the poster/.test(ready[0].body.contents.en) &&
+      !rem2.some(x => /^🗓️ Availability: /.test(ttl(x))) && rem3.length === 0,
+      'all done → "' + (ready[0] ? ttl(ready[0]) + ' · ' + ready[0].body.contents.en.replace(/\n/g, ' · ') : 'none') + '" to the admins, once (nothing the next day)');
+    ok(lateIds.length >= 1 && coach2.length === lateIds.length && coachOk(coach2, lateIds, dueNow) && coach2.every(x => ttl(x) === '✅ Your new starters\' days') && !coach2.some(x => to(x).join() === s1.coach_id),
+      'a coach whose starters were missing gets "✅ Your new starters\' days" once they\'re in; Jasraj\'s coach (told already) isn\'t told twice');
     // On the phone: Day 1 → 🗓️ Availability
     await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button[data-tab=academy]');
     await ap.click('.tabbar button[data-tab=academy]'); await ap.waitForSelector('#goAvail');
@@ -2390,7 +2413,7 @@ async function fillEval(p) {
   ok(tueCnt.some(c => c.id === nadia.id && c.in_room !== 'TRUE' && c.pay_reason) && tueCnt.some(c => c.id === wally.id && !c.pay_reason) && bw.attended === tueCnt.filter(c => !c.pay_reason).length &&
     bw.nonQual === tueCnt.filter(c => c.pay_reason).length && bw.nonQual >= 1 && !/not rated by the presenter/.test(await ap.innerText('#page')) && bw.walkOuts === 1,
     'daily stats poster: the unrated non-qualifier (Nadia) is in "non qualifiers" (' + bw.nonQual + ') and not in "attended" (' + bw.attended + ', with the walk out), and isn\'t "not rated"; then "🚶 WALK OUTS ' + bw.walkOuts + '"');
-  ok(rowSum(bw.rows) === bw.attended, 'and its top performers add up to ' + bw.attended + ': ' + bw.rows.join(' · '));
+  ok(bw.rows.every(r => Number(/ (\d+)(?: BAR)?$/.exec(r)[1]) >= 2) && rowSum(bw.rows) <= bw.attended, 'and its top performers are the bookers on 2+ only: ' + (bw.rows.join(' · ') || 'nobody yet'));
   await saveImg('15c-bulletin-walk-outs.jpg');
   // The Appointments total grid: the same, and what the non qualifiers are
   await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button[data-tab=pay]');
