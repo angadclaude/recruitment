@@ -2125,11 +2125,13 @@ async function fillEval(p) {
     const miraPh = (await api(admin, 'availPhotos', { weekEnding: WE })).photos[mira.id] || '';
     const miraDim = await ap.evaluate(src => new Promise(r => { const i = new Image(); i.onload = () => r(i.naturalWidth + '×' + i.naturalHeight); i.src = src; }), miraPh);
     ok(miraDim === '480×572' && miraPh.length < 140000, 'saved cropped, 480×572 (' + Math.round(miraPh.length / 1000) + 'k characters), sharp on the poster');
-    await ap.fill('#avnotes', 'Slough | retail');
+    // A long note, as the team write them (Angad, 27 Oct: "I want to see all the notes" on the PDF)
+    const MIRA_NOTE = 'Slough | retail. Lives in Southall, two buses to the office, so 10:00 on Thursdays; wants HelloFresh later on; her sister works at Tesco Slough and may refer two friends';
+    await ap.fill('#avnotes', MIRA_NOTE);
     await shot(ap, '51-availability-edit');
     await ap.click('#avsave'); await ap.waitForFunction(() => !document.querySelector('.sheet-back'));
     const miraNow = (await api(admin, 'availWeek', { weekEnding: WE })).rows.find(r => r.id === mira.id);
-    ok(miraNow.w1 === '-IO----' && miraNow.w2 === 'IIIIIOO' && miraNow.driver === 'No' && miraNow.notes === 'Slough | retail' && miraNow.has_photo,
+    ok(miraNow.w1 === '-IO----' && miraNow.w2 === 'IIIIIOO' && miraNow.driver === 'No' && miraNow.notes === MIRA_NOTE && miraNow.has_photo,
       'saved from the phone: Week 1 Tue in, Wed out; Week 2 "Mon–Fri in, weekend out"; no car; notes; the photo taken with the camera');
     await ap.click('#avwk button[data-wk="2"]'); await ap.waitForSelector('#avwk button.on[data-wk="2"]');
     ok(/Week 2: Mon 26 Oct – Sun 1 Nov/.test(await ap.innerText('#page')), 'Week 2 = the week after their Day 1 week');
@@ -2137,6 +2139,10 @@ async function fillEval(p) {
     const apRaw = fs.readFileSync(apPath, 'latin1');
     ok(apd.suggestedFilename() === 'NS Availability W2 w-e 25.10.2026.pdf' && /\(NS Availability · Week 2\) Tj/.test(apRaw) && /\(Mira Manual\) Tj/.test(apRaw) && /\(IN\) Tj/.test(apRaw) &&
       /\(Fundraising · \d+\) Tj/.test(apRaw) && /\(Sun\) Tj/.test(apRaw), '📄 PDF like the old sheet: "NS Availability W2 w-e 25.10.2026.pdf", a table per campaign, Monday to Sunday IN / OUT');
+    const pdfLines = [...apRaw.matchAll(/\(((?:[^()\\]|\\.)*)\) Tj/g)].map(m => m[1].replace(/\\(.)/g, '$1')), noteAt = pdfLines.findIndex(l => l.startsWith('Notes: Slough'));
+    const noteTxt = noteAt < 0 ? '' : pdfLines.slice(noteAt).filter((l, i, a) => i === 0 || !/^Notes: |^\d+$/.test(l)).slice(0, 4).join(' ');
+    ok(noteTxt.startsWith('Notes: ' + MIRA_NOTE) && pdfLines.slice(noteAt, noteAt + 3).every(l => !/\.\.\.$/.test(l)) && !pdfLines.includes('Notes'),
+      'every note in full on the PDF, under the starter, across the table (no Notes column cutting it short): "' + pdfLines.slice(noteAt, noteAt + 2).join(' / ') + '"');
     try { require('child_process').execFileSync('pdftoppm', ['-png', '-r', '70', '-singlefile', apPath, `${SHOTS}/52-availability`]); } catch (e) { /* no renderer here */ }
     // 📸 The poster (Angad, 27 Oct): the app's welcome header, HELLO FRESH and FUNDRAISING ribbons and Mission footer, with each
     // starter as on the team's Canva pages: photo, NAME, then "OFFICE" (booked from the office) or "<COACH> - PR". 🏢 Office can be the coach.
@@ -2204,7 +2210,7 @@ async function fillEval(p) {
     await shot(ap, '54-availability-removed');
     await ap.click('.avgone [data-avback="' + mira.id + '"]'); await ap.waitForSelector('.avrow:has-text("Mira Manual")');
     const miraBack = (await api(admin, 'availWeek', { weekEnding: WE })).rows.find(r => r.id === mira.id);
-    ok(miraBack && miraBack.has_photo && miraBack.notes === 'Slough | retail' && miraBack.w2 === 'IIIIIOO', '↩️ Put back: Mira is on the list again, days, notes and photo as they were');
+    ok(miraBack && miraBack.has_photo && miraBack.notes === MIRA_NOTE && miraBack.w2 === 'IIIIIOO', '↩️ Put back: Mira is on the list again, days, notes and photo as they were');
     // 📷 Photos from a file (Angad, 27 Oct: put in the week's photos cut from his Canva pages, no retaking). The file is
     // sent to him privately (never in the repo, which is public); it runs in his own session, shows who, saves when he says
     const mkPh = col => ap.evaluate(c => { const v = document.createElement('canvas'); v.width = 480; v.height = 572; const g = v.getContext('2d'); g.fillStyle = c; g.fillRect(0, 0, 480, 572); return v.toDataURL('image/jpeg', 0.8); }, col);
