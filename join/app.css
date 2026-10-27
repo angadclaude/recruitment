@@ -944,3 +944,29 @@ table.t td { padding: 9px 4px; border-bottom: 1px solid var(--line); vertical-al
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; animation-delay: 0s !important; transition-duration: .01ms !important; }
 }
+/* New starters' availability (27 Oct): a day strip with the headcount, Monday to Sunday chips per starter */
+.avrange { margin: -4px 4px 10px; }
+.avdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; margin: 0 0 2px; }
+.avd { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 6px 2px; text-align: center; display: flex; flex-direction: column; align-items: center; }
+.avd b { font: 600 11px var(--label); text-transform: uppercase; color: var(--muted); }
+.avd span { font-size: 11px; color: var(--muted); }
+.avd i { font: 400 24px/1.1 var(--display); font-style: normal; color: var(--green); }
+.avd.none i { color: var(--soft2); }
+.avd em { font-size: 10px; font-style: normal; color: var(--muted); white-space: nowrap; }
+.avtools { margin: 4px 0 6px; }
+.avwarn { background: var(--amber-bg); color: var(--amber); }
+.avrow { align-items: flex-start; }
+.avrow .av, .avph { flex: none; }
+img.av.avph { object-fit: cover; padding: 0; border-radius: 50%; }
+.avchips { display: flex; gap: 3px; margin: 6px 0 2px; flex-wrap: nowrap; }
+.avc { flex: 1 1 0; min-width: 0; text-align: center; font: 600 10.5px var(--label); text-transform: uppercase; border-radius: 7px; padding: 3px 0; border: 1px solid var(--line); color: var(--muted); background: var(--card); }
+.avc.in { background: var(--green); border-color: var(--green); color: #fff; }
+.avc.out { background: var(--soft2); border-color: var(--soft2); color: var(--muted); text-decoration: line-through; }
+.avc.na { border-style: dashed; }
+.avc.pre { opacity: .35; border-style: dotted; }
+.avnote { margin-top: 2px; white-space: pre-wrap; }
+.avpick { display: flex; gap: 4px; margin: 4px 0 6px; }
+.avpick .avc { padding: 8px 0 6px; font-size: 12px; display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer; }
+.avpick .avc small { font: 600 10px var(--label); }
+.avpick .avc.out { text-decoration: none; }
+.avfill { margin: 0 0 4px; }

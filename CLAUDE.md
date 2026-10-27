@@ -129,6 +129,26 @@ Old links keep working through the forward, so nothing has to be reprinted.
 ## Done: booking a presentation after the call (23 Oct 2026)
 Jess, Rubal and Angad (`CONFIG.BOOK_TEAM`) book Teamtailor applicants into a Mon–Fri 10:00 presentation from the **Book Appts** tab (`viewBook`; for them Team moves into the menu, 7 tabs don't fit a phone). Data: the **Bookings** tab (made by itself the first time it's needed, `newTab`). The app writes three WhatsApp messages in the thank-you's style, no hearts, signed by the sender, "In association with JUSS Marketing Ltd" (`msgBookConfirm`, `msgBookRemind`, `msgBookMissed` in `JS.html`; Angad approved the wording). Alerts: 18:00 the evening before (`maybeBookingReminders`, `?c=bookrem` opens the send list) and 10:30 on the day (`maybeMissedBookings`). Check-in matches the booking by mobile (`bookingFor`): the booking's booker wins, `brand` = JUSS, `booking_note` shows to the presenter. Show-up card on Appts Attended (admins, `showupFor`). On a computer every wa.me button copies the message and opens the chat empty (`IS_DESKTOP` listener next to `waUrl`): WhatsApp's desktop app turns pre-filled emojis into "�". CONFIRM like Day 1: each booking has a `confirm_token`; the messages link to `booked.html?t=…&n=…&d=…` (`startBooked` / `renderBooked`, public `bookingInfo` / `confirmBooking`, the booker gets an alert). The office robot (`office-texting` branch) is on hold.
 
+## Done: new starters' availability, Week 1 and Week 2 (27 Oct 2026)
+This replaces the "Juss & Link - NS Availability - 2026" Google Sheet (a W1 / Pics / W2 tab per week since Jan 2025) and the Canva poster. Angad: "the app becomes the all-in-one go-to". **The app is the one place now**; the Sheet stays as the archive of old weeks, and nobody re-creates tabs.
+- **Where:** Day 1 tab → **🗓️ Availability · Week 1 & Week 2**, and the account menu → **🗓️ New starters' availability** for everyone (`viewAvail`).
+- **Data:** `Availability` + `StarterPhotos` tabs (`availRows`, `availWeek`, `saveAvail`, `addStarter`, `removeStarter`, `saveStarterPhoto`, `availPhotos`).
+  - **Rows:** everyone ticked **Arrived** on Day 1 gets a row by themselves (cohort = their Day 1 week), plus anyone added by hand ("someone who started without the app").
+  - **Fields:** name and mobile are copied in. Coach = whoever booked them (if that person has left, whoever took over). Driver, Week 1 and Week 2 as `w1` / `w2` (7 letters Mon–Sun: I in / O out / - not said), notes, photo (360 px JPEG under 48k characters).
+- **Angad's decisions (27 Oct, don't re-ask):**
+  - **Who fills it in:** the one-to-one on Day 1 is done by Angad, Satpal or someone they delegate. Editors are `canAvail` = admins plus anyone ticked **Availability** in Team.
+  - **Everyone can view, phone numbers included**, like the sheet.
+  - **Kept for good:** numbers, notes and photos. The 6-month clear-out only touches Candidates.
+  - **Pictures:** a photo of each starter; the app makes the poster (`drawStarters` in `Bulletin.html`: "Welcome our new starters", HelloFresh then Fundraising, photo, name, coach).
+- **Extras:**
+  - per-day headcount with 🚗 drivers;
+  - "N with no Week 1 days yet" on screen;
+  - an 18:00 alert to the editors (`maybeAvailReminder`, Mon–Sat, once a day);
+  - "Said 5 days, in 3" against their evaluation answer (`q6_days`);
+  - their coach gets an alert when days change after the first fill;
+  - a PDF like the sheet (`availPdf`, "NS Availability W1 w-e dd.mm.yyyy").
+- **e2e section "availability"** covers all of it, on both back ends.
+
 ## Data fixes Angad asked for
 - **26 Oct 2026:** Fiza's 2 appointments that day were Angad's (he entered them under her by mistake). Angad moved both himself (candidate → **Booker** → Angad → **Save**, `reassignBooker`, which also moves the candidate's company to the booker's). The rest of that week is automatic (`HANDOVER`, above). Her earlier candidates stay hers, and their alerts go to Angad (the PR #140 move was undone on 27 Oct, see Rules).
 

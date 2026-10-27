@@ -438,6 +438,50 @@
     footer(o);
   }
 
+  // ── New starters poster (Angad, 27 Oct: replaces the Canva poster): everyone who started that week, photo, name, coach,
+  //    HelloFresh on top, Fundraising below. d: { we, title, groups: [{ label, co: 'JUSS' | 'LINK', people: [{ name, coach, photo: Image }] }] }
+  function drawStarters(canvas, d, o, assets) {
+    begin(canvas, o.scale || 1.5);
+    logos(assets, 16, 168);
+    emoji('🎉', 92, 236, 62);
+    text(d.title || 'WELCOME OUR NEW STARTERS', 560, 266, { size: 62, weight: 700, align: 'center', maxW: 820 });
+    text(d.sub || '', W / 2, 336, { size: 40, weight: 700, align: 'center', color: ORANGE, maxW: 900 });
+    const groups = d.groups.filter(g => g.people.length), top = 372, avail = FOOT - 20 - top, GH = 58, GAP = 14;
+    // The biggest cards that fit: fewest columns whose rows still fit the space
+    let cols = 2, cw = 0, chh = 0;
+    for (cols = 2; cols <= 7; cols++) {
+      cw = Math.min(250, (W - 64 - (cols - 1) * GAP) / cols); chh = cw * 1.3;
+      const need = groups.reduce((t, g) => t + GH + 12 + Math.ceil(g.people.length / cols) * (chh + GAP), 0);
+      if (need <= avail) break;
+    }
+    let y = top;
+    if (!groups.length) text('No starters this week yet', W / 2, top + 200, { size: 34, weight: 500, italic: true, align: 'center', color: '#6b7280' });
+    groups.forEach(g => {
+      const col = g.co === 'JUSS' ? TEAL : ORANGE, light = g.co === 'JUSS' ? '#25a5b8' : '#f7931e';
+      ribbon(32, y, W - 64, GH, grad(0, y, 0, y + GH, [light, col]));
+      text(g.label + '  ·  ' + g.people.length, W / 2, y + GH * 0.72, { size: 34, weight: 700, align: 'center', color: '#fff' });
+      y += GH + 12;
+      g.people.forEach((p, i) => {
+        const r = Math.floor(i / cols), k = i % cols, inRow = Math.min(cols, g.people.length - r * cols), rw = inRow * cw + (inRow - 1) * GAP;
+        const x = (W - rw) / 2 + k * (cw + GAP), cy = y + r * (chh + GAP);
+        X.save(); X.shadowColor = 'rgba(20,28,59,.12)'; X.shadowBlur = 12; X.shadowOffsetY = 4; rr(x, cy, cw, chh, 18); X.fillStyle = '#fff'; X.fill(); X.restore();
+        rr(x, cy, cw, chh, 18); X.lineWidth = 3; X.strokeStyle = col; X.stroke();
+        const dia = cw * 0.66, px = x + (cw - dia) / 2, py = cy + cw * 0.08;
+        X.save(); X.beginPath(); X.arc(px + dia / 2, py + dia / 2, dia / 2, 0, 7); X.clip();
+        if (p.photo) X.drawImage(p.photo, px, py, dia, dia);
+        else { X.fillStyle = grad(0, py, 0, py + dia, [light, col]); X.fillRect(px, py, dia, dia);
+          text(p.name.split(' ').filter(String).slice(0, 2).map(w => w[0].toUpperCase()).join(''), px + dia / 2, py + dia * 0.64, { size: dia * 0.38, weight: 700, align: 'center', color: '#fff' }); }
+        X.restore();
+        X.beginPath(); X.arc(px + dia / 2, py + dia / 2, dia / 2, 0, 7); X.lineWidth = 4; X.strokeStyle = col; X.stroke();
+        const ny = py + dia + cw * 0.17;
+        text(p.name, x + cw / 2, ny, { size: Math.max(16, cw * 0.13), weight: 700, align: 'center', maxW: cw - 16 });
+        if (p.coach) text('Coach: ' + p.coach, x + cw / 2, ny + cw * 0.13, { size: Math.max(12, cw * 0.085), weight: 500, align: 'center', color: '#6b7280', maxW: cw - 16 });
+      });
+      y += Math.ceil(g.people.length / cols) * (chh + GAP) + 6;
+    });
+    footer(o);
+  }
+
   // ── Assets (fonts + logos), loaded once ──
   let ready = null;
   function load(base) {
@@ -454,7 +498,7 @@
   window.JLBulletin = {
     DAY_TITLES: DAY_TITLES, dailyRows: dailyRows, weeklyRows: weeklyRows, load: load,
     /** kind 'daily' | 'weekly' → draws onto canvas. */
-    draw: function (canvas, kind, d, o, assets) { (kind === 'weekly' ? drawWeekly : drawDaily)(canvas, d, o, assets || {}); return canvas; },
+    draw: function (canvas, kind, d, o, assets) { (kind === 'weekly' ? drawWeekly : kind === 'starters' ? drawStarters : drawDaily)(canvas, d, o, assets || {}); return canvas; },
   };
 })();
 </script>
