@@ -2248,16 +2248,17 @@ function availSheet(r, we, wk) {
   const ph = () => st.photo ? '<img class="av lg avph" src="' + st.photo + '" alt="">' : '<span class="av lg co-' + h(r.company) + '">' + h(initials(r.full_name)) + '</span>';
   back.innerHTML = '<div class="sheet" role="dialog" aria-label="Availability"><div class="grab"></div>' +
     '<div class="sheet-h"><span id="avph">' + ph() + '</span><div style="min-width:0"><div class="label muted">' + (avCamp(r) === 'HF' ? 'HelloFresh' : 'Fundraising') + ' · Day 1 ' + h(fmt(r.day1_date)) + '</div><div class="display">' + h(r.full_name) + '</div></div></div>' +
-    '<div id="avf"><div class="row" style="gap:8px;margin:2px 0 6px"><label class="btn ghost sm" style="margin:0">📷 ' + (st.photo ? 'New photo' : 'Take photo') + '<input type="file" id="avcam" accept="image/*" capture="environment" hidden></label>' +
-      '<button type="button" class="btn ghost sm" id="avphx"' + (st.photo ? '' : ' hidden') + '>Remove photo</button></div>' +
+    '<div id="avf"><div class="row" style="gap:8px;margin:2px 0 6px"><label class="btn ghost sm" style="margin:0">📷 ' + (st.photo ? 'New photo' : 'Add photo') + '<input type="file" id="avcam" accept="image/*" hidden></label>' +
+      '<button type="button" class="btn ghost sm" id="avphadj"' + (st.photo ? '' : ' hidden') + '>✂️ Adjust</button>' +
+      '<button type="button" class="btn ghost sm" id="avphx"' + (st.photo ? '' : ' hidden') + '>Remove</button></div>' +
     '<label class="q">Driver</label>' + chips('driver', ['Yes', 'No'], r.driver) +
     '<label class="q">Week 1 · ' + h(fmt(mon)) + ' – ' + h(fmt(we)) + '</label>' + avDayBtns('avw1', r.w1, pre1) +
     '<button type="button" class="btn ghost sm avfill" data-w="w1">Mon–Fri in, weekend out</button>' +
     '<label class="q">Week 2 · ' + h(fmt(addDays(mon, 7))) + ' – ' + h(fmt(addDays(we, 7))) + '</label>' + avDayBtns('avw2', r.w2) +
     '<button type="button" class="btn ghost sm avfill" data-w="w2">Mon–Fri in, weekend out</button>' +
     (said ? '<p class="small muted" style="margin:8px 0 0">At their evaluation they said <b>' + h(r.said_days) + '</b> a week.</p>' : '') +
-    '<label class="q">Coach</label><select id="avcoach"><option value="">—</option>' + (d.coaches || []).map(c => '<option value="' + h(c.id) + '"' + (c.id === r.coach_id ? ' selected' : '') + '>' + h(c.name) + '</option>').join('') +
-      (r.coach_id && !(d.coaches || []).some(c => c.id === r.coach_id) ? '<option value="' + h(r.coach_id) + '" selected>' + h(r.coach_name) + '</option>' : '') + '</select>' +
+    '<label class="q">Coach</label><select id="avcoach"><option value="">—</option><option value="office"' + (r.coach_id === 'office' ? ' selected' : '') + '>🏢 Office</option>' + (d.coaches || []).map(c => '<option value="' + h(c.id) + '"' + (c.id === r.coach_id ? ' selected' : '') + '>' + h(c.name) + '</option>').join('') +
+      (r.coach_id && r.coach_id !== 'office' && !(d.coaches || []).some(c => c.id === r.coach_id) ? '<option value="' + h(r.coach_id) + '" selected>' + h(r.coach_name) + '</option>' : '') + '</select>' +
     '<label class="q">Notes</label><textarea id="avnotes" class="short" placeholder="Where they live, background… (e.g. Windsor | Law graduate)">' + h(r.notes) + '</textarea>' +
     '<div id="averr"></div><button class="btn block" id="avsave" style="margin-top:14px">Save</button>' +
     (r.manual ? '<button class="btn ghost block" id="avdel" style="margin-top:8px;color:var(--red)">Remove from the list</button>' : '') +
@@ -2276,12 +2277,13 @@ function availSheet(r, we, wk) {
   back.querySelector('#avcancel').onclick = () => closeSheet();
   const setPhoto = (data, btn) => call('saveStarterPhoto', { id: r.id, data: data }).then(() => {
     st.photo = data; S.avPh = S.avPh || {}; if (data) S.avPh[r.id] = data; else delete S.avPh[r.id];
-    r.has_photo = !!data; back.querySelector('#avph').innerHTML = ph(); back.querySelector('#avphx').hidden = !data; toast(data ? 'Photo saved ✓' : 'Photo removed');
+    r.has_photo = !!data; back.querySelector('#avph').innerHTML = ph(); back.querySelector('#avphx').hidden = back.querySelector('#avphadj').hidden = !data; toast(data ? 'Photo saved ✓' : 'Photo removed');
   }).catch(e => toast(e.message)).then(() => { if (btn) busy(btn, false); });
   back.querySelector('#avcam').onchange = e => {
-    const file = e.target.files && e.target.files[0]; if (!file) return;
-    shrinkPhoto(file).then(data => setPhoto(data)).catch(() => toast('Couldn\'t read that photo. Try again.'));
+    const file = e.target.files && e.target.files[0]; e.target.value = ''; if (!file) return;
+    framePhoto(file, r.full_name).then(data => { if (data) setPhoto(data); }).catch(() => toast('Couldn\'t read that photo. Try again.'));
   };
+  back.querySelector('#avphadj').onclick = () => { if (st.photo) framePhoto(st.photo, r.full_name).then(data => { if (data) setPhoto(data); }).catch(() => toast('Couldn\'t open that photo.')); };
   back.querySelector('#avphx').onclick = e => { busy(e.currentTarget, true, 'Removing…'); setPhoto('', e.currentTarget); };
   const del = back.querySelector('#avdel');
   if (del) { let armed = false; del.onclick = () => {
@@ -2295,22 +2297,60 @@ function availSheet(r, we, wk) {
       .catch(x => { busy(btn, false); showErr(back.querySelector('#averr'), x.message); });
   };
 }
-/** The phone's photo, cropped square and made small (360 px JPEG, under ~45k characters) so it's quick to save and to load. */
-function shrinkPhoto(file) {
-  return new Promise((res, rej) => {
-    const img = new Image(), url = URL.createObjectURL(file);
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      const side = Math.min(img.naturalWidth, img.naturalHeight), cv = document.createElement('canvas'), SZ = 360;
-      cv.width = SZ; cv.height = SZ;
-      cv.getContext('2d').drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, SZ, SZ);
-      let q = 0.82, data = cv.toDataURL('image/jpeg', q);
-      while (data.length > 45000 && q > 0.3) { q -= 0.08; data = cv.toDataURL('image/jpeg', q); }
-      res(data);
-    };
-    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('bad image')); };
-    img.src = url;
-  });
+/** A starter's photo, framed head and shoulders like the team's Canva pages (Angad, 27 Oct: "you can't even see someone's
+ *  face"). Their face is found and framed by itself; drag or pinch (or the slider) if it needs moving, then ✅ Use photo.
+ *  Saved at 480 × 572, sharp on the poster. src: the phone's photo (a File) or a saved one (a data URL). null = cancelled. */
+function framePhoto(src, who) {
+  const url = typeof src === 'string' ? src : URL.createObjectURL(src);
+  const img = new Image();
+  return new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error('bad image')); img.src = url; })
+    .then(() => (window.JLBulletin ? JLBulletin.findFace(img, '').catch(() => null) : null))
+    .then(face => new Promise(done => {
+      const W0 = img.naturalWidth, H0 = img.naturalHeight, A = window.JLBulletin ? JLBulletin.NS_ASPECT : 214 / 255;
+      const f = window.JLBulletin ? JLBulletin.faceFrame(W0, H0, face, A) : { x: 0, y: 0, w: Math.min(W0, H0 * A), h: Math.min(W0, H0 * A) / A };
+      const VW = Math.min(280, window.innerWidth - 80), VH = VW / A, kMin = Math.max(VW / W0, VH / H0);
+      let k = Math.max(kMin, VW / f.w), ox = -f.x * k, oy = -f.y * k;
+      const back = document.createElement('div');
+      back.className = 'cropback';
+      back.innerHTML = '<div class="cropcard"><b>' + h(who ? who.split(' ')[0] + '\'s photo' : 'Photo') + '</b><p class="small">' + (face ? 'Head and shoulders, like the poster. Move or zoom if you need to.' : 'Move and zoom it so it\'s their head and shoulders, like the poster.') + '</p>' +
+        '<div class="cropbox" style="width:' + VW + 'px;height:' + VH + 'px"><img alt="" src="' + h(url) + '" style="width:' + W0 + 'px;height:' + H0 + 'px"></div>' +
+        '<input type="range" id="cropz" min="0" max="100" value="0" aria-label="Zoom">' +
+        '<div class="row" style="gap:8px;margin-top:10px"><button class="btn ghost" id="cropx">Cancel</button><button class="btn" id="cropok">✅ Use photo</button></div></div>';
+      document.body.appendChild(back);
+      const box = back.querySelector('.cropbox'), pic = box.querySelector('img'), zoom = back.querySelector('#cropz'), KMAX = kMin * 6;
+      const toZ = () => { zoom.value = Math.round(100 * Math.log(k / kMin) / Math.log(KMAX / kMin)); };
+      const paint = () => {
+        k = Math.max(kMin, Math.min(KMAX, k));
+        ox = Math.min(0, Math.max(VW - W0 * k, ox)); oy = Math.min(0, Math.max(VH - H0 * k, oy));
+        pic.style.transform = 'translate(' + ox + 'px,' + oy + 'px) scale(' + k + ')';
+      };
+      const zoomAt = (nk, px, py) => { nk = Math.max(kMin, Math.min(KMAX, nk)); ox = px - (px - ox) * nk / k; oy = py - (py - oy) * nk / k; k = nk; paint(); };
+      paint(); toZ();
+      zoom.oninput = () => zoomAt(kMin * Math.pow(KMAX / kMin, zoom.value / 100), VW / 2, VH / 2);
+      const pts = {}; let last = null;
+      const state = () => { const p = Object.values(pts); if (p.length > 1) return { x: (p[0].x + p[1].x) / 2, y: (p[0].y + p[1].y) / 2, d: Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y) }; return p[0] ? { x: p[0].x, y: p[0].y, d: 0 } : null; };
+      box.onpointerdown = e => { box.setPointerCapture(e.pointerId); pts[e.pointerId] = { x: e.clientX, y: e.clientY }; last = state(); };
+      box.onpointermove = e => {
+        if (!pts[e.pointerId]) return;
+        pts[e.pointerId] = { x: e.clientX, y: e.clientY };
+        const now = state(), rc = box.getBoundingClientRect();
+        if (last && now) { ox += now.x - last.x; oy += now.y - last.y; if (last.d && now.d) zoomAt(k * now.d / last.d, now.x - rc.left, now.y - rc.top); else paint(); toZ(); }
+        last = now;
+      };
+      box.onpointerup = box.onpointercancel = e => { delete pts[e.pointerId]; last = state(); };
+      box.onwheel = e => { e.preventDefault(); const rc = box.getBoundingClientRect(); zoomAt(k * (e.deltaY < 0 ? 1.1 : 0.9), e.clientX - rc.left, e.clientY - rc.top); toZ(); };
+      const close = v => { back.remove(); if (typeof src !== 'string') URL.revokeObjectURL(url); done(v); };
+      back.querySelector('#cropx').onclick = () => close(null);
+      back.querySelector('#cropok').onclick = () => {
+        const cv = document.createElement('canvas'), OW = 480, OH = Math.round(OW / A);
+        cv.width = OW; cv.height = OH;
+        const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, OW, OH);
+        g.drawImage(img, -ox / k, -oy / k, VW / k, VH / k, 0, 0, OW, OH);
+        let q = 0.86, data = cv.toDataURL('image/jpeg', q);
+        while (data.length > 120000 && q > 0.4) { q -= 0.08; data = cv.toDataURL('image/jpeg', q); }
+        close(data);
+      };
+    }));
 }
 /** Someone who started without coming through the app (a referral, another office). */
 function addStarterSheet(we, coaches) {
@@ -2356,41 +2396,56 @@ function availPdf(we, wk, rows) {
 /** ⬇️ Save on a poster. iPhone: the Share sheet, whose "Save Image" puts it in Photos (a download there only lands in Files,
  *  as a grey "JPG" page with "Open in Preview": Angad, 27 Oct). Everywhere else: a normal download. */
 function savePoster(file, url) {
-  if (IS_IOS && navigator.canShare && navigator.canShare({ files: [file] })) {
-    toast('Tap "Save Image" to put it in Photos.');
-    navigator.share({ files: [file] }).catch(e => { if (e && e.name !== 'AbortError') toast('Press and hold the poster, then "Save to Photos".'); });
+  const files = [].concat(file), urls = [].concat(url);
+  if (IS_IOS && navigator.canShare && navigator.canShare({ files: files })) {
+    toast(files.length > 1 ? 'Tap "Save ' + files.length + ' Images" to put them in Photos.' : 'Tap "Save Image" to put it in Photos.');
+    navigator.share({ files: files }).catch(e => { if (e && e.name !== 'AbortError') toast('Press and hold the poster, then "Save to Photos".'); });
     return;
   }
-  const a = document.createElement('a'); a.href = url; a.download = file.name; document.body.appendChild(a); a.click(); a.remove();
+  files.forEach((f, i) => { const a = document.createElement('a'); a.href = urls[i]; a.download = f.name; document.body.appendChild(a); a.click(); a.remove(); });
 }
-/** "Welcome our new starters": their photos, names and coaches, HelloFresh then Fundraising, ready for WhatsApp (no Canva). */
+/** The new starters poster, as the team made it in Canva (Angad, 27 Oct: "match it exactly"): an A4 page per campaign,
+ *  Fundraising (LINK + NDCS) then HelloFresh (JUSS + HelloFresh), "NS - WE - dd/mm/yy", photos 4 across, NAME, and
+ *  "OFFICE" (booked from the office) or "HASINI - PR" (their coach). Office first, then each coach's starters together. */
 function availPoster(we, wk, rows) {
   if (!window.JLBulletin) return toast('Posters work in the installed app. Open it from your home-screen icon.');
   const img = src => new Promise(res => { if (!src) return res(null); const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; });
   toast('Making the poster…');
-  Promise.all(rows.map(r => img((S.avPh || {})[r.id]))).then(pics => JLBulletin.load('').then(assets => {
-    const person = (r, i) => ({ name: r.full_name, coach: (r.coach_name || '').split(' ')[0], photo: pics[i] });
-    const groups = [['JUSS', 'HELLO FRESH', 'HF'], ['LINK', 'FUNDRAISING', 'FR']].map(g => ({ co: g[0], label: g[1], people: rows.map((r, i) => avCamp(r) === g[2] ? person(r, i) : null).filter(Boolean) }));
-    const cv = JLBulletin.draw(document.createElement('canvas'), 'starters', { title: 'WELCOME OUR NEW STARTERS', sub: 'WEEK ' + wk + '  |  DAY 1 W/E ' + we.slice(8, 10) + '/' + we.slice(5, 7) + '/' + we.slice(0, 4), groups: groups },
-      Object.assign({}, BULL_DEFAULTS, store.get('bullOpts') || {}), assets);
-    cv.toBlob(blob => {
-      const name = 'JL-new-starters-' + we + '.jpg', file = new File([blob], name, { type: 'image/jpeg' }), url = URL.createObjectURL(blob);
-      closeSheet(true);
-      const back = document.createElement('div');
-      back.className = 'sheet-back';
-      back.innerHTML = '<div class="sheet pdfprev" role="dialog" aria-label="Poster"><div class="grab"></div><div class="sheet-h"><div style="min-width:0"><div class="label muted">Poster · ' + rows.length + ' starters</div><div class="display">New starters</div></div></div>' +
-        '<img id="avpimg" src="' + url + '" alt="New starters poster" style="width:100%;border-radius:14px" data-info="' + h(JSON.stringify({ we: we, people: groups.map(g => g.label + ':' + g.people.map(p => p.name + (p.photo ? '+photo' : '')).join(',')) })) + '">' +
-        '<div class="bullbtns pdfbtns"><button class="btn wa" id="avpshare">📤 Share to WhatsApp</button><button class="btn ghost" id="avpsave">⬇️ Save</button></div></div>';
-      document.body.appendChild(back);
-      document.body.style.overflow = 'hidden';
-      back.onclick = e => { if (e.target === back) closeSheet(); };
-      back.querySelector('#avpshare').onclick = () => {
-        if (navigator.canShare && navigator.canShare({ files: [file] })) navigator.share({ files: [file] }).catch(() => {});
-        else { savePoster(file, url); toast('Saved. Open WhatsApp and attach the image.'); }
-      };
-      back.querySelector('#avpsave').onclick = () => savePoster(file, url);
-    }, 'image/jpeg', 0.9);
-  })).catch(e => toast('Couldn\'t make the poster: ' + e.message));
+  const dd = we.slice(8, 10) + '-' + we.slice(5, 7) + '-' + we.slice(2, 4);
+  Promise.all(rows.map(r => img((S.avPh || {})[r.id]))).then(pics => JLBulletin.load('').then(assets =>
+    Promise.all(pics.map(p => (p ? JLBulletin.autoFrame(p, '') : null))).then(frames => {
+      const coach = r => (r.office ? '' : (r.coach_name || '').split(' ')[0]);
+      const n = {}; rows.forEach(r => { n[coach(r)] = (n[coach(r)] || 0) + 1; });
+      const pages = [['FR', 'LINK'], ['HF', 'JUSS']].map(g => {
+        const mine = rows.map((r, i) => ({ r: r, i: i })).filter(x => avCamp(x.r) === g[0]).sort((a, b) => {
+          const ca = coach(a.r), cb = coach(b.r);
+          return (ca ? 1 : 0) - (cb ? 1 : 0) || n[cb] - n[ca] || ca.localeCompare(cb) || a.r.full_name.localeCompare(b.r.full_name);
+        });
+        return { camp: g[0], co: g[1], people: mine.map(x => ({ name: x.r.full_name, label: coach(x.r) ? coach(x.r) + ' - PR' : 'Office', photo: pics[x.i], frame: frames[x.i] })) };
+      }).filter(pg => pg.people.length);
+      if (!pages.length) return toast('Nobody on availability that week yet.');
+      return Promise.all(pages.map(pg => new Promise(res => {
+        const cv = JLBulletin.draw(document.createElement('canvas'), 'ns', { we: we, camp: pg.camp, people: pg.people }, {}, assets);
+        cv.toBlob(blob => res({ pg: pg, blob: blob }), 'image/jpeg', 0.9);
+      }))).then(outs => {
+        const files = outs.map(o => new File([o.blob], 'NS-WE-' + dd + '-' + o.pg.co + '.jpg', { type: 'image/jpeg' })), urls = outs.map(o => URL.createObjectURL(o.blob));
+        const info = { we: we, pages: outs.map(o => ({ camp: o.pg.camp, people: o.pg.people.map(p => p.name + ' · ' + p.label.toUpperCase() + (p.photo ? ' · photo' : '')) })) };
+        closeSheet(true);
+        const back = document.createElement('div');
+        back.className = 'sheet-back';
+        back.innerHTML = '<div class="sheet pdfprev" role="dialog" aria-label="Poster"><div class="grab"></div><div class="sheet-h"><div style="min-width:0"><div class="label muted">Poster · ' + rows.length + ' starters · ' + outs.length + ' page' + (outs.length > 1 ? 's' : '') + '</div><div class="display">New starters</div></div></div>' +
+          '<div id="avpimgs" data-info="' + h(JSON.stringify(info)) + '">' + urls.map((u, i) => '<img class="avpimg" src="' + u + '" alt="New starters, ' + (outs[i].pg.camp === 'HF' ? 'HelloFresh' : 'Fundraising') + '" data-camp="' + outs[i].pg.camp + '">').join('') + '</div>' +
+          '<div class="bullbtns pdfbtns"><button class="btn wa" id="avpshare">📤 Share to WhatsApp</button><button class="btn ghost" id="avpsave">⬇️ Save</button></div></div>';
+        document.body.appendChild(back);
+        document.body.style.overflow = 'hidden';
+        back.onclick = e => { if (e.target === back) closeSheet(); };
+        back.querySelector('#avpshare').onclick = () => {
+          if (navigator.canShare && navigator.canShare({ files: files })) navigator.share({ files: files }).catch(() => {});
+          else { savePoster(files, urls); toast('Saved. Open WhatsApp and attach the images.'); }
+        };
+        back.querySelector('#avpsave').onclick = () => savePoster(files, urls);
+      });
+    }))).catch(e => toast('Couldn\'t make the poster: ' + e.message));
 }
 
 // ───── QR codes for the presentation slides (admin) ─────
@@ -2819,12 +2874,15 @@ function drawAcademy(r, quiet) {
   // 📷 on an arrived starter: the phone's camera, made small, saved as their availability photo
   page.querySelectorAll('[data-cam]').forEach(inp => {
     inp.onchange = () => {
-      const file = inp.files && inp.files[0], c = pool.filter(x => x.id === inp.dataset.cam)[0]; if (!file || !c) return;
-      toast('Saving ' + c.first_name + '\'s photo…');
-      shrinkPhoto(file).then(data => call('day1Photo', { id: c.id, data: data }).then(res => {
-        S.avPh = S.avPh || {}; S.avPh[res.avail_id] = data;
-        return loadAvail(res.weekEnding).then(() => { drawAcademy(S.academy || r, true); toast('📷 ' + c.first_name + '\'s photo saved'); });
-      })).catch(e => toast(e.message || 'Couldn\'t read that photo. Try again.'));
+      const file = inp.files && inp.files[0], c = pool.filter(x => x.id === inp.dataset.cam)[0]; inp.value = ''; if (!file || !c) return;
+      framePhoto(file, c.full_name).then(data => {
+        if (!data) return;
+        toast('Saving ' + c.first_name + '\'s photo…');
+        return call('day1Photo', { id: c.id, data: data }).then(res => {
+          S.avPh = S.avPh || {}; S.avPh[res.avail_id] = data;
+          return loadAvail(res.weekEnding).then(() => { drawAcademy(S.academy || r, true); toast('📷 ' + c.first_name + '\'s photo saved'); });
+        });
+      }).catch(e => toast(e.message || 'Couldn\'t read that photo. Try again.'));
     };
   });
   // FR / HF: one tap, saved straight away (the list, the PDF, availability and the results follow it)

@@ -304,7 +304,11 @@ No more highlighters on the printed list:
   - who has no days yet;
   - anyone ticked in for fewer days than they said at their evaluation.
 - **Changed after the one-to-one:** their coach gets an alert with the new days.
-- **📸 Poster:** "Welcome our new starters" with everyone's photo, name and coach. **📤 Share to WhatsApp**: no Canva, no uploading. **⬇️ Save** on an iPhone opens the Share sheet: tap **Save Image** and it's in Photos (same on the daily bulletin). The cards grow to fill the poster, and long names go on two lines.
+- **📸 Poster:** the same pages the team made in Canva, one A4 page per campaign.
+  - **Fundraising (LINK + NDCS), then HelloFresh (JUSS + HelloFresh):** "NS - WE - 01/11/26", photos 4 across, each NAME, and **OFFICE** or **"HASINI - PR"** underneath.
+  - **📤 Share to WhatsApp** sends both pages. **⬇️ Save** on an iPhone opens the Share sheet: tap **Save 2 Images** and they're in Photos (the daily bulletin's Save works the same way).
+  - **Photos:** take or pick one and the app finds their face and frames it head and shoulders. Drag, pinch or use the slider if it needs moving, then **✅ Use photo**. **✂️ Adjust** re-frames a saved one.
+  - **Coach → 🏢 Office** makes someone show as OFFICE (bookings by admins already do).
 - **📄 PDF:** the old sheet's layout, Monday to Sunday IN / OUT, a table per campaign.
 
 ## The numbers: one meaning everywhere (Angad, 26 Oct)

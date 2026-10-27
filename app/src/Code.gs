@@ -1607,6 +1607,7 @@ function availRows(we) {
     const c = byId[r.candidate_id];
     return { id: r.id, week_ending: r.week_ending, candidate_id: r.candidate_id, day1_date: r.day1_date, full_name: r.full_name, mobile: r.mobile,
       company: r.company, campaign: c ? campaignOf(c) : r.campaign || (r.company === 'JUSS' ? 'HF' : 'FR'), coach_id: r.coach_id, coach_name: r.coach_name, driver: r.driver, w1: r.w1 || AV_BLANK, w2: r.w2 || AV_BLANK, notes: r.notes,
+      office: r.coach_id === 'office' || isOffice(r.coach_name, r.coach_id),  // "OFFICE" on the poster, else "HASINI - PR"
       has_photo: truthy(r.has_photo), updated_at: r.updated_at, updated_by: r.updated_by, manual: !r.candidate_id,
       said_days: c ? c.q6_days : '', no_longer: !!(c && !still(c)), left: !!(c && c.day1_left_at) };
   });
@@ -1629,7 +1630,8 @@ function saveAvail(req, u) {
   const ok = w => /^[IO-]{7}$/.test(String(w || ''));
   if (!ok(req.w1) || !ok(req.w2)) throw new Error('Tap in or out for each day.');
   if (['Yes', 'No', ''].indexOf(req.driver || '') < 0) throw new Error('Driver: yes or no.');
-  const coach = req.coach_id ? userById(req.coach_id) : null;
+  // 'office' = booked from the office, no field coach: "OFFICE" on the poster (Angad's Canva pages)
+  const coach = req.coach_id === 'office' ? { id: 'office', name: 'Office' } : req.coach_id ? userById(req.coach_id) : null;
   if (req.coach_id && !coach) throw new Error('Coach not found');
   const res = withLock(() => {
     const r = availRecord(req.id), was = { w1: r.w1 || AV_BLANK, w2: r.w2 || AV_BLANK };
@@ -1673,7 +1675,8 @@ function removeStarter(req, u) {
 function saveStarterPhoto(req, u) {
   if (!canAvail(u)) throw new Error('Not allowed');
   const data = String(req.data || '');
-  if (data && (!/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(data) || data.length > 48000)) throw new Error('That photo didn\'t come through. Try again.');
+  // 480 × 572 head and shoulders (framePhoto), ~40–120k characters; the first ones (to 27 Oct) were 360 px squares
+  if (data && (!/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(data) || data.length > 140000)) throw new Error('That photo didn\'t come through. Try again.');
   withLock(() => {
     const a = availRecord(req.id), pr = rowOfId('StarterPhotos', a.id);
     if (!data) { if (pr) deleteWhere('StarterPhotos', x => x.id === a.id); }
