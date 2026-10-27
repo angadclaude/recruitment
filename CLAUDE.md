@@ -67,6 +67,9 @@ The recruitment app for **LINK Marketing** and **JUSS Marketing** (Angad runs bo
   - e2e checks all of this.
 - **Someone who leaves (Angad, 26 Oct):** `CONFIG.HANDOVER` credits their *new* check-ins to whoever took over, until a date: typed names (`matchBooker(typed, day)`), picks from an out-of-date list (`liveBooker`), and their name in the check-in list. After the date: no booker, and an admin sets it. Nobody switched off is ever credited. **Alerts** about their candidates go to whoever took over (`successorOf` in `notify`, no end date). **Now: Fiza → Angad until Sun 1 Nov 2026** (company = Angad's, LINK, so FR).
 - **Who booked an appointment never changes after the fact (Angad, 27 Oct).** Past weeks must read exactly as they happened. Only an admin's manual **Booker → Save** (a correction) moves one. PR #140 broke this: it moved Fiza's open candidates to Angad, so w/e 25 Oct showed Angad with appointments he never had. `undoHandoverOpen` put them all back once (PR #141), and e2e proves a leaver's week reads identically before and after they leave.
+- **Names: always the app's (Angad, 27 Oct: "that's what is based on the documents").**
+  - Never take a spelling from a Canva page, a printed list or a screenshot, and don't suggest changing an app name to match one. His NS w/e 01/11/26 Canva had "PRICE MAHMOOD", "TARANIH RAGAGURU" and "Mel Abraham" by hand; the app's Prince Mahmood, Taranih Rajagopal and Mel Anouman are right.
+  - Posters, lists and PDFs print the app's full name.
 - **Other things Angad has settled (don't re-ask):**
   - **Day 1 reminders** name one company, the candidate's (`brandOf`), never "LINK Marketing and JUSS Marketing".
   - **Day 1** has a **Dropped out** option (two taps, Undo), left out of counts and onboarding.
@@ -196,7 +199,7 @@ The app now does all of it, and **he decided the flow is mine to set**:
 5. **From the next day, 📄 New Starts List comes out marked up:** rows in their campaign's colour, struck through for anyone who didn't start or didn't continue, Arrived = Left / No, and the results underneath. On the day itself it's still the plain sign-in sheet.
 
 - **"Office"** = bookings by admins, or by anyone in `CONFIG.OFFICE_BOOKERS` (Fiza Iqbal), as in the team's tally (`isOffice`; `office` flag in `shape`).
-- **Fix their name** (admins, on their page, `fixName`) updates availability too. The 26 Oct list had "Mel Anouman" corrected to "Mel Abraham" by hand.
+- **Fix their name** (admins, on their page, `fixName`) updates availability too. Only for a real typo against their documents: the app's names are the source (see Rules).
 - **Not built, ask if needed:** the ✓ ticks the team put next to some pink (HF) rows. Meaning unknown.
 
 ## Data fixes Angad asked for
