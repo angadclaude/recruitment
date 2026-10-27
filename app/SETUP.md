@@ -283,7 +283,12 @@ No more highlighters on the printed list:
 ## New starters' availability: Week 1 and Week 2 (replaces the NS Availability sheet)
 **Day 1 → 🗓️ Availability · Week 1 & Week 2** (or the menu → **🗓️ New starters' availability**).
 
-- **Who's on it:** everyone ticked **Arrived** on Day 1 appears by themselves, grouped HelloFresh then Fundraising. Their coach is whoever booked them.
+- **The week:**
+  - **Monday (Jess / Rubal):** on the Day 1 list, tick **Arrived**, then tap **📷 Photo** on the same row. That's their availability photo; it shows as their picture.
+  - **Tuesday 2–3pm:** the one-to-one. Fill in their days (blank until then).
+  - **17:00:** you hear "✅ Availability ready" (who's in each day, drivers), or who's still missing, every day until it's done. Each coach gets their own starters' days.
+  - **Then:** **📸 Poster** → Share to the team WhatsApp, and **📄 PDF**.
+- **Who's on it:** everyone ticked **Arrived** on Day 1 appears by themselves, grouped HelloFresh then Fundraising (their FR / HF from Day 1). Their coach is whoever booked them.
   - Someone started without coming through the app? **＋ Add someone**.
   - ‹ › goes back through every week, and nothing is ever deleted.
 - **The one-to-one** (Angad, Satpal, or anyone ticked **Availability** in Team):
@@ -296,7 +301,7 @@ No more highlighters on the printed list:
 - **Everyone else** can see it all, numbers included, but can't change it.
 - **At a glance:**
   - how many are in each day, and how many of them drive;
-  - who has no days yet (and an 18:00 alert to the people who fill it in);
+  - who has no days yet;
   - anyone ticked in for fewer days than they said at their evaluation.
 - **Changed after the one-to-one:** their coach gets an alert with the new days.
 - **📸 Poster:** "Welcome our new starters" with everyone's photo, name and coach. **📤 Share to WhatsApp**: no Canva, no uploading.

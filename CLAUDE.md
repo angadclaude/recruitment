@@ -142,10 +142,16 @@ This replaces the "Juss & Link - NS Availability - 2026" Google Sheet (a W1 / Pi
   - **Everyone can view, phone numbers included**, like the sheet.
   - **Kept for good:** numbers, notes and photos. The 6-month clear-out only touches Candidates.
   - **Pictures:** a photo of each starter; the app makes the poster (`drawStarters` in `Bulletin.html`: "Welcome our new starters", HelloFresh then Fundraising, photo, name, coach).
+- **The week's rhythm (Angad, 27 Oct, don't re-ask):**
+  - **Monday, Day 1:** Jess and Rubal (admins) tick **Arrived**, then tap **📷 Photo** on the same Day 1 row (`day1Photo`, back camera). The photo is their availability photo and shows as their picture on the Day 1 list.
+  - **Tuesday around 2–3pm:** the one-to-one where they commit to their days. Days stay **blank until then** (not pre-filled).
+  - **17:00 from the day after their Day 1** (`maybeAvailReminder`, `AVAIL_REMIND_TIME`):
+    - the editors get "🗓️ Availability: 12 of 15 done · Still to fill in: …" daily until everyone has Week 1 days, then "✅ Availability ready: 15 new starters · Week 1 in: Tue 13 · … · 🚗 4 drive · tap for the poster and the PDF" once a week;
+    - each coach gets "🗓️ Your new starters this week" with their starters' days, once.
+  - **Tuesday he wants ready:** the poster in the team WhatsApp, who's in each day, that alert, and the PDF.
 - **Extras:**
   - per-day headcount with 🚗 drivers;
   - "N with no Week 1 days yet" on screen;
-  - an 18:00 alert to the editors (`maybeAvailReminder`, Mon–Sat, once a day);
   - "Said 5 days, in 3" against their evaluation answer (`q6_days`);
   - their coach gets an alert when days change after the first fill;
   - a PDF like the sheet (`availPdf`, "NS Availability W1 w-e dd.mm.yyyy").
