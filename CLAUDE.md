@@ -157,6 +157,7 @@ This replaces the "Juss & Link - NS Availability - 2026" Google Sheet (a W1 / Pi
     - a head-and-shoulders photo in a rounded blue frame (220 × 261 proportions);
     - the NAME in capitals (Roboto Bold; two lines when long, as TARANIH / RAGAGURU);
     - then the coach in italics (Arimo Italic): **OFFICE** (`office` flag = coach is an admin, in `OFFICE_BOOKERS`, or 🏢 Office), else **"HASINI - PR"**.
+    - **Ramis is not office (Angad, 27 Oct):** his starters show "RAMIS - PR". The one exception is w/e 01/11/26, where his two (Harishanker Mohandas, Taranih Rajagopal) go to the office "just for this once": their availability coach is set to 🏢 Office by hand. Don't add him to `OFFICE_BOOKERS`, and don't change who booked them.
   - **Order and layout:**
     - Office first, then each coach's starters together;
     - fixed columns, a part-filled last row on the left;
