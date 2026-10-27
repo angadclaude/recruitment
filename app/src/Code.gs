@@ -1675,8 +1675,9 @@ function availRows(we) {
 function availWeek(req, u) {
   const we = weekEnding(/^\d{4}-\d\d-\d\d$/.test(req.weekEnding || '') ? req.weekEnding : todayStr());
   const edit = canAvail(u);
-  // The A (best new start) is for the people who do the one-to-ones, not the whole team
-  return { weekEnding: we, today: todayStr(), canEdit: edit, rows: availRows(we).map(r => (edit ? r : Object.assign(r, { grade: '' }))), bell: isAdmin(u) ? bellStatus(we) : null,
+  // Bookers see the names, coaches and Week 1 / Week 2 days, nothing more (Angad, 27 Oct): not their numbers or notes, and the A
+  // (best new start) is for the people who do the one-to-ones
+  return { weekEnding: we, today: todayStr(), canEdit: edit, rows: availRows(we).map(r => (edit ? r : Object.assign(r, { grade: '', mobile: '', notes: '', said_days: '' }))), bell: isAdmin(u) ? bellStatus(we) : null,
     removed: edit ? readTable('Availability').filter(r => r.week_ending === we && r.removed_at).map(r => ({ id: r.id, full_name: r.full_name, removed_by: r.removed_by })) : [],
     coaches: edit ? usersAll().filter(x => truthy(x.active) && has(x, 'booker')).map(x => ({ id: x.id, name: x.name, company: x.company })).sort((a, b) => a.name.localeCompare(b.name)) : [] };
 }

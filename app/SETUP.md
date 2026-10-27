@@ -298,7 +298,7 @@ No more highlighters on the printed list:
 ## New starters' availability: Week 1 and Week 2 (replaces the NS Availability sheet)
 **Day 1 → 🗓️ Availability · Week 1 & Week 2** (or the menu → **🗓️ New starters' availability**).
 
-**Bookers and leaders:** tap **New starts** in the bottom bar: every new starter in the office, with their days, coach and notes (view only). Turn on alerts to hear at 18:00 when your own starters' days are in.
+**Bookers and leaders:** tap **New starts** in the bottom bar: every new starter in the office, their coach, and the days they're in for Week 1 and Week 2 (view only). Turn on alerts to hear at 18:00 when your own starters' days are in.
 
 - **The week:**
   - **Monday (Jess / Rubal):** on the Day 1 list, tick **Arrived**, then tap **📷 Photo** on the same row. That's their availability photo; it shows as their picture.
@@ -315,7 +315,7 @@ No more highlighters on the printed list:
   4. Tap each day for Week 1 and Week 2: in → out → not said ("Mon–Fri in, weekend out" in one tap).
   5. Add notes, then **Save**.
   - Their Week 1 days before their Day 1 stay blank.
-- **Everyone else** can see it all, numbers included, but can't change it.
+- **Everyone else (bookers)** sees just each starter's name, coach and Week 1 / Week 2 days: no poster, PDF, day counts, numbers or notes. They can't change anything.
 - **At a glance:**
   - how many are in each day, and how many of them drive;
   - who has no days yet;

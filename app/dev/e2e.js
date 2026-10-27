@@ -1887,8 +1887,8 @@ async function fillEval(p) {
       'everyone ticked Arrived on Day 1 (w/e 25 Oct) is on the list by themselves: name, mobile, coach = who booked them (' + av.rows.map(r => r.full_name + ' · coach ' + r.coach_name).join('; ') + ')');
     const s1 = av.rows[0], viewer = await api(abdT, 'availWeek', { weekEnding: WE });
     let refused = null; try { await api(abdT, 'saveAvail', { id: s1.id, w1: 'IIIIIOO', w2: '-------', driver: '' }); } catch (e) { refused = e.message; }
-    ok(!viewer.canEdit && viewer.rows.length === av.rows.length && viewer.rows.every(r => r.mobile) && /Only Angad, Satpal and the people they pick/.test(refused || ''),
-      'a booker sees every starter, phone numbers included (like the sheet), but can\'t change anything');
+    ok(!viewer.canEdit && viewer.rows.length === av.rows.length && av.rows.every(r => r.mobile) && viewer.rows.every(r => !r.mobile && !r.notes) && /Only Angad, Satpal and the people they pick/.test(refused || ''),
+      'a booker sees every starter (names, coaches and days; not their numbers or notes, Angad 27 Oct), but can\'t change anything');
     const coachPush = async fn => { const n0 = (await getJson('/dev/pushes')).length; await fn(); return (await getJson('/dev/pushes')).slice(n0).filter(x => /days changed$/.test(x.body.headings.en)); };
     let first = await coachPush(() => api(admin, 'saveAvail', { id: s1.id, w1: 'IIIIIOO', w2: 'IIIIIIO', driver: 'Yes', notes: 'Windsor | Law graduate', coach_id: s1.coach_id }));
     av = await api(admin, 'availWeek', { weekEnding: WE });
@@ -2081,8 +2081,16 @@ async function fillEval(p) {
     const nsNames = await bp.$$eval('.avrow .name', e => e.map(x => x.textContent));
     ok(bTabs.includes('New starts') && (await bp.textContent('#abTitle')) === 'New starts' && (await bp.$eval('#abBack', b => b.hidden)) &&
       nsNames.length === allNow.length && allNow.every(r => nsNames.includes(r.full_name)) && nsNames.includes('Adham Soliman') &&
-      !(await bp.$('.avA')) && !(await bp.$('button.avrow')) && !(await bp.$('#avadd')) && (await ap.$$('.tabbar button[data-tab=avail]')).length === 0,
-      'every booker has a New starts tab (' + bTabs.join(' · ') + '): all ' + nsNames.length + ' new starters in the office, anyone\'s coach (Adham is Abdullahi\'s), read-only; admins keep it in Day 1');
+      !(await bp.$('.avA')) && !(await bp.$('button.avrow')) && !(await bp.$('#avadd')) && (await ap.$$('.tabbar button[data-tab=avail]')).length === 0 &&
+      !(await bp.$('#avposter')) && !(await bp.$('#avpdf')) && !(await bp.$('.avdays')) && !(await bp.$('#avwk')) && !(await bp.$('a[href^="tel:"]')) &&
+      (await bp.$$('.avrow .avwk2')).length === 2 * nsNames.length && !/Windsor \| Law graduate/.test(await bp.innerText('#page')),
+      'every booker has a New starts tab (' + bTabs.join(' · ') + '): all ' + nsNames.length + ' new starters in the office, anyone\'s coach (Adham is Abdullahi\'s): name, coach, Week 1 and Week 2 days, nothing else (no poster, PDF, day counts, numbers or notes); admins keep the full page in Day 1');
+    const jasW = await bp.$eval('.avrow:has-text("' + s1.full_name + '")', e => [...e.querySelectorAll('.avwk2')].map(w => w.querySelector('b').textContent + ' ' + [...w.querySelectorAll('.avc.in')].map(x => x.textContent).join(' ')).join(' | '));
+    ok(/^W1 Mo Tu We Th Fr \| W2 /i.test(jasW), 'each starter shows Week 1 and Week 2 together: "' + jasW + '"');
+    await bp.click('#abMe'); await bp.waitForSelector('#mLogout');
+    const noMenu = !(await bp.$('#mAvail'));
+    await bp.evaluate(() => { document.getElementById('menu').hidden = true; });
+    ok(noMenu, 'with New starts in the bottom bar, the account menu doesn\'t repeat it');
     await shot(bp, '50d-booker-new-starts');
     // On the phone: Day 1 → 🗓️ Availability
     await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button[data-tab=academy]');

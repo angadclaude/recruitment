@@ -1,4 +1,4 @@
-window.APP_VERSION = '007585d9';
+window.APP_VERSION = 'a1402585';
 
 (function () {
 'use strict';
@@ -1420,7 +1420,7 @@ function toggleMenu() {
     '<div class="small muted"><span class="co ' + h(u.company) + '">' + h(u.company) + '</span> · ' + (isAdmin() ? '<b>Admin</b>' : '<b>BA</b> · ' + h(u.roles.join(', '))) + '</div></div></div>' +
     (isAdmin() && !tabs().some(t => t[0] === 'team') ? '<button class="btn ghost block" id="mTeam" style="margin-top:12px">👥 Team</button>' : '') +
     (isBooker() && !tabs().some(t => t[0] === 'mine') ? '<button class="btn ghost block" id="mMine" style="margin-top:8px">📞 My candidates</button>' : '') +
-    '<button class="btn ghost block" id="mAvail" style="margin-top:8px">🗓️ New starters\' availability</button>' +
+    (tabs().some(t => t[0] === 'avail') ? '' : '<button class="btn ghost block" id="mAvail" style="margin-top:8px">🗓️ New starters\' availability</button>') +
     '<button class="btn ghost block" id="mRefresh" style="margin-top:8px">↻ Refresh now</button>' +
     '<button class="btn ghost block" id="mLogout" style="margin-top:8px;color:var(--red)">Log out</button>' +
     '<p class="small muted center" style="margin:10px 0 0">App version ' + h(window.APP_VERSION || 'dev') + '<br>Alerts: ' + h(pushStatus()) + '</p></div>';
@@ -1429,7 +1429,7 @@ function toggleMenu() {
   document.getElementById('mRefresh').onclick = () => { m.hidden = true; pullRefresh(); };
   const mt = document.getElementById('mTeam'); if (mt) mt.onclick = () => { m.hidden = true; nav('team', {}, true); };
   const mm = document.getElementById('mMine'); if (mm) mm.onclick = () => { m.hidden = true; nav('mine', {}, true); };
-  document.getElementById('mAvail').onclick = () => { m.hidden = true; nav('avail', {}, !tabs().some(t => t[0] === 'avail')); };
+  const ma = document.getElementById('mAvail'); if (ma) ma.onclick = () => { m.hidden = true; nav('avail', {}, true); };
   document.getElementById('mLogout').onclick = () => {
     if (outbox().length && !navigator.onLine) { toast('Wait for signal first: you have changes that haven\'t synced'); return; }
     store.del('outbox'); store.del('tok'); store.del('cache'); S.token = ''; S.me = null; S.data = {}; S.users = null; S.chase = null; S.chaseN = 0; S.chaseCarry = 0; S.academy = null; S.d1Old = null; S.d1Pick = null; S.booted = false; S.tab = '';
@@ -2193,22 +2193,35 @@ function viewAvail(quiet) {
     .catch(e => { if (S.viewId === id && !(S.avail || {})[we]) paint(title, '<div class="err">' + h(e.message) + '</div>', false, !asTab); });
   const mon = addDays(we, -6 + (wk === 2 ? 7 : 0)), days = AV_DAY.map((x, i) => addDays(mon, i));
   const go = p => { S.params = Object.assign({ we: we, wk: wk }, p); hist('replace', { v: 'avail', p: S.params }); render(); };
-  const top = '<div class="seg bullseg" id="avwk"><button data-wk="1" class="' + (wk === 1 ? 'on' : '') + '">Week 1</button><button data-wk="2" class="' + (wk === 2 ? 'on' : '') + '">Week 2</button></div>' +
+  // Bookers see the names and their Week 1 + Week 2 days, nothing else (Angad, 27 Oct: no poster, PDF or day counts for them)
+  const edit = d ? d.canEdit : isAdmin() || roles().indexOf('availability') >= 0, w2mon = addDays(we, 1);
+  const top = (edit ? '<div class="seg bullseg" id="avwk"><button data-wk="1" class="' + (wk === 1 ? 'on' : '') + '">Week 1</button><button data-wk="2" class="' + (wk === 2 ? 'on' : '') + '">Week 2</button></div>' : '') +
     '<div class="seg-nav"><div class="lbl"><span>' + (we === thisWe ? 'Started this week · Day 1 w/e' : we === addDays(thisWe, -7) ? 'Started last week · Day 1 w/e' : 'Started · Day 1 w/e') + '</span><b>' + fmt(we) + '</b></div>' +
     '<button class="iconbtn" id="avprev" aria-label="Previous week">‹</button><button class="iconbtn" id="avnext" aria-label="Next week"' + (we >= thisWe ? ' disabled' : '') + '>›</button></div>' +
-    '<p class="small muted avrange">Week ' + wk + ': ' + fmt(days[0]) + ' – ' + fmt(days[6]) + '</p>';
+    '<p class="small muted avrange">' + (edit ? 'Week ' + wk + ': ' + fmt(days[0]) + ' – ' + fmt(days[6]) :
+      'Week 1: ' + fmt(addDays(we, -6)) + ' – ' + fmt(we) + ' · Week 2: ' + fmt(w2mon) + ' – ' + fmt(addDays(w2mon, 6))) + '</p>';
   if (!d) { bindAvail(paint(title, top + skeleton(4), quiet, !asTab), go, we); return; }
-  const rows = avOrder(d.rows), edit = d.canEdit, key = wk === 2 ? 'w2' : 'w1';
+  const rows = avOrder(d.rows), key = wk === 2 ? 'w2' : 'w1';
   const pre = (r, i) => wk === 1 && days[i] < r.day1_date;  // before their Day 1
   const inOn = i => rows.filter(r => r[key][i] === 'I'), drivers = i => inOn(i).filter(r => r.driver === 'Yes').length;
-  const strip = rows.length ? '<div class="avdays">' + days.map((x, i) => '<div class="avd' + (inOn(i).length ? '' : ' none') + '"><b>' + AV_DAY[i] + '</b><span>' + Number(x.slice(8)) + '</span><i>' + inOn(i).length + '</i>' +
+  const strip = edit && rows.length ? '<div class="avdays">' + days.map((x, i) => '<div class="avd' + (inOn(i).length ? '' : ' none') + '"><b>' + AV_DAY[i] + '</b><span>' + Number(x.slice(8)) + '</span><i>' + inOn(i).length + '</i>' +
     '<em>' + (drivers(i) ? '🚗 ' + drivers(i) : '&nbsp;') + '</em></div>').join('') + '</div><p class="small muted center" style="margin:4px 0 10px">In each day · 🚗 drivers</p>' : '';
   const blank = rows.filter(r => r.day1_date <= today && !/[IO]/.test(r[key]));
-  const warn = blank.length ? '<div class="card tight small avwarn">⚠️ <b>' + blank.length + ' with no Week ' + wk + ' days yet:</b> ' + blank.map(r => h(r.full_name.split(' ')[0])).join(', ') + (edit ? '. Tap a name to fill it in.' : '.') + '</div>' : '';
-  const tools = '<div class="bullbtns avtools">' + (rows.length ? '<button class="btn ghost" id="avposter">📸 Poster</button><button class="btn ghost" id="avpdf">📄 PDF</button>' : '') +
+  const warn = edit && blank.length ? '<div class="card tight small avwarn">⚠️ <b>' + blank.length + ' with no Week ' + wk + ' days yet:</b> ' + blank.map(r => h(r.full_name.split(' ')[0])).join(', ') + (edit ? '. Tap a name to fill it in.' : '.') + '</div>' : '';
+  const tools = !edit ? '' : '<div class="bullbtns avtools">' + (rows.length ? '<button class="btn ghost" id="avposter">📸 Poster</button><button class="btn ghost" id="avpdf">📄 PDF</button>' : '') +
     (edit ? '<button class="btn ghost" id="avadd">＋ Add someone</button>' : '') + '</div>' +
     (edit ? '<label class="linkbtn avimp">📥 Add photos from a file<input type="file" id="avimpf" accept=".json,application/json" hidden></label>' : '');
+  // A booker's card: their picture, name, coach, and Week 1 / Week 2 days
+  const chips = (w, before) => '<div class="avchips">' + w.split('').map((x, i) => '<span class="avc ' + (before(i) ? 'pre' : x === 'I' ? 'in' : x === 'O' ? 'out' : 'na') + '">' + AV_DAY[i].slice(0, 2) + '</span>').join('') + '</div>';
+  const view = r => { const ph = (S.avPh || {})[r.id], mon1 = addDays(we, -6);
+    return '<div class="item avrow avview">' +
+      (ph ? '<img class="av avph avpic" src="' + (thumbNow(r.id) || ph) + '" data-thumb="' + h(r.id) + '" alt="">' : '<span class="av avpic co-' + (avCamp(r) === 'HF' ? 'JUSS' : 'LINK') + '">' + h(initials(r.full_name)) + '</span>') +
+      '<div class="main"><div class="name">' + h(r.full_name) + '</div><div class="sub">' + (r.coach_name ? 'Coach ' + h(r.coach_name.split(' ')[0]) + ' · ' : '') + 'Day 1 ' + h(fmt(r.day1_date)) + '</div>' +
+      '<div class="avwk2"><b>W1</b>' + chips(r.w1, i => addDays(mon1, i) < r.day1_date) + '</div>' +  // days before their Day 1: blank
+      '<div class="avwk2"><b>W2</b>' + chips(r.w2, () => false) + '</div>' +
+      (r.left ? '<div class="pills"><span class="pill red">🚪 Didn\'t continue</span></div>' : '') + '</div></div>'; };
   const card = r => {
+    if (!edit) return view(r);
     const w = r[key], ph = (S.avPh || {})[r.id], said = saidDays(r.said_days), short = wk === 1 && said && /[IO]/.test(w) && avIn(w) < said;
     const tag = edit ? 'button type="button"' : 'div';
     return '<' + tag + ' class="item avrow" data-av="' + h(r.id) + '">' +
@@ -2236,9 +2249,10 @@ function viewAvail(quiet) {
     '<button type="button" class="linkbtn" id="avbellset">🔗 ' + (bl.sheets.some(x => x.url) ? 'Change the links' : 'Add the bell sheets\' links') + '</button></div>' : '';
   const page = paint(title, top + strip + warn + tools + gone +
     (rows.length ? group('JUSS', 'HelloFresh') + group('LINK', 'Fundraising') : empty('🗓️', we > addDays(thisWe, -7) && we >= thisWe ? 'Nobody\'s started this week yet. Starters appear here when they\'re ticked Arrived on Day 1.' : 'Nobody started that week.')) + bell +
-    '<p class="hint">' + (edit ? 'Tap a starter to fill in their days (tap a day: in → out → not said), driver, notes and photo, or to remove them. ' : '') +
+    (!edit ? '<p class="hint">W1 is their Day 1 week, W2 the week after. Green = in, crossed out = out, blank = not said yet (the days are filled in at the one-to-one, Tuesday afternoon). ‹ › for other weeks.</p>' :
+    '<p class="hint">Tap a starter to fill in their days (tap a day: in → out → not said), driver, notes and photo, or to remove them. ' +
       'Week 1 is their Day 1 week, Week 2 the week after. Everyone who started is here as soon as they\'re ticked Arrived on Day 1, with the photo taken there (📷 on the Day 1 list); their coach is whoever booked them. Days stay blank until the one-to-one (Tuesday afternoon); at 18:00 you hear it\'s ready, or who\'s missing. ' +
-      (edit ? 'Days changed after the one-to-one? Their coach gets an alert. Tap <b>A</b> on your best new starts: it goes green (only the people who do the one-to-ones see it). ' : 'Only Angad, Satpal and the people they pick can change it. ') + 'Every week is kept: ‹ › to go back.</p>', quiet, !asTab);
+      'Days changed after the one-to-one? Their coach gets an alert. Tap <b>A</b> on your best new starts: it goes green (only the people who do the one-to-ones see it). Bookers see the names and their Week 1 and Week 2 days only. Every week is kept: ‹ › to go back.</p>'), quiet, !asTab);
   bindAvail(page, go, we);
   page.querySelectorAll('[data-av]').forEach(b => { if (edit) b.onclick = () => availSheet(rows.filter(r => r.id === b.dataset.av)[0], we, wk); });
   page.querySelectorAll('[data-ava]').forEach(b => {

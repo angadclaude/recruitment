@@ -993,6 +993,12 @@ img.av.avph.avpic { border-radius: 12px; object-position: 50% 50%; }
 .cropcard .row { width: 100%; }
 .cropcard .row .btn { flex: 1; }
 .avchips { display: flex; gap: 3px; margin: 6px 0 2px; flex-wrap: nowrap; }
+/* A booker's view (Angad, 27 Oct): Week 1 and Week 2 on each card, labelled */
+.avwk2 { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+.avwk2 > b { flex: none; width: 22px; font: 700 11px var(--label); color: var(--muted); letter-spacing: .04em; }
+.avwk2 .avchips { flex: 1; min-width: 0; margin: 0; }
+.avview { cursor: default; }
+.avview:active { transform: none; }
 .avc { flex: 1 1 0; min-width: 0; text-align: center; font: 600 10.5px var(--label); text-transform: uppercase; border-radius: 7px; padding: 3px 0; border: 1px solid var(--line); color: var(--muted); background: var(--card); }
 .avc.in { background: var(--green); border-color: var(--green); color: #fff; }
 .avc.out { background: var(--soft2); border-color: var(--soft2); color: var(--muted); text-decoration: line-through; }
