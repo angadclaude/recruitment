@@ -2082,7 +2082,7 @@ async function fillEval(p) {
     const nsNames = await bp.$$eval('.avrow .name', e => e.map(x => x.textContent));
     ok(bTabs.includes('New starts') && (await bp.textContent('#abTitle')) === 'New starts' && (await bp.$eval('#abBack', b => b.hidden)) &&
       nsNames.length === allNow.length && allNow.every(r => nsNames.includes(r.full_name)) && nsNames.includes('Adham Soliman') &&
-      !(await bp.$('.avA')) && !(await bp.$('button.avrow')) && !(await bp.$('#avadd')) && (await ap.$$('.tabbar button[data-tab=avail]')).length === 0 &&
+      !(await bp.$('button.avrow')) && !(await bp.$('#avadd')) && (await ap.$$('.tabbar button[data-tab=avail]')).length === 0 &&
       !(await bp.$('#avposter')) && !(await bp.$('#avpdf')) && !!(await bp.$('#avpdfw1')) && !!(await bp.$('#avpdfw2')) && !(await bp.$('.avdays')) && !(await bp.$('#avwk')) && !(await bp.$('a[href^="tel:"]')) &&
       (await bp.$$('.avrow .avwk2')).length === 2 * nsNames.length && !/Windsor \| Law graduate/.test(await bp.innerText('#page')) &&
       (await bp.$$('.avA')).length === 1 && !!(await bp.$('.avcell:has-text("' + s1.full_name + '") .avA.on')) && !(await bp.$('[data-ava]')),
