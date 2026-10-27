@@ -1,4 +1,4 @@
-window.APP_VERSION = 'f993d9d2';
+window.APP_VERSION = '8d927ec5';
 
 (function () {
 'use strict';
@@ -2221,8 +2221,15 @@ function viewAvail(quiet) {
   // Taken off (Angad, 27 Oct): kept, and one tap puts them back
   const gone = edit && (d.removed || []).length ? '<div class="card tight small avgone"><b>Removed this week:</b> ' + d.removed.map(x => '<span class="avback">' + h(x.full_name) +
     ' <button type="button" class="btn ghost sm" data-avback="' + h(x.id) + '">↩️ Put back</button></span>').join(' ') + '</div>' : '';
+  // The bell sheets (admins, Angad 27 Oct): the week's starters go on by themselves; their links are set here once
+  const bl = d.bell, bell = bl ? '<div class="card tight small avbell"><b>🔔 Bell sheets · ' + h(bl.tab) + '</b>' + bl.sheets.map(x => '<div class="avbl">' +
+      (x.url ? '<a href="' + h(x.url) + '" target="_blank" rel="noopener">' + h(x.title || x.name) + '</a>' : '<span class="muted">' + h(x.name) + ': no link yet</span>') +
+      ' · ' + (x.on ? x.on + ' on ✓' : 'nobody on yet') + x.problems.map(t => '<div class="avbp">⚠️ ' + h(t) + '</div>').join('') + '</div>').join('') +
+    '<p class="muted" style="margin:6px 0 0">Each starter goes under New Starts (name and coach in capitals, OFFICE if there\'s no coach) by themselves, from ' + h(bl.time) +
+      ' the day after their Day 1, once their Week 1 days are in. FR → FR bell sheet, HF → HF bell sheet. You get an alert.</p>' +
+    '<button type="button" class="linkbtn" id="avbellset">🔗 ' + (bl.sheets.some(x => x.url) ? 'Change the links' : 'Add the bell sheets\' links') + '</button></div>' : '';
   const page = paint('Availability', top + strip + warn + tools + gone +
-    (rows.length ? group('JUSS', 'HelloFresh') + group('LINK', 'Fundraising') : empty('🗓️', we > addDays(thisWe, -7) && we >= thisWe ? 'Nobody\'s started this week yet. Starters appear here when they\'re ticked Arrived on Day 1.' : 'Nobody started that week.')) +
+    (rows.length ? group('JUSS', 'HelloFresh') + group('LINK', 'Fundraising') : empty('🗓️', we > addDays(thisWe, -7) && we >= thisWe ? 'Nobody\'s started this week yet. Starters appear here when they\'re ticked Arrived on Day 1.' : 'Nobody started that week.')) + bell +
     '<p class="hint">' + (edit ? 'Tap a starter to fill in their days (tap a day: in → out → not said), driver, notes and photo, or to remove them. ' : '') +
       'Week 1 is their Day 1 week, Week 2 the week after. Everyone who started is here as soon as they\'re ticked Arrived on Day 1, with the photo taken there (📷 on the Day 1 list); their coach is whoever booked them. Days stay blank until the one-to-one (Tuesday afternoon); at 18:00 you hear it\'s ready, or who\'s missing. ' +
       (edit ? 'Days changed after the one-to-one? Their coach gets an alert. ' : 'Only Angad, Satpal and the people they pick can change it. ') + 'Every week is kept: ‹ › to go back.</p>', quiet, true);
@@ -2236,6 +2243,30 @@ function viewAvail(quiet) {
   const pd = page.querySelector('#avpdf'); if (pd) pd.onclick = () => savePdf(availPdf(we, wk, rows), avName(we, wk) + '.pdf');
   const ad = page.querySelector('#avadd'); if (ad) ad.onclick = () => addStarterSheet(we, d.coaches);
   const im = page.querySelector('#avimpf'); if (im) im.onchange = () => { const f = im.files && im.files[0]; im.value = ''; if (f) photoImportFile(f); };
+  const bs = page.querySelector('#avbellset'); if (bs) bs.onclick = () => bellLinksSheet(we, bl);
+}
+/** The bell sheets' links (admins): pasted once, kept in the app's settings (never in the public code). */
+function bellLinksSheet(we, bl) {
+  closeSheet(true);
+  const back = document.createElement('div');
+  back.className = 'sheet-back';
+  back.innerHTML = '<div class="sheet" role="dialog" aria-label="Bell sheets"><div class="grab"></div>' +
+    '<div class="sheet-h"><div style="min-width:0"><div class="label muted">New starters go on by themselves</div><div class="display">🔔 Bell sheets</div></div></div>' +
+    '<div id="bsf"><p class="small muted" style="margin:0 0 6px">Open each bell sheet in Google Sheets, tap <b>Share → Copy link</b>, and paste it here. A new sheet next year? Paste its link here instead.</p>' +
+    bl.sheets.map(x => '<label class="q">' + (x.key === 'FR' ? 'FR (Fundraising): LINK FR bell sheet' : 'HF (HelloFresh): JUSS HF bell sheet') + '</label>' +
+      '<input type="url" id="bs' + x.key + '" autocomplete="off" placeholder="https://docs.google.com/spreadsheets/d/…" value="' + h(x.url) + '">').join('') +
+    '<div id="bserr"></div><button class="btn block" id="bssave" style="margin-top:14px">Save</button><button class="btn ghost block" id="bscancel" style="margin-top:8px">Cancel</button></div></div>';
+  document.body.appendChild(back);
+  document.body.style.overflow = 'hidden';
+  back.onclick = e => { if (e.target === back) closeSheet(); };
+  back.querySelector('#bscancel').onclick = () => closeSheet();
+  back.querySelector('#bssave').onclick = e => {
+    const btn = e.currentTarget, links = {};
+    bl.sheets.forEach(x => { links[x.key] = back.querySelector('#bs' + x.key).value; });
+    busy(btn, true, 'Saving…');
+    call('setBellSheets', { links: links }).then(() => loadAvail(we)).then(() => { closeSheet(); render(true); toast('Saved ✓'); })
+      .catch(x => { busy(btn, false); showErr(back.querySelector('#bserr'), x.message); });
+  };
 }
 function bindAvail(page, go, we) {
   page.querySelectorAll('#avwk button').forEach(b => { b.onclick = () => go({ wk: Number(b.dataset.wk) }); });

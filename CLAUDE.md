@@ -20,7 +20,7 @@ The recruitment app for **LINK Marketing** and **JUSS Marketing** (Angad runs bo
   - `server/worker.js` runs `Code.gs` in a worker thread with the Google services rebuilt on Postgres: each Sheet tab = `jl.tabs` + `jl.rows` (ordered), CacheService = `jl.cache`, PropertiesService = `jl.props`, LockService = a Postgres advisory lock. Code.gs is synchronous, so every database call waits on the main thread (`server/runtime.js`, Atomics).
   - `server/runtime.js`: one job = one transaction, one job at a time per instance. Emails go into `jl.outbox` and are sent after the commit.
   - `server/live.js` wires it to Supabase (the shared project; schema `jl`, next to FR's `public`, `leaders` and `hf`), OneSignal, and Google's **email relay**.
-  - The relay is the Google-only part of `Code.gs` (`relayMail`, `relayInfo`, `relayExport`, `relayFreeze`, `relaySwitch`). Emails still go out from Gmail ("send mail as" Jess / Rubal / Fiza), and the OneSignal key stays in Google. Calls carry Vercel's `RELAY_SECRET`; `Code.gs` holds only its SHA-256 (`RELAY_SECRET_SHA256`).
+  - The relay is the Google-only part of `Code.gs` (`relayMail`, `relayInfo`, `relayExport`, `relayFreeze`, `relaySwitch`, `relayMirror`, `relayEarnings`, `relayBell`). Emails still go out from Gmail ("send mail as" Jess / Rubal / Fiza), and the OneSignal key stays in Google. Calls carry Vercel's `RELAY_SECRET`; `Code.gs` holds only its SHA-256 (`RELAY_SECRET_SHA256`).
   - `api/rpc.js` is the app's API (same requests and answers as Google's `/exec`). `api/cron.js` is Vercel Cron every 5 minutes, replacing Google's timers in London time. It does nothing until `jl.props.VERCEL_LIVE` is set.
   - `scripts/import-from-google.js` copies every tab and setting from Google, then compares them field by field (`--apply`, `--verify`).
   - Local secrets in the repo root (gitignored): `.env.supabase`, `.env.relay`, `.env.cron`.
@@ -225,16 +225,25 @@ Once availability is filled in, the new starters go into the **NEW STARTS** sect
   - Thursday onwards is blank. FR also has **NS** in column C.
   - Never change, move or delete any of these.
 - **Filling:** use the empty template rows. Never overwrite a row that already has a name, and never delete rows.
-- **w/e 01/11/26** was done by hand through the Sheets connector (FR 9, HF 6). The weekly automation is still to build (Open items).
+- **w/e 01/11/26** was done by hand through the Sheets connector (FR 9, HF 6).
+- **From then on it's automatic (built 27 Oct):**
+  - **When:** from `AVAIL_REMIND_TIME` (18:00) the day after their Day 1, anyone with Week 1 days in who isn't on yet. Later fills go on within 5 minutes.
+  - **How:**
+    - Vercel's cron (`api/cron.js` → `server/bell.js` `bellToSheets`) asks `bellDue`.
+    - Google writes them (`relayBell`, Google-only, so a change to it needs Angad's paste).
+    - `bellDone` keeps who's on (`BELL_SENT_<we>`, avail row ids) and tells the admins.
+  - **What `relayBell` does:**
+    - finds the tab by its date (the HF tab names vary: "WE 5.07.26", " WE 23.11.2025": `bellTabDate`);
+    - the section ends at a blank row, the next section's title (A only) or "(Please DO NOT TOUCH)";
+    - it only fills A:B of rows whose A and B are empty, skips a name already there, and never inserts or deletes rows.
+  - **Problems** (no tab yet, no section, no empty rows left, Google's Code.gs not updated) alert the admins once each (`BELL_PROBLEM_<we>`) and are retried every 5 minutes.
+  - **The sheets' links:** an admin setting on availability (**🔔 Bell sheets** card, `setBellSheets` → `BELL_SHEETS` in props). **Never put their IDs in this repo:** the FR sheet is "anyone with the link can view" and the HF one "anyone with the link can edit" (27 Oct).
+  - e2e "availability" tests it on both back ends (the fake bell books are in `gas.js` `__books`; `/dev/bell` runs the cron step).
 
 ## Data fixes Angad asked for
 - **26 Oct 2026:** Fiza's 2 appointments that day were Angad's (he entered them under her by mistake). Angad moved both himself (candidate → **Booker** → Angad → **Save**, `reassignBooker`, which also moves the candidate's company to the booker's). The rest of that week is automatic (`HANDOVER`, above). Her earlier candidates stay hers, and their alerts go to Angad (the PR #140 move was undone on 27 Oct, see Rules).
 
 ## Open items (ask Angad when relevant)
-- **Bell sheets every week (Angad asked, 27 Oct):** add the new starters by themselves when availability is ready (rules above). The plan:
-  - a Google-side `relayBell` (one Apps Script paste);
-  - a cron step that sends only names not sent before;
-  - an alert to admins with what went in.
-  - Keep the bell sheets' IDs out of this public repo if they're link-shared.
+- **The HF bell sheet is "anyone with the link can edit"** (owner Jess, 27 Oct). Suggested to Angad: switch General access to Viewer (or Restricted) and keep named editors. His call.
 - **Optional:** auto-deploy `Code.gs` from GitHub with `clasp`, to remove the paste step. It needs the Apps Script API turned on and a `CLASPRC_JSON` GitHub secret, which he sets himself and never pastes in chat.
 - The full team guide is `app/SETUP.md`.

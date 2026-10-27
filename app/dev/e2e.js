@@ -1969,6 +1969,109 @@ async function fillEval(p) {
       'all done → "' + (ready[0] ? ttl(ready[0]) + ' · ' + ready[0].body.contents.en.replace(/\n/g, ' · ') : 'none') + '" to the admins, once (nothing the next day)');
     ok(lateIds.length >= 1 && coach2.length === lateIds.length && coachOk(coach2, lateIds, dueNow) && coach2.every(x => ttl(x) === '✅ Your new starters\' days') && !coach2.some(x => to(x).join() === s1.coach_id),
       'a coach whose starters were missing gets "✅ Your new starters\' days" once they\'re in; Jasraj\'s coach (told already) isn\'t told twice');
+
+    // The bell sheets (Angad, 27 Oct): once their days are in, the week's starters go under NEW STARTS on that week's tab, FR on
+    // the LINK FR bell sheet, HF on the JUSS HF one: NAME and COACH in capitals, OFFICE when there's no coach. Columns A and B
+    // only; the plan already in those rows (BA AC = BA Academy Mon + Tue, S = Shadow day Wed) and the totals stay as they are.
+    const PG = process.env.JL_BACKEND === 'pg', BRS = 'bell-test-secret-0123456789abcdefghijkl';
+    await post('/dev/props', { RELAY_SECRET_SHA256: require('crypto').createHash('sha256').update(BRS).digest('hex') });
+    const bellDue = async () => (await post('/dev/run', { fn: 'bellDue' })).out;
+    const bellRun = async fake => { const n0 = (await getJson('/dev/pushes')).length, out = (await post('/dev/bell', { secret: BRS, fake: PG ? fake : undefined })).out;
+      return { out, pushes: (await getJson('/dev/pushes')).slice(n0) }; };
+    const books = async js => JSON.parse((await post('/dev/eval', { js: (js || '') + '; JSON.stringify(globalThis.__books || null)' })).out);
+    ok(await bellDue() === null, 'bell sheets: nothing goes on until an admin adds their links');
+    let bellNo = null; try { await api(abdT, 'setBellSheets', { links: { FR: 'x' } }); } catch (e) { bellNo = e.message; }
+    let bellBad = null; try { await api(admin, 'setBellSheets', { links: { FR: 'https://example.com/not-a-sheet' } }); } catch (e) { bellBad = e.message; }
+    const FRID = 'FAKEfrBELLsheet0123456789abcdefXYZ', HFID = 'FAKEhfBELLsheet0123456789abcdefXYZ';
+    await api(admin, 'setBellSheets', { links: { FR: 'https://docs.google.com/spreadsheets/d/' + FRID + '/edit?usp=sharing', HF: HFID } });
+    const bst0 = (await api(admin, 'availWeek', { weekEnding: WE })).bell;
+    ok(/Only admins/.test(bellNo || '') && /doesn't look like a Google Sheets link/.test(bellBad || '') && bst0.tab === 'WE 25.10.26' &&
+      bst0.sheets.map(x => x.key + ' ' + x.url).join() === 'FR https://docs.google.com/spreadsheets/d/' + FRID + '/edit,HF https://docs.google.com/spreadsheets/d/' + HFID + '/edit' &&
+      (await api(abdT, 'availWeek', { weekEnding: WE })).bell === null,
+      'an admin pastes the two bell sheets\' links once, on availability (kept in the app\'s settings, never in the public code); bookers can\'t, and don\'t see them');
+    for (const r of dueBlank) await api(admin, 'saveAvail', { id: r.id, w1: 'IIIIIOO', w2: '-------', driver: '' });
+    await api(admin, 'saveAvail', { id: mira.id, w1: '-IIIIOO', w2: '-------', driver: '' });
+    // Two more, for the order (office first, then each coach's): a FR one with a coach, a HF one booked from the office
+    const zara = await api(admin, 'addStarter', { weekEnding: WE, full_name: 'Zara Field', company: 'LINK', coach_id: abd.id, day1_date: '2026-10-19' });
+    const ben = await api(admin, 'addStarter', { weekEnding: WE, full_name: 'Ben Okafor', company: 'JUSS', coach_id: fiza.id, day1_date: '2026-10-19' });
+    for (const r of [zara, ben]) await api(admin, 'saveAvail', { id: r.id, w1: 'IIIOOOO', w2: '-------', driver: '' });
+    const filled = (await api(admin, 'availWeek', { weekEnding: WE })).rows.filter(r => r.day1_date < '2026-10-20' && /[IO]/.test(r.w1) && !r.no_longer);
+    const want = k => filled.filter(r => r.campaign === k).map(r => { const c = !r.office && r.coach_name ? r.coach_name.split(' ')[0] : 'Office';
+      return { name: r.full_name.toUpperCase(), coach: c.toUpperCase(), office: c === 'Office' }; }).sort((a, b) => (b.office - a.office) || a.coach.localeCompare(b.coach) || a.name.localeCompare(b.name));
+    const wFR = want('FR'), wHF = want('HF'), nb = x => x.name + ' (' + x.coach + ')';
+    const before = await bellDue();
+    await setTime('2026-10-20T18:05:00+01:00');
+    const due1 = await bellDue(), dueRows = k => ((due1.sheets.find(x => x.key === k) || {}).rows || []).map(x => x.name + '|' + x.coach).join();
+    ok(before === null && due1 && due1.tab === 'WE 25.10.26' && wFR.length >= 2 && wHF.length >= 1 && dueRows('FR') === wFR.map(x => x.name + '|' + x.coach).join() &&
+      dueRows('HF') === wHF.map(x => x.name + '|' + x.coach).join() && !/MIRA/.test(dueRows('FR')),
+      'from 18:00 the day after Day 1, everyone with Week 1 days in: FR "' + wFR.map(nb).join(', ') + '" and HF "' + wHF.map(nb).join(', ') + '" (office first, then each coach\'s; Mira, Day 1 on the Tuesday, isn\'t due till Wednesday)');
+    // Google's side: the team's sheets as they are (a starter typed in by hand already, the empty rows with the plan, the totals underneath)
+    const frRow = ['', '', 'NS', '', '', 'BA AC', 'BA AC', 'S', '', '', '', '-', '0'], hfRow = ['', '', '', '', 'BA AC', 'BA AC', 'S', '', '', '', '', '0', '£0.00', '£0.00'];
+    const rowsOf = (n, r) => Array.from({ length: n }, () => r.slice()), total = ['Daily Total (Please DO NOT TOUCH)', '', '', '', '', '7', '0', '0', '0', '0', '0', '0', '7'];
+    const cardiff = ['', '', '3️⃣', '', '1', '', '', '', '', '', '-', '1', '£20.00', '£30.00'];
+    if (!PG) await books('globalThis.__books = ' + JSON.stringify({
+      [FRID]: { title: '🧏🏻‍♂️LINK 2026 FR BELL SHEET  ', tabs: { 'WE 18.10.26': [['NEW STARTS']].concat(rowsOf(3, frRow)),
+        'WE 25.10.26': [['LINK 2026'], ['BA NAME/ TEAM NAME ', 'COACH', 'COD STAGE'], ['ANGAD (L)', 'SATPAL', '7️⃣', '-'], ['NEW STARTS'],
+          [wFR[0].name.toLowerCase().replace(/\b\w/g, c => c.toUpperCase()), 'TYPED', 'NS', '', '', 'BA AC', 'BA AC', 'S', '', '', '', '-', '0']].concat(rowsOf(wFR.length + 1, frRow), [total]) } },
+      [HFID]: { title: '🍋JUSS HF🍋 BELLSHEET ', tabs: { ' WE 25.10.2026': [['', 'LEADER'], ['JUSS SLOUGH'], ['NEW STARTS - SLOUGH']].concat(rowsOf(wHF.length - 1, hfRow), [['M1 CLUB CARDIFF'], cardiff]) } },
+    }));
+    const b1 = await bellRun({ 'NEW STARTS': { rows: ['already'] }, 'NEW STARTS - SLOUGH': { rows: wHF.map((x, i) => (i === wHF.length - 1 ? 'full' : 'added')) } });
+    const st = k => b1.out.sheets.find(x => x.key === k).rows.map(x => x.status).join();
+    ok(st('FR') === ['already'].concat(wFR.slice(1).map(() => 'added')).join() && st('HF') === wHF.map((x, i) => (i === wHF.length - 1 ? 'full' : 'added')).join(),
+      'Google writes them in: FR ' + st('FR') + ' (the one the team typed in already is left alone); HF ' + st('HF') + ' (one more than the empty rows)');
+    if (!PG) {
+      const bk = await books(), fr = bk[FRID].tabs['WE 25.10.26'], hf = bk[HFID].tabs[' WE 25.10.2026'];
+      const frNew = fr.slice(5, 5 + wFR.length - 1), frLeft = fr.slice(5 + wFR.length - 1, -1);
+      ok(frNew.map(r => r[0] + '|' + r[1]).join() === wFR.slice(1).map(x => x.name + '|' + x.coach).join() && frNew.concat(frLeft).every(r => r.slice(2).join() === frRow.slice(2).join()) &&
+        frLeft.length === 2 && frLeft.every(r => !r[0] && !r[1]) && fr[4][1] === 'TYPED' && fr[fr.length - 1].join() === total.join() &&
+        hf.slice(3, 3 + wHF.length - 1).every((r, i) => r[0] === wHF[i].name && r[1] === wHF[i].coach && r.slice(2).join() === hfRow.slice(2).join()) &&
+        hf[hf.length - 2][0] === 'M1 CLUB CARDIFF' && hf[hf.length - 1].join() === cardiff.join() && bk[FRID].tabs['WE 18.10.26'].slice(1).every(r => !r[0]),
+        'on the sheets: NAME and COACH in columns A and B of the empty rows, in order; NS / BA AC / BA AC / S, the totals, the next section (M1 CLUB CARDIFF) and last week\'s tab untouched; tab "WE 25.10.26" and " WE 25.10.2026" both found');
+    }
+    const nAdd = wFR.length - 1 + wHF.length - 1, onP = b1.pushes.filter(x => /^🔔 On the bell sheets/.test(ttl(x))), notP = b1.pushes.filter(x => /^🔔 Bell sheets: not done yet/.test(ttl(x)));
+    const lastHF = wHF[wHF.length - 1];
+    const addBody = [wFR.length > 1 ? 'FR ' + (wFR.length - 1) + ': ' + wFR.slice(1).map(nb).join(', ') : '', wHF.length > 1 ? 'HF ' + (wHF.length - 1) + ': ' + wHF.slice(0, -1).map(nb).join(', ') : ''].filter(Boolean).join('\n') + '\nWE 25.10.26, under New Starts.';
+    ok(onP.length === adminIds.length && onP.every(x => isAdm(to(x)[0])) && ttl(onP[0]) === '🔔 On the bell sheets: ' + nAdd + ' new starter' + (nAdd === 1 ? '' : 's') && onP[0].body.contents.en === addBody &&
+      notP.length === adminIds.length && notP[0].body.contents.en === 'No empty rows left under NEW STARTS - SLOUGH on the HF bell sheet for ' + lastHF.name + '. Copy in more empty rows and they go on within 5 minutes.',
+      'the admins hear: "' + (onP[0] ? ttl(onP[0]) + ' · ' + onP[0].body.contents.en.replace(/\n/g, ' · ') : 'none') + '" and "' + (notP[0] ? notP[0].body.contents.en : 'none') + '"');
+    const b2 = await bellRun({ 'NEW STARTS - SLOUGH': { rows: ['full'] } }), bst1 = (await api(admin, 'availWeek', { weekEnding: WE })).bell, sh = k => bst1.sheets.find(x => x.key === k);
+    ok(b2.out.sheets.length === 1 && b2.out.sheets[0].rows.map(x => x.name).join() === lastHF.name && !b2.pushes.length && sh('FR').on === wFR.length && sh('HF').on === wHF.length - 1 &&
+      sh('HF').problems.length === 1 && /No empty rows left/.test(sh('HF').problems[0]) && !sh('FR').problems.length && (PG || sh('FR').title === '🧏🏻‍♂️LINK 2026 FR BELL SHEET'),
+      'five minutes later only the one left over is tried again, with no second alert; the card on availability: FR ' + sh('FR').on + ' on, HF ' + sh('HF').on + ' on, "No empty rows left…"');
+    if (!PG) await books('globalThis.__books["' + HFID + '"].tabs[" WE 25.10.2026"].splice(3 + ' + (wHF.length - 1) + ', 0, ' + JSON.stringify(hfRow) + ')');
+    const b3 = await bellRun({ 'NEW STARTS - SLOUGH': { rows: ['added'] } }), on3 = b3.pushes.filter(x => /^🔔 On the bell sheets/.test(ttl(x)));
+    const bst2 = (await api(admin, 'availWeek', { weekEnding: WE })).bell, b4 = await bellRun({});
+    ok(on3.length === adminIds.length && ttl(on3[0]) === '🔔 On the bell sheets: 1 new starter' && on3[0].body.contents.en.startsWith('HF 1: ' + nb(lastHF)) &&
+      bst2.sheets.find(x => x.key === 'HF').on === wHF.length && !bst2.sheets.find(x => x.key === 'HF').problems.length && b4.out === null && !b4.pushes.length,
+      'a row copied in → on within 5 minutes ("' + (on3[0] ? on3[0].body.contents.en.split('\n')[0] : 'none') + '"), the warning goes; then nothing more to do');
+    await setTime('2026-10-21T18:05:00+01:00');
+    const due5 = await bellDue(), b5 = await bellRun({}), on5 = b5.pushes.filter(x => /^🔔 On the bell sheets/.test(ttl(x)));
+    ok(due5 && due5.sheets.length === 1 && due5.sheets[0].key === 'FR' && due5.sheets[0].rows.map(nb).join() === 'MIRA MANUAL (OFFICE)' && on5.length === adminIds.length &&
+      on5[0].body.contents.en.startsWith('FR 1: MIRA MANUAL (OFFICE)') && (PG || (await books())[FRID].tabs['WE 25.10.26'].some(r => r[0] === 'MIRA MANUAL' && r[1] === 'OFFICE')),
+      'Wednesday 18:00 (the day after her Day 1): Mira goes on, under the FR ones, coach OFFICE (booked by Fiza)');
+    // What's in the way, once each: no tab for the week yet; Google not updated yet
+    const sentWas = JSON.parse((await post('/dev/eval', { js: 'PropertiesService.getScriptProperties().getProperty("BELL_SENT_' + WE + '")' })).out);
+    await post('/dev/props', { ['BELL_SENT_' + WE]: '{}' });
+    const prob = { 'NEW STARTS': { error: 'no tab' }, 'NEW STARTS - SLOUGH': { error: 'relay relayBell: Not allowed' } };
+    const b6 = await bellRun(prob), b7 = await bellRun(prob), not6 = b6.pushes.filter(x => /^🔔 Bell sheets: not done yet/.test(ttl(x)));
+    const left6 = await bellDue();
+    if (PG) ok(not6.length === adminIds.length && not6[0].body.contents.en === 'The FR bell sheet has no "WE 25.10.26" tab yet: they go on as soon as it\'s there.\nGoogle\'s copy of the app needs the new Code.gs (paste it, then Deploy → New version).' &&
+      !b7.pushes.length && left6.sheets.length === 2, 'what\'s in the way, once each: "' + (not6[0] ? not6[0].body.contents.en.replace(/\n/g, ' · ') : 'none') + '"; nobody is marked as on');
+    else ok(!b6.pushes.length && b6.out.sheets.every(x => x.rows.every(r => r.status === 'already')) && left6 === null,
+      'everyone already on the sheet (asked again from scratch): nothing written twice, no alert');
+    await post('/dev/props', { ['BELL_SENT_' + WE]: JSON.stringify(sentWas), ['BELL_PROBLEM_' + WE]: '{}' });
+    if (!PG) {
+      const rb = x => relay2('relayBell', Object.assign({ secret: BRS, id: FRID, we: '2026-10-25', section: 'NEW STARTS', rows: [['NEW PERSON', 'OFFICE']] }, x));
+      const relay2 = (action, extra) => post('/api', Object.assign({ action }, extra || {}));
+      ok((await rb({ secret: 'guess' })).error === 'Not allowed' && (await rb({ section: 'TOTALS' })).error === 'Not allowed' && (await rb({ id: 'x' })).error === 'Not allowed' &&
+        (await rb({ we: '2026-11-01' })).data.error === 'no tab' && (await rb({ we: '2026-10-18', section: 'NEW STARTS - SLOUGH', id: HFID })).data.error === 'no tab' &&
+        (await rb({ section: 'NEW STARTERS' })).data.rows[0] === 'added',
+        'Google only writes a NEW STARTS section on a week\'s tab, with the key: no tab for the week → "no tab"; one NEW STARTS section by another name is still found');
+    }
+    for (const r of dueBlank) await api(admin, 'saveAvail', { id: r.id, w1: '-------', w2: '-------', driver: '' });
+    await api(admin, 'saveAvail', { id: mira.id, w1: '-------', w2: '-------', driver: '' });
+    for (const r of [zara, ben]) await api(admin, 'removeStarter', { id: r.id });
+    await setTime('2026-10-20T10:00:00+01:00');
     // On the phone: Day 1 → 🗓️ Availability
     await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button[data-tab=academy]');
     await ap.click('.tabbar button[data-tab=academy]'); await ap.waitForSelector('#goAvail');
@@ -1986,6 +2089,19 @@ async function fillEval(p) {
     const thumb = await ap.$eval('.avrow img[data-thumb]', i => i.naturalWidth + '×' + i.naturalHeight + ' shown ' + i.clientWidth + '×' + i.clientHeight);
     ok(thumb === '168×200 shown 64×76', 'each starter\'s picture on availability is bigger and cropped to the face (' + thumb + ')');
     await shot(ap, '50-availability');
+    // The bell sheets card (admins): how many are on each, and the links pasted once
+    const bellTxt = await ap.innerText('.avbell');
+    ok(/🔔 Bell sheets · WE 25\.10\.26/.test(bellTxt) && bellTxt.includes((wFR.length + 1) + ' on ✓') && bellTxt.includes(wHF.length + ' on ✓') && /from 18:00 the day after their Day 1/.test(bellTxt) &&
+      (await ap.$$eval('.avbell a', a => a.map(x => x.href))).join() === 'https://docs.google.com/spreadsheets/d/' + FRID + '/edit,https://docs.google.com/spreadsheets/d/' + HFID + '/edit',
+      'availability shows the admins the bell sheets card: "' + bellTxt.split('\n').slice(0, 3).join(' · ') + '"');
+    await ap.click('#avbellset'); await ap.waitForSelector('#bsHF');
+    const bsWas = await ap.inputValue('#bsFR');
+    await ap.fill('#bsHF', 'not a link'); await ap.click('#bssave'); await ap.waitForSelector('#bserr .err, #bserr:not(:empty)');
+    const bsErr = await ap.innerText('#bserr');
+    await ap.click('#bscancel'); await ap.waitForSelector('#bsHF', { state: 'detached' });
+    ok(bsWas === 'https://docs.google.com/spreadsheets/d/' + FRID + '/edit' && /doesn't look like a Google Sheets link \(HF\)/.test(bsErr) &&
+      (await api(admin, 'availWeek', { weekEnding: WE })).bell.sheets.find(x => x.key === 'HF').url.includes(HFID),
+      '🔗 Change the links: the current ones are filled in; something that isn\'t a link is refused ("' + bsErr.trim() + '"), and nothing changes');
     await ap.click('.avrow:has-text("Mira Manual")'); await ap.waitForSelector('#avw1');
     ok(await ap.$('#avw1 button[data-i="0"][disabled]') && !(await ap.$('#avw1 button[data-i="1"][disabled]')), 'her Monday is before her Day 1 (Tuesday): blank, can\'t be ticked');
     await ap.click('#avw1 button[data-i="1"]'); await ap.click('#avw1 button[data-i="2"]'); await ap.click('#avw1 button[data-i="2"]');
