@@ -1720,15 +1720,39 @@ function viewMine(quiet) {
       '<div class="hero-body">' + ring(r.net, d.pay.target) + '<div class="hero-txt"><b>' + (left ? left + ' more to hit ' + d.pay.target : 'Target smashed 🔥') + '</b>' +
       '<span>' + r.attended + ' checked in · ' + r.excluded.length + ' don\'t count</span>' +
       (r.excluded.length ? '<span class="small">' + r.excluded.map(x => h(x.name) + ' (' + h(x.why) + ')').join(' · ') + '</span>' : '') + '</div></div>') + '</div>' +
+      '<!--mystarters-->' +
       (toCall.length ? '<div class="section-h"><b>📞 To call · ' + toCall.length + '</b><span>log by ' + h(S.me.deadlineLabel || 'Sat ' + S.me.deadlineTime) + '</span></div><div class="list">' + toCall.map(c => item(c, true, 'call')).join('') + '</div>' : '') +
       (toSend.length ? '<div class="section-h"><b>🎉 Send Day 1 details · ' + toSend.length + '</b></div><div class="list">' + toSend.map(c => item(c, true, 'offer')).join('') + '</div>' : '') +
       (noAnswer.length ? '<div class="section-h"><b>📵 No answer · ' + noAnswer.length + '</b><span>WhatsApp = "we tried calling you"</span></div><div class="list">' + noAnswer.map(c => item(c, true, 'noanswer')).join('') + '</div>' : '') +
       (items.length > toCall.length + toSend.length + noAnswer.length ? '<div class="section-h"><b>' + (toCall.length || toSend.length || noAnswer.length ? 'Everyone else' : 'This week') + '</b></div>' + groupByDate(items.filter(c => toCall.indexOf(c) < 0 && toSend.indexOf(c) < 0 && noAnswer.indexOf(c) < 0))
         : items.length ? '' : empty('🗓️', 'No candidates this week yet.'));
   }
-  const page = paint('', body + (d ? '<button class="btn ghost block" id="goAcademy" style="margin-top:14px">🎓 My Day 1 starters</button>' : ''), quiet);
+  const page = paint('', body.replace('<!--mystarters-->', thisWeek ? myStartersCard() : '') + (d ? '<button class="btn ghost block" id="goAcademy" style="margin-top:14px">🎓 My Day 1 starters</button>' : ''), quiet);
   bindItems(page); bindWeekNav();
   const ga = document.getElementById('goAcademy'); if (ga) ga.onclick = () => nav('academy', {}, true);
+  page.querySelectorAll('[data-myav]').forEach(b => { b.onclick = () => nav('avail', { we: b.dataset.myav, wk: Number(b.dataset.wk) }, true); });
+}
+/** A coach's own new starters on their home screen (Angad, 27 Oct: Hasini, coaching new starters in the BA Academy, couldn't
+ *  find their availability): this week's and last week's, the days they're in this week, a tap for the full list. */
+function myStartersCard() {
+  const m = S.mySt;
+  if (!m || Date.now() - m.at > LIST_STALE_MS) {
+    if (!S.myStLoading) {
+      S.myStLoading = true;
+      call('myStarters', {}).then(r => { S.mySt = { at: Date.now(), starters: r.starters }; if (S.view === 'mine') render(true); })
+        .catch(() => {}).then(() => { S.myStLoading = false; });
+    }
+  }
+  const st = (m && m.starters) || [];
+  if (!st.length) return '';
+  return '<div class="section-h"><b>🗓️ Your new starters · ' + st.length + '</b><span>the days they\'re in this week</span></div><div class="list">' + st.map(x => {
+    const mon = addDays(x.week_ending, -6 + (x.wk === 2 ? 7 : 0)), days = String(x.days || '-------'), none = !/[IO]/.test(days), ph = thumbNow(x.id);
+    return '<button type="button" class="item avrow mystart" data-myav="' + h(x.week_ending) + '" data-wk="' + x.wk + '">' +
+      (ph ? '<img class="av avph avpic" src="' + ph + '" alt="">' : '<span class="av avpic co-' + (x.campaign === 'HF' ? 'JUSS' : 'LINK') + '">' + h(initials(x.full_name)) + '</span>') +
+      '<div class="main"><div class="name">' + h(x.full_name) + '</div><div class="sub">' + (x.campaign === 'HF' ? 'HelloFresh' : 'Fundraising') + ' · Week ' + x.wk + ' · Day 1 ' + h(fmt(x.day1_date)) + (x.driver === 'Yes' ? ' · 🚗' : '') + '</div>' +
+      '<div class="avchips">' + days.split('').map((c, i) => '<span class="avc ' + (x.wk === 1 && addDays(mon, i) < x.day1_date ? 'pre' : c === 'I' ? 'in' : c === 'O' ? 'out' : 'na') + '">' + AV_DAY[i].slice(0, 2) + '</span>').join('') + '</div>' +
+      (none ? '<div class="small muted avnote">Days not in yet: they\'re filled in at the one-to-one (Tuesday afternoon).</div>' : '') + '</div></button>';
+  }).join('') + '</div>';
 }
 
 // ───── All (admin) ─────

@@ -2072,6 +2072,18 @@ async function fillEval(p) {
     await api(admin, 'saveAvail', { id: mira.id, w1: '-------', w2: '-------', driver: '' });
     for (const r of [zara, ben]) await api(admin, 'removeStarter', { id: r.id });
     await setTime('2026-10-20T10:00:00+01:00');
+    // A coach sees their own new starters on their home screen (Angad, 27 Oct: Hasini, coaching new starters in the BA Academy,
+    // couldn't find them): Fiza coaches Jasraj (days in) and Mira (not yet); Adham is Abdullahi's
+    await bp.goto(APP + 'index.html'); await bp.waitForSelector('.tabbar button[data-tab=mine]');
+    await bp.click('.tabbar button[data-tab=mine]'); await bp.waitForSelector('.mystart');
+    const mySt = await bp.$$eval('.mystart', e => e.map(x => x.innerText.replace(/\s+/g, ' ')));
+    const jasIn = await bp.$$eval('.mystart:has-text("' + s1.full_name + '") .avc.in', e => e.map(x => x.textContent).join(' '));
+    ok(mySt.filter(t => /Week 1/.test(t)).length === 2 && mySt.some(t => t.includes(s1.full_name) && /Week 1/.test(t)) && mySt.some(t => /Mira Manual/.test(t) && /Days not in yet/.test(t)) && !mySt.some(t => /Adham/.test(t)) &&
+      jasIn === 'MO TU WE TH FR' && new RegExp('🗓️ Your new starters · ' + mySt.length).test(await bp.innerText('#page')),
+      'a coach sees their own new starters on Mine, with the days they\'re in ("' + s1.full_name + ': ' + jasIn + '"; Mira: days not in yet), not anyone else\'s');
+    await shot(bp, '50d-mine-new-starters');
+    await bp.click('.mystart:has-text("' + s1.full_name + '")'); await bp.waitForSelector('#avprev');
+    ok((await bp.textContent('.seg-nav b')) === 'Sun 25 Oct' && !!(await bp.$('.avrow:has-text("' + s1.full_name + '")')), 'one tap → their week on Availability');
     // On the phone: Day 1 → 🗓️ Availability
     await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button[data-tab=academy]');
     await ap.click('.tabbar button[data-tab=academy]'); await ap.waitForSelector('#goAvail');
