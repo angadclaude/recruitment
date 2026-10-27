@@ -1,4 +1,4 @@
-window.APP_VERSION = '858baeec';
+window.APP_VERSION = 'c286b937';
 
 (function () {
 'use strict';
@@ -1312,7 +1312,7 @@ function tabs() {
   if (canBook()) t.push(['book', 'Book Appts']);  // Jess, Rubal, Angad: book after the call, send the details (Angad, 23 Oct)
   if (isBooker()) t.push(['mine', 'Mine']);
   if (isAdmin() || isBooker()) t.push(['chase', 'Chase']);
-  if (isBooker() && !isAdmin()) t.push(['avail', 'New starts']);  // every new starter in the office, read-only (Angad, 27 Oct); admins have it in Day 1
+  if ((isBooker() || roles().indexOf('presenter') >= 0) && !isAdmin()) t.push(['avail', 'New starts']);  // bookers read it, presenters fill it in (Angad, 27 Oct); admins have it in Day 1
   if (isAdmin()) t.push(['academy', 'Day 1']);
   if (isAdmin()) t.push(['all', 'All']);
   t.push(['pay', 'Appts Attended']);  // was "Incentive" (Angad, 20 Oct)
@@ -2194,7 +2194,7 @@ function viewAvail(quiet) {
   const mon = addDays(we, -6 + (wk === 2 ? 7 : 0)), days = AV_DAY.map((x, i) => addDays(mon, i));
   const go = p => { S.params = Object.assign({ we: we, wk: wk }, p); hist('replace', { v: 'avail', p: S.params }); render(); };
   // Bookers see the names and their Week 1 + Week 2 days, nothing else (Angad, 27 Oct: no poster, PDF or day counts for them)
-  const edit = d ? d.canEdit : isAdmin() || roles().indexOf('availability') >= 0, w2mon = addDays(we, 1);
+  const edit = d ? d.canEdit : isAdmin() || roles().indexOf('availability') >= 0 || roles().indexOf('presenter') >= 0, w2mon = addDays(we, 1);
   const top = (edit ? '<div class="seg bullseg" id="avwk"><button data-wk="1" class="' + (wk === 1 ? 'on' : '') + '">Week 1</button><button data-wk="2" class="' + (wk === 2 ? 'on' : '') + '">Week 2</button></div>' : '') +
     '<div class="seg-nav"><div class="lbl"><span>' + (we === thisWe ? 'Started this week · Day 1 w/e' : we === addDays(thisWe, -7) ? 'Started last week · Day 1 w/e' : 'Started · Day 1 w/e') + '</span><b>' + fmt(we) + '</b></div>' +
     '<button class="iconbtn" id="avprev" aria-label="Previous week">‹</button><button class="iconbtn" id="avnext" aria-label="Next week"' + (we >= thisWe ? ' disabled' : '') + '>›</button></div>' +
@@ -2235,9 +2235,10 @@ function viewAvail(quiet) {
         (short ? '<span class="pill amber">Said ' + said + ' days, in ' + avIn(w) + '</span>' : '') + (r.left ? '<span class="pill red">🚪 Didn\'t continue</span>' : r.no_longer ? '<span class="pill red">Not ticked Arrived any more</span>' : '') + '</div>' +
       (r.notes ? '<div class="small muted avnote">' + h(r.notes) + '</div>' : '') + '</div></' + (edit ? 'button' : 'div') + '>';
   };
-  // A = one of the best new starts (Angad, 27 Oct: "so I can just tap on that"): green when on, for the people who do the one-to-ones
-  const cell = r => edit ? '<div class="avcell">' + card(r) + '<button type="button" class="avA' + (r.grade === 'A' ? ' on' : '') + '" data-ava="' + h(r.id) + '" aria-pressed="' +
-    (r.grade === 'A') + '" aria-label="A: one of the best new starts">A</button></div>' : card(r);
+  // A = one of the best new starts (Angad, 27 Oct: "so I can just tap on that"): admins tap it; everyone sees it green
+  const cell = r => isAdmin() && edit ? '<div class="avcell">' + card(r) + '<button type="button" class="avA' + (r.grade === 'A' ? ' on' : '') + '" data-ava="' + h(r.id) + '" aria-pressed="' +
+    (r.grade === 'A') + '" aria-label="A: one of the best new starts">A</button></div>' :
+    r.grade === 'A' ? '<div class="avcell">' + card(r) + '<span class="avA on ro" role="img" aria-label="A: one of the best new starts">A</span></div>' : card(r);
   const group = (co, label) => { const l = rows.filter(r => avCamp(r) === (co === 'JUSS' ? 'HF' : 'FR')); return l.length ? '<div class="section-h"><b>' + label + '</b><span>' + l.length + '</span></div><div class="list">' + l.map(cell).join('') + '</div>' : ''; };
   // Taken off (Angad, 27 Oct): kept, and one tap puts them back
   const gone = edit && (d.removed || []).length ? '<div class="card tight small avgone"><b>Removed this week:</b> ' + d.removed.map(x => '<span class="avback">' + h(x.full_name) +
@@ -2251,10 +2252,11 @@ function viewAvail(quiet) {
     '<button type="button" class="linkbtn" id="avbellset">🔗 ' + (bl.sheets.some(x => x.url) ? 'Change the links' : 'Add the bell sheets\' links') + '</button></div>' : '';
   const page = paint(title, top + strip + warn + tools + gone +
     (rows.length ? group('JUSS', 'HelloFresh') + group('LINK', 'Fundraising') : empty('🗓️', we > addDays(thisWe, -7) && we >= thisWe ? 'Nobody\'s started this week yet. Starters appear here when they\'re ticked Arrived on Day 1.' : 'Nobody started that week.')) + bell +
-    (!edit ? '<p class="hint">W1 is their Day 1 week, W2 the week after. Green = in, crossed out = out, blank = not said yet (the days are filled in at the one-to-one, Tuesday afternoon). Their number and notes are in the PDF. ‹ › for other weeks.</p>' :
+    (!edit ? '<p class="hint">W1 is their Day 1 week, W2 the week after. Green = in, crossed out = out, blank = not said yet (the days are filled in at the one-to-one, Tuesday afternoon). A green <b>A</b> = one of the best new starts. Their number and notes are in the PDF. ‹ › for other weeks.</p>' :
     '<p class="hint">Tap a starter to fill in their days (tap a day: in → out → not said), driver, notes and photo, or to remove them. ' +
       'Week 1 is their Day 1 week, Week 2 the week after. Everyone who started is here as soon as they\'re ticked Arrived on Day 1, with the photo taken there (📷 on the Day 1 list); their coach is whoever booked them. Days stay blank until the one-to-one (Tuesday afternoon); at 18:00 you hear it\'s ready, or who\'s missing. ' +
-      'Days changed after the one-to-one? Their coach gets an alert. Tap <b>A</b> on your best new starts: it goes green (only the people who do the one-to-ones see it). Bookers see the names and their Week 1 and Week 2 days, and the details in the PDF. Every week is kept: ‹ › to go back.</p>'), quiet, !asTab);
+      'Days changed after the one-to-one? Their coach gets an alert. ' + (isAdmin() ? 'Tap <b>A</b> on your best new starts: it goes green for everyone, and on the PDF. ' : 'A green <b>A</b> = one of the best new starts (the admins mark them). ') +
+      'Bookers see the names, their Week 1 and Week 2 days and the A, and the details in the PDF. Every week is kept: ‹ › to go back.</p>'), quiet, !asTab);
   bindAvail(page, go, we);
   page.querySelectorAll('[data-av]').forEach(b => { if (edit) b.onclick = () => availSheet(rows.filter(r => r.id === b.dataset.av)[0], we, wk); });
   page.querySelectorAll('[data-ava]').forEach(b => {
