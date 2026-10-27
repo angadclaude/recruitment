@@ -1,4 +1,4 @@
-window.APP_VERSION = '1020c8c1';
+window.APP_VERSION = 'e29c34d9';
 
 (function () {
 'use strict';
@@ -3076,6 +3076,12 @@ function bookings() { return (S.bookings && S.bookings.items) || []; }
 function bookById(id) { return bookings().filter(b => b.id === id)[0] || null; }
 function bookName(b) { return (b.first_name + ' ' + (b.last_name || '')).trim(); }
 function bookCo(b) { return b.company === 'LINK' ? 'LINK' : 'JUSS'; }
+/** Booked in Hyrre (Megan, or by hand there): approved there, and Hyrre sends their messages, so none of ours. */
+function bookHy(b) { return !!b.hyrre_id; }
+/** Confirmed, or approved in Hyrre (Hyrre's people don't tap our CONFIRM). */
+function bookOk(b) { return !!b.confirmed_at || bookHy(b); }
+/** Who booked them, short: "Jess", or "Megan Hyrre" in full (she isn't on the team). */
+function bookBy(b) { const n = String(b.booked_by || ''); return n === (bookCfg().hyrreBy || 'Megan Hyrre') ? n : n.split(' ')[0]; }
 function bookDaysTo(ymd) { return Math.round((D(ymd) - D(S.me.today)) / 86400000); }
 /** Not checked in by 10:30 on the day (or rebooked after missing it) = didn't come. */
 function bookMissed(b) {
@@ -3177,12 +3183,24 @@ function viewBook(quiet) {
   const d = want(weekEndingOf(S.me.today));  // the week's bundle brings the bookings, and keeps them fresh
   const p = bookPick();
   const page = paint('Book Appts', '<div class="card bookcard"><button class="btn block" id="bookNew">📅 Book a presentation</button>' +
-      '<p class="hint" style="margin:8px 2px 0">Just booked someone on the phone? Tap here: their confirmation is ready to send on WhatsApp, signed by you.</p></div>' +
+      '<p class="hint" style="margin:8px 2px 0">Just booked someone on the phone? Tap here: their confirmation is ready to send on WhatsApp, signed by you.</p>' + bookHyLine() + '</div>' +
     '<div class="chips bkmode">' + [['day', 'Day'], ['week', 'Week']].map(m => '<button type="button" class="chip' + (p.mode === m[0] ? ' on' : '') + '" data-bkmode="' + m[0] + '">' + m[1] + '</button>').join('') + '</div>' +
     (d || S.bookings ? (p.mode === 'week' ? bookWeekHtml(p.we) : bookDayHtml(p.day)) : skeleton(3)) +
     '<p class="hint">⏳ Not confirmed yet turns ✅ Confirmed by itself when they tap CONFIRM in your message. Said yes on WhatsApp instead? Tap "Mark as confirmed". ' +
-      'Booked here = the confirmation, the 18:00 reminder the evening before, "didn\'t come" at ' + h(bookCfg().missed) + ', and check-in knows who booked them. Tap a name for their booking.</p>', quiet);
+      'Booked here = the confirmation, the 18:00 reminder the evening before, "didn\'t come" at ' + h(bookCfg().missed) + ', and check-in knows who booked them. ' +
+      '🤖 Hyrre\'s come in at 08:30 with their messages sent by Hyrre. Tap a name for their booking.</p>', quiet);
   bindBookings(page);
+}
+/** The morning pull from Hyrre: when it last ran and what it brought. Amber on a weekday it hasn't run by 09:15. */
+function bookHyLine() {
+  const x = bookCfg().hyrre; if (!x || !x.at) return '';
+  const day = String(x.at).slice(0, 10), today = S.me.today, wd = D(today).getUTCDay();
+  const late = day !== today && wd > 0 && wd < 6 && londonNow().slice(11, 16) >= '09:15';
+  const when = day === today ? 'today at ' + String(x.at).slice(11, 16) : fmtTs(x.at);
+  const n = x.approved || 0;
+  return '<p class="hint bkhy' + (late ? ' late' : '') + '" style="margin:8px 2px 0">🤖 <b>Hyrre</b> · pulled ' + h(when) + ': ' + n + ' approved booking' + (n === 1 ? '' : 's') +
+    (x.added ? ', ' + x.added + ' new' : '') + (x.cancelled ? ', ' + x.cancelled + ' taken off' : '') + '.' +
+    (late ? ' Not today yet: is Angad\'s computer on?' : '') + '</p>';
 }
 /** What Book Appts shows: Day or Week, which day, which week. Today (Monday at the weekend) until someone picks another
  *  with ‹ ›, until the date changes. */
@@ -3204,9 +3222,9 @@ function bookOrder(l) {
 /** That day's presentation has happened (its "didn't come" time has passed). */
 function bookAfter(day) { return day < S.me.today || (day === S.me.today && londonNow().slice(11, 16) >= bookCfg().missed); }
 function bookRemBtn(day, o, small) {
-  const n = bookDaysTo(day), sent = o.due.filter(b => String(b.remind_at).slice(0, 10) === S.me.today).length;
-  return day >= S.me.today && o.due.length ? '<button type="button" class="btn ghost ' + (small ? 'sm' : 'block bkremd') + '" data-bkrem="' + day + '">📲 ' +
-    (small ? 'Remind' : 'Send ' + (n === 0 ? 'today\'s' : n === 1 ? 'tomorrow\'s' : DAYS_LONG[D(day).getUTCDay()] + '\'s') + ' reminders') + (sent ? ' · ' + sent + '/' + o.due.length : '') + '</button>' : '';
+  const due = o.due.filter(b => !bookHy(b)), n = bookDaysTo(day), sent = due.filter(b => String(b.remind_at).slice(0, 10) === S.me.today).length;  // Hyrre reminds its own
+  return day >= S.me.today && due.length ? '<button type="button" class="btn ghost ' + (small ? 'sm' : 'block bkremd') + '" data-bkrem="' + day + '">📲 ' +
+    (small ? 'Remind' : 'Send ' + (n === 0 ? 'today\'s' : n === 1 ? 'tomorrow\'s' : DAYS_LONG[D(day).getUTCDay()] + '\'s') + ' reminders') + (sent ? ' · ' + sent + '/' + due.length : '') + '</button>' : '';
 }
 /** Like the All tab's: the week as a PDF, who was booked and who came (Angad, 23 Oct). */
 function bookPdfBtn(we) { return '<button class="btn ghost block bkpdf" data-bkpdf="' + we + '">📄 Booked appointments w/e ' + h(fmt(we)) + ' (PDF)</button>'; }
@@ -3220,7 +3238,7 @@ function bookDayHtml(day) {
     '<button class="iconbtn" id="bkprev" aria-label="Previous day"' + (prev < r.from ? ' disabled' : '') + '>‹</button>' +
     '<button class="iconbtn" id="bknext" aria-label="Next day"' + (next > r.to ? ' disabled' : '') + '>›</button></div>';
   if (!l.length) return nav + bookPdfBtn(weekEndingOf(day)) + empty('📅', 'Nobody booked for ' + h(fmtLong(day)) + (after ? '.' : ' yet.'));
-  const unconf = o.due.filter(b => !b.confirmed_at).length, unsent = o.due.filter(b => !b.confirm_at).length;
+  const unconf = o.due.filter(b => !bookOk(b)).length, unsent = o.due.filter(b => !b.confirm_at && !bookHy(b)).length;
   return nav + bookPdfBtn(weekEndingOf(day)) + (after ? kpis([[l.length, 'Booked'], [o.came.length, 'Came'], [o.missed.length, 'Didn\'t come', o.missed.length > 0], [Math.round(o.came.length / l.length * 100) + '%', 'Show-up']])
       : kpis([[l.length, 'Booked'], [l.length - unconf, 'Confirmed'], [unconf, 'Not confirmed', unconf > 0], [unsent, 'Not sent', unsent > 0]])) +
     bookRemBtn(day, o) + '<div class="list alist">' + o.due.concat(o.missed, o.came).map(bookRow).join('') + '</div>';
@@ -3234,14 +3252,14 @@ function bookWeekHtml(we) {
     '<button class="iconbtn" id="bkwnext" aria-label="Next week"' + (addDays(we, 1) > r.to ? ' disabled' : '') + '>›</button></div>';
   if (!l.length) return nav + bookPdfBtn(we) + empty('📅', 'Nobody booked for this week yet.');
   const all = bookOrder(l);
-  return nav + bookPdfBtn(we) + kpis([[l.length, 'Booked'], [l.filter(b => b.confirmed_at).length, 'Confirmed'], [all.came.length, 'Came'], [all.missed.length, 'Didn\'t come', all.missed.length > 0]]) +
+  return nav + bookPdfBtn(we) + kpis([[l.length, 'Booked'], [l.filter(bookOk).length, 'Confirmed'], [all.came.length, 'Came'], [all.missed.length, 'Didn\'t come', all.missed.length > 0]]) +
     [0, 1, 2, 3, 4].map(i => addDays(mon, i)).map(day => {
       const dl = l.filter(b => b.slot_date === day).sort(bookByName); if (!dl.length) return '';
       const o = bookOrder(dl), n = bookDaysTo(day);
       // Short dates and the Remind button on a line of its own, like All's day headers: a phone is too narrow for both
       const rem = bookRemBtn(day, o, true);
       return '<div class="section-h bkdayh"><b data-bkday="' + day + '">' + h(fmt(day)) + (n === 0 ? ' · today' : n === 1 ? ' · tomorrow' : '') + '</b><span>' + dl.length + ' booked · ' +
-          (bookAfter(day) ? o.came.length + ' came' : dl.filter(b => b.confirmed_at).length + ' confirmed') + '</span></div>' + (rem ? '<div class="bkremw">' + rem + '</div>' : '') +
+          (bookAfter(day) ? o.came.length + ' came' : dl.filter(bookOk).length + ' confirmed') + '</span></div>' + (rem ? '<div class="bkremw">' + rem + '</div>' : '') +
         '<div class="list alist">' + o.due.concat(o.missed, o.came).map(bookRow).join('') + '</div>';
     }).join('');
 }
@@ -3251,16 +3269,18 @@ function bookPills(b, yes) {
   return b.status === 'came' ? '<span class="pill green">🎓 Checked in ' + t(b.came_at) + '</span>'
     : b.status === 'no_show' ? '<span class="pill red">❌ Didn\'t come</span><span class="pill blue">📅 Rebooked</span>'
     : missed ? '<span class="pill red">❌ Didn\'t come</span>' + (b.missed_at ? '<span class="pill green">✓ Messaged ' + t(b.missed_at) + '</span>' : '')
-    : (b.confirmed_at ? '<span class="pill green">✅ Confirmed</span>' : '<span class="pill amber">⏳ Not confirmed yet</span>' + (yes ? '<button type="button" class="btn ghost sm markyes" data-bkyes="' + h(b.id) + '">✅ Mark as confirmed</button>' : '')) +
+    : bookHy(b) ? '<span class="pill green">✅ Approved in Hyrre</span>'  // Hyrre sends their confirmation and reminders
+    : (b.confirmed_at ?'<span class="pill green">✅ Confirmed</span>' : '<span class="pill amber">⏳ Not confirmed yet</span>' + (yes ? '<button type="button" class="btn ghost sm markyes" data-bkyes="' + h(b.id) + '">✅ Mark as confirmed</button>' : '')) +
       (b.confirm_at || b.confirmed_at ? '' : '<span class="pill red">Confirmation not sent</span>') +  // confirmed = they had it, however it reached them
       (String(b.remind_at).slice(0, 10) === S.me.today ? '<span class="pill blue">📲 Reminded ' + t(b.remind_at) + '</span>' : '');
 }
 function bookRow(b) {
   const missed = bookMissed(b);
-  const act = missed && b.status === 'booked' ? '<div class="bkbtns">' + bookSend(b, 'missed', 'Sorry we missed you') + '<button class="btn ghost sm" data-bkre="' + h(b.id) + '">📅 Rebook</button></div>' : '';
+  const act = missed && b.status === 'booked' ? (bookHy(b) ? '<p class="hint bkhyact">Mark them absent in Hyrre (Shift + click their appointment): Hyrre sends the rebook link.</p>'
+    : '<div class="bkbtns">' + bookSend(b, 'missed', 'Sorry we missed you') + '<button class="btn ghost sm" data-bkre="' + h(b.id) + '">📅 Rebook</button></div>') : '';
   return '<div class="trow bkrow' + (b.status === 'came' ? ' arrived' : '') + '"><span class="av co-' + bookCo(b) + '">' + h(initials(bookName(b))) + '</span>' +
     '<div class="main" data-bk="' + h(b.id) + '"><div class="name">' + h(bookName(b)) + ' <span class="co ' + bookCo(b) + '">' + bookCo(b) + '</span></div>' +
-    '<div class="sub">booked by ' + h(String(b.booked_by).split(' ')[0]) + ' · ' + h(b.source) + '</div><div class="pills">' + bookPills(b, true) + '</div>' + act + '</div></div>';
+    '<div class="sub">booked by ' + h(bookBy(b)) + ' · ' + h(b.source) + (bookHy(b) ? ' · 🤖 Hyrre' : '') + '</div><div class="pills">' + bookPills(b, true) + '</div>' + act + '</div></div>';
 }
 function bindBookings(root) {
   const nb = root.querySelector('#bookNew'); if (nb) nb.onclick = () => bookForm({});
@@ -3368,7 +3388,7 @@ function bookSendSheet(b, kind) {
 }
 /** Reminders for one day, one after another: tap send, WhatsApp opens with it ready (signed by you), come back, next one. */
 function bookRemindSheet(date) {
-  const items = bookings().filter(b => b.slot_date === date && b.status === 'booked').sort((a, b) => bookName(a).localeCompare(bookName(b)));
+  const items = bookings().filter(b => b.slot_date === date && b.status === 'booked' && !bookHy(b)).sort((a, b) => bookName(a).localeCompare(bookName(b)));  // Hyrre reminds its own
   if (!items.length) return toast('Nobody to remind for ' + fmtLong(date));
   const n = bookDaysTo(date), reminded = b => String(b.remind_at).slice(0, 10) === S.me.today;
   const sent = b => '<span class="pill green">✓ Sent ' + h(String(b.remind_at).slice(11, 16)) + (b.remind_by && b.remind_by !== S.me.user.name ? ' · ' + h(String(b.remind_by).split(' ')[0]) : '') + '</span>';
@@ -3388,7 +3408,7 @@ function bookRemindSheet(date) {
 /** One booking: who, when, what's been sent, and what you can do next. */
 function bookSheet(id) {
   const b = bookById(id); if (!b) return;
-  const missed = bookMissed(b), open = b.status === 'booked' && !missed;
+  const hy = bookHy(b), missed = bookMissed(b), open = b.status === 'booked' && !missed && !hy;  // Hyrre's: changed in Hyrre, messages from Hyrre
   const sentLine = k => b[k + '_at'] ? '<div>📨 ' + BOOK_SENT[k] + ': ' + h(fmtTs(b[k + '_at'])) + ' · ' + h(String(b[k + '_by']).split(' ')[0]) + ' · ' + h(VIA_LABEL[b[k + '_via']] || 'WhatsApp') + '</div>' : '';
   const back = bookSheetOpen('Booking',
     '<div class="sheet-h"><span class="av co-' + bookCo(b) + '">' + h(initials(bookName(b))) + '</span><div style="min-width:0"><div class="label muted">📅 ' + h(fmtLong(b.slot_date)) + ' · ' + h(fmt12(b.slot_time || bookCfg().time)) + '</div>' +
@@ -3398,14 +3418,16 @@ function bookSheet(id) {
       '<div>🙋 Booked by ' + h(b.booked_by) + ' · ' + h(fmtTs(b.created_at)) + ' · ' + h(b.source) + '</div>' +
       (b.notes ? '<div>📝 ' + h(b.notes) + '</div>' : '') +
       sentLine('confirm') + sentLine('remind') + sentLine('missed') +
-      (b.confirmed_at ? '<div>✅ ' + (b.confirmed_by === 'CONFIRM' ? 'Tapped CONFIRM · ' + h(fmtTs(b.confirmed_at)) : 'Replied YES · ' + h(fmtTs(b.confirmed_at)) + (b.confirmed_by ? ' · ' + h(String(b.confirmed_by).split(' ')[0]) : '')) + '</div>' : '') + '</div>' +
+      (b.confirmed_at ? '<div>✅ ' + (b.confirmed_by === 'CONFIRM' ? 'Tapped CONFIRM · ' + h(fmtTs(b.confirmed_at)) : 'Replied YES · ' + h(fmtTs(b.confirmed_at)) + (b.confirmed_by ? ' · ' + h(String(b.confirmed_by).split(' ')[0]) : '')) + '</div>' : '') +
+      (hy ? '<div>🤖 From Hyrre, approved there' + (b.hyrre_at ? ' · seen ' + h(fmtTs(b.hyrre_at)) : '') + '. Hyrre sends their confirmation and reminders. ' +
+        'To change the day or cancel, do it in Hyrre: the 08:30 pull brings it here.' + (missed && b.status === 'booked' ? ' Didn\'t come? Mark them absent in Hyrre (Shift + click) and Hyrre sends the rebook link.' : '') + '</div>' : '') + '</div>' +
     (open ? '<button class="btn wa block" id="bkc">💬 ' + (b.confirm_at ? 'Send the confirmation again' : 'Send the confirmation') + ' · WhatsApp or 📱 Text</button>' +
       '<button class="btn ghost block" id="bkr" style="margin-top:8px">📲 Send a reminder</button>' +
       (b.confirmed_at ? '' : '<button class="btn ghost block" id="bky" style="margin-top:8px">✅ Mark as confirmed (they said yes)</button>') +
       '<button class="btn ghost block" id="bke" style="margin-top:8px">📅 Change the day</button>' : '') +
-    (missed && b.status === 'booked' ? '<button class="btn wa block" id="bkm">💬 Sorry we missed you</button><button class="btn ghost block" id="bkre" style="margin-top:8px">📅 Rebook</button>' : '') +
+    (missed && b.status === 'booked' && !hy ? '<button class="btn wa block" id="bkm">💬 Sorry we missed you</button><button class="btn ghost block" id="bkre" style="margin-top:8px">📅 Rebook</button>' : '') +
     (b.status === 'came' && b.candidate_id ? '<button class="btn block" id="bko">🎓 Open their check-in</button>' : '') +
-    (b.status === 'booked' ? '<button class="linkbtn block center" id="bkx" style="margin-top:12px">Cancel this booking</button>' : '') +
+    (b.status === 'booked' && !hy ? '<button class="linkbtn block center" id="bkx" style="margin-top:12px">Cancel this booking</button>' : '') +
     '<button class="btn ghost block" id="bkdone" style="margin-top:10px">Done</button>');
   const on = (sel, fn) => { const el = back.querySelector(sel); if (el) el.onclick = fn; };
   on('#bkc', () => bookSendSheet(b, 'confirm'));
@@ -3432,7 +3454,7 @@ function showupCard(s) {
     '<div class="label muted" style="margin:14px 0 2px">Where they applied</div>' +
       s.sources.map(x => '<div class="su-src"><div class="su-l"><span><b>' + h(x.source) + '</b> · ' + x.booked + ' booked → ' + x.came + ' came</span><b>' + pct(x.came, x.booked) + '</b></div>' +
         '<div class="bar"><i style="width:' + (x.booked ? Math.round(x.came / x.booked * 100) : 0) + '%"></i></div></div>').join('') + '</div>' +
-    '<p class="hint">Booked from the app after a call, Mon–Fri. Today\'s count once ' + h(bookCfg().missed) + ' has passed. Cancelled bookings are left out.</p>';
+    '<p class="hint">Booked from the app after a call, or in Hyrre (Megan Hyrre, or by hand there), Mon–Fri. Today\'s count once ' + h(bookCfg().missed) + ' has passed. Cancelled bookings are left out.</p>';
 }
 
 // ───── New starter onboarding (admins only): their details to copy into Databyte, and the welcome email with the FieldIQ link.
@@ -3866,8 +3888,9 @@ function bookPdfName(we) { return 'Booked Appointments w-e ' + we.slice(8, 10) +
 /** Everyone booked into a presentation that week, a table per day: confirmed or not, and who came. */
 function bookPdf(we) {
   const mon = addDays(we, -6), l = bookings().filter(b => b.slot_date >= mon && b.slot_date <= we), all = bookOrder(l), first = n => String(n || '').split(' ')[0];
-  const conf = l.filter(b => b.confirmed_at).length, happened = all.came.length + all.missed.length;
-  const confirmed = b => b.confirmed_at ? [b.confirmed_by === 'CONFIRM' ? 'Tapped CONFIRM' : 'Replied YES', 'green'] : b.confirm_at ? ['No', 'amber', true] : ['Not sent', 'red', true];
+  const conf = l.filter(bookOk).length, happened = all.came.length + all.missed.length;
+  const confirmed = b => b.confirmed_at ? [b.confirmed_by === 'CONFIRM' ? 'Tapped CONFIRM' : 'Replied YES', 'green'] : bookHy(b) ? ['Approved in Hyrre', 'green']
+    : b.confirm_at ? ['No', 'amber', true] : ['Not sent', 'red', true];
   const came = b => b.status === 'came' ? ['Came ' + String(b.came_at || '').slice(11, 16), 'green', true] : b.status === 'no_show' ? ['Didn\'t come (rebooked)', 'red', true]
     : bookMissed(b) ? ['Didn\'t come', 'red', true] : [b.slot_date === S.me.today ? 'Expected today' : 'Expected', 'grey'];
   return listPdf({
@@ -3875,13 +3898,13 @@ function bookPdf(we) {
     sub: 'Everyone booked into a ' + fmt12(bookCfg().time) + ' presentation after their call (Mon-Fri), confirmed or not, and who came  |  ' + bookCfg().co + ' Marketing',
     boxes: [[l.length, 'Booked'], [conf, 'Confirmed', 'green'], [l.length - conf, 'Not confirmed', l.length > conf ? 'amber' : ''], [all.came.length, 'Came', 'green'],
       [all.missed.length, 'Didn\'t come', all.missed.length ? 'red' : ''], [happened ? Math.round(all.came.length / happened * 100) + '%' : '-', 'Show-up\n(days so far)']],
-    line: l.length ? 'Booked by: ' + pdfTally(l, b => first(b.booked_by)) + '  ·  Applied via: ' + pdfTally(l, b => b.source) + '  ·  Still to come: ' + all.due.length : '',
+    line: l.length ? 'Booked by: ' + pdfTally(l, bookBy) + '  ·  Applied via: ' + pdfTally(l, b => b.source) + '  ·  Still to come: ' + all.due.length : '',
     cols: [['#', 18], ['Name', 112], ['Mobile', 68], ['Booked by', 64], ['Applied via', 62], ['Confirmed', 80], ['Came?', 119]],
     groups: [0, 1, 2, 3, 4].map(i => addDays(mon, i)).map(day => {
       const dl = l.filter(b => b.slot_date === day).sort(bookByName), o = bookOrder(dl);
-      return { head: fmtLong(day), note: dl.length + ' booked · ' + dl.filter(b => b.confirmed_at).length + ' confirmed' + (bookAfter(day) ? ' · ' + o.came.length + ' came · ' + o.missed.length + ' didn\'t come' : ''),
+      return { head: fmtLong(day), note: dl.length + ' booked · ' + dl.filter(bookOk).length + ' confirmed' + (bookAfter(day) ? ' · ' + o.came.length + ' came · ' + o.missed.length + ' didn\'t come' : ''),
         rows: o.due.concat(o.missed, o.came).map(b => ({ fill: b.status === 'came' ? 'green' : o.missed.indexOf(b) >= 0 ? 'red' : '',
-          cells: [bookName(b), b.mobile, first(b.booked_by), b.source, confirmed(b), came(b)] })) };
+          cells: [bookName(b), b.mobile, bookBy(b), b.source, confirmed(b), came(b)] })) };
     }),
     empty: 'Nobody booked for this week.',
   });

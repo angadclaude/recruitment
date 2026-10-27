@@ -147,6 +147,23 @@ Applicants from Teamtailor are called by **Jess, Rubal or Angad** (`BOOK_TEAM` i
 
 **GDPR:** a booking's notes go after 12 weeks; the whole booking is deleted after 6 months, like everything else.
 
+## 🤖 Megan's bookings from Hyrre (Slough, every morning at 08:30)
+Hyrre's AI caller, **Megan**, screens Slough's CVs and pencils people into the 10:00; Rubal approves them in Hyrre, and **Hyrre sends their confirmation and reminders** (J&L sends them nothing). Every morning at **08:30** the approved ones come into **Book Appts** by themselves:
+
+- **Who booked them:** **Megan Hyrre**, or **Rubal / Jess** when Hyrre's note says *"Booked by Rubal"* (a callback booked by hand in Hyrre). Megan Hyrre counts as **Office Recruitment** (no incentive). She isn't on the Team list and can't log in; her alerts (*"🙌 … just checked in"*, *"😕 … didn't come today"*) go to **Rubal and Jess** (`CONFIG.HYRRE.ALERTS_TO`).
+- **On Book Appts** they show *"booked by Megan Hyrre · Hirematic · 🤖 Hyrre"* and **✅ Approved in Hyrre**, with no WhatsApp buttons and no 18:00 reminder. At the top: *"🤖 Hyrre · pulled today at 08:30: N approved bookings"*.
+- **Change or cancel them in Hyrre**, not here: the next morning's pull brings it across (moved day, declined, a corrected name). Pencilled-in (not yet approved) people don't come across.
+- **Didn't come (10:30):** mark them **absent in Hyrre** (Shift + click their appointment) and Hyrre sends the rebook link.
+- **Check-in** finds them by mobile like any booking (*"booked by Megan Hyrre"*); show-up on Appts Attended has a Megan Hyrre row.
+- **No pull by 09:15 on a weekday:** Angad, Rubal and Jess get *"🤖 Hyrre's bookings didn't come in this morning"*.
+
+**How it runs (Angad's computer):** a Claude scheduled task, **hyrre-morning-pull**, at 08:30 every day. It runs `node scripts/hyrre-sync.js snippet` (a one-time ticket, good for 15 minutes) and runs `scripts/hyrre-pull.js` in a Chrome tab on hyrre.co.uk, logged in as Rubal. That page only reads Slough's appointments (pipeline 403) and sends them to J&L (`hyrreImport`). Hyrre's own Claude/ChatGPT connection only admits those two apps, so J&L can't connect to Hyrre directly. It needs:
+1. the computer on at 08:30, with the Claude app and Chrome open (Claude in Chrome connected);
+2. Hyrre logged in, in that Chrome;
+3. the key in `.env.hyrre` (made once by `node scripts/hyrre-sync.js setup`; J&L keeps only its fingerprint, `HYRRE_SYNC_SHA256`).
+
+To pull now, ask Claude *"pull Hyrre now"* (it runs the same task). `node scripts/hyrre-sync.js last` shows what the last pull brought.
+
 ## 🔔 Chase tab: nobody drops out of the pipeline
 A tab in the bottom bar for admins and bookers. The red number on it shows how many people are at risk right now. Someone is on it if, in the last 2 weeks (`CHASE_DAYS` in `Code.gs`):
 

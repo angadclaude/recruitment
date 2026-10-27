@@ -35,6 +35,7 @@ The recruitment app for **LINK Marketing** and **JUSS Marketing** (Angad runs bo
      - `dev/room.js`: busy room, 20 check-ins; `CPU=10` for a slow phone.
      - `dev/move-test.js`: address moves.
      - `dev/book.js`: booking a presentation after the call (both back ends, 49 checks).
+     - `dev/hyrre.js`: Megan's bookings from Hyrre (both back ends, 41 checks).
    - **Needs:** Node 22+ and Playwright with Chromium (`npm i -g playwright && npx playwright install chromium`). `pdftotext` is optional.
    - **On Angad's PC (PowerShell):** Playwright is installed in `%LOCALAPPDATA%\jl-recruitment-tools`, so first run `$env:NODE_PATH = "$env:LOCALAPPDATA\jl-recruitment-tools\node_modules"`. Run the harnesses one at a time: with `speed.js` running alongside, an e2e step (Chase → Nudge all) once timed out. Alone, e2e passes 379/379 on UK time and on UTC. Git is at `%LOCALAPPDATA%\Programs\Git\cmd\git.exe` (not on PATH in older shells). This clone has `core.autocrlf=false`: keep files LF, or the build's version hash changes. `private/` (ignored locally) holds files that must never go in this public repo.
    - **Test browser clocks** follow the fake server clock (`setTime`), so tests don't depend on today's real date.
@@ -210,6 +211,15 @@ The app now does all of it, and **he decided the flow is mine to set**:
 
 ## Data fixes Angad asked for
 - **26 Oct 2026:** Fiza's 2 appointments that day were Angad's (he entered them under her by mistake). Angad moved both himself (candidate → **Booker** → Angad → **Save**, `reassignBooker`, which also moves the candidate's company to the booker's). The rest of that week is automatic (`HANDOVER`, above). Her earlier candidates stay hers, and their alerts go to Angad (the PR #140 move was undone on 27 Oct, see Rules).
+
+## Done: Megan's bookings from Hyrre (27 Oct 2026)
+Hyrre (hyrre.co.uk, org "JMO", Slough = pipeline **403**) is the AI screening-call recruiter Slough uses since 26 Oct: its caller "Megan" pencils people into the 10:00 and Rubal approves them there. At **08:30** a Claude scheduled task on Angad's PC (**hyrre-morning-pull**) runs `node scripts/hyrre-sync.js snippet` (key in `.env.hyrre` → one-time 15-min ticket, `hyrreTicket`), then runs `scripts/hyrre-pull.js` in a Chrome tab on hyrre.co.uk logged in as Rubal. It reads Slough's appointments (look-only GETs, header `X-Pipeline-Id: 403`) and POSTs them to `/api/rpc` `hyrreImport`; `api/rpc.js` lets the `https://hyrre.co.uk` origin read the answer.
+- Approved ones become Bookings rows with `hyrre_id` + `hyrre_at`, keyed by Hyrre id + day. A moved day = old row cancelled + new row; declined or removed (still to come) = cancelled. Rows that came or no-showed are never touched.
+- Booker: **Megan Hyrre** (Users row id `hyrremegan`, admin role, switched off, no email: Office Recruitment, no incentive, hidden from Team, can't be edited). "Booked by Rubal/Jess" in Hyrre's note credits them. `liveBooker` keeps Megan's bookings hers; `successorsOf` sends her alerts to `CONFIG.HYRRE.ALERTS_TO` (Rubal, Jess).
+- No J&L messages for them: no CONFIRM token, no 18:00 reminder. J&L can't edit, cancel or message them (`HYRRE_OWNS`). The 10:30 alert says to mark them absent in Hyrre.
+- `maybeHyrreLate`: no pull by 09:15 on a weekday → the booking team is alerted.
+- Hyrre's MCP (OAuth, read-only) only admits Claude/ChatGPT (`unknown_app` for anything else), so there's no server-side link. Ask Matt (Hyrre) for an API key or webhook if Angad wants it without his PC.
+- Tests: `node app/dev/hyrre.js <dir>`, 41 checks on both back ends. **Never change Hyrre settings or templates** (Angad, 27 Oct).
 
 ## Open items (ask Angad when relevant)
 - **Optional:** auto-deploy `Code.gs` from GitHub with `clasp`, to remove the paste step. It needs the Apps Script API turned on and a `CLASPRC_JSON` GitHub secret, which he sets himself and never pastes in chat.

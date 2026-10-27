@@ -11,8 +11,18 @@ async function isLive(rt) {
   return LIVE;
 }
 
+// The 08:30 pull from Hyrre posts from a hyrre.co.uk tab (scripts/hyrre-pull.js): that page may read the answer. Nothing else is
+// let in: the post carries a one-time ticket (hyrreImport) and every other action still needs a login.
+const HYRRE_ORIGIN = 'https://hyrre.co.uk';
+
 module.exports = async (req, res) => {
   res.setHeader('cache-control', 'no-store');
+  if (req.headers.origin === HYRRE_ORIGIN) { res.setHeader('access-control-allow-origin', HYRRE_ORIGIN); res.setHeader('vary', 'origin'); }
+  if (req.method === 'OPTIONS' && req.headers.origin === HYRRE_ORIGIN) {
+    res.setHeader('access-control-allow-methods', 'POST');
+    res.setHeader('access-control-allow-headers', 'content-type');
+    res.statusCode = 204; return res.end();
+  }
   if (req.method !== 'POST') { res.statusCode = 405; return res.end('POST only'); }
   let body = req.body;
   if (Buffer.isBuffer(body)) body = body.toString('utf8');
