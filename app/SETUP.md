@@ -272,10 +272,10 @@ The app sends through the script owner's Gmail, so that Gmail has to be allowed 
 
 ## Day 1 results: the marked-up New Starts List, done by the app
 No more highlighters on the printed list:
-- **On the day:** tick **Arrived**, **No-show** or **🚫 Dropped out** (not interested) as usual. On each row, tap **FR** or **HF** for where they're going. It starts on their company's (JUSS = HF, LINK = FR); orange = FR, pink = HF.
+- **On the day:** tick **Arrived**, **No-show** or **🚫 Dropped out** (not interested) as usual. On each row, tap **FR** or **HF** for where they're going. It starts on their company's (JUSS = HF, LINK = FR); purple (NDCS) = FR, green (HelloFresh) = HF.
 - **Next morning:** anyone who came on Day 1 but not back, tap **🚪 Didn't continue** (twice; Undo puts them back). They still count as a Day 1 start.
 - **09:00 the morning after**, admins get the results: "15 of 23 started · FR 9 · HF 6 · 2 didn't continue", starts by booker ("Office 5 · Hasini 3 …"), and why the rest didn't start. The same card is at the top of that day on the Day 1 tab.
-- **📄 New Starts List** from the next day comes out marked up: rows in FR orange / HF pink, struck through for anyone who didn't start or didn't continue, and the results underneath. On the day itself it's the usual sign-in sheet.
+- **📄 New Starts List** from the next day comes out marked up: rows in NDCS purple (FR) / HelloFresh green (HF), struck through for anyone who didn't start or didn't continue, and the results underneath. On the day itself it's the usual sign-in sheet.
 - **A name typed wrong at check-in?** Their page → **Fix their name**.
 
 ## New starters' availability: Week 1 and Week 2 (replaces the NS Availability sheet)

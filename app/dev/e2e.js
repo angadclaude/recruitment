@@ -1590,7 +1590,7 @@ async function fillEval(p) {
   await ap.click('.trow[data-cand="' + adham.id + '"] [data-campsw] button[data-camp="FR"]');
   await ap.waitForFunction(id => { const b = document.querySelector('.trow[data-cand="' + id + '"] [data-campsw] button.on'); return b && b.textContent === 'FR'; }, adham.id);
   ok(await campSaved(adham.id, 'FR') && /FR\s*2/.test(await ap.textContent('[data-d1camp="FR"]')) && await ap.$('.trow.campFR[data-cand="' + adham.id + '"]'),
-    'one tap on FR moves Adham (JUSS) to FR: saved, his row goes orange, the FR chip counts him (FR 2)');
+    'one tap on FR moves Adham (JUSS) to FR: saved, his row goes FR purple, the FR chip counts him (FR 2)');
   await ap.click('.trow[data-cand="' + adham.id + '"] [data-campsw] button[data-camp="HF"]');
   ok(await campSaved(adham.id, 'HF'), '…and HF moves him back');
   await ap.click('[data-d1camp="FR"]'); await ap.waitForSelector('[data-d1camp="FR"].on');
@@ -2089,6 +2089,22 @@ async function fillEval(p) {
     await ap.click('.avgone [data-avback="' + mira.id + '"]'); await ap.waitForSelector('.avrow:has-text("Mira Manual")');
     const miraBack = (await api(admin, 'availWeek', { weekEnding: WE })).rows.find(r => r.id === mira.id);
     ok(miraBack && miraBack.has_photo && miraBack.notes === 'Slough | retail' && miraBack.w2 === 'IIIIIOO', '↩️ Put back: Mira is on the list again, days, notes and photo as they were');
+    // 📷 Photos from a file (Angad, 27 Oct: put in the week's photos cut from his Canva pages, no retaking). The file is
+    // sent to him privately (never in the repo, which is public); it runs in his own session, shows who, saves when he says
+    const mkPh = col => ap.evaluate(c => { const v = document.createElement('canvas'); v.width = 480; v.height = 572; const g = v.getContext('2d'); g.fillStyle = c; g.fillRect(0, 0, 480, 572); return v.toDataURL('image/jpeg', 0.8); }, col);
+    const pack = { we: WE, photos: [{ name: 'Jasraj', data: await mkPh('#123456') }, { name: 'adham', data: await mkPh('#654321') }, { name: 'Nobody', data: await mkPh('#999999') }] };
+    await ap.setInputFiles('#avimpf', { name: 'not-photos.json', mimeType: 'application/json', buffer: Buffer.from('{"hello":1}') });
+    await ap.waitForSelector('#toast:has-text("isn\'t a photos file")');
+    await ap.setInputFiles('#avimpf', { name: 'NS-photos.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(pack)) });
+    await ap.waitForSelector('.impsheet #impgo');
+    const impTxt = await ap.innerText('.impsheet');
+    ok(/2 new starters' photos/.test(impTxt) && /Jasraj Bhuller/.test(impTxt) && /Adham Soliman/.test(impTxt) && /left out: Nobody/.test(impTxt),
+      '📥 Add photos from a file: "2 new starters\' photos" with the app\'s names (Jasraj Bhuller, Adham Soliman), "Nobody" left out; any other file is refused');
+    await shot(ap, '56-photos-file');
+    await ap.click('#impgo'); await ap.waitForSelector('#toast:has-text("photos in")', { timeout: 15000 });
+    const phNow = (await api(admin, 'availPhotos', { weekEnding: WE })).photos, avIds = (await api(admin, 'availWeek', { weekEnding: WE })).rows;
+    const idOf = f => avIds.find(r => r.full_name.split(' ')[0] === f).id;
+    ok(phNow[idOf('Jasraj')] === pack.photos[0].data && phNow[idOf('Adham')] === pack.photos[1].data, '✅ Put in: both photos saved');
     await ap.click('#abMe'); await ap.waitForSelector('#mAvail');
     ok(/New starters' availability/.test(await ap.textContent('#mAvail')), 'everyone has it in the menu: "🗓️ New starters\' availability"');
   }
@@ -2132,11 +2148,11 @@ async function fillEval(p) {
     ok(jasNow.day1_status === 'arrived' && !!jasNow.day1_left_at && /1 didn't continue/.test(card2) && /2 of 2 started/.test(card2) && (!avJ || avJ.left),
       '🚪 Didn\'t continue (twice) on Jasraj: still a Day 1 start (2 of 2), "1 didn\'t continue", off availability (or flagged there if already filled in)');
     await shot(ap, '54-day1-results');
-    // The list, marked up the way the team did it by hand: FR orange / HF pink rows, struck through, results underneath
+    // The list, marked up the way the team did it by hand: rows in the campaign's colour (FR NDCS purple / HF HelloFresh green), struck through, results underneath
     const rDl = await pdfDl(ap, '[data-pdf="' + D1 + '"]'), rPath = `${SHOTS}/55-day1-results.pdf`; await rDl.saveAs(rPath);
     const rRaw = fs.readFileSync(rPath, 'latin1');
-    ok(/1 0\.88 0\.76 rg/.test(rRaw) && /\(Left\) Tj/.test(rRaw) && /0\.25 0\.25 0\.3 RG 0\.9 w/.test(rRaw) && /\(2 of 2 started  ·  FR 2 · HF 0 · 1 didn't continue\) Tj/.test(rRaw.replace(/\\'/g, "'")) &&
-      /\(By booker: Office 1 · Abdullahi 1\) Tj/.test(rRaw), '📄 the next day, the New Starts List comes out marked up: FR rows orange, "Left" struck through, "2 of 2 started · FR 2 · HF 0 · 1 didn\'t continue", by booker underneath');
+    ok(/0\.89 0\.81 0\.89 rg/.test(rRaw) && /\(Left\) Tj/.test(rRaw) && /0\.25 0\.25 0\.3 RG 0\.9 w/.test(rRaw) && /\(2 of 2 started  ·  FR 2 · HF 0 · 1 didn't continue\) Tj/.test(rRaw.replace(/\\'/g, "'")) &&
+      /\(By booker: Office 1 · Abdullahi 1\) Tj/.test(rRaw), '📄 the next day, the New Starts List comes out marked up: FR rows NDCS purple, "Left" struck through, "2 of 2 started · FR 2 · HF 0 · 1 didn\'t continue", by booker underneath');
     try { require('child_process').execFileSync('pdftoppm', ['-png', '-r', '70', '-singlefile', rPath, `${SHOTS}/55-day1-results`]); } catch (e) { /* no renderer here */ }
     // 09:00 the next morning: the results come to the admins by themselves
     await post('/dev/props', { D1_RESULTS: '' });
