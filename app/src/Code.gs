@@ -168,7 +168,7 @@ const SHEETS = {
   // starter, kept for good (his call): name and mobile are copied in, so the 6-month clear-out of Candidates doesn't touch it.
   // w1 / w2: Monday to Sunday, one letter a day: I = in, O = out, - = not said yet.
   Availability: ['id', 'created_at', 'week_ending', 'candidate_id', 'day1_date', 'full_name', 'mobile', 'company', 'coach_id', 'coach_name',
-    'driver', 'w1', 'w2', 'notes', 'has_photo', 'updated_at', 'updated_by', 'campaign', 'removed_at', 'removed_by'],
+    'driver', 'w1', 'w2', 'notes', 'has_photo', 'updated_at', 'updated_by', 'campaign', 'removed_at', 'removed_by', 'grade', 'grade_by', 'grade_at'],
   StarterPhotos: ['id', 'data', 'updated_at'],  // one photo per Availability row (same id), a small JPEG as a data: URL
 };
 
@@ -1629,7 +1629,7 @@ const STAFF_ACTIONS = {
   onboardStep: onboardStep, onboardPreview: onboardPreview, onboardSend: onboardSend, setBrand: setBrand,
   saveBooking: saveBooking, bookingAction: bookingAction, bookingList: bookingList,
   setCampaign: setCampaign, fixName: fixName, day1Photo: day1Photo,
-  availWeek: availWeek, saveAvail: saveAvail, addStarter: addStarter, removeStarter: removeStarter, restoreStarter: restoreStarter, saveStarterPhoto: saveStarterPhoto, availPhotos: availPhotos,
+  availWeek: availWeek, saveAvail: saveAvail, addStarter: addStarter, removeStarter: removeStarter, restoreStarter: restoreStarter, gradeStarter: gradeStarter, saveStarterPhoto: saveStarterPhoto, availPhotos: availPhotos,
   setBellSheets: setBellSheets,
 };
 
@@ -1667,6 +1667,7 @@ function availRows(we) {
     return { id: r.id, week_ending: r.week_ending, candidate_id: r.candidate_id, day1_date: r.day1_date, full_name: r.full_name, mobile: r.mobile,
       company: r.company, campaign: c ? campaignOf(c) : r.campaign || (r.company === 'JUSS' ? 'HF' : 'FR'), coach_id: r.coach_id, coach_name: r.coach_name, driver: r.driver, w1: r.w1 || AV_BLANK, w2: r.w2 || AV_BLANK, notes: r.notes,
       office: r.coach_id === 'office' || isOffice(r.coach_name, r.coach_id),  // "OFFICE" on the poster, else "HASINI - PR"
+      grade: r.grade === 'A' ? 'A' : '',  // A = one of the best new starts (Angad, 27 Oct): green, a tap
       has_photo: truthy(r.has_photo), updated_at: r.updated_at, updated_by: r.updated_by, manual: !r.candidate_id,
       said_days: c ? c.q6_days : '', no_longer: !!(c && !still(c)), left: !!(c && c.day1_left_at) };
   });
@@ -1674,7 +1675,8 @@ function availRows(we) {
 function availWeek(req, u) {
   const we = weekEnding(/^\d{4}-\d\d-\d\d$/.test(req.weekEnding || '') ? req.weekEnding : todayStr());
   const edit = canAvail(u);
-  return { weekEnding: we, today: todayStr(), canEdit: edit, rows: availRows(we), bell: isAdmin(u) ? bellStatus(we) : null,
+  // The A (best new start) is for the people who do the one-to-ones, not the whole team
+  return { weekEnding: we, today: todayStr(), canEdit: edit, rows: availRows(we).map(r => (edit ? r : Object.assign(r, { grade: '' }))), bell: isAdmin(u) ? bellStatus(we) : null,
     removed: edit ? readTable('Availability').filter(r => r.week_ending === we && r.removed_at).map(r => ({ id: r.id, full_name: r.full_name, removed_by: r.removed_by })) : [],
     coaches: edit ? usersAll().filter(x => truthy(x.active) && has(x, 'booker')).map(x => ({ id: x.id, name: x.name, company: x.company })).sort((a, b) => a.name.localeCompare(b.name)) : [] };
 }
@@ -1729,6 +1731,14 @@ function removeStarter(req, u) {
   const r = withLock(() => { const a = availRecord(req.id); a.removed_at = nowStr(); a.removed_by = u.name; writeRow('Availability', a); return a; });
   log(u, 'availability_remove', r.candidate_id || '', r.full_name);
   return { ok: true, id: r.id, full_name: r.full_name };
+}
+/** A = one of the best new starts (Angad, 27 Oct: "that's my best new start, so I can just tap on that"). One tap on, one off. */
+function gradeStarter(req, u) {
+  if (!canAvail(u)) throw new Error('Not allowed');
+  if (['A', ''].indexOf(req.grade || '') < 0) throw new Error('A, or nothing.');
+  const r = withLock(() => { const a = availRecord(req.id); a.grade = req.grade || ''; a.grade_by = u.name; a.grade_at = nowStr(); writeRow('Availability', a); return a; });
+  log(u, 'availability_grade', r.candidate_id || '', r.full_name + ': ' + (r.grade || 'not A'));
+  return { ok: true, id: r.id, grade: r.grade };
 }
 function restoreStarter(req, u) {
   if (!canAvail(u)) throw new Error('Not allowed');
