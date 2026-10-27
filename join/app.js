@@ -1,4 +1,4 @@
-window.APP_VERSION = 'da13493b';
+window.APP_VERSION = 'b6de072f';
 
 (function () {
 'use strict';
@@ -2177,7 +2177,7 @@ function loadAvail(we) {
     (S.avail = S.avail || {})[we] = Object.assign(r, { at: Date.now() });
     if (r.rows.some(x => x.has_photo && !(S.avPh || {})[x.id])) call('availPhotos', { weekEnding: we }).then(p => {
       S.avPh = Object.assign(S.avPh || {}, p.photos);
-      if (S.view === 'avail' && !document.querySelector('.sheet-back')) render(true);
+      if ((S.view === 'avail' || S.view === 'academy') && !document.querySelector('.sheet-back')) render(true);  // the Day 1 list shows them too
     }).catch(() => {});
     return r;
   });
@@ -2219,7 +2219,7 @@ function viewAvail(quiet) {
   const page = paint('Availability', top + strip + warn + tools +
     (rows.length ? group('JUSS', 'HelloFresh') + group('LINK', 'Fundraising') : empty('🗓️', we > addDays(thisWe, -7) && we >= thisWe ? 'Nobody\'s started this week yet. Starters appear here when they\'re ticked Arrived on Day 1.' : 'Nobody started that week.')) +
     '<p class="hint">' + (edit ? 'Tap a starter to fill in their days (tap a day: in → out → not said), driver, notes and photo. ' : '') +
-      'Week 1 is their Day 1 week, Week 2 the week after. Everyone who started is here as soon as they\'re ticked Arrived on Day 1; their coach is whoever booked them. ' +
+      'Week 1 is their Day 1 week, Week 2 the week after. Everyone who started is here as soon as they\'re ticked Arrived on Day 1, with the photo taken there (📷 on the Day 1 list); their coach is whoever booked them. Days stay blank until the one-to-one (Tuesday afternoon); at 17:00 you hear it\'s ready, or who\'s missing. ' +
       (edit ? 'Days changed after the one-to-one? Their coach gets an alert. ' : 'Only Angad, Satpal and the people they pick can change it. ') + 'Every week is kept: ‹ › to go back.</p>', quiet, true);
   bindAvail(page, go, we);
   page.querySelectorAll('[data-av]').forEach(b => { if (edit) b.onclick = () => availSheet(rows.filter(r => r.id === b.dataset.av)[0], we, wk); });
@@ -2248,7 +2248,7 @@ function availSheet(r, we, wk) {
   const ph = () => st.photo ? '<img class="av lg avph" src="' + st.photo + '" alt="">' : '<span class="av lg co-' + h(r.company) + '">' + h(initials(r.full_name)) + '</span>';
   back.innerHTML = '<div class="sheet" role="dialog" aria-label="Availability"><div class="grab"></div>' +
     '<div class="sheet-h"><span id="avph">' + ph() + '</span><div style="min-width:0"><div class="label muted">' + (avCamp(r) === 'HF' ? 'HelloFresh' : 'Fundraising') + ' · Day 1 ' + h(fmt(r.day1_date)) + '</div><div class="display">' + h(r.full_name) + '</div></div></div>' +
-    '<div id="avf"><div class="row" style="gap:8px;margin:2px 0 6px"><label class="btn ghost sm" style="margin:0">📷 ' + (st.photo ? 'New photo' : 'Take photo') + '<input type="file" id="avcam" accept="image/*" capture="user" hidden></label>' +
+    '<div id="avf"><div class="row" style="gap:8px;margin:2px 0 6px"><label class="btn ghost sm" style="margin:0">📷 ' + (st.photo ? 'New photo' : 'Take photo') + '<input type="file" id="avcam" accept="image/*" capture="environment" hidden></label>' +
       '<button type="button" class="btn ghost sm" id="avphx"' + (st.photo ? '' : ' hidden') + '>Remove photo</button></div>' +
     '<label class="q">Driver</label>' + chips('driver', ['Yes', 'No'], r.driver) +
     '<label class="q">Week 1 · ' + h(fmt(mon)) + ' – ' + h(fmt(we)) + '</label>' + avDayBtns('avw1', r.w1, pre1) +
@@ -2689,6 +2689,11 @@ function drawAcademy(r, quiet) {
   const wk = mon < from ? (S.d1Old || {})[we] : { items: r.items.filter(c => c.academy_date >= mon && c.academy_date <= we) };
   if (!wk) loadD1Week(we);
   const items = wk ? wk.items : [], pool = items.concat(r.items), dates = [];
+  // Photos (taken on this list on Day 1) live on availability: fetch the week's once anyone has arrived
+  if (admin && items.some(c => c.day1_status === 'arrived') && !(S.avail || {})[we] && (S.avAsk || {})[we] !== true) {
+    (S.avAsk = S.avAsk || {})[we] = true;
+    loadAvail(we).then(() => { if (S.view === 'academy' && S.academy && !document.querySelector('.sheet-back')) drawAcademy(S.academy, true); }).catch(() => { S.avAsk[we] = false; });
+  }
   items.forEach(c => { if (dates.indexOf(c.academy_date) < 0) dates.push(c.academy_date); });
   dates.sort();
   const label = x => { const n = Math.round((D(x) - D(today)) / 86400000); return fmtLong(x) + (n === 0 ? ' · TODAY' : n === 1 ? ' · TOMORROW' : ''); };
@@ -2700,6 +2705,11 @@ function drawAcademy(r, quiet) {
     const camp = admin ? '<span class="campsw" data-campsw="' + h(c.id) + '">' + ['FR', 'HF'].map(k => '<button type="button" class="' + k + (cp === k ? ' on' : '') + '" data-camp="' + k + '">' + k + '</button>').join('') + '</span>'
       : '<span class="pill camp ' + cp + '">' + cp + '</span>';
     const left = c.day1_status === 'arrived' && c.day1_left_at;
+    // Their photo, taken here on Day 1 by Jess / Rubal (Angad, 27 Oct): it's their availability photo, and it shows as their picture
+    const avr = ((S.avail || {})[weekEndingOf(c.academy_date)] || { rows: [] }).rows.filter(x => x.candidate_id === c.id)[0], ph = avr && (S.avPh || {})[avr.id];
+    const pic = ph ? '<img class="av avph" src="' + ph + '" alt="">' : avatar(c);
+    const camBtn = admin && started && c.day1_status === 'arrived' && !left ? '<label class="btn sm ghost d1cam">📷 ' + (ph ? 'Retake' : 'Photo') +
+      '<input type="file" accept="image/*" capture="environment" data-cam="' + h(c.id) + '" hidden></label>' : '';
     if (dropped) return '<div class="trow dropped" data-cand="' + h(c.id) + '"' + dq + '>' + avatar(c) + '<div class="main"><div class="name">' + h(c.full_name) + ' <span class="co ' + h(c.company) + '">' + h(c.company) + '</span></div>' +
       '<div class="sub">' + (c.booker_name ? 'booked by ' + h(c.booker_name) : 'no booker') + (closedBy(c) ? ' · closed by ' + h(closedBy(c)) : '') + '</div>' +
       '<div class="pills"><span class="pill">' + cp + '</span><span class="pill red">🚫 Dropped out</span>' + (c.day1_by ? '<span class="pill">' + h(String(c.day1_by).split(' ')[0]) + ' · ' + h(fmtTs(c.day1_at)) + '</span>' : '') + '</div></div>' +
@@ -2730,9 +2740,9 @@ function drawAcademy(r, quiet) {
       : '<button class="btn sm ghost' + (sureOf('left') ? ' sure' : '') + '" data-d1="left" data-id="' + h(c.id) + '">' + (sureOf('left') ? 'Didn\'t continue?' : '🚪 Didn\'t continue') + '</button>';
     const act = started
       ? '<div class="d1btns"><button class="btn sm ' + (c.day1_status === 'arrived' ? 'green' : 'ghost') + '" data-d1="arrived" data-id="' + h(c.id) + '">Arrived</button>' +
-        '<button class="btn sm ' + (c.day1_status === 'no_show' ? 'red' : 'ghost') + '" data-d1="no_show" data-id="' + h(c.id) + '">No-show</button>' + mvBtn + dropBtn + leftBtn + '</div>'
+        '<button class="btn sm ' + (c.day1_status === 'no_show' ? 'red' : 'ghost') + '" data-d1="no_show" data-id="' + h(c.id) + '">No-show</button>' + camBtn + mvBtn + dropBtn + leftBtn + '</div>'
       : '<div class="d1btns">' + (offer ? '' : '<a class="btn ' + (c.no_whatsapp ? 'sms' : 'wa') + ' sm" data-rem1="' + h(c.id) + '" data-via="' + (c.no_whatsapp ? 'sms' : 'whatsapp') + '" target="_blank" rel="noopener" href="' + h(msgUrl(c, msgDay1Reminder(c))) + '">💬 Remind</a>') + mvBtn + dropBtn + '</div>';
-    return '<div class="trow' + (q ? ' d1q' : '') + (left ? ' left' : c.day1_status === 'arrived' ? ' arrived' : '') + ' camp' + cp + '" data-cand="' + h(c.id) + '"' + dq + '>' + avatar(c) + '<div class="main"><div class="name">' + h(c.full_name) + ' <span class="co ' + h(c.company) + '">' + h(c.company) + '</span></div>' +
+    return '<div class="trow' + (q ? ' d1q' : '') + (left ? ' left' : c.day1_status === 'arrived' ? ' arrived' : '') + ' camp' + cp + '" data-cand="' + h(c.id) + '"' + dq + '>' + pic + '<div class="main"><div class="name">' + h(c.full_name) + ' <span class="co ' + h(c.company) + '">' + h(c.company) + '</span></div>' +
       '<div class="sub">' + (c.booker_name ? 'booked by ' + h(c.booker_name) : 'no booker') + (closedBy(c) ? ' · closed by ' + h(closedBy(c)) : '') + '</div>' +
       (c.offer_sent_at ? '<div class="sub d1by">🎉 Day 1 details ' + offerBy(c) + '</div>' : '') + '<div class="pills">' + pills + '</div></div>' + act + q + '</div>';
   };
@@ -2795,6 +2805,17 @@ function drawAcademy(r, quiet) {
     if (c) { c.offer_sent_at = londonNow(); setTimeout(() => { if (S.view === 'academy') drawAcademy(r, true); }, 400); }
   }));
   page.querySelectorAll('[data-remall]').forEach(b => { b.onclick = () => day1Sheet(b.dataset.remall); });
+  // 📷 on an arrived starter: the phone's camera, made small, saved as their availability photo
+  page.querySelectorAll('[data-cam]').forEach(inp => {
+    inp.onchange = () => {
+      const file = inp.files && inp.files[0], c = pool.filter(x => x.id === inp.dataset.cam)[0]; if (!file || !c) return;
+      toast('Saving ' + c.first_name + '\'s photo…');
+      shrinkPhoto(file).then(data => call('day1Photo', { id: c.id, data: data }).then(res => {
+        S.avPh = S.avPh || {}; S.avPh[res.avail_id] = data;
+        return loadAvail(res.weekEnding).then(() => { drawAcademy(S.academy || r, true); toast('📷 ' + c.first_name + '\'s photo saved'); });
+      })).catch(e => toast(e.message || 'Couldn\'t read that photo. Try again.'));
+    };
+  });
   // FR / HF: one tap, saved straight away (the list, the PDF, availability and the results follow it)
   page.querySelectorAll('[data-campsw] button').forEach(b => {
     b.onclick = e => {

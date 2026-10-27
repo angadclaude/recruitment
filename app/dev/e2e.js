@@ -1918,19 +1918,29 @@ async function fillEval(p) {
     await api(admin, 'saveUser', { user: Object.assign({}, abdU, { roles: ['booker'] }) });
     ok(deleg.canEdit && deleg.coaches.length > 0, 'Team → tick "Availability" on a BA (Abdullahi): he can fill it in; untick and he can\'t');
     await api(admin, 'saveAvail', { id: mira.id, w1: '-------', w2: '-------', driver: '', notes: '' });
-    // 18:00: anyone who's had their Day 1 with no Week 1 days yet → the people who fill it in
+    // 17:00 from the day after Day 1 (Angad, 27 Oct: the one-to-one is Tuesday 2-3pm): who's still missing → the people who fill
+    // it in, then "✅ ready" once; each coach gets their own starters' days once
     const blanks = (await api(admin, 'availWeek', { weekEnding: WE })).rows.filter(r => r.day1_date <= '2026-10-20' && !/[IO]/.test(r.w1)), bNames = blanks.map(r => r.full_name.split(' ')[0]);
-    await setTime('2026-10-20T18:05:00+01:00');
-    const r0 = (await getJson('/dev/pushes')).length;
-    await post('/dev/run', { fn: 'maybeAvailReminder' });
-    const rem = (await getJson('/dev/pushes')).slice(r0).filter(x => /with no availability yet$/.test(x.body.headings.en)), r1 = (await getJson('/dev/pushes')).length;
-    await post('/dev/run', { fn: 'maybeAvailReminder' });
-    const again = (await getJson('/dev/pushes')).length - r1;
+    const due = (await api(admin, 'availWeek', { weekEnding: WE })).rows.filter(r => r.day1_date < '2026-10-20'), dueBlank = due.filter(r => !/[IO]/.test(r.w1));
+    const runRem = async () => { const n0 = (await getJson('/dev/pushes')).length; await post('/dev/run', { fn: 'maybeAvailReminder' }); return (await getJson('/dev/pushes')).slice(n0); };
+    await setTime('2026-10-20T17:05:00+01:00');
+    const rem = await runRem(), again = await runRem();
+    const miss = rem.filter(x => /^🗓️ Availability: /.test(x.body.headings.en)), coachP = rem.filter(x => x.body.headings.en === '🗓️ Your new starters this week');
+    ok(dueBlank.length >= 1 && !due.some(r => r.full_name === 'Mira Manual') && miss.length >= 1 && miss[0].body.headings.en === '🗓️ Availability: ' + (due.length - dueBlank.length) + ' of ' + due.length + ' done' &&
+      miss[0].body.contents.en.startsWith('Still to fill in: ' + dueBlank.map(r => r.full_name.split(' ')[0]).join(', ') + '.') && miss.some(x => x.body.include_aliases.external_id.includes(angadU.id)) && !again.length,
+      '17:00 the day after Day 1: "' + (miss[0] ? miss[0].body.headings.en + ' · ' + miss[0].body.contents.en : 'none') + '" to the people who fill it in, once a day (Mira, Day 1 today, isn\'t due yet)');
+    ok(coachP.length === 1 && coachP[0].body.include_aliases.external_id.join() === s1.coach_id && /^Jasraj: Mon Tue Wed Thu Fri$/.test(coachP[0].body.contents.en),
+      '…and Jasraj\'s coach gets his days: "' + (coachP[0] ? coachP[0].body.contents.en : 'none') + '"');
+    for (const r of dueBlank) await api(admin, 'saveAvail', { id: r.id, w1: 'IIIIIOO', w2: '-------', driver: '' });
+    await post('/dev/props', { AVAIL_REMINDED: '' });
+    const rem2 = await runRem(), ready = rem2.filter(x => /^✅ Availability ready/.test(x.body.headings.en)), coach2 = rem2.filter(x => x.body.headings.en === '🗓️ Your new starters this week');
+    await post('/dev/props', { AVAIL_REMINDED: '' });
+    const rem3 = await runRem();
+    for (const r of dueBlank) await api(admin, 'saveAvail', { id: r.id, w1: '-------', w2: '-------', driver: '' });
     await setTime('2026-10-20T10:00:00+01:00');
-    console.log('    reminder pushes:', rem.length, rem.map(x => x.body.include_aliases.external_id.join('+')).join(' / '));
-    ok(blanks.length >= 1 && bNames.includes('Mira') && rem.length >= 1 && !again && rem.every(x => x.body.headings.en === rem[0].body.headings.en) && rem[0].body.headings.en === '🗓️ ' + blanks.length + ' new starter' + (blanks.length > 1 ? 's' : '') + ' with no availability yet' &&
-      rem[0].body.contents.en.startsWith(bNames.join(', ') + '. ') && rem.some(x => x.body.include_aliases.external_id.includes(angadU.id)),
-      '18:00: "' + (rem[0] ? rem[0].body.headings.en + ' · ' + rem[0].body.contents.en : 'none') + '" (once a day, to admins and the ticked)');
+    ok(ready.length >= 1 && ready[0].body.headings.en === '✅ Availability ready: ' + due.length + ' new starters' && /^Week 1 in: Mon \d+ · Tue \d+ · Wed \d+ · Thu \d+ · Fri \d+ · 🚗 \d+ drive\nTap for the poster/.test(ready[0].body.contents.en) &&
+      coach2.every(x => x.body.include_aliases.external_id.join() !== s1.coach_id) && !rem3.some(x => /^✅ Availability ready/.test(x.body.headings.en)),
+      'all done → "' + (ready[0] ? ready[0].body.headings.en + ' · ' + ready[0].body.contents.en.replace(/\n/g, ' · ') : 'none') + '" once (not again the next day); coaches aren\'t told twice');
     // On the phone: Day 1 → 🗓️ Availability
     await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button[data-tab=academy]');
     await ap.click('.tabbar button[data-tab=academy]'); await ap.waitForSelector('#goAvail');
@@ -1997,6 +2007,14 @@ async function fillEval(p) {
     for (let i = 0; i < 4 && !(await ap.$('.d1res[data-res="' + D1 + '"]')); i++) { await ap.click('#d1prev'); await ap.waitForTimeout(300); }
     const card = await ap.innerText('.d1res[data-res="' + D1 + '"]');
     ok(/2 of 2 started/.test(card) && /FR 2 · HF 0/.test(card) && /Office 1 · Abdullahi 1/.test(card), 'Day 1 tab, Monday 19 Oct: a results card ("' + card.replace(/\n/g, ' · ') + '")');
+    // 📷 on the Day 1 list (Angad, 27 Oct: Jess / Rubal take each starter's photo as they arrive): it's their availability photo
+    const camJpg = Buffer.from((await ap.evaluate(() => { const c = document.createElement('canvas'); c.width = c.height = 300; const g = c.getContext('2d'); g.fillStyle = '#E5409A'; g.fillRect(0, 0, 300, 300);
+      g.fillStyle = '#fff'; g.beginPath(); g.arc(150, 120, 60, 0, 7); g.fill(); return c.toDataURL('image/jpeg', 0.8); })).split(',')[1], 'base64');
+    await ap.setInputFiles('[data-cam="' + adham.id + '"]', { name: 'adham.jpg', mimeType: 'image/jpeg', buffer: camJpg });
+    await ap.waitForSelector('.trow[data-cand="' + adham.id + '"] img.avph', { timeout: 15000 });
+    const avAdPh = (await api(admin, 'availWeek', { weekEnding: '2026-10-25' })).rows.find(r => r.candidate_id === adham.id);
+    ok(avAdPh && avAdPh.has_photo && /Retake/.test(await ap.textContent('.trow[data-cand="' + adham.id + '"] .d1cam')) && !(await ap.$('[data-cam="' + adham.id + '"][capture="user"]')),
+      '📷 Photo on Adham\'s Day 1 row (back camera): saved as his availability photo, shows as his picture, the button says Retake');
     const lb = '[data-d1="left"][data-id="' + jasId + '"]';
     await ap.click(lb); await ap.waitForSelector(lb + '.sure'); await ap.click(lb);
     await ap.waitForSelector('.trow.left[data-cand="' + jasId + '"]');
