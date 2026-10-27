@@ -1983,8 +1983,23 @@ async function fillEval(p) {
     ok((await ap.textContent('#avw1 button[data-i="1"] small')) === 'IN' && (await ap.textContent('#avw1 button[data-i="2"] small')) === 'OUT', 'tap a day: in, tap again: out');
     await ap.click('.avfill[data-w="w2"]'); await ap.click('.sheet .chip[data-v="No"]');
     const photoBuf = Buffer.from(jpg.split(',')[1], 'base64');
+    // A photo goes through the crop screen first (Angad, 27 Oct: head and shoulders, like the Canva pages): framed by itself,
+    // drag / pinch / the slider to adjust, ✅ Use photo. Camera or photo library (no capture= here, so both are offered).
+    ok(!(await ap.$('#avcam[capture]')), 'the availability photo can be taken or picked from the library');
     await ap.setInputFiles('#avcam', { name: 'mira.jpg', mimeType: 'image/jpeg', buffer: photoBuf });
+    await ap.waitForSelector('.cropback .cropbox img');
+    const cropTxt = await ap.innerText('.cropcard'), boxAR = await ap.$eval('.cropbox', b => b.clientWidth / b.clientHeight);
+    const zoomBefore = await ap.$eval('.cropbox img', i => i.style.transform);
+    await ap.fill('#cropz', '40'); await ap.dispatchEvent('#cropz', 'input');
+    const zoomAfter = await ap.$eval('.cropbox img', i => i.style.transform);
+    ok(/Mira's photo/.test(cropTxt) && /head and shoulders/i.test(cropTxt) && Math.abs(boxAR - 214 / 255) < 0.02 && zoomBefore !== zoomAfter,
+      'the crop screen: "Mira\'s photo", a portrait frame the shape of the poster\'s, the slider zooms');
+    await shot(ap, '51b-photo-crop');
+    await ap.click('#cropok');
     await ap.waitForSelector('.sheet #avph img.avph');
+    const miraPh = (await api(admin, 'availPhotos', { weekEnding: WE })).photos[mira.id] || '';
+    const miraDim = await ap.evaluate(src => new Promise(r => { const i = new Image(); i.onload = () => r(i.naturalWidth + '×' + i.naturalHeight); i.src = src; }), miraPh);
+    ok(miraDim === '480×572' && miraPh.length < 140000, 'saved cropped, 480×572 (' + Math.round(miraPh.length / 1000) + 'k characters), sharp on the poster');
     await ap.fill('#avnotes', 'Slough | retail');
     await shot(ap, '51-availability-edit');
     await ap.click('#avsave'); await ap.waitForFunction(() => !document.querySelector('.sheet-back'));
@@ -1998,13 +2013,34 @@ async function fillEval(p) {
     ok(apd.suggestedFilename() === 'NS Availability W2 w-e 25.10.2026.pdf' && /\(NS Availability · Week 2\) Tj/.test(apRaw) && /\(Mira Manual\) Tj/.test(apRaw) && /\(IN\) Tj/.test(apRaw) &&
       /\(Fundraising · \d+\) Tj/.test(apRaw) && /\(Sun\) Tj/.test(apRaw), '📄 PDF like the old sheet: "NS Availability W2 w-e 25.10.2026.pdf", a table per campaign, Monday to Sunday IN / OUT');
     try { require('child_process').execFileSync('pdftoppm', ['-png', '-r', '70', '-singlefile', apPath, `${SHOTS}/52-availability`]); } catch (e) { /* no renderer here */ }
-    await ap.click('#avposter'); await ap.waitForSelector('#avpimg[data-info]', { timeout: 15000 });
-    const pInfo = JSON.parse(await ap.getAttribute('#avpimg', 'data-info'));
-    ok(pInfo.we === WE && pInfo.people.join('|').includes('Mira Manual+photo') && pInfo.people.join('|').includes(s1.full_name + '+photo'),
-      '📸 Poster: "Welcome our new starters", their photos, names and coaches, HelloFresh then Fundraising (' + pInfo.people.join(' / ') + ')');
-    fs.writeFileSync(`${SHOTS}/53-new-starters-poster.jpg`, Buffer.from(await ap.$eval('#avpimg', i => fetch(i.src).then(r => r.arrayBuffer()).then(b => Array.from(new Uint8Array(b))))));
-    const [posterDl] = await Promise.all([ap.waitForEvent('download'), ap.click('#avpsave')]);
-    ok(posterDl.suggestedFilename() === 'JL-new-starters-' + WE + '.jpg', '⬇️ Save on a computer / Android: downloads "JL-new-starters-' + WE + '.jpg"');
+    // 📸 The poster, as the team made it in Canva (Angad, 27 Oct): an A4 page per campaign, FR (LINK + NDCS) then HF (JUSS +
+    // HelloFresh), photos 4 across, NAME, then "OFFICE" (booked from the office) or "<COACH> - PR". 🏢 Office can be picked as the coach.
+    const avNow = (await api(admin, 'availWeek', { weekEnding: WE })).rows, frOne = avNow.find(r => !r.office && r.coach_id);
+    if (frOne) {
+      await ap.click('.avrow:has-text("' + frOne.full_name + '")'); await ap.waitForSelector('#avcoach');
+      await ap.selectOption('#avcoach', 'office'); await ap.click('#avsave'); await ap.waitForFunction(() => !document.querySelector('.sheet-back'));
+    }
+    const avOff = (await api(admin, 'availWeek', { weekEnding: WE })).rows;
+    const frOff = frOne && avOff.find(r => r.id === frOne.id);
+    ok(frOff && frOff.coach_id === 'office' && frOff.coach_name === 'Office' && frOff.office, 'Coach → 🏢 Office: saved, and marked office (' + (frOne ? frOne.full_name : '?') + ')');
+    await ap.click('#avposter'); await ap.waitForSelector('#avpimgs[data-info]', { timeout: 15000 });
+    const pInfo = JSON.parse(await ap.getAttribute('#avpimgs', 'data-info')), allP = pInfo.pages.map(pg => pg.camp + ': ' + pg.people.join(', ')).join(' / ');
+    const expLabel = r => (r.office ? 'OFFICE' : (r.coach_name || '').split(' ')[0].toUpperCase() + ' - PR');
+    const camps = pInfo.pages.map(pg => pg.camp).join(), pageDims = await ap.$$eval('#avpimgs img', a => a.map(i => i.naturalWidth + '×' + i.naturalHeight));
+    ok(pInfo.we === WE && (camps === 'FR,HF' || camps === 'FR' || camps === 'HF') && pageDims.every(d => d === '1652×2336') &&
+      avOff.every(r => allP.includes(r.full_name + ' · ' + expLabel(r))) && allP.includes('Mira Manual · OFFICE · photo') && allP.includes(s1.full_name + ' · ' + expLabel(s1) + ' · photo') &&
+      pInfo.pages.every(pg => { const ls = pg.people.map(x => / · OFFICE/.test(x)); return ls.indexOf(false) < 0 || ls.lastIndexOf(true) < ls.indexOf(false); }),
+      '📸 Poster: A4 pages (' + pageDims.join(', ') + '), Fundraising then HelloFresh, Office first, then each coach\'s: ' + allP);
+    for (const [i, pg] of pInfo.pages.entries()) fs.writeFileSync(`${SHOTS}/53-new-starters-${pg.camp}.jpg`, Buffer.from(await ap.$eval('#avpimgs img:nth-child(' + (i + 1) + ')', im => fetch(im.src).then(r => r.arrayBuffer()).then(b => Array.from(new Uint8Array(b))))));
+    if (frOne) await api(admin, 'saveAvail', { id: frOne.id, w1: frOne.w1, w2: frOne.w2, driver: frOne.driver, notes: frOne.notes, coach_id: frOne.coach_id });
+    const nsName = co => 'NS-WE-' + WE.slice(8, 10) + '-' + WE.slice(5, 7) + '-' + WE.slice(2, 4) + '-' + co + '.jpg';
+    const posterNames = pInfo.pages.map(pg => nsName(pg.camp === 'HF' ? 'JUSS' : 'LINK'));
+    const posterDls = [], onDl = d => posterDls.push(d.suggestedFilename());
+    ap.on('download', onDl);
+    await ap.click('#avpsave');
+    for (let i = 0; i < 50 && posterDls.length < posterNames.length; i++) await ap.waitForTimeout(100);
+    ap.off('download', onDl);
+    ok(JSON.stringify(posterDls) === JSON.stringify(posterNames), '⬇️ Save on a computer / Android: downloads each page (' + posterDls.join(', ') + ')');
     // iPhone (Angad, 27 Oct): a download there only reaches Files, as a grey "JPG" page with "Open in Preview". Save opens the
     // Share sheet instead, whose "Save Image" puts it in Photos. Same for the daily bulletin's Save.
     const iosCtx = await browser.newContext(Object.assign({ userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1' }, PHONE));
@@ -2017,17 +2053,18 @@ async function fillEval(p) {
     for (let i = 0; i < 4 && (await ip.textContent('.seg-nav b')) !== 'Sun 25 Oct'; i++) {
       const was = await ip.textContent('.seg-nav b'); await ip.click('#avprev'); await ip.waitForFunction(w => document.querySelector('.seg-nav b').textContent !== w, was);
     }
-    await ip.waitForSelector('#avposter'); await ip.click('#avposter'); await ip.waitForSelector('#avpimg[data-info]', { timeout: 15000 });
+    await ip.waitForSelector('#avposter'); await ip.click('#avposter'); await ip.waitForSelector('#avpimgs[data-info]', { timeout: 15000 });
     await ip.click('#avpsave');
-    await ip.waitForFunction(() => (window.__shared || []).length === 1);
+    await ip.waitForFunction(n => (window.__shared || []).length === n, posterNames.length);
     const iosToast = await ip.textContent('#toast').catch(() => '');
     await ip.click('.sheet-back', { position: { x: 5, y: 5 } }); await ip.waitForFunction(() => !document.querySelector('.sheet-back'));
     await ip.click('.tabbar button[data-tab=today]'); await ip.waitForSelector('#bullDaily'); await ip.click('#bullDaily');
     await ip.waitForSelector('#bsave:not([hidden])', { timeout: 15000 }); await ip.click('#bsave');
-    await ip.waitForFunction(() => (window.__shared || []).length === 2);
-    const shared = await ip.evaluate(() => window.__shared);
-    ok(shared[0] === 'JL-new-starters-' + WE + '.jpg image/jpeg' && /^JL-stats-\d{4}-\d\d-\d\d\.jpg image\/jpeg$/.test(shared[1]) && iosDl === 0 && /Save Image/.test(iosToast || ''),
-      'iPhone: ⬇️ Save opens the Share sheet with the JPEG ("' + (iosToast || '').trim() + '"), not the grey file page (poster: ' + shared[0] + '; bulletin: ' + shared[1] + ')');
+    await ip.waitForFunction(n => (window.__shared || []).length === n + 1, posterNames.length);
+    const shared = await ip.evaluate(() => window.__shared), nP = posterNames.length;
+    ok(JSON.stringify(shared.slice(0, nP)) === JSON.stringify(posterNames.map(n => n + ' image/jpeg')) && /^JL-stats-\d{4}-\d\d-\d\d\.jpg image\/jpeg$/.test(shared[nP]) && iosDl === 0 &&
+      /Save (\d+ Images|Image)/.test(iosToast || ''),
+      'iPhone: ⬇️ Save opens the Share sheet with the JPEGs ("' + (iosToast || '').trim() + '"), not the grey file page (poster: ' + shared.slice(0, nP).join(', ') + '; bulletin: ' + shared[nP] + ')');
     await iosCtx.close();
     await ap.click('.sheet-back', { position: { x: 5, y: 5 } }); await ap.waitForFunction(() => !document.querySelector('.sheet-back'));
     await ap.click('#abMe'); await ap.waitForSelector('#mAvail');
@@ -2060,6 +2097,7 @@ async function fillEval(p) {
     const camJpg = Buffer.from((await ap.evaluate(() => { const c = document.createElement('canvas'); c.width = c.height = 300; const g = c.getContext('2d'); g.fillStyle = '#E5409A'; g.fillRect(0, 0, 300, 300);
       g.fillStyle = '#fff'; g.beginPath(); g.arc(150, 120, 60, 0, 7); g.fill(); return c.toDataURL('image/jpeg', 0.8); })).split(',')[1], 'base64');
     await ap.setInputFiles('[data-cam="' + adham.id + '"]', { name: 'adham.jpg', mimeType: 'image/jpeg', buffer: camJpg });
+    await ap.waitForSelector('.cropback #cropok'); await ap.click('#cropok');
     await ap.waitForSelector('.trow[data-cand="' + adham.id + '"] img.avph', { timeout: 15000 });
     const avAdPh = (await api(admin, 'availWeek', { weekEnding: '2026-10-25' })).rows.find(r => r.candidate_id === adham.id);
     ok(avAdPh && avAdPh.has_photo && /Retake/.test(await ap.textContent('.trow[data-cand="' + adham.id + '"] .d1cam')) && !(await ap.$('[data-cam="' + adham.id + '"][capture="user"]')),

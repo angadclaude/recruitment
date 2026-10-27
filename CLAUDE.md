@@ -136,12 +136,29 @@ This replaces the "Juss & Link - NS Availability - 2026" Google Sheet (a W1 / Pi
 - **Where:** Day 1 tab → **🗓️ Availability · Week 1 & Week 2**, and the account menu → **🗓️ New starters' availability** for everyone (`viewAvail`).
 - **Data:** `Availability` + `StarterPhotos` tabs (`availRows`, `availWeek`, `saveAvail`, `addStarter`, `removeStarter`, `saveStarterPhoto`, `availPhotos`).
   - **Rows:** everyone ticked **Arrived** on Day 1 gets a row by themselves (cohort = their Day 1 week), plus anyone added by hand ("someone who started without the app").
-  - **Fields:** name and mobile are copied in. Coach = whoever booked them (if that person has left, whoever took over). Driver, Week 1 and Week 2 as `w1` / `w2` (7 letters Mon–Sun: I in / O out / - not said), notes, photo (360 px JPEG under 48k characters).
+  - **Fields:** name and mobile are copied in. Coach = whoever booked them (if that person has left, whoever took over). Driver, Week 1 and Week 2 as `w1` / `w2` (7 letters Mon–Sun: I in / O out / - not said), notes, photo (480 × 572 JPEG, head and shoulders, under 140k characters; the first ones, to 27 Oct, were 360 px squares). Coach can also be **🏢 Office** (`coach_id` `office`).
 - **Angad's decisions (27 Oct, don't re-ask):**
   - **Who fills it in:** the one-to-one on Day 1 is done by Angad, Satpal or someone they delegate. Editors are `canAvail` = admins plus anyone ticked **Availability** in Team.
   - **Everyone can view, phone numbers included**, like the sheet.
   - **Kept for good:** numbers, notes and photos. The 6-month clear-out only touches Candidates.
-  - **Pictures:** a photo of each starter; the app makes the poster (`drawStarters` in `Bulletin.html`: "Welcome our new starters", HelloFresh then Fundraising, photo, name, coach).
+  - **Pictures:** a photo of each starter; the app makes the poster.
+- **The poster = the team's Canva pages, exactly (Angad, 27 Oct: "match it exactly… you can't even see someone's face"; don't redesign it):**
+  - `drawNS` in `Bulletin.html`, measured off his NS w/e 01/11/26 pages (1180 wide, drawn at 1.4×: 1652 × 2336 JPEGs).
+  - **One A4 page per campaign**, Fundraising first: LINK logo + NDCS logo, then JUSS logo + HelloFresh logo (`img/logo-link-ns.png`, `logo-ndcs.png`, `logo-hellofresh.png`, cut from his pages).
+  - **Layout:**
+    - title "NS - WE - dd/mm/yy" (Roboto Bold, #1d49a4), a blue rule;
+    - 4 across, fixed columns, a part-filled last row on the left;
+    - rounded blue frames 220 × 261 with head-and-shoulders photos;
+    - the NAME in capitals (Roboto Bold; two lines over ~258 px, as TARANIH / RAGAGURU);
+    - then the coach in italics (Arimo Italic): **OFFICE** (`office` flag = coach is an admin, in `OFFICE_BOOKERS`, or 🏢 Office), else **"HASINI - PR"**.
+    - Office first, then each coach's starters together.
+    - More than 12 on a page: the grid shrinks (or goes 5 across) to stay on it.
+  - **Share / Save** send both pages (`NS-WE-dd-mm-yy-LINK.jpg`, `…-JUSS.jpg`); on iPhone Save = the Share sheet → Save 2 Images (`savePoster`).
+  - **Faces:**
+    - Every photo goes through `framePhoto`: the face is found (`findFace`, our own runner of the pico cascade `img/facefinder.bin`, MIT, `img/face-LICENSE.txt`) and framed like the Canva crops (face ≈ 37% of the height, centre 30% down: `faceFrame`).
+    - The crop screen lets them drag, pinch or slide, then ✅ Use photo.
+    - Older square photos are framed from their face when the poster is drawn (`autoFrame`); they're soft, so retaking them gives a sharper poster.
+    - Checked against all 15 of his 26 Oct photos: the face was found in every one.
 - **The week's rhythm (Angad, 27 Oct, don't re-ask):**
   - **Monday, Day 1:** Jess and Rubal (admins) tick **Arrived**, then tap **📷 Photo** on the same Day 1 row (`day1Photo`, back camera). The photo is their availability photo and shows as their picture on the Day 1 list.
   - **Tuesday around 2–3pm:** the one-to-one where they commit to their days. Days stay **blank until then** (not pre-filled).

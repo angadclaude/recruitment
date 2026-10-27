@@ -160,8 +160,12 @@ self.addEventListener('fetch', e => {
 `);
 
 ['icon-180.png', 'icon-192.png', 'icon-512.png'].forEach(f => copy(path.join(ASSETS, f), 'icons/' + f));
-['poster-link.jpg', 'poster-juss.jpg', 'og-link.jpg', 'og-juss.jpg', 'og-app.jpg', 'logo-juss.png', 'logo-link.png'].forEach(f => copy(path.join(ASSETS, f), 'img/' + f));
-// App + bulletin fonts (Oswald + Anton, SIL Open Font License, see fonts/OFL.txt)
+['poster-link.jpg', 'poster-juss.jpg', 'og-link.jpg', 'og-juss.jpg', 'og-app.jpg', 'logo-juss.png', 'logo-link.png',
+  'logo-link-ns.png', 'logo-ndcs.png', 'logo-hellofresh.png'].forEach(f => copy(path.join(ASSETS, f), 'img/' + f));
+// The face finder's cascade for the new starters poster (MIT, see img/face-LICENSE.txt)
+copy(path.join(ASSETS, 'face', 'facefinder.bin'), 'img/facefinder.bin');
+copy(path.join(ASSETS, 'face', 'LICENSE.txt'), 'img/face-LICENSE.txt');
+// App + bulletin fonts (Oswald, Anton, Roboto and Arimo, SIL Open Font License, see fonts/OFL.txt)
 fs.readdirSync(path.join(ASSETS, 'fonts')).forEach(f => copy(path.join(ASSETS, 'fonts', f), 'fonts/' + f));
 
 console.log('Built ' + OUT + ' (v' + v + ') for ' + BASE);
