@@ -53,6 +53,7 @@ The recruitment app for **LINK Marketing** and **JUSS Marketing** (Angad runs bo
 - **Campaign = where a starter is placed, FR or HF, per person (27 Oct).** The default is their company's (JUSS = HF, LINK = FR). An admin switches it in one tap on the Day 1 row (`setCampaign`, `campaign` column, `campaignOf` on server and app).
   - Angad's 26 Oct rule "JUSS = HF always" didn't match his own printed list: 6 of the 12 JUSS starters who arrived went to FR (orange = FR, pink = HF on the team's highlighter).
   - The Day 1 list, its PDF, availability, the poster and the results all follow the placement.
+  - **Colours (Angad, 27 Oct):** HF = HelloFresh green, FR = NDCS purple. This applies to the marked-up New Starts List rows and the FR | HF switch. The paper used pink / orange highlighter; don't go back to those.
 - **The numbers mean one thing everywhere (Angad, 26 Oct: "I don't want to explain this again"):**
   - **Checked in** = everyone.
   - **Attended / appointments** = rated in the room (walk outs too), Mon–Fri, **minus non-qualifiers**, the incentive's net (`counted(c) && !c.pay_reason`).
@@ -166,6 +167,10 @@ This replaces the "Juss & Link - NS Availability - 2026" Google Sheet (a W1 / Pi
     - The crop screen lets them drag, pinch or slide, then ✅ Use photo.
     - Older square photos are framed from their face when the poster is drawn (`autoFrame`); they're soft, so retaking them gives a sharper poster.
     - Checked against all 15 of his 26 Oct photos: the face was found in every one.
+  - **Photos from a file (`photoImportFile` / `photoImport`, Availability → 📥 Add photos from a file)** are for putting a week's photos in for Angad without anyone retaking them.
+    - The file is JSON `{ we, photos: [{ name, data }] }`, sent to him privately (SendUserFile).
+    - It runs in the opener's own session (`canAvail`): it shows who each photo is for (by the app's first names) and saves them on ✅.
+    - On 27 Oct the session's safety check refused both other routes, and rightly: signing in as Angad with a code from his inbox, and pushing the photos (even encrypted) to this public repo. Never do either.
 - **The week's rhythm (Angad, 27 Oct, don't re-ask):**
   - **Monday, Day 1:** Jess and Rubal (admins) tick **Arrived**, then tap **📷 Photo** on the same Day 1 row (`day1Photo`, back camera). The photo is their availability photo and shows as their picture on the Day 1 list.
   - **Tuesday around 2–3pm:** the one-to-one where they commit to their days. Days stay **blank until then** (not pre-filled).

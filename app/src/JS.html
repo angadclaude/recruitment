@@ -2202,7 +2202,8 @@ function viewAvail(quiet) {
   const blank = rows.filter(r => r.day1_date <= today && !/[IO]/.test(r[key]));
   const warn = blank.length ? '<div class="card tight small avwarn">⚠️ <b>' + blank.length + ' with no Week ' + wk + ' days yet:</b> ' + blank.map(r => h(r.full_name.split(' ')[0])).join(', ') + (edit ? '. Tap a name to fill it in.' : '.') + '</div>' : '';
   const tools = '<div class="bullbtns avtools">' + (rows.length ? '<button class="btn ghost" id="avposter">📸 Poster</button><button class="btn ghost" id="avpdf">📄 PDF</button>' : '') +
-    (edit ? '<button class="btn ghost" id="avadd">＋ Add someone</button>' : '') + '</div>';
+    (edit ? '<button class="btn ghost" id="avadd">＋ Add someone</button>' : '') + '</div>' +
+    (edit ? '<label class="linkbtn avimp">📥 Add photos from a file<input type="file" id="avimpf" accept=".json,application/json" hidden></label>' : '');
   const card = r => {
     const w = r[key], ph = (S.avPh || {})[r.id], said = saidDays(r.said_days), short = wk === 1 && said && /[IO]/.test(w) && avIn(w) < said;
     const tag = edit ? 'button type="button"' : 'div';
@@ -2233,6 +2234,7 @@ function viewAvail(quiet) {
   const ps = page.querySelector('#avposter'); if (ps) ps.onclick = () => availPoster(we, wk, rows);
   const pd = page.querySelector('#avpdf'); if (pd) pd.onclick = () => savePdf(availPdf(we, wk, rows), avName(we, wk) + '.pdf');
   const ad = page.querySelector('#avadd'); if (ad) ad.onclick = () => addStarterSheet(we, d.coaches);
+  const im = page.querySelector('#avimpf'); if (im) im.onchange = () => { const f = im.files && im.files[0]; im.value = ''; if (f) photoImportFile(f); };
 }
 function bindAvail(page, go, we) {
   page.querySelectorAll('#avwk button').forEach(b => { b.onclick = () => go({ wk: Number(b.dataset.wk) }); });
@@ -2334,6 +2336,52 @@ function avThumb(id) {
 function fillThumbs(root) {
   const todo = Array.from(root.querySelectorAll('img[data-thumb]')).filter(im => !thumbNow(im.dataset.thumb) || im.src !== thumbNow(im.dataset.thumb));
   todo.reduce((chain, im) => chain.then(() => avThumb(im.dataset.thumb).then(u => { if (u && im.isConnected) im.src = u; })), Promise.resolve()).catch(() => {});
+}
+/** Photos for a week's starters from a file (Angad, 27 Oct: "update the pictures for all the new starts", cut from his
+ *  Canva pages, no retaking). The file ({ we, photos: [{ name, data }] }) is sent to him privately, never put in the repo,
+ *  which is public. Runs in the opener's own session: shows who each photo is for, saves them when they say so. */
+function photoImportFile(file) {
+  if (!canAvail()) return toast('Only Angad, Satpal and the people they pick can put photos in.');
+  const rd = new FileReader();
+  rd.onload = () => {
+    let pk = null;
+    try { pk = JSON.parse(rd.result); } catch (e) { /* not JSON */ }
+    if (!pk || !/^\d{4}-\d\d-\d\d$/.test(pk.we || '') || !Array.isArray(pk.photos) || pk.photos.some(p => !p.name || !/^data:image\/jpeg;base64,/.test(p.data || ''))) return toast('That isn\'t a photos file.');
+    photoImport(pk);
+  };
+  rd.onerror = () => toast('Couldn\'t read that file.');
+  rd.readAsText(file);
+}
+function photoImport(pk) {
+  toast('Opening the photos…');
+  loadAvail(pk.we).then(() => pk)
+    .then(pk => {
+      const rows = ((S.avail || {})[pk.we] || {}).rows || [];
+      const list = pk.photos.map(p => { const m = rows.filter(r => r.full_name.split(' ')[0].toLowerCase() === String(p.name).toLowerCase()); return { p: p, r: m.length === 1 ? m[0] : null }; });
+      const ok = list.filter(x => x.r), miss = list.filter(x => !x.r);
+      closeSheet(true); document.getElementById('toast').hidden = true;
+      const back = document.createElement('div');
+      back.className = 'sheet-back';
+      back.innerHTML = '<div class="sheet impsheet" role="dialog" aria-label="Photos"><div class="grab"></div><div class="sheet-h"><div style="min-width:0"><div class="label muted">Day 1 w/e ' + h(fmt(pk.we)) + '</div><div class="display">' + ok.length + ' new starters\' photos</div></div>' +
+        '<button type="button" class="iconbtn sheetx" id="impx" aria-label="Close">✕</button></div>' +
+        '<div class="impgrid">' + ok.map(x => '<div><img src="' + x.p.data + '" alt=""><b>' + h(x.r.full_name) + '</b></div>').join('') + '</div>' +
+        (miss.length ? '<p class="small muted">Not on availability that week, so left out: ' + miss.map(x => h(x.p.name)).join(', ') + '.</p>' : '') +
+        '<p class="small muted">These replace the photos they have now.</p>' +
+        '<button class="btn block" id="impgo"' + (ok.length ? '' : ' disabled') + '>✅ Put in ' + ok.length + ' photo' + (ok.length === 1 ? '' : 's') + '</button>' +
+        '<button class="btn ghost block" id="impno" style="margin-top:8px">Cancel</button></div>';
+      document.body.appendChild(back);
+      document.body.style.overflow = 'hidden';
+      back.onclick = e => { if (e.target === back) closeSheet(); };
+      back.querySelector('#impx').onclick = back.querySelector('#impno').onclick = () => closeSheet();
+      back.querySelector('#impgo').onclick = ev => {
+        const b = ev.currentTarget; let n = 0; b.disabled = true;
+        ok.reduce((chain, x) => chain.then(() => { b.textContent = 'Saving ' + (++n) + ' of ' + ok.length + '…'; return call('saveStarterPhoto', { id: x.r.id, data: x.p.data }); })
+          .then(() => { S.avPh = S.avPh || {}; S.avPh[x.r.id] = x.p.data; x.r.has_photo = true; }), Promise.resolve())
+          .then(() => { closeSheet(); nav('avail', { we: pk.we }, true); toast('📷 ' + ok.length + ' photos in ✓'); })
+          .catch(e => { b.disabled = false; b.textContent = '✅ Try again'; toast(e.message); });
+      };
+    })
+    .catch(e => toast(e.message));
 }
 /** A starter's photo, framed head and shoulders like the team's Canva pages (Angad, 27 Oct: "you can't even see someone's
  *  face"). Their face is found and framed by itself; drag or pinch (or the slider) if it needs moving, then ✅ Use photo.
@@ -3498,7 +3546,7 @@ function day1Pdf(mon, list, opts) {
   const perDay = dates.length > 1 ? ' (' + dates.map(x => fmt(x) + ': ' + live.filter(c => c.academy_date === x).length).join(' · ') + ')' : '';
   const fit = (s, w, size) => { s = String(s || ''); const max = Math.floor(w / (size * 0.55)); return s.length <= max ? s : s.slice(0, Math.max(1, max - 2)) + '...'; };
   // From the morning after the day (the day itself prints the sign-in sheet), the list comes out marked up the way the team used to do it by hand for Angad (27 Oct):
-  // starters in their campaign's colour (FR orange, HF pink), everyone who didn't start (or didn't continue) struck through,
+  // starters in their campaign's colour (Angad, 27 Oct: HF in HelloFresh green, FR in the NDCS purple), everyone who didn't start (or didn't continue) struck through,
   // and the results under the table
   const done = rows.length && dates.every(x => x < S.me.today), res = done ? d1ResultsLines(d1Results(rows)) : null;
   const pages = [];
@@ -3518,7 +3566,7 @@ function day1Pdf(mon, list, opts) {
       const t = top - 20 - i * RH, b = t - RH, y = t - 15;
       const at = k => { let v = M; for (let j = 0; j < k; j++) v += cols[j][1]; return v + 4; };
       const left = c.day1_status === 'arrived' && c.day1_left_at;
-      if (done && c.day1_status === 'arrived') o.push((campaignOf(c) === 'HF' ? '1 0.86 0.93' : '1 0.88 0.76') + ' rg ' + M + ' ' + b.toFixed(2) + ' 523 ' + RH + ' re f');  // HF pink, FR orange
+      if (done && c.day1_status === 'arrived') o.push((campaignOf(c) === 'HF' ? '0.89 0.94 0.79' : '0.89 0.81 0.89') + ' rg ' + M + ' ' + b.toFixed(2) + ' 523 ' + RH + ' re f');  // HF HelloFresh green, FR NDCS purple
       else if (c.day1_status === 'arrived') o.push('0.88 0.96 0.9 rg ' + M + ' ' + b.toFixed(2) + ' 523 ' + RH + ' re f');  // light green, like the app
       else if (c.day1_status === 'dropped') o.push('0.94 0.94 0.94 rg ' + M + ' ' + b.toFixed(2) + ' 523 ' + RH + ' re f');  // light grey: dropped out
       const prev = rows[p * PER + i - 1];  // JUSS on top, LINK below: a dark line where LINK starts
