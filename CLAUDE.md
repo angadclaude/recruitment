@@ -160,7 +160,7 @@ Every Tuesday the team brought Angad the printed New Starts List marked up by ha
 The app now does all of it, and **he decided the flow is mine to set**:
 1. **Monday, in the room:** Day 1 tab, as before: Arrived / No-show / 🚫 Dropped out (NI). Plus the **FR | HF** switch on each row.
 2. **Next morning:** **🚪 Didn't continue** (two taps, Undo) on anyone who came on Day 1 but not back (`markDay1` `left` / `stayed`, columns `day1_left_at` / `_by`). They still count as a Day 1 start, and they drop off availability.
-3. **09:00 the morning after a Day 1:** admins get the results (`maybeDay1Results`, `D1_RESULTS_TIME`; tap opens Day 1):
+3. **09:00 the morning after a Day 1:** admins get the results (`maybeDay1Results`, `D1_RESULTS_TIME`; tap opens Day 1). The first one is for Day 1 Mon 2 Nov (`D1_RESULTS_FROM`): 26 Oct's FR / HF were only on paper, so an alert for it would have shown the wrong split.
    - "🎓 Day 1 Monday 26th October: 15 of 23 started"
    - "FR 9 · HF 6 · 2 didn't continue"
    - "Office 5 · Hasini 3 …"
