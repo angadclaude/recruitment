@@ -20,7 +20,7 @@ The recruitment app for **LINK Marketing** and **JUSS Marketing** (Angad runs bo
   - `server/worker.js` runs `Code.gs` in a worker thread with the Google services rebuilt on Postgres: each Sheet tab = `jl.tabs` + `jl.rows` (ordered), CacheService = `jl.cache`, PropertiesService = `jl.props`, LockService = a Postgres advisory lock. Code.gs is synchronous, so every database call waits on the main thread (`server/runtime.js`, Atomics).
   - `server/runtime.js`: one job = one transaction, one job at a time per instance. Emails go into `jl.outbox` and are sent after the commit.
   - `server/live.js` wires it to Supabase (the shared project; schema `jl`, next to FR's `public`, `leaders` and `hf`), OneSignal, and Google's **email relay**.
-  - The relay is the Google-only part of `Code.gs` (`relayMail`, `relayInfo`, `relayExport`, `relayFreeze`, `relaySwitch`). Emails still go out from Gmail ("send mail as" Jess / Rubal / Fiza), and the OneSignal key stays in Google. Calls carry Vercel's `RELAY_SECRET`; `Code.gs` holds only its SHA-256 (`RELAY_SECRET_SHA256`).
+  - The relay is the Google-only part of `Code.gs` (`relayMail`, `relayInfo`, `relayExport`, `relayFreeze`, `relaySwitch`, `relayMirror`, `relayEarnings`, `relayBell`). Emails still go out from Gmail ("send mail as" Jess / Rubal / Fiza), and the OneSignal key stays in Google. Calls carry Vercel's `RELAY_SECRET`; `Code.gs` holds only its SHA-256 (`RELAY_SECRET_SHA256`).
   - `api/rpc.js` is the app's API (same requests and answers as Google's `/exec`). `api/cron.js` is Vercel Cron every 5 minutes, replacing Google's timers in London time. It does nothing until `jl.props.VERCEL_LIVE` is set.
   - `scripts/import-from-google.js` copies every tab and setting from Google, then compares them field by field (`--apply`, `--verify`).
   - Local secrets in the repo root (gitignored): `.env.supabase`, `.env.relay`, `.env.cron`.
@@ -176,7 +176,7 @@ This replaces the "Juss & Link - NS Availability - 2026" Google Sheet (a W1 / Pi
 - **The week's rhythm (Angad, 27 Oct, don't re-ask):**
   - **Monday, Day 1:** Jess and Rubal (admins) tick **Arrived**, then tap **📷 Photo** on the same Day 1 row (`day1Photo`, back camera). The photo is their availability photo and shows as their picture on the Day 1 list.
   - **Tuesday around 2–3pm:** the one-to-one where they commit to their days. Days stay **blank until then** (not pre-filled).
-  - **17:00 from the day after their Day 1** (`maybeAvailReminder`, `AVAIL_REMIND_TIME`):
+  - **18:00 from the day after their Day 1** (`maybeAvailReminder`, `AVAIL_REMIND_TIME`; Angad moved it from 17:00 on 27 Oct because the availability chat can run long):
     - **Satpal, Rubal, Jess and Angad (the admins, Angad 27 Oct)** get all the new starters, done vs missing: "🗓️ Availability: 12 of 15 done · Still to fill in: …" daily until everyone has Week 1 days, then "✅ Availability ready: 15 new starters · Week 1 in: Tue 13 · … · 🚗 4 drive · tap for the poster and the PDF" once a week. Delegates ticked **Availability** don't get it (he named the four);
     - **each coach** (non-admin, active) gets their own new starters, done vs missing: "🗓️ Your new starters: 1 of 2 done" with a line each ("Jasraj: Mon Tue Wed Thu Fri", "Adham: not filled in yet") daily while any are missing, then "✅ Your new starters' days" once (`AVAIL_COACH_READY_<week>`).
   - **Tuesday he wants ready:** the poster in the team WhatsApp, who's in each day, that alert, and the PDF.
@@ -209,6 +209,38 @@ The app now does all of it, and **he decided the flow is mine to set**:
 - **Fix their name** (admins, on their page, `fixName`) updates availability too. Only for a real typo against their documents: the app's names are the source (see Rules).
 - **Not built, ask if needed:** the ✓ ticks the team put next to some pink (HF) rows. Meaning unknown.
 
+## Bell sheets: new starters each week (Angad, 27 Oct 2026)
+Once availability is filled in, the new starters go into the **NEW STARTS** section at the bottom of that week's bell sheet. The team used to copy them across from the old availability Google Sheet.
+- **Which sheet:** by campaign (`campaignOf`).
+  - FR → "🧏🏻‍♂️LINK 2026 FR BELL SHEET", section **NEW STARTS**.
+  - HF → "🍋JUSS HF🍋 BELLSHEET", section **NEW STARTS - SLOUGH**.
+  - The tab is the Day 1 week, "WE dd.mm.yy" (e.g. `WE 01.11.26`).
+- **Only columns A and B are filled in:**
+  - A = their full name in capitals, as the app has it (the New Starts List);
+  - B = their coach in capitals: the first name of whoever booked them.
+  - **OFFICE** when there's no coach (Angad: "just put it as office"): booked by an admin, by `OFFICE_BOOKERS` (Fiza), or availability coach 🏢 Office.
+  - Office first, then each coach's starters together.
+- **What the other letters mean (Angad, 27 Oct):** the days are typed into the template rows already, and they're the plan, not formulas.
+  - **BA AC = BA Academy**, in-house, on Monday and Tuesday.
+  - **S = Shadow day**, on Wednesday.
+  - Thursday onwards is blank. FR also has **NS** in column C.
+  - Never change, move or delete any of these.
+- **Filling:** use the empty template rows. Never overwrite a row that already has a name, and never delete rows.
+- **w/e 01/11/26** was done by hand through the Sheets connector (FR 9, HF 6).
+- **From then on it's automatic (built 27 Oct):**
+  - **When:** from `AVAIL_REMIND_TIME` (18:00) the day after their Day 1, anyone with Week 1 days in who isn't on yet. Later fills go on within 5 minutes.
+  - **How:**
+    - Vercel's cron (`api/cron.js` → `server/bell.js` `bellToSheets`) asks `bellDue`.
+    - Google writes them (`relayBell`, Google-only, so a change to it needs Angad's paste).
+    - `bellDone` keeps who's on (`BELL_SENT_<we>`, avail row ids) and tells the admins.
+  - **What `relayBell` does:**
+    - finds the tab by its date (the HF tab names vary: "WE 5.07.26", " WE 23.11.2025": `bellTabDate`);
+    - the section ends at a blank row, the next section's title (A only) or "(Please DO NOT TOUCH)";
+    - it only fills A:B of rows whose A and B are empty, skips a name already there, and never inserts or deletes rows.
+  - **Problems** (no tab yet, no section, no empty rows left, Google's Code.gs not updated) alert the admins once each (`BELL_PROBLEM_<we>`) and are retried every 5 minutes.
+  - **The sheets' links:** an admin setting on availability (**🔔 Bell sheets** card, `setBellSheets` → `BELL_SHEETS` in props). **Never put their IDs in this repo:** the FR sheet is "anyone with the link can view" and the HF one "anyone with the link can edit" (27 Oct).
+  - e2e "availability" tests it on both back ends (the fake bell books are in `gas.js` `__books`; `/dev/bell` runs the cron step).
+
 ## Data fixes Angad asked for
 - **26 Oct 2026:** Fiza's 2 appointments that day were Angad's (he entered them under her by mistake). Angad moved both himself (candidate → **Booker** → Angad → **Save**, `reassignBooker`, which also moves the candidate's company to the booker's). The rest of that week is automatic (`HANDOVER`, above). Her earlier candidates stay hers, and their alerts go to Angad (the PR #140 move was undone on 27 Oct, see Rules).
 
@@ -222,5 +254,6 @@ Hyrre (hyrre.co.uk, org "JMO", Slough = pipeline **403**) is the AI screening-ca
 - Tests: `node app/dev/hyrre.js <dir>`, 41 checks on both back ends. **Never change Hyrre settings or templates** (Angad, 27 Oct).
 
 ## Open items (ask Angad when relevant)
+- **The HF bell sheet is "anyone with the link can edit"** (owner Jess, 27 Oct). Suggested to Angad: switch General access to Viewer (or Restricted) and keep named editors. His call.
 - **Optional:** auto-deploy `Code.gs` from GitHub with `clasp`, to remove the paste step. It needs the Apps Script API turned on and a `CLASPRC_JSON` GitHub secret, which he sets himself and never pastes in chat.
 - The full team guide is `app/SETUP.md`.

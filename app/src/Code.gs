@@ -56,7 +56,7 @@ const CONFIG = {
   D1_RESULTS_TIME: '09:00',       // the morning after a Day 1: the results to admins (Angad's Tuesday list, 27 Oct)
   D1_RESULTS_FROM: '2026-11-02',  // the first Day 1 with FR / HF set in the app (26 Oct's were only on paper): no alert with a wrong split
   OFFICE_BOOKERS: ['Fiza Iqbal'],  // with the admins, "Office" in the results' starts by booker (bookings made from the office)
-  AVAIL_REMIND_TIME: '17:00',     // after Tuesday's 2-3pm one-to-ones: done vs missing → admins (all starters) and each coach (their own)
+  AVAIL_REMIND_TIME: '18:00',     // after Tuesday's 2-3pm one-to-ones: done vs missing → admins (all starters) and each coach (their own)
   EMAIL_ALERTS: false,            // true = also email every alert. Push is used when OneSignal keys are set.
   SESSION_DAYS: 30,               // staff stay logged in for this long
   SHEET_ID: '',                   // the data Sheet; only needed if this script isn't opened from the Sheet itself
@@ -214,11 +214,12 @@ function include(name) {
 //  - the handover: the Sheet's tabs and settings, read once on switch day (relayExport);
 //  - the switch: FROZEN = saves wait ("Trying again…", phones retry by themselves) while the data is copied;
 //    MOVED_TO = every request from a phone that still has the old address open is passed on to Vercel. Undo = relaySwitch({ to: '' });
-//  - the JUSS earnings summaries: Satpal's weekly email lands in this account, so the JUSS Playbook fetches them here (relayEarnings).
+//  - the JUSS earnings summaries: Satpal's weekly email lands in this account, so the JUSS Playbook fetches them here (relayEarnings);
+//  - the bell sheets: the week's new starters into their NEW STARTS section (relayBell).
 // Every relay call carries Vercel's RELAY_SECRET (a long random key in Vercel's settings). Only its SHA-256 fingerprint
 // is here (safe to publish: it can't be turned back into the key), so nobody has to copy the key into Google.
 const RELAY_SECRET_SHA256 = 'f648c4393028bfc5db8e40b94fd30bb09f068d190d024534f9c9e88e076a3163';
-const RELAY_ACTIONS = { relayInfo: relayInfo, relayMail: relayMail, relayExport: relayExport, relayFreeze: relayFreeze, relaySwitch: relaySwitch, relayMirror: relayMirror, relayEarnings: relayEarnings };
+const RELAY_ACTIONS = { relayInfo: relayInfo, relayMail: relayMail, relayExport: relayExport, relayFreeze: relayFreeze, relaySwitch: relaySwitch, relayMirror: relayMirror, relayEarnings: relayEarnings, relayBell: relayBell };
 /** The live copy for the team (19 Oct): Vercel writes each tab here every 5 minutes when it changed, so the Sheet keeps
  *  showing today's people. Read-only: the app's data lives in Supabase, and edits made here are overwritten (each tab
  *  warns before an edit). Never the login tabs. Everything as plain text, so mobiles keep their leading 0. */
@@ -326,6 +327,46 @@ function relayEarnings(req) {
     return { id: e.id, date: e.date, subject: e.subject, names: e.files.map(a => a.getName()),
       files: send ? e.files.map(a => ({ name: a.getName(), data: Utilities.base64Encode(a.getBytes()) })) : undefined };
   }) };
+}
+/** The week's new starters onto a bell sheet (Angad, 27 Oct; Vercel's 5-minute timer, server/bell.js): into the empty rows of
+ *  the NEW STARTS section on that week's tab, columns A and B only (NAME, COACH). The plan already typed in those rows (BA AC =
+ *  BA Academy, in-house, Monday and Tuesday; S = Shadow day, Wednesday; NS on FR) and every formula stay as they are: nothing is
+ *  inserted, moved or deleted, and a name that's already there is left alone. rows = [[name, coach], …] → each 'added',
+ *  'already' or 'full'. */
+function relayBell(req) {
+  relayCheck(req);
+  const id = String(req.id || ''), we = String(req.we || ''), section = bellNorm(req.section), rows = (req.rows || []).slice(0, 80);
+  if (!/^[\w-]{25,80}$/.test(id) || !/^\d{4}-\d\d-\d\d$/.test(we) || section.indexOf('NEW START') !== 0) throw new Error('Not allowed');
+  const book = SpreadsheetApp.openById(id), title = String(book.getName()).trim();
+  const sh = book.getSheets().filter(x => bellTabDate(x.getName()) === we)[0];
+  if (!sh) return { title: title, error: 'no tab' };
+  const v = sh.getDataRange().getDisplayValues(), a = i => bellNorm(v[i][0]);
+  let start = v.findIndex((r, i) => a(i) === section);
+  if (start < 0) { const like = v.map((r, i) => i).filter(i => a(i).indexOf('NEW START') === 0); start = like.length === 1 ? like[0] : -1; }
+  if (start < 0) return { title: title, tab: sh.getName(), error: 'no section' };
+  const free = [], have = {};
+  for (let i = start + 1; i < v.length; i++) {
+    // The end: a blank row, the next section's title (a name and nothing else) or the totals
+    if (!v[i].slice(1).some(x => String(x).trim()) || /DO NOT TOUCH/.test(a(i))) break;
+    if (a(i)) have[a(i)] = true; else if (!bellNorm(v[i][1])) free.push(i + 1);
+  }
+  return { title: title, tab: sh.getName(), rows: rows.map(r => {
+    const name = String(r[0] || '').trim(), key = bellNorm(name);
+    if (!key) return 'skipped';
+    if (have[key]) return 'already';
+    if (!free.length) return 'full';
+    sh.getRange(free.shift(), 1, 1, 2).setValues([[name, String(r[1] || '').trim()]]);
+    have[key] = true;
+    return 'added';
+  }) };
+}
+function bellNorm(s) { return String(s || '').trim().replace(/\s+/g, ' ').toUpperCase(); }
+/** The team's tab names vary ("WE 01.11.26", "WE 5.07.26", " WE 23.11.2025"): the date they stand for, or ''. */
+function bellTabDate(name) {
+  const m = /^\s*W\/?E\s*(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{4}|\d{2})\s*$/i.exec(String(name || ''));
+  if (!m) return '';
+  const two = n => ('0' + n).slice(-2);
+  return (m[3].length === 2 ? '20' + m[3] : m[3]) + '-' + two(m[2]) + '-' + two(m[1]);
 }
 function switchover(req) {
   if (onSupabase()) return null;
@@ -1589,6 +1630,7 @@ const STAFF_ACTIONS = {
   saveBooking: saveBooking, bookingAction: bookingAction, bookingList: bookingList,
   setCampaign: setCampaign, fixName: fixName, day1Photo: day1Photo,
   availWeek: availWeek, saveAvail: saveAvail, addStarter: addStarter, removeStarter: removeStarter, restoreStarter: restoreStarter, saveStarterPhoto: saveStarterPhoto, availPhotos: availPhotos,
+  setBellSheets: setBellSheets,
 };
 
 // ───────────────────────── NEW STARTERS' AVAILABILITY (Angad, 27 Oct) ─────────────────────────
@@ -1632,7 +1674,7 @@ function availRows(we) {
 function availWeek(req, u) {
   const we = weekEnding(/^\d{4}-\d\d-\d\d$/.test(req.weekEnding || '') ? req.weekEnding : todayStr());
   const edit = canAvail(u);
-  return { weekEnding: we, today: todayStr(), canEdit: edit, rows: availRows(we),
+  return { weekEnding: we, today: todayStr(), canEdit: edit, rows: availRows(we), bell: isAdmin(u) ? bellStatus(we) : null,
     removed: edit ? readTable('Availability').filter(r => r.week_ending === we && r.removed_at).map(r => ({ id: r.id, full_name: r.full_name, removed_by: r.removed_by })) : [],
     coaches: edit ? usersAll().filter(x => truthy(x.active) && has(x, 'booker')).map(x => ({ id: x.id, name: x.name, company: x.company })).sort((a, b) => a.name.localeCompare(b.name)) : [] };
 }
@@ -1735,7 +1777,7 @@ function day1Photo(req, u) {
  *  - Each coach (whoever booked them): their own starters, done vs missing, daily until all theirs are done; then once. */
 function maybeAvailReminder() {
   const now = nowStr(), today = now.slice(0, 10), hm = now.slice(11, 16);
-  if (hm < (CONFIG.AVAIL_REMIND_TIME || '17:00') || hm > '20:59' || weekday(today) === 0) return;
+  if (hm < (CONFIG.AVAIL_REMIND_TIME || '18:00') || hm > '20:59' || weekday(today) === 0) return;
   const p = PropertiesService.getScriptProperties();
   if (p.getProperty('AVAIL_REMINDED') === today) return;
   p.setProperty('AVAIL_REMINDED', today);
@@ -1762,6 +1804,88 @@ function maybeAvailReminder() {
     else if (ready.indexOf(id) < 0) { ready.push(id); notify([ch], '✅ Your new starters\' days', mine.map(line).join('\n'), 'avail'); }
   });
   p.setProperty('AVAIL_COACH_READY_' + we, JSON.stringify(ready));
+}
+
+// ───────────────────────── BELL SHEETS (Angad, 27 Oct) ─────────────────────────
+// Once their availability is in, the week's new starters go into the NEW STARTS section at the bottom of that week's tab on the
+// bell sheet: FR on the LINK FR bell sheet, HF on the JUSS HF one ("NEW STARTS - SLOUGH"). NAME and COACH in capitals, as on
+// the New Starts List; OFFICE when there's no coach (booked by an admin, by Fiza, or coach 🏢 Office). Office first, then each
+// coach's together. From AVAIL_REMIND_TIME the day after their Day 1, anyone with Week 1 days in who isn't on yet: Vercel's
+// 5-minute timer asks bellDue, Google writes them (relayBell) and bellDone keeps who went on and tells the admins. The sheets'
+// links are an admin setting on availability (BELL_SHEETS), never in this public file: anyone with a bell sheet's link can open it.
+const BELL = { FR: { section: 'NEW STARTS', name: 'FR bell sheet' }, HF: { section: 'NEW STARTS - SLOUGH', name: 'HF bell sheet' } };
+function bellProp(k, dflt) { try { return JSON.parse(PropertiesService.getScriptProperties().getProperty(k) || 'null') || dflt; } catch (e) { return dflt; } }
+function bellTab(we) { return 'WE ' + we.slice(8, 10) + '.' + we.slice(5, 7) + '.' + we.slice(2, 4); }
+/** Their row: NAME, COACH (first name), in capitals; OFFICE when there's no coach. */
+function bellRow(r) {
+  const coach = !r.office && String(r.coach_name || '').trim() ? String(r.coach_name).trim().split(/\s+/)[0] : '';
+  return { id: r.id, name: String(r.full_name || '').trim().replace(/\s+/g, ' ').toUpperCase(), coach: (coach || 'Office').toUpperCase(), office: !coach };
+}
+/** Who's due on the bell sheets now (null = nobody, or no links yet). */
+function bellDue() {
+  const ids = bellProp('BELL_SHEETS', {});
+  if (!ids.FR && !ids.HF) return null;
+  const now = nowStr(), stamp = now.slice(0, 10) + ' ' + now.slice(11, 16), at = CONFIG.AVAIL_REMIND_TIME || '18:00', we = weekEnding(now.slice(0, 10));
+  if (stamp < addDays(we, -5) + ' ' + at) return null;  // the first of them is due at 18:00 on the Tuesday
+  const sent = bellProp('BELL_SENT_' + we, {});
+  const due = availRows(we).filter(r => !r.no_longer && /[IO]/.test(r.w1) && !sent[r.id] && stamp >= addDays(r.day1_date, 1) + ' ' + at);
+  const sheets = Object.keys(BELL).filter(k => ids[k]).map(k => ({ key: k, id: ids[k], section: BELL[k].section,
+    rows: due.filter(r => r.campaign === k).map(bellRow).sort((a, b) => (b.office - a.office) || a.coach.localeCompare(b.coach) || a.name.localeCompare(b.name)) }))
+    .filter(x => x.rows.length);
+  return sheets.length ? { we: we, tab: bellTab(we), sheets: sheets } : null;
+}
+/** What Google wrote (server/bell.js): keeps who's on, tells the admins who went on and, once each, what's in the way. */
+function bellDone(res) {
+  const p = PropertiesService.getScriptProperties(), we = String((res && res.we) || '');
+  if (!/^\d{4}-\d\d-\d\d$/.test(we)) throw new Error('Which week?');
+  const sent = bellProp('BELL_SENT_' + we, {}), probs = bellProp('BELL_PROBLEM_' + we, {}), titles = bellProp('BELL_TITLES', {}), tab = bellTab(we);
+  const added = [], fresh = [];
+  let n = 0;
+  (res.sheets || []).forEach(s => {
+    const b = BELL[s.key], rows = s.rows || [], now = {};
+    if (!b) return;
+    if (s.title) titles[s.key] = s.title;
+    rows.forEach(r => { if (r.status === 'added' || r.status === 'already') sent[r.id] = s.key; });
+    const mine = rows.filter(r => r.status === 'added'), full = rows.filter(r => r.status === 'full');
+    if (mine.length) { n += mine.length; added.push(s.key + ' ' + mine.length + ': ' + mine.map(r => r.name + ' (' + r.coach + ')').join(', ')); }
+    if (s.error === 'no tab') now.tab = 'The ' + b.name + ' has no "' + tab + '" tab yet: they go on as soon as it\'s there.';
+    else if (s.error === 'no section') now.section = 'There\'s no "' + b.section + '" section on the ' + b.name + '\'s ' + (s.tab || tab) + ' tab.';
+    else if (/not allowed|unknown action/i.test(s.error || '')) now.google = 'Google\'s copy of the app needs the new Code.gs (paste it, then Deploy → New version).';
+    else if (s.error) now.error = 'The ' + b.name + ' couldn\'t be written to: ' + s.error;
+    if (full.length) now.full = 'No empty rows left under ' + b.section + ' on the ' + b.name + ' for ' + full.map(r => r.name).join(', ') + '. Copy in more empty rows and they go on within 5 minutes.';
+    // Each problem once (it's tried again every 5 minutes); one that's gone is cleared
+    Object.keys(probs).filter(k => k.indexOf(s.key + ' ') === 0 && !now[k.slice(s.key.length + 1)]).forEach(k => { delete probs[k]; });
+    Object.keys(now).forEach(k => { if (!probs[s.key + ' ' + k]) fresh.push(now[k]); probs[s.key + ' ' + k] = now[k]; });
+  });
+  p.setProperty('BELL_SENT_' + we, JSON.stringify(sent));
+  p.setProperty('BELL_PROBLEM_' + we, JSON.stringify(probs));
+  p.setProperty('BELL_TITLES', JSON.stringify(titles));
+  const admins = usersAll().filter(x => truthy(x.active) && isAdmin(x));
+  if (n) notify(admins, '🔔 On the bell sheets: ' + plural(n, 'new starter'), added.join('\n') + '\n' + tab + ', under New Starts.', 'avail');
+  if (fresh.length) notify(admins, '🔔 Bell sheets: not done yet', fresh.join('\n'), 'avail');
+  return { added: n, problems: fresh.length };
+}
+/** The bell sheets card on availability (admins): which sheets, how many of the week are on, anything in the way. */
+function bellStatus(we) {
+  const ids = bellProp('BELL_SHEETS', {}), sent = bellProp('BELL_SENT_' + we, {}), probs = bellProp('BELL_PROBLEM_' + we, {}), titles = bellProp('BELL_TITLES', {});
+  return { tab: bellTab(we), time: CONFIG.AVAIL_REMIND_TIME || '18:00', sheets: Object.keys(BELL).map(k => ({ key: k, name: BELL[k].name, section: BELL[k].section,
+    url: ids[k] ? 'https://docs.google.com/spreadsheets/d/' + ids[k] + '/edit' : '', title: ids[k] ? titles[k] || '' : '',
+    on: Object.keys(sent).filter(id => sent[id] === k).length, problems: Object.keys(probs).filter(x => x.indexOf(k + ' ') === 0).map(x => probs[x]) })) };
+}
+/** The bell sheets' links (admins, on availability). Kept in the app's settings, not in the code: the code is public. */
+function setBellSheets(req, u) {
+  if (!isAdmin(u)) throw new Error('Only admins can set the bell sheets.');
+  const ids = bellProp('BELL_SHEETS', {}), links = req.links || {};
+  Object.keys(BELL).forEach(k => {
+    if (!(k in links)) return;
+    const s = String(links[k] || '').trim(), m = /\/d\/([\w-]{25,80})/.exec(s) || /^([\w-]{25,80})$/.exec(s);
+    if (s && !m) throw new Error('That doesn\'t look like a Google Sheets link (' + k + '). Open the bell sheet, tap Share → Copy link, and paste it here.');
+    if (m && m[1] !== ids[k]) { ids[k] = m[1]; const t = bellProp('BELL_TITLES', {}); delete t[k]; PropertiesService.getScriptProperties().setProperty('BELL_TITLES', JSON.stringify(t)); }
+    if (!m) delete ids[k];
+  });
+  PropertiesService.getScriptProperties().setProperty('BELL_SHEETS', JSON.stringify(ids));
+  log(u, 'bell sheets', '', 'FR ' + (ids.FR ? 'linked' : 'none') + ' · HF ' + (ids.HF ? 'linked' : 'none'));
+  return bellStatus(weekEnding(todayStr()));
 }
 
 // ───────────────────────── LINKS ─────────────────────────

@@ -301,7 +301,7 @@ No more highlighters on the printed list:
 - **The week:**
   - **Monday (Jess / Rubal):** on the Day 1 list, tick **Arrived**, then tap **📷 Photo** on the same row. That's their availability photo; it shows as their picture.
   - **Tuesday 2–3pm:** the one-to-one. Fill in their days (blank until then).
-  - **17:00:** Satpal, Rubal, Jess and Angad hear who's still missing ("🗓️ Availability: 12 of 15 done"), every day until it's done, then "✅ Availability ready" (who's in each day, drivers). Each coach hears about their own new starters the same way: done vs missing, then "✅ Your new starters' days".
+  - **18:00** (the one-to-one can run long): Satpal, Rubal, Jess and Angad hear who's still missing ("🗓️ Availability: 12 of 15 done"), every day until it's done, then "✅ Availability ready" (who's in each day, drivers). Each coach hears about their own new starters the same way: done vs missing, then "✅ Your new starters' days".
   - **Then:** **📸 Poster** → Share to the team WhatsApp, and **📄 PDF**.
 - **Who's on it:** everyone ticked **Arrived** on Day 1 appears by themselves, grouped HelloFresh then Fundraising (their FR / HF from Day 1). Their coach is whoever booked them.
   - Someone started without coming through the app? **＋ Add someone**.
@@ -327,6 +327,17 @@ No more highlighters on the printed list:
 - **🗑️ Remove someone:** tap them → **🗑️ Remove from availability** → tap again. They come off the list, the poster, the PDF and the alerts. Changed your mind? **↩️ Put back** at the top of the list.
 - **Pictures:** everyone's picture on the list is cropped to their face, so you can see who's who.
 - **📄 PDF:** the old sheet's layout, Monday to Sunday IN / OUT, a table per campaign.
+
+## 🔔 Bell sheets: new starters go on by themselves (replaces copying names across)
+- **What happens:** from **18:00 the day after their Day 1**, every new starter with their Week 1 days in goes into the **NEW STARTS** section at the bottom of that week's tab ("WE 01.11.26").
+  - FR → the LINK FR bell sheet (**NEW STARTS**). HF → the JUSS HF bell sheet (**NEW STARTS - SLOUGH**).
+  - Name and coach in capitals, as on the New Starts List. **OFFICE** when there's no coach (booked by an admin or Fiza, or coach 🏢 Office).
+  - Office first, then each coach's starters together.
+  - Only the empty rows' name and coach columns are filled in. **BA AC** (BA Academy, in-house, Monday and Tuesday), **S** (Shadow day, Wednesday) and the formulas stay as they are. Nothing is deleted, and someone already typed in isn't added twice.
+  - Filled in later (Wednesday, say)? They go on within 5 minutes.
+- **Alerts (admins):** "🔔 On the bell sheets: 15 new starters" with who went where. If something's in the way (no tab for the week yet, no empty rows left), you hear once: make the tab or copy in empty rows, and they go on within 5 minutes.
+- **One-time setup (an admin):** Availability → bottom of the page → **🔔 Bell sheets → Add the bell sheets' links**. Paste each sheet's link (Google Sheets → **Share → Copy link**) → **Save**. A new sheet next year? Paste its link there instead.
+  - The links stay in the app's settings, never in the code (the code is public, and anyone with a bell sheet's link can open it).
 
 ## The numbers: one meaning everywhere (Angad, 26 Oct)
 Every screen, PDF and alert counts the same way, so they always agree:
