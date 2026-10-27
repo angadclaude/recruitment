@@ -50,7 +50,9 @@ The recruitment app for **LINK Marketing** and **JUSS Marketing** (Angad runs bo
 - **The recruitment team** (`THANKS_TEAM` + `RECRUIT_TEAM` in `Code.gs`) send thank-yous, Day 1 details and follow-ups as LINK or JUSS, signed with their own name, and the welcome emails. Everyone else follows the candidate's company. **Only Jess and Rubal since 26 Oct** (Angad: Fiza off): `RECRUIT_TEAM` is empty; e2e puts an address back in it to keep testing it.
 - **Outcome deadline** is Friday 18:00 (later outcomes are marked LATE).
 - **Day 1 tab and New Starts List order (always, Angad 25 Oct):** JUSS on top, LINK below; in each company Monday's starters then Tuesday's, by name, no-shows at the bottom (`d1Order`). That's the default; the tab can also sort *Name A–Z* and show one campaign (`d1View`), and the PDF follows what's on screen.
-- **Campaign (Angad, 26 Oct): JUSS = HF, LINK = FR, always** (`campaignOf`, from the company; nothing to switch). The `campaign` column in Candidates is unused but stays: columns are by position.
+- **Campaign = where a starter is placed, FR or HF, per person (27 Oct).** The default is their company's (JUSS = HF, LINK = FR). An admin switches it in one tap on the Day 1 row (`setCampaign`, `campaign` column, `campaignOf` on server and app).
+  - Angad's 26 Oct rule "JUSS = HF always" didn't match his own printed list: 6 of the 12 JUSS starters who arrived went to FR (orange = FR, pink = HF on the team's highlighter).
+  - The Day 1 list, its PDF, availability, the poster and the results all follow the placement.
 - **The numbers mean one thing everywhere (Angad, 26 Oct: "I don't want to explain this again"):**
   - **Checked in** = everyone.
   - **Attended / appointments** = rated in the room (walk outs too), Mon–Fri, **minus non-qualifiers**, the incentive's net (`counted(c) && !c.pay_reason`).
@@ -148,6 +150,27 @@ This replaces the "Juss & Link - NS Availability - 2026" Google Sheet (a W1 / Pi
   - their coach gets an alert when days change after the first fill;
   - a PDF like the sheet (`availPdf`, "NS Availability W1 w-e dd.mm.yyyy").
 - **e2e section "availability"** covers all of it, on both back ends.
+
+## Done: the morning after Day 1 (27 Oct 2026)
+Every Tuesday the team brought Angad the printed New Starts List marked up by hand:
+- pink highlighter = HF, orange = FR;
+- struck through = didn't start (NI, not confirmed, no-show), or arrived but didn't come back;
+- a tally of starts by booker ("Office 5 · Hasini 3 · Ramis 2 …") and "NDCS 9 / HF 6".
+
+The app now does all of it, and **he decided the flow is mine to set**:
+1. **Monday, in the room:** Day 1 tab, as before: Arrived / No-show / 🚫 Dropped out (NI). Plus the **FR | HF** switch on each row.
+2. **Next morning:** **🚪 Didn't continue** (two taps, Undo) on anyone who came on Day 1 but not back (`markDay1` `left` / `stayed`, columns `day1_left_at` / `_by`). They still count as a Day 1 start, and they drop off availability.
+3. **09:00 the morning after a Day 1:** admins get the results (`maybeDay1Results`, `D1_RESULTS_TIME`; tap opens Day 1):
+   - "🎓 Day 1 Monday 26th October: 15 of 23 started"
+   - "FR 9 · HF 6 · 2 didn't continue"
+   - "Office 5 · Hasini 3 …"
+   - "Didn't start: 4 dropped out, 3 didn't confirm, 1 no-show"
+4. **The Day 1 tab** shows the same results card per day (`d1Results` in the app = `day1Results` on the server; keep them identical).
+5. **From the next day, 📄 New Starts List comes out marked up:** rows in their campaign's colour, struck through for anyone who didn't start or didn't continue, Arrived = Left / No, and the results underneath. On the day itself it's still the plain sign-in sheet.
+
+- **"Office"** = bookings by admins, or by anyone in `CONFIG.OFFICE_BOOKERS` (Fiza Iqbal), as in the team's tally (`isOffice`; `office` flag in `shape`).
+- **Fix their name** (admins, on their page, `fixName`) updates availability too. The 26 Oct list had "Mel Anouman" corrected to "Mel Abraham" by hand.
+- **Not built, ask if needed:** the ✓ ticks the team put next to some pink (HF) rows. Meaning unknown.
 
 ## Data fixes Angad asked for
 - **26 Oct 2026:** Fiza's 2 appointments that day were Angad's (he entered them under her by mistake). Angad moved both himself (candidate → **Booker** → Angad → **Save**, `reassignBooker`, which also moves the candidate's company to the booker's). The rest of that week is automatic (`HANDOVER`, above). Her earlier candidates stay hers, and their alerts go to Angad (the PR #140 move was undone on 27 Oct, see Rules).

@@ -1,4 +1,4 @@
-window.APP_VERSION = 'ade86147';
+window.APP_VERSION = 'da13493b';
 
 (function () {
 'use strict';
@@ -2168,7 +2168,9 @@ function canAvail() { return isAdmin() || (S.me.user.roles || []).indexOf('avail
 function avIn(w) { return String(w || '').split('').filter(x => x === 'I').length; }
 /** "5 days" → 5 (their evaluation answer), so someone ticked in for fewer days than they said stands out. */
 function saidDays(s) { const m = /^(\d)/.exec(String(s || '')); return m ? Number(m[1]) : 0; }
-function avOrder(rows) { return rows.slice().sort((a, b) => (a.company === 'JUSS' ? 0 : 1) - (b.company === 'JUSS' ? 0 : 1) || a.day1_date.localeCompare(b.day1_date) || a.full_name.localeCompare(b.full_name)); }
+/** HF or FR: where they were placed on Day 1 (the server sends it), else their company's. */
+function avCamp(r) { return r.campaign === 'HF' || r.campaign === 'FR' ? r.campaign : r.company === 'JUSS' ? 'HF' : 'FR'; }
+function avOrder(rows) { return rows.slice().sort((a, b) => (avCamp(a) === 'HF' ? 0 : 1) - (avCamp(b) === 'HF' ? 0 : 1) || a.day1_date.localeCompare(b.day1_date) || a.full_name.localeCompare(b.full_name)); }
 function avName(we, wk) { return 'NS Availability W' + wk + ' w-e ' + we.slice(8, 10) + '.' + we.slice(5, 7) + '.' + we.slice(0, 4); }
 function loadAvail(we) {
   return call('availWeek', { weekEnding: we }).then(r => {
@@ -2205,15 +2207,15 @@ function viewAvail(quiet) {
     const w = r[key], ph = (S.avPh || {})[r.id], said = saidDays(r.said_days), short = wk === 1 && said && /[IO]/.test(w) && avIn(w) < said;
     const tag = edit ? 'button type="button"' : 'div';
     return '<' + tag + ' class="item avrow" data-av="' + h(r.id) + '">' +
-      (ph ? '<img class="av avph" src="' + ph + '" alt="">' : '<span class="av co-' + h(r.company) + '">' + h(initials(r.full_name)) + '</span>') +
+      (ph ? '<img class="av avph" src="' + ph + '" alt="">' : '<span class="av co-' + (avCamp(r) === 'HF' ? 'JUSS' : 'LINK') + '">' + h(initials(r.full_name)) + '</span>') +
       '<div class="main"><div class="name">' + h(r.full_name) + '</div>' +
       '<div class="sub">' + (r.coach_name ? 'Coach ' + h(r.coach_name.split(' ')[0]) + ' · ' : '') + (r.mobile ? (edit ? h(r.mobile) : '<a href="tel:' + h(r.mobile) + '">' + h(r.mobile) + '</a>') + ' · ' : '') + 'Day 1 ' + h(fmt(r.day1_date)) + '</div>' +
       '<div class="avchips">' + w.split('').map((x, i) => '<span class="avc ' + (pre(r, i) ? 'pre' : x === 'I' ? 'in' : x === 'O' ? 'out' : 'na') + '">' + AV_DAY[i].slice(0, 2) + '</span>').join('') + '</div>' +
       '<div class="pills">' + (r.driver === 'Yes' ? '<span class="pill green">🚗 Driver</span>' : r.driver === 'No' ? '<span class="pill">No car</span>' : '') +
-        (short ? '<span class="pill amber">Said ' + said + ' days, in ' + avIn(w) + '</span>' : '') + (r.no_longer ? '<span class="pill red">Not ticked Arrived any more</span>' : '') + '</div>' +
+        (short ? '<span class="pill amber">Said ' + said + ' days, in ' + avIn(w) + '</span>' : '') + (r.left ? '<span class="pill red">🚪 Didn\'t continue</span>' : r.no_longer ? '<span class="pill red">Not ticked Arrived any more</span>' : '') + '</div>' +
       (r.notes ? '<div class="small muted avnote">' + h(r.notes) + '</div>' : '') + '</div></' + (edit ? 'button' : 'div') + '>';
   };
-  const group = (co, label) => { const l = rows.filter(r => (r.company === 'JUSS' ? 'JUSS' : 'LINK') === co); return l.length ? '<div class="section-h"><b>' + label + '</b><span>' + l.length + '</span></div><div class="list">' + l.map(card).join('') + '</div>' : ''; };
+  const group = (co, label) => { const l = rows.filter(r => avCamp(r) === (co === 'JUSS' ? 'HF' : 'FR')); return l.length ? '<div class="section-h"><b>' + label + '</b><span>' + l.length + '</span></div><div class="list">' + l.map(card).join('') + '</div>' : ''; };
   const page = paint('Availability', top + strip + warn + tools +
     (rows.length ? group('JUSS', 'HelloFresh') + group('LINK', 'Fundraising') : empty('🗓️', we > addDays(thisWe, -7) && we >= thisWe ? 'Nobody\'s started this week yet. Starters appear here when they\'re ticked Arrived on Day 1.' : 'Nobody started that week.')) +
     '<p class="hint">' + (edit ? 'Tap a starter to fill in their days (tap a day: in → out → not said), driver, notes and photo. ' : '') +
@@ -2245,7 +2247,7 @@ function availSheet(r, we, wk) {
   back.className = 'sheet-back';
   const ph = () => st.photo ? '<img class="av lg avph" src="' + st.photo + '" alt="">' : '<span class="av lg co-' + h(r.company) + '">' + h(initials(r.full_name)) + '</span>';
   back.innerHTML = '<div class="sheet" role="dialog" aria-label="Availability"><div class="grab"></div>' +
-    '<div class="sheet-h"><span id="avph">' + ph() + '</span><div style="min-width:0"><div class="label muted">' + (r.company === 'JUSS' ? 'HelloFresh' : 'Fundraising') + ' · Day 1 ' + h(fmt(r.day1_date)) + '</div><div class="display">' + h(r.full_name) + '</div></div></div>' +
+    '<div class="sheet-h"><span id="avph">' + ph() + '</span><div style="min-width:0"><div class="label muted">' + (avCamp(r) === 'HF' ? 'HelloFresh' : 'Fundraising') + ' · Day 1 ' + h(fmt(r.day1_date)) + '</div><div class="display">' + h(r.full_name) + '</div></div></div>' +
     '<div id="avf"><div class="row" style="gap:8px;margin:2px 0 6px"><label class="btn ghost sm" style="margin:0">📷 ' + (st.photo ? 'New photo' : 'Take photo') + '<input type="file" id="avcam" accept="image/*" capture="user" hidden></label>' +
       '<button type="button" class="btn ghost sm" id="avphx"' + (st.photo ? '' : ' hidden') + '>Remove photo</button></div>' +
     '<label class="q">Driver</label>' + chips('driver', ['Yes', 'No'], r.driver) +
@@ -2342,7 +2344,7 @@ function availPdf(we, wk, rows) {
   const mon = addDays(we, -6 + (wk === 2 ? 7 : 0)), key = wk === 2 ? 'w2' : 'w1', inN = i => rows.filter(r => r[key][i] === 'I').length;
   const row = r => ({ fill: /[IO]/.test(r[key]) ? '' : 'amber', cells: [r.full_name, r.mobile || '', (r.coach_name || '').split(' ')[0], r.driver || ''].concat(
     r[key].split('').map((x, i) => wk === 1 && addDays(mon, i) < r.day1_date ? ['-', 'grey'] : x === 'I' ? ['IN', 'green', true] : x === 'O' ? ['OUT', 'grey'] : '')).concat([r.notes || '']) });
-  const g = (co, head) => { const l = rows.filter(r => (r.company === 'JUSS' ? 'JUSS' : 'LINK') === co); return { head: head + ' · ' + l.length, rows: l.map(row) }; };
+  const g = (co, head) => { const l = rows.filter(r => avCamp(r) === (co === 'JUSS' ? 'HF' : 'FR')); return { head: head + ' · ' + l.length, rows: l.map(row) }; };
   return listPdf({
     name: avName(we, wk), heading: 'NS Availability · Week ' + wk, sub: 'Started week ending ' + fmtLong(we) + ' ' + we.slice(0, 4) + '  ·  Week ' + wk + ': ' + fmt(mon) + ' – ' + fmt(addDays(mon, 6)) + '  ·  LINK Marketing & JUSS Marketing',
     boxes: [[rows.length, 'Starters'], [rows.filter(r => r.driver === 'Yes').length, 'Drivers', 'green'], [rows.filter(r => !/[IO]/.test(r[key])).length, 'No days yet', rows.some(r => !/[IO]/.test(r[key])) ? 'amber' : '']],
@@ -2358,7 +2360,7 @@ function availPoster(we, wk, rows) {
   toast('Making the poster…');
   Promise.all(rows.map(r => img((S.avPh || {})[r.id]))).then(pics => JLBulletin.load('').then(assets => {
     const person = (r, i) => ({ name: r.full_name, coach: (r.coach_name || '').split(' ')[0], photo: pics[i] });
-    const groups = [['JUSS', 'HELLO FRESH'], ['LINK', 'FUNDRAISING']].map(g => ({ co: g[0], label: g[1], people: rows.map((r, i) => (r.company === 'JUSS' ? 'JUSS' : 'LINK') === g[0] ? person(r, i) : null).filter(Boolean) }));
+    const groups = [['JUSS', 'HELLO FRESH', 'HF'], ['LINK', 'FUNDRAISING', 'FR']].map(g => ({ co: g[0], label: g[1], people: rows.map((r, i) => avCamp(r) === g[2] ? person(r, i) : null).filter(Boolean) }));
     const cv = JLBulletin.draw(document.createElement('canvas'), 'starters', { title: 'WELCOME OUR NEW STARTERS', sub: 'WEEK ' + wk + '  |  DAY 1 W/E ' + we.slice(8, 10) + '/' + we.slice(5, 7) + '/' + we.slice(0, 4), groups: groups },
       Object.assign({}, BULL_DEFAULTS, store.get('bullOpts') || {}), assets);
     cv.toBlob(blob => {
@@ -2621,8 +2623,24 @@ function d1Order(list) {
   const co = c => c.company === 'JUSS' ? 0 : 1, out = c => c.day1_status === 'dropped' ? 2 : c.day1_status === 'no_show' ? 1 : 0;
   return list.slice().sort((a, b) => co(a) - co(b) || out(a) - out(b) || a.academy_date.localeCompare(b.academy_date) || a.full_name.localeCompare(b.full_name));
 }
-/** FR or HF: the campaign a starter joins, always their company's (Angad, 26 Oct): JUSS = HF, LINK = FR. */
-function campaignOf(c) { return c.company === 'JUSS' ? 'HF' : 'FR'; }
+/** FR or HF: where a starter is placed, picked on Day 1 (Angad's 26 Oct list put JUSS starters in FR), else their company's: JUSS = HF, LINK = FR. */
+function campaignOf(c) { return c.campaign === 'HF' || c.campaign === 'FR' ? c.campaign : c.company === 'JUSS' ? 'HF' : 'FR'; }
+/** A Day 1's results, as the team used to mark up the printed list for Angad on Tuesday morning (27 Oct): started of everyone
+ *  booked, FR / HF, didn't continue after the day, starts by booker ("Office" for admins and the office team), and why the
+ *  rest didn't start. Counted the same way as the 09:00 alert (day1Results in Code.gs). */
+function d1Results(l) {
+  const started = l.filter(c => c.day1_status === 'arrived'), by = {}, rest = l.filter(c => c.day1_status !== 'arrived' && c.day1_status !== 'dropped');
+  started.forEach(c => { const k = !c.booker_name ? 'No booker' : c.office ? 'Office' : String(c.booker_name).split(' ')[0]; by[k] = (by[k] || 0) + 1; });
+  return { booked: l.length, started: started.length, fr: started.filter(c => campaignOf(c) === 'FR').length, hf: started.filter(c => campaignOf(c) === 'HF').length,
+    left: started.filter(c => c.day1_left_at).length, dropped: l.filter(c => c.day1_status === 'dropped').length,
+    noShow: rest.filter(c => c.day1_status === 'no_show' || c.academy_confirmed_at).length, notConfirmed: rest.filter(c => c.day1_status !== 'no_show' && !c.academy_confirmed_at).length,
+    byBooker: Object.keys(by).map(k => [k, by[k]]).sort((a, b) => b[1] - a[1] || (a[0] === 'Office' ? -1 : b[0] === 'Office' ? 1 : a[0].localeCompare(b[0]))) };
+}
+function d1ResultsLines(x) {
+  const not = [x.dropped ? x.dropped + ' dropped out' : '', x.notConfirmed ? x.notConfirmed + ' didn\'t confirm' : '', x.noShow ? x.noShow + ' no-show' + (x.noShow > 1 ? 's' : '') : ''].filter(String);
+  return [x.started + ' of ' + x.booked + ' started', 'FR ' + x.fr + ' · HF ' + x.hf + (x.left ? ' · ' + x.left + ' didn\'t continue' : ''),
+    x.byBooker.map(b => b[0] + ' ' + b[1]).join(' · '), not.length ? 'Didn\'t start: ' + not.join(', ') : ''];
+}
 /** The Day 1 list as chosen on the tab (Angad, 26 Oct): only FR or HF (or both), JUSS then LINK (d1Order, the default) or names
  *  A–Z (no-shows, then dropped out, still at the bottom). The New Starts List follows it. */
 function d1View(list) {
@@ -2678,7 +2696,10 @@ function drawAcademy(r, quiet) {
     const started = c.academy_date <= today, dropped = c.day1_status === 'dropped';
     // Dropped out (Angad, 26 Oct): just that, and Undo; no reminders, Day 1 details or onboarding for them
     const dq = ' data-q="' + h((c.full_name + ' ' + (c.mobile || '')).toLowerCase()) + '"', cp = campaignOf(c);
-    const camp = '<span class="pill camp">' + cp + '</span>';  // JUSS = HF, LINK = FR (Angad, 26 Oct)
+    // Where they go, FR or HF, picked on Day 1 (Angad, 27 Oct): orange FR, pink HF, like the team's highlighter
+    const camp = admin ? '<span class="campsw" data-campsw="' + h(c.id) + '">' + ['FR', 'HF'].map(k => '<button type="button" class="' + k + (cp === k ? ' on' : '') + '" data-camp="' + k + '">' + k + '</button>').join('') + '</span>'
+      : '<span class="pill camp ' + cp + '">' + cp + '</span>';
+    const left = c.day1_status === 'arrived' && c.day1_left_at;
     if (dropped) return '<div class="trow dropped" data-cand="' + h(c.id) + '"' + dq + '>' + avatar(c) + '<div class="main"><div class="name">' + h(c.full_name) + ' <span class="co ' + h(c.company) + '">' + h(c.company) + '</span></div>' +
       '<div class="sub">' + (c.booker_name ? 'booked by ' + h(c.booker_name) : 'no booker') + (closedBy(c) ? ' · closed by ' + h(closedBy(c)) : '') + '</div>' +
       '<div class="pills"><span class="pill">' + cp + '</span><span class="pill red">🚫 Dropped out</span>' + (c.day1_by ? '<span class="pill">' + h(String(c.day1_by).split(' ')[0]) + ' · ' + h(fmtTs(c.day1_at)) + '</span>' : '') + '</div></div>' +
@@ -2689,7 +2710,7 @@ function drawAcademy(r, quiet) {
       // Not for someone who has confirmed: they had the details, however they were sent (20 Oct: Jasraj confirmed, still "not sent")
       (c.offer_sent_at || c.academy_confirmed_at || started ? '' : '<span class="pill red">Day 1 text not sent</span>') +
       (remindedToday(c) && !c.day1_status ? '<span class="pill blue">📲 Reminded ' + h(String(c.day1_reminded_at).slice(11, 16)) + '</span>' : '') +
-      (c.day1_status === 'arrived' ? '<span class="pill green">🎓 Arrived</span>' : c.day1_status === 'no_show' ? '<span class="pill red">❌ No-show</span>' : '') +
+      (left ? '<span class="pill red">🚪 Didn\'t continue</span>' : c.day1_status === 'arrived' ? '<span class="pill green">🎓 Arrived</span>' : c.day1_status === 'no_show' ? '<span class="pill red">❌ No-show</span>' : '') +
       (!admin || started ? '' : c.onboard_email_at ? '<span class="pill green">🚀 Onboarded</span>' : c.databyte_at ? '<span class="pill amber">🚀 Welcome email to send</span>' : '<span class="pill red">🚀 Not on Databyte</span>');
     // Moved here from Chase (19 Oct): the Day 1 details still to send come first (the reminder only makes sense after them),
     // and a no-show gets the rebook buttons
@@ -2704,11 +2725,14 @@ function drawAcademy(r, quiet) {
       (sure ? 'Move to ' + mv.day.slice(0, 3) + '?' : '📅 ' + mv.day) + '</button>' : '';
     // 🚫 Dropped out (Angad, 26 Oct): any time until they've arrived, two taps like a move
     const dropBtn = c.day1_status === 'arrived' ? '' : '<button class="btn sm ghost' + (sureOf('drop') ? ' sure' : '') + '" data-d1="dropped" data-id="' + h(c.id) + '">' + (sureOf('drop') ? 'Dropped out?' : '🚫 Dropped out') + '</button>';
+    // Came on Day 1 but not back after it (the struck-through arrivals on the team's Tuesday list): two taps, Undo
+    const leftBtn = c.day1_status !== 'arrived' ? '' : left ? '<button class="btn sm ghost" data-d1="stayed" data-id="' + h(c.id) + '">↩️ Undo</button>'
+      : '<button class="btn sm ghost' + (sureOf('left') ? ' sure' : '') + '" data-d1="left" data-id="' + h(c.id) + '">' + (sureOf('left') ? 'Didn\'t continue?' : '🚪 Didn\'t continue') + '</button>';
     const act = started
       ? '<div class="d1btns"><button class="btn sm ' + (c.day1_status === 'arrived' ? 'green' : 'ghost') + '" data-d1="arrived" data-id="' + h(c.id) + '">Arrived</button>' +
-        '<button class="btn sm ' + (c.day1_status === 'no_show' ? 'red' : 'ghost') + '" data-d1="no_show" data-id="' + h(c.id) + '">No-show</button>' + mvBtn + dropBtn + '</div>'
+        '<button class="btn sm ' + (c.day1_status === 'no_show' ? 'red' : 'ghost') + '" data-d1="no_show" data-id="' + h(c.id) + '">No-show</button>' + mvBtn + dropBtn + leftBtn + '</div>'
       : '<div class="d1btns">' + (offer ? '' : '<a class="btn ' + (c.no_whatsapp ? 'sms' : 'wa') + ' sm" data-rem1="' + h(c.id) + '" data-via="' + (c.no_whatsapp ? 'sms' : 'whatsapp') + '" target="_blank" rel="noopener" href="' + h(msgUrl(c, msgDay1Reminder(c))) + '">💬 Remind</a>') + mvBtn + dropBtn + '</div>';
-    return '<div class="trow' + (q ? ' d1q' : '') + (c.day1_status === 'arrived' ? ' arrived' : '') + '" data-cand="' + h(c.id) + '"' + dq + '>' + avatar(c) + '<div class="main"><div class="name">' + h(c.full_name) + ' <span class="co ' + h(c.company) + '">' + h(c.company) + '</span></div>' +
+    return '<div class="trow' + (q ? ' d1q' : '') + (left ? ' left' : c.day1_status === 'arrived' ? ' arrived' : '') + ' camp' + cp + '" data-cand="' + h(c.id) + '"' + dq + '>' + avatar(c) + '<div class="main"><div class="name">' + h(c.full_name) + ' <span class="co ' + h(c.company) + '">' + h(c.company) + '</span></div>' +
       '<div class="sub">' + (c.booker_name ? 'booked by ' + h(c.booker_name) : 'no booker') + (closedBy(c) ? ' · closed by ' + h(closedBy(c)) : '') + '</div>' +
       (c.offer_sent_at ? '<div class="sub d1by">🎉 Day 1 details ' + offerBy(c) + '</div>' : '') + '<div class="pills">' + pills + '</div></div>' + act + q + '</div>';
   };
@@ -2721,7 +2745,10 @@ function drawAcademy(r, quiet) {
     const counts = (S.d1Camp ? S.d1Camp + ' only · ' : '') + l.length + ' expected · ' + conf + ' confirmed' + (l.length - conf ? ' · ' + (l.length - conf) + ' not' : '') + (drop ? ' · ' + drop + ' dropped out' : '') +
       (x <= today ? ' · ' + arr + ' arrived' + (ns ? ' · ' + ns + ' no-show' : '') + (x < today && toRemind.length ? ' · ' + toRemind.length + ' not ticked' : '') : '');
     const tools = admin && x >= today && toRemind.length ? '<div class="bullbtns d1tools"><button class="btn ' + (rem < toRemind.length ? 'wa' : 'ghost') + '" data-remall="' + x + '">📲 Send reminders · ' + rem + '/' + toRemind.length + '</button></div>' : '';
-    return '<div class="datehead">' + h(label(x)) + '</div><p class="hint" style="margin:-4px 4px 8px">' + h(counts) + '</p>' + tools + '<div class="list alist">' + all.map(row).join('') + '</div>';
+    // The day's results once it's happened (all of that day's starters, whatever the campaign filter): what Angad used to get on paper
+    const res = admin && x <= today ? d1ResultsLines(d1Results(items.filter(c => c.academy_date === x))) : null;
+    const resCard = res ? '<div class="card d1res" data-res="' + x + '"><b>🎓 ' + h(res[0]) + '</b><div>' + h(res[1]) + '</div><div class="small">' + h(res[2]) + '</div>' + (res[3] ? '<div class="small muted">' + h(res[3]) + '</div>' : '') + '</div>' : '';
+    return '<div class="datehead">' + h(label(x)) + '</div><p class="hint" style="margin:-4px 4px 8px">' + h(counts) + '</p>' + resCard + tools + '<div class="list alist">' + all.map(row).join('') + '</div>';
   };
   const toOnb = admin ? r.items.filter(c => c.academy_date >= today && !c.onboard_email_at && c.day1_status !== 'dropped') : [];
   const pend = admin ? r.pending || [] : [];  // Academy bookings waiting on an admin (moved here from Chase)
@@ -2768,6 +2795,16 @@ function drawAcademy(r, quiet) {
     if (c) { c.offer_sent_at = londonNow(); setTimeout(() => { if (S.view === 'academy') drawAcademy(r, true); }, 400); }
   }));
   page.querySelectorAll('[data-remall]').forEach(b => { b.onclick = () => day1Sheet(b.dataset.remall); });
+  // FR / HF: one tap, saved straight away (the list, the PDF, availability and the results follow it)
+  page.querySelectorAll('[data-campsw] button').forEach(b => {
+    b.onclick = e => {
+      e.stopPropagation();
+      const c = pool.filter(x => x.id === b.parentNode.dataset.campsw)[0]; if (!c || campaignOf(c) === b.dataset.camp) return;
+      const was = c.campaign; c.campaign = b.dataset.camp; drawAcademy(r, true);
+      call('setCampaign', { id: c.id, campaign: b.dataset.camp }).then(nc => { Object.assign(c, nc); upsert(nc); toast(c.first_name + ' → ' + b.dataset.camp); })
+        .catch(x => { c.campaign = was; drawAcademy(r, true); toast(x.message); });
+    };
+  });
   page.querySelectorAll('[data-pdf]').forEach(b => { b.onclick = () => savePdf(day1Pdf(mon, d1View(items), { line: S.d1Sort !== 'az', camp: S.d1Camp }), newStartsName(mon) + '.pdf'); });
   page.querySelectorAll('[data-d1sort]').forEach(b => { b.onclick = () => { S.d1Sort = b.dataset.d1sort; drawAcademy(r, true); }; });
   page.querySelectorAll('[data-d1camp]').forEach(b => { b.onclick = () => { S.d1Camp = b.dataset.d1camp; drawAcademy(r, true); }; });
@@ -2788,22 +2825,22 @@ function drawAcademy(r, quiet) {
   page.querySelectorAll('[data-d1]').forEach(b => {
     b.onclick = () => {
       const c = pool.filter(x => x.id === b.dataset.id)[0]; if (!c) return;
-      const move = b.dataset.d1 === 'next_day' || b.dataset.d1 === 'prev_day', drop = b.dataset.d1 === 'dropped' && c.day1_status !== 'dropped';
+      const move = b.dataset.d1 === 'next_day' || b.dataset.d1 === 'prev_day', drop = b.dataset.d1 === 'dropped' && c.day1_status !== 'dropped', leave = b.dataset.d1 === 'left';
       // Moving their Day 1 (or marking them dropped out) is a bigger change than a tick: the first tap asks, the second (within
       // 4 s) does it. Kept in S.d1Sure, not just on the button, so a background refresh of the list between the two taps doesn't undo the first.
-      const kind = move ? 'move' : drop ? 'drop' : '', asked = S.d1Sure && S.d1Sure.id === c.id && S.d1Sure.act === kind && Date.now() < S.d1Sure.until;
+      const kind = move ? 'move' : drop ? 'drop' : leave ? 'left' : '', asked = S.d1Sure && S.d1Sure.id === c.id && S.d1Sure.act === kind && Date.now() < S.d1Sure.until;
       if (kind && !asked) {
         const mine = S.d1Sure = { id: c.id, act: kind, until: Date.now() + 4000 };
-        b.classList.add('sure'); b.textContent = move ? 'Move to ' + b.dataset.day.slice(0, 3) + '?' : 'Dropped out?';
+        b.classList.add('sure'); b.textContent = move ? 'Move to ' + b.dataset.day.slice(0, 3) + '?' : leave ? 'Didn\'t continue?' : 'Dropped out?';
         setTimeout(() => { if (S.d1Sure === mine) { S.d1Sure = null; if (S.view === 'academy' && S.academy) drawAcademy(S.academy, true); } }, 4000);
         return;
       }
       if (kind) S.d1Sure = null;
-      const st = move ? b.dataset.d1 : c.day1_status === b.dataset.d1 ? '' : b.dataset.d1;  // tap again to clear
+      const st = move || leave || b.dataset.d1 === 'stayed' ? b.dataset.d1 : c.day1_status === b.dataset.d1 ? '' : b.dataset.d1;  // tap again to clear
       busy(b, true, '…');
       call('markDay1', { id: c.id, status: st }).then(nc => {
         Object.assign(c, nc); upsert(nc); drawAcademy(r, true);
-        toast(move ? '📅 ' + c.first_name + ' starts ' + fmtLong(nc.academy_date) + ' instead' : st === 'arrived' ? '🎓 ' + c.first_name + ' arrived' : st === 'no_show' ? c.first_name + ': no-show' : st === 'dropped' ? '🚫 ' + c.first_name + ': dropped out' : 'Cleared');
+        toast(move ? '📅 ' + c.first_name + ' starts ' + fmtLong(nc.academy_date) + ' instead' : st === 'left' ? '🚪 ' + c.first_name + ': didn\'t continue' : st === 'stayed' ? '↩️ ' + c.first_name + ' is back on' : st === 'arrived' ? '🎓 ' + c.first_name + ' arrived' : st === 'no_show' ? c.first_name + ': no-show' : st === 'dropped' ? '🚫 ' + c.first_name + ': dropped out' : 'Cleared');
       }).catch(e => { busy(b, false); toast(e.message); });
     };
   });
@@ -3342,6 +3379,10 @@ function day1Pdf(mon, list, opts) {
   const dates = rows.map(c => c.academy_date).filter((x, i, a) => a.indexOf(x) === i).sort();
   const perDay = dates.length > 1 ? ' (' + dates.map(x => fmt(x) + ': ' + live.filter(c => c.academy_date === x).length).join(' · ') + ')' : '';
   const fit = (s, w, size) => { s = String(s || ''); const max = Math.floor(w / (size * 0.55)); return s.length <= max ? s : s.slice(0, Math.max(1, max - 2)) + '...'; };
+  // From the morning after the day (the day itself prints the sign-in sheet), the list comes out marked up the way the team used to do it by hand for Angad (27 Oct):
+  // starters in their campaign's colour (FR orange, HF pink), everyone who didn't start (or didn't continue) struck through,
+  // and the results under the table
+  const done = rows.length && dates.every(x => x < S.me.today), res = done ? d1ResultsLines(d1Results(rows)) : null;
   const pages = [];
   for (let p = 0; p === 0 || p * PER < rows.length; p++) pages.push(rows.slice(p * PER, (p + 1) * PER));
   const streams = pages.map((chunk, p) => {
@@ -3358,7 +3399,9 @@ function day1Pdf(mon, list, opts) {
     chunk.forEach((c, i) => {
       const t = top - 20 - i * RH, b = t - RH, y = t - 15;
       const at = k => { let v = M; for (let j = 0; j < k; j++) v += cols[j][1]; return v + 4; };
-      if (c.day1_status === 'arrived') o.push('0.88 0.96 0.9 rg ' + M + ' ' + b.toFixed(2) + ' 523 ' + RH + ' re f');  // light green, like the app
+      const left = c.day1_status === 'arrived' && c.day1_left_at;
+      if (done && c.day1_status === 'arrived') o.push((campaignOf(c) === 'HF' ? '1 0.86 0.93' : '1 0.88 0.76') + ' rg ' + M + ' ' + b.toFixed(2) + ' 523 ' + RH + ' re f');  // HF pink, FR orange
+      else if (c.day1_status === 'arrived') o.push('0.88 0.96 0.9 rg ' + M + ' ' + b.toFixed(2) + ' 523 ' + RH + ' re f');  // light green, like the app
       else if (c.day1_status === 'dropped') o.push('0.94 0.94 0.94 rg ' + M + ' ' + b.toFixed(2) + ' 523 ' + RH + ' re f');  // light grey: dropped out
       const prev = rows[p * PER + i - 1];  // JUSS on top, LINK below: a dark line where LINK starts
       if (opts.line !== false && i && prev.company === 'JUSS' && c.company !== 'JUSS') o.push('0.2 0.2 0.25 RG 1.5 w ' + M + ' ' + t.toFixed(2) + ' m ' + (M + 523) + ' ' + t.toFixed(2) + ' l S');
@@ -3372,16 +3415,23 @@ function day1Pdf(mon, list, opts) {
       txt(at(7), y, fit(who(closedBy(c)), cols[7][1] - 8, 8.5), 8.5);
       txt(at(8), y, c.academy_confirmed_at ? 'Yes' : 'No', 9, !c.academy_confirmed_at);
       // Arrived: what was ticked in the app, or an empty box to tick by hand
-      if (c.day1_status === 'arrived') txt(at(9), y, 'Yes', 9, true, false, '0.08 0.5 0.25');
+      if (left) txt(at(9), y, 'Left', 9, true, false, '0.8 0.15 0.15');
+      else if (c.day1_status === 'arrived') txt(at(9), y, 'Yes', 9, true, false, '0.08 0.5 0.25');
       else if (c.day1_status === 'no_show') txt(at(9), y, 'No-show', 8.5, true, false, '0.8 0.15 0.15');
       else if (c.day1_status === 'dropped') txt(at(9), y, 'Dropped', 8.5, true, false, '0.8 0.15 0.15');
+      else if (done) txt(at(9), y, 'No', 9, true, false, '0.8 0.15 0.15');
       else o.push('0.2 0.2 0.25 RG 0.8 w ' + (at(9) + 12).toFixed(2) + ' ' + (b + 6.5).toFixed(2) + ' 11 11 re S');
+      if (done && (c.day1_status !== 'arrived' || left)) o.push('0.25 0.25 0.3 RG 0.9 w ' + (M + 20) + ' ' + (b + RH / 2).toFixed(2) + ' m ' + (M + 496) + ' ' + (b + RH / 2).toFixed(2) + ' l S');  // struck through
       o.push('0.85 0.84 0.82 RG 0.5 w ' + M + ' ' + b.toFixed(2) + ' m ' + (M + 523) + ' ' + b.toFixed(2) + ' l S');
     });
     if (!chunk.length) txt(M + 4, top - 38, 'Nobody booked for this week.', 10, false, true);
     if (p === pages.length - 1) {
       const y = top - 20 - Math.max(chunk.length, 1) * RH - 34;
-      txt(M, y, (ticked ? 'Arrived: ' + arr + ' of ' + live.length + (ns ? '  ·  No-show: ' + ns : '') : 'Arrived: ______ of ' + live.length) + '          Checked by: ___________________________', 10);
+      if (done) {
+        txt(M, y, res[0] + '  ·  ' + res[1], 11, true);
+        txt(M, y - 16, 'By booker: ' + res[2], 9.5);
+        if (res[3]) txt(M, y - 30, res[3], 9.5, false, true);
+      } else txt(M, y, (ticked ? 'Arrived: ' + arr + ' of ' + live.length + (ns ? '  ·  No-show: ' + ns : '') : 'Arrived: ______ of ' + live.length) + '          Checked by: ___________________________', 10);
     }
     txt(M, 24, 'Personal data: keep this sheet safe and shred it after Day 1.', 8, false, true);
     txt(W - M - 52, 24, 'Page ' + (p + 1) + ' of ' + pages.length, 8, false, true);
@@ -4474,7 +4524,9 @@ function renderCandidate(c, quiet) {
       (byAdmin ? '' : c.pay_excluded
         ? '<button class="btn ghost sm" id="incl">Count it again</button>'
         : '<div class="row"><input type="text" id="exr" placeholder="Reason, e.g. share code failed" style="flex:1"><button class="btn ghost sm" id="excl">Remove from incentive</button></div>') +
-      '<hr><details class="fixel"' + (c.non_qual ? ' open' : '') + '><summary><b>' + (c.non_qual ? 'Ticked the wrong answer at check-in?' : 'Fix their check-in answers') + '</b></summary>' +
+      '<hr><details class="fixel" id="fixnm"><summary><b>Fix their name</b></summary><label class="q">Full name</label><input type="text" id="fnname" value="' + h(c.full_name) + '">' +
+        '<button class="btn ghost sm" id="fnsave" style="margin-top:10px">Save name</button></details>' +
+      '<details class="fixel"' + (c.non_qual ? ' open' : '') + '><summary><b>' + (c.non_qual ? 'Ticked the wrong answer at check-in?' : 'Fix their check-in answers') + '</b></summary>' +
         '<label class="q">18 or over</label><select id="fx18">' + ['Yes', 'No'].map(v => '<option' + (c.over18 === v ? ' selected' : '') + '>' + v + '</option>').join('') + '</select>' +
         '<label class="q">Right to work</label><select id="fxrtw">' + (S.me.rtw || []).map(r => '<option' + (c.rtw === r.label ? ' selected' : '') + '>' + h(r.label) + '</option>').join('') + '</select>' +
         '<label class="q">Visa expiry (visas only)</label><input type="date" id="fxexp" value="' + h(c.visa_expiry) + '">' +
@@ -4549,6 +4601,8 @@ function renderCandidate(c, quiet) {
       if (!r) return toast('Add a reason first');
       call('setPayExcluded', { id: c.id, excluded: true, reason: r }).then(nc => saved(nc, 'Removed from the incentive count')).catch(x => toast(x.message));
     };
+    const fn = document.getElementById('fnsave');
+    if (fn) fn.onclick = () => call('fixName', { id: c.id, full_name: document.getElementById('fnname').value }).then(nc => saved(nc, 'Name saved ✓ ' + nc.full_name)).catch(x => toast(x.message));
     const fx = document.getElementById('fxsave');
     if (fx) fx.onclick = () => call('fixEligibility', { id: c.id, over18: document.getElementById('fx18').value, rtw: document.getElementById('fxrtw').value, visa_expiry: document.getElementById('fxexp').value })
       .then(nc => saved(nc, nc.non_qual ? 'Saved: still a non-qualifier' : 'Saved ✓ They can do the evaluation now')).catch(x => toast(x.message));

@@ -970,3 +970,16 @@ img.av.avph { object-fit: cover; padding: 0; border-radius: 50%; }
 .avpick .avc small { font: 600 10px var(--label); }
 .avpick .avc.out { text-decoration: none; }
 .avfill { margin: 0 0 4px; }
+/* Day 1 placement (27 Oct): FR orange, HF pink, like the team's highlighters; didn't continue struck through; the day's results */
+.campsw { display: inline-flex; border-radius: 999px; overflow: hidden; border: 1px solid var(--line); vertical-align: middle; }
+.campsw button { border: 0; background: var(--card); color: var(--muted); font: 600 11.5px var(--label); padding: 4px 10px; cursor: pointer; }
+.campsw button.FR.on { background: #F7931E; color: #fff; }
+.campsw button.HF.on { background: #E5409A; color: #fff; }
+.pill.camp.FR { background: #F7931E; color: #fff; }
+.pill.camp.HF { background: #E5409A; color: #fff; }
+.trow.campFR { box-shadow: inset 4px 0 0 #F7931E; }
+.trow.campHF { box-shadow: inset 4px 0 0 #E5409A; }
+.trow.left .name { text-decoration: line-through; opacity: .7; }
+.d1res { margin: 0 0 10px; }
+.d1res b { font-size: 15px; }
+.d1res div { margin-top: 3px; }

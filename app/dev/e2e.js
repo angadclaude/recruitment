@@ -527,7 +527,7 @@ async function fillEval(p) {
   ok(/💡 Plays semi-pro football/.test(snap) && /Wants to earn on results, saving for a house/.test(snap), 'booker sees the room answers: 💡 ice-breaker + why sales');
   ok(/🎤 Presentation by Nathan Smith/.test(snap) && !/rated by/.test(snap), 'their page says who ran the presentation: "🎤 Presentation by Nathan Smith" (he rated the room too)');
   const hdr = (await getJson('/dev/sheet?name=Candidates'))[0];
-  ok(hdr.slice(-20).join() === 'recruit_source,databyte_at,databyte_by,onboard_email_at,onboard_email_by,brand,presented_by_id,presented_by,offer_by,offer_via,offer_co,thanks_via,thanks_co,outcome_log,callback_at,callback_by_id,callback_nudged,booking_id,booking_note,campaign' && new Set(hdr).size === hdr.length,
+  ok(hdr.slice(-22).join() === 'recruit_source,databyte_at,databyte_by,onboard_email_at,onboard_email_by,brand,presented_by_id,presented_by,offer_by,offer_via,offer_co,thanks_via,thanks_co,outcome_log,callback_at,callback_by_id,callback_nudged,booking_id,booking_note,campaign,day1_left_at,day1_left_by' && new Set(hdr).size === hdr.length,
     'live Sheet with the presenter headers written twice: the empty copies cleared, the new columns added in the right place (no data moved)');
   ok(!/unspent criminal convictions/i.test(snap), 'conviction answer hidden from bookers');
   ok(/A door gets shut in your face\. What's your first thought\?/.test(snap) && /Tell us about a time you kept going when things got tough\. What did you do\?/.test(snap) &&
@@ -1579,9 +1579,16 @@ async function fillEval(p) {
   ok(backMon.academy_date === '2026-10-19' && !backMon.day1_status, '📅 Monday (twice) puts him back on Monday\'s list');
 
   // ── Day 1: campaign (FR / HF), search, sort by name, one campaign (Angad, 26 Oct) ──
-  const campOf = id => ap.$eval('.trow[data-cand="' + id + '"] .pill.camp', b => b.textContent);
-  ok(await campOf(jasId) === 'FR' && await campOf(adham.id) === 'HF' && !(await ap.$('[data-camp]')),
-    'each starter shows their campaign, always their company\'s (Angad, 26 Oct: "JUSS = HF, LINK = FR"): Jasraj (LINK) FR, Adham (JUSS) HF; nothing to switch');
+  const campOf = id => ap.$eval('.trow[data-cand="' + id + '"] [data-campsw] button.on', b => b.textContent);
+  ok(await campOf(jasId) === 'FR' && await campOf(adham.id) === 'HF', 'each starter starts on their company\'s campaign (JUSS = HF, LINK = FR): Jasraj (LINK) FR, Adham (JUSS) HF');
+  // Placed on Day 1 (Angad, 27 Oct: his 26 Oct list had 6 JUSS starters in FR): one tap, saved
+  const campSaved = async (id, k) => { for (let i = 0; i < 40; i++) { if ((await api(admin, 'getCandidate', { id: id })).campaign === k) return true; await new Promise(r => setTimeout(r, 150)); } return false; };
+  await ap.click('.trow[data-cand="' + adham.id + '"] [data-campsw] button[data-camp="FR"]');
+  await ap.waitForFunction(id => { const b = document.querySelector('.trow[data-cand="' + id + '"] [data-campsw] button.on'); return b && b.textContent === 'FR'; }, adham.id);
+  ok(await campSaved(adham.id, 'FR') && /FR\s*2/.test(await ap.textContent('[data-d1camp="FR"]')) && await ap.$('.trow.campFR[data-cand="' + adham.id + '"]'),
+    'one tap on FR moves Adham (JUSS) to FR: saved, his row goes orange, the FR chip counts him (FR 2)');
+  await ap.click('.trow[data-cand="' + adham.id + '"] [data-campsw] button[data-camp="HF"]');
+  ok(await campSaved(adham.id, 'HF'), '…and HF moves him back');
   await ap.click('[data-d1camp="FR"]'); await ap.waitForSelector('[data-d1camp="FR"].on');
   ok(await ap.$('.trow[data-cand="' + jasId + '"]') && !(await ap.$('.trow[data-cand="' + adham.id + '"]')) && /FR only · 1 expected/.test(await ap.innerText('#page')),
     'the FR chip: only the FR starters (Jasraj), "FR only · 1 expected"');
@@ -1607,11 +1614,11 @@ async function fillEval(p) {
   const grab = re => jsSrc.match(re)[0];
   const viewWith = new Function('S', grab(/function campaignOf\(c\) \{[^\n]*\}/) + '\n' + grab(/function d1Order\(list\) \{[\s\S]*?\n\}/) + '\n' + grab(/function d1View\(list\) \{[\s\S]*?\n\}/) + '\nreturn d1View;');
   const four = [{ full_name: 'Zed Juss', company: 'JUSS', academy_date: '2026-10-19' }, { full_name: 'Amy Link', company: 'LINK', academy_date: '2026-10-19' },
-    { full_name: 'Bob Juss', company: 'JUSS', academy_date: '2026-10-19', campaign: 'FR' /* an old value in the column: ignored */ }, { full_name: 'Cal Link', company: 'LINK', academy_date: '2026-10-19', day1_status: 'no_show' }];
+    { full_name: 'Bob Juss', company: 'JUSS', academy_date: '2026-10-19', campaign: 'FR' /* placed in FR on Day 1 */ }, { full_name: 'Cal Link', company: 'LINK', academy_date: '2026-10-19', day1_status: 'no_show' }];
   const nm = l => l.map(c => c.full_name).join(', ');
   ok(nm(viewWith({})(four)) === 'Bob Juss, Zed Juss, Amy Link, Cal Link' && nm(viewWith({ d1Sort: 'az' })(four)) === 'Amy Link, Bob Juss, Zed Juss, Cal Link' &&
-    nm(viewWith({ d1Camp: 'FR' })(four)) === 'Amy Link, Cal Link' && nm(viewWith({ d1Camp: 'HF' })(four)) === 'Bob Juss, Zed Juss',
-    'the rules: JUSS · LINK (default) / Name A–Z (no-shows still last) / FR = the LINK starters / HF = the JUSS ones (always)');
+    nm(viewWith({ d1Camp: 'FR' })(four)) === 'Bob Juss, Amy Link, Cal Link' && nm(viewWith({ d1Camp: 'HF' })(four)) === 'Zed Juss',
+    'the rules: JUSS · LINK (default) / Name A–Z (no-shows still last) / FR = the LINK starters and anyone placed in FR (Bob, JUSS) / HF = the rest of JUSS');
   let gone = null; try { await api(admin, 'markDay1', { id: jasId, status: 'prev_day' }); } catch (e) { gone = e.message; }
   ok(/already gone/.test(gone), 'never onto a day that has gone (Monday → Sunday refused)');
   await api(admin, 'markDay1', { id: adham.id, status: 'arrived' });
@@ -1966,6 +1973,67 @@ async function fillEval(p) {
     await ap.click('.sheet-back', { position: { x: 5, y: 5 } }); await ap.waitForFunction(() => !document.querySelector('.sheet-back'));
     await ap.click('#abMe'); await ap.waitForSelector('#mAvail');
     ok(/New starters' availability/.test(await ap.textContent('#mAvail')), 'everyone has it in the menu: "🗓️ New starters\' availability"');
+  }
+  // ── The morning after Day 1 (Angad, 27 Oct: the team marks up the printed list and brings it to him on Tuesday) ──
+  //    FR / HF placed per starter, "didn't continue", the results card, the 09:00 alert, the list marked up as a PDF
+  console.log('day 1 results');
+  {
+    const D1 = '2026-10-19', d1c = (await api(admin, 'academyList', { weekEnding: '2026-10-25' })).items.filter(c => c.academy_date === D1);
+    const jas = d1c.find(c => c.id === jasId), adh = d1c.find(c => c.id === adham.id);
+    ok(jas && adh && jas.day1_status === 'arrived' && adh.day1_status === 'arrived' && jas.office && !adh.office,
+      'Day 1 Mon 19 Oct: Jasraj (booked by Fiza: "Office", like the team\'s tally) and Adham (booked by Abdullahi) both arrived');
+    const resNow = async () => JSON.parse((await post('/dev/eval', { js: `JSON.stringify(day1ResultsText(day1Results('${D1}')))` })).out);
+    let rt = await resNow();
+    ok(rt.title === '🎓 Day 1 Monday 19th October: ' + d1c.length + ' of ' + d1c.length + ' started' && rt.body.split('\n')[0] === 'FR 1 · HF 1' && rt.body.split('\n')[1] === 'Office 1 · Abdullahi 1',
+      'the results: "' + rt.title + ' · ' + rt.body.replace(/\n/g, ' · ') + '"');
+    await api(admin, 'setCampaign', { id: adham.id, campaign: 'FR' });
+    rt = await resNow();
+    const avAd = (await api(admin, 'availWeek', { weekEnding: '2026-10-25' })).rows.find(r => r.candidate_id === adham.id);
+    ok(rt.body.split('\n')[0] === 'FR 2 · HF 0' && avAd && avAd.campaign === 'FR' && avAd.company === 'JUSS',
+      'Adham (JUSS) placed in FR: the results say FR 2 · HF 0, and availability lists him under Fundraising');
+    // On the phone: the results card on the Day 1 tab, and "🚪 Didn't continue"
+    await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button[data-tab=academy]');
+    await ap.click('.tabbar button[data-tab=academy]'); await ap.waitForSelector('#d1prev');
+    for (let i = 0; i < 4 && !(await ap.$('.d1res[data-res="' + D1 + '"]')); i++) { await ap.click('#d1prev'); await ap.waitForTimeout(300); }
+    const card = await ap.innerText('.d1res[data-res="' + D1 + '"]');
+    ok(/2 of 2 started/.test(card) && /FR 2 · HF 0/.test(card) && /Office 1 · Abdullahi 1/.test(card), 'Day 1 tab, Monday 19 Oct: a results card ("' + card.replace(/\n/g, ' · ') + '")');
+    const lb = '[data-d1="left"][data-id="' + jasId + '"]';
+    await ap.click(lb); await ap.waitForSelector(lb + '.sure'); await ap.click(lb);
+    await ap.waitForSelector('.trow.left[data-cand="' + jasId + '"]');
+    const card2 = await ap.innerText('.d1res[data-res="' + D1 + '"]'), jasNow = await api(admin, 'getCandidate', { id: jasId });
+    const avJ = (await api(admin, 'availWeek', { weekEnding: '2026-10-25' })).rows.find(r => r.candidate_id === jasId);
+    ok(jasNow.day1_status === 'arrived' && !!jasNow.day1_left_at && /1 didn't continue/.test(card2) && /2 of 2 started/.test(card2) && (!avJ || avJ.left),
+      '🚪 Didn\'t continue (twice) on Jasraj: still a Day 1 start (2 of 2), "1 didn\'t continue", off availability (or flagged there if already filled in)');
+    await shot(ap, '54-day1-results');
+    // The list, marked up the way the team did it by hand: FR orange / HF pink rows, struck through, results underneath
+    const rDl = await pdfDl(ap, '[data-pdf="' + D1 + '"]'), rPath = `${SHOTS}/55-day1-results.pdf`; await rDl.saveAs(rPath);
+    const rRaw = fs.readFileSync(rPath, 'latin1');
+    ok(/1 0\.88 0\.76 rg/.test(rRaw) && /\(Left\) Tj/.test(rRaw) && /0\.25 0\.25 0\.3 RG 0\.9 w/.test(rRaw) && /\(2 of 2 started  ·  FR 2 · HF 0 · 1 didn't continue\) Tj/.test(rRaw.replace(/\\'/g, "'")) &&
+      /\(By booker: Office 1 · Abdullahi 1\) Tj/.test(rRaw), '📄 the next day, the New Starts List comes out marked up: FR rows orange, "Left" struck through, "2 of 2 started · FR 2 · HF 0 · 1 didn\'t continue", by booker underneath');
+    try { require('child_process').execFileSync('pdftoppm', ['-png', '-r', '70', '-singlefile', rPath, `${SHOTS}/55-day1-results`]); } catch (e) { /* no renderer here */ }
+    // 09:00 the next morning: the results come to the admins by themselves
+    await post('/dev/props', { D1_RESULTS: '' });
+    await setTime('2026-10-20T09:05:00+01:00');
+    const p0 = (await getJson('/dev/pushes')).length;
+    await post('/dev/run', { fn: 'maybeDay1Results' });
+    const d1p = (await getJson('/dev/pushes')).slice(p0).filter(x => /^🎓 Day 1 /.test(x.body.headings.en)), p1 = (await getJson('/dev/pushes')).length;
+    await post('/dev/run', { fn: 'maybeDay1Results' });
+    const d1again = (await getJson('/dev/pushes')).length - p1;
+    await setTime('2026-10-20T10:00:00+01:00');
+    ok(d1p.length >= 1 && !d1again && d1p.every(x => x.body.headings.en === '🎓 Day 1 Monday 19th October: 2 of 2 started') && d1p.some(x => x.body.include_aliases.external_id.includes(angadU.id)) &&
+      /^FR 2 · HF 0 · 1 didn't continue\nOffice 1 · Abdullahi 1/.test(d1p[0].body.contents.en) && d1p[0].body.web_url.endsWith('?c=academy'),
+      '09:00 the morning after: "' + (d1p[0] ? d1p[0].body.headings.en + ' · ' + d1p[0].body.contents.en.replace(/\n/g, ' · ') : 'none') + '" → admins (once), tap → Day 1');
+    // Undo, and put everything back for the rest of the run
+    await api(admin, 'markDay1', { id: jasId, status: 'stayed' }); await api(admin, 'setCampaign', { id: adham.id, campaign: '' });
+    ok(!(await api(admin, 'getCandidate', { id: jasId })).day1_left_at && JSON.parse((await post('/dev/eval', { js: `JSON.stringify(day1Results('${D1}'))` })).out).fr === 1,
+      '↩️ Undo: back to continuing; and blank = their company\'s campaign again');
+    // A name typed wrong at check-in ("Mel Anouman" → "Mel Abraham" on 26 Oct's list): fixed everywhere it shows
+    let short = null; try { await api(admin, 'fixName', { id: jasId, full_name: 'Jasraj' }); } catch (e) { short = e.message; }
+    await api(admin, 'fixName', { id: jasId, full_name: 'jasraj bhuller-singh' });
+    const fixed = (await api(admin, 'getCandidate', { id: jasId })).full_name, avFixed = (await api(admin, 'availWeek', { weekEnding: '2026-10-25' })).rows.find(r => r.candidate_id === jasId);
+    await api(admin, 'fixName', { id: jasId, full_name: 'Jasraj Bhuller' });
+    ok(/First and last name/.test(short || '') && fixed === 'Jasraj Bhuller-Singh' && (!avFixed || avFixed.full_name === 'Jasraj Bhuller-Singh'),
+      'Fix their name (admins, on their page): "Jasraj Bhuller-Singh" on their record and on availability');
   }
   await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button'); await openTeam(ap);
   await ap.click('.item[data-u="' + mo.id + '"]'); await ap.waitForSelector('#ual');
