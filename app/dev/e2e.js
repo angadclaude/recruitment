@@ -1233,19 +1233,20 @@ async function fillEval(p) {
   ok(fizaD1.length && fizaD1.every(c => c.booker_id === fiza.id), 'a booker\'s Day 1 list shows their own starters only');
   ok(!(await api(nathan, 'academyList', {})).items.length, 'a presenter sees nobody (no access to other people\'s candidates)');
 
-  // ── New starter onboarding (admins only): 1 · Databyte, 2 · the welcome email with FieldIQ ──
+  // ── New starter onboarding (admins only): 1 · their details to copy into Databyte, 2 · the welcome email with FieldIQ.
+  //    Databyte is done by hand (Angad, 27 Oct): no Databyte buttons, and the email doesn't wait for it ──
   console.log('onboarding');
   const allP = await getJson('/dev/pushes');
   const nsJ = allP.find(p => p.body.headings.en === '🚀 New starter to onboard: Jasraj Bhuller'), nsA = allP.find(p => p.body.headings.en === '🚀 New starter to onboard: Adham Soliman');
   ok(nsJ && nsJ.body.include_aliases.external_id.join() === jessId && nsA && nsA.body.include_aliases.external_id.join() === rubalId &&
-    /^Booked by Abdullahi Ahmed for Monday 19th October\. Tap: add to Databyte, then send the welcome email\.$/.test(nsA.body.contents.en) && nsA.body.web_url.endsWith('?c=' + adham.id),
+    /^Booked by Abdullahi Ahmed for Monday 19th October\. Tap: copy their details into Databyte and send the welcome email\.$/.test(nsA.body.contents.en) && nsA.body.web_url.endsWith('?c=' + adham.id),
     'booked → straight to Jess (LINK: Jasraj) / Rubal (JUSS: Adham): "🚀 New starter to onboard: Adham Soliman · ' + (nsA ? nsA.body.contents.en : '') + '"');
   ok(!allP.some(p => /New starter to onboard: Ishita/.test(p.body.headings.en)), 'not for a booking waiting on an admin (Ishita was rejected)');
   const denied = async (a, x) => { try { await api(fizaTok, a, x); return ''; } catch (e) { return e.message; } };
   ok(/Admin only/.test(await denied('onboardStep', { id: jasId, databyte: true })) && /Admin only/.test(await denied('onboardPreview', { id: jasId })) && /Admin only/.test(await denied('onboardSend', { id: jasId })),
     'bookers can\'t touch onboarding (Databyte, welcome email): admins only');
   let tooSoon = null; try { await api(admin, 'onboardSend', { id: adham.id }); } catch (e) { tooSoon = e.message; }
-  ok(/Add them to Databyte first/.test(tooSoon), 'the welcome email can\'t go before they\'re on Databyte (FieldIQ wouldn\'t work yet)');
+  ok(!/Databyte/.test(tooSoon || ''), 'the welcome email doesn\'t wait for Databyte (the team does that by hand)');
   await ap.goto(APP + 'index.html?c=' + adham.id); await ap.waitForSelector('#onb');
   const onbTxt = await ap.innerText('#onb');
   ok(/First name\s*Adham/.test(onbTxt) && /Last name\s*Soliman/.test(onbTxt) && /adham@example\.com/.test(onbTxt) && /07700 900300/.test(onbTxt) && /Recruitment source\s*Personal Recruitment/.test(onbTxt) && (await ap.$$('#onb [data-copy]')).length === 5,
@@ -1255,13 +1256,11 @@ async function fillEval(p) {
   const srcOf = async id => (await post('/dev/eval', { js: `recruitSourceOf({ booker_id: '${id}' })` })).out;
   ok(await srcOf(abd.id) === 'Personal Recruitment' && await srcOf(jessId) === 'Office Recruitment' && await srcOf(rubalId) === 'Office Recruitment' && await srcOf('') === 'Office Recruitment',
     'the rule: any booker → Personal Recruitment; Jess / Rubal (the office) or no booker → Office Recruitment');
-  ok(/📤 From Rubal Oshan · rubal@jussmarketing\.co\.uk not set up yet/i.test(onbTxt) && (await ap.getAttribute('#onb a[href*="databyte"]', 'href')) === 'https://uk.databyte.live/onboarding/dashboard/list',
-    'step 2 says who it comes from (Angad onboarding a JUSS starter → Rubal\'s address), flagged until Gmail can send as it; Databyte opens its onboarding dashboard');
-  ok(await ap.$('#obsend[disabled]'), 'step 2 (welcome email) is locked until they\'re on Databyte');
+  ok(/📤 From Rubal Oshan · rubal@jussmarketing\.co\.uk not set up yet/i.test(onbTxt),
+    'step 2 says who it comes from (Angad onboarding a JUSS starter → Rubal\'s address), flagged until Gmail can send as it');
+  ok(/1 · Their details for Databyte/.test(onbTxt) && !(await ap.$('#onb a[href*="databyte"]')) && !(await ap.$('#dbdone')) && !/Added to Databyte|Unlocks once/.test(onbTxt) && await ap.$('#obsend:not([disabled])'),
+    'no Databyte buttons (it\'s done by hand): just the boxes to copy, and "📧 Preview & send welcome email" is open straight away');
   await ap.locator('#onb').screenshot({ path: SHOTS + '/33-onboard.png' });
-  await ap.click('#dbdone'); await ap.waitForSelector('#obsend:not([disabled])');
-  const adOnb = await api(admin, 'getCandidate', { id: adham.id });
-  ok(!!adOnb.databyte_at && adOnb.databyte_by === 'Angad Oshan' && adOnb.recruit_source === 'Personal Recruitment', '"✅ Added to Databyte" saved (who, when, Personal Recruitment) and step 2 unlocks');
   await ap.click('#obsend'); await ap.waitForSelector('.obframe'); await ap.waitForSelector('#oberr .err');
   ok(/Can't send as rubal@jussmarketing\.co\.uk yet/.test(await ap.innerText('#oberr')) && await ap.$('#obgo[disabled]') && /From Rubal Oshan <rubal@jussmarketing\.co\.uk>/.test(await ap.innerText('#obfrom')),
     'until the app\'s Gmail can send as Rubal: the preview says so and Send stays off (never falls back to another address)');
@@ -1421,7 +1420,6 @@ async function fillEval(p) {
   ok(/^Link Marketing - /.test(aPj.subject) && aPj.from === 'Jess Grace <jess@linkmarketing.org.uk>', 'only the recruitment team choose the company (Angad still gets the LINK email from Jess)');
   await post('/dev/eval', { js: "globalThis.__sendAs = ['rubal@jussmarketing.co.uk', 'jess@linkmarketing.org.uk', 'recruitment@jussmarketing.co.uk']; CacheService.getScriptCache().remove('send_as'); 1" });
   ok((await api(zT2, 'me')).welcomeFrom.mine.email === 'recruitment@jussmarketing.co.uk' && (await api(zT2, 'me')).welcomeFrom.mine.ready, 'her card shows "From Zara Iqbal · recruitment@jussmarketing.co.uk", ready once Gmail can send as it');
-  await api(zT2, 'onboardStep', { id: jasId, databyte: true });
   const mbZ = (await getJson('/dev/mail')).length;
   await api(zT2, 'onboardSend', { id: jasId, co: 'LINK' });
   const zm = (await getJson('/dev/mail')).slice(mbZ).find(m => m.to === 'jasraj@example.com');

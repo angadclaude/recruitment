@@ -2461,11 +2461,12 @@ function trimOldBookings(before) {
   readTable('Bookings').forEach(b => { if (b.slot_date && b.slot_date < before && (b.notes || b.confirm_token)) { b.notes = ''; b.confirm_token = ''; writeRow('Bookings', b); } });
 }
 
-// ───────────────────────── NEW STARTER ONBOARDING (admins only: Databyte, then the welcome email) ─────────────────────────
+// ───────────────────────── NEW STARTER ONBOARDING (admins only: their details for Databyte, and the welcome email) ─────────────────────────
+// Databyte is done by hand (Angad, 27 Oct): the app shows the boxes to copy, and the welcome email can go any time.
 /** Someone's just been booked onto the Academy: Jess (LINK) / Rubal (JUSS) onboard them straight away. */
 function newStarterAlert(c) {
   const t = thanksTeam()[c.company === 'JUSS' ? 'JUSS' : 'LINK'], u = t.id ? userById(t.id) : null;
-  if (u) notify([u], '🚀 New starter to onboard: ' + c.full_name, 'Booked by ' + (c.booker_name || 'their booker') + ' for ' + longDate(c.academy_date) + '. Tap: add to Databyte, then send the welcome email.', c.id);
+  if (u) notify([u], '🚀 New starter to onboard: ' + c.full_name, 'Booked by ' + (c.booker_name || 'their booker') + ' for ' + longDate(c.academy_date) + '. Tap: copy their details into Databyte and send the welcome email.', c.id);
 }
 const DAYS_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -2671,12 +2672,11 @@ function onboardPreview(req, u) {
 function brandPick(req, u) { return (req.co === 'LINK' || req.co === 'JUSS') && onRecruitTeam(u) ? req.co : ''; }
 /** Goes from the sender's own address if they're on the recruitment team (Jess / Rubal / Fiza), else the company's (ONBOARD.*.from),
  *  signed by them: replies go straight to them. No copy back to the sender (Angad, 22 Oct: "it shouldn't come back as a
- *  BCC"); the app's card and Log say who sent it and when. Databyte first: FieldIQ only works once they're on it. */
+ *  BCC"); the app's card and Log say who sent it and when. No wait for Databyte (Angad, 27 Oct): the team does that by hand. */
 function onboardSend(req, u) {
   if (!isAdmin(u)) throw new Error('Admin only');
   const c = getC(req.id);
   if (!onboardable(c)) throw new Error('Only people booked onto the Academy are onboarded.');
-  if (!c.databyte_at) throw new Error('Add them to Databyte first: FieldIQ only works once they\'re on Databyte.');
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(c.email || '')) throw new Error('No valid email for ' + c.full_name + '.');
   const pick = brandPick(req, u), s = welcomeSender(c, u, pick), bad = welcomeNotReady(s);
   if (bad) throw new Error(bad);

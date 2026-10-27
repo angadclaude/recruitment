@@ -46,7 +46,7 @@ The recruitment app for **LINK Marketing** and **JUSS Marketing** (Angad runs bo
 
 ## Rules
 - **Bookers** see only their own candidates. **Admins** see everyone. **Presenters** see everyone else's candidates as name, who booked them and room rating only.
-- **Onboarding** (Databyte, welcome email) is for admins only.
+- **Onboarding** (their details to copy into Databyte, the welcome email) is for admins only. **Databyte is done by hand** (Angad, 27 Oct): no Databyte buttons in the app, only the Copy boxes, and the welcome email can go any time (no lock).
 - **The recruitment team** (`THANKS_TEAM` + `RECRUIT_TEAM` in `Code.gs`) send thank-yous, Day 1 details and follow-ups as LINK or JUSS, signed with their own name, and the welcome emails. Everyone else follows the candidate's company. **Only Jess and Rubal since 26 Oct** (Angad: Fiza off): `RECRUIT_TEAM` is empty; e2e puts an address back in it to keep testing it.
 - **Outcome deadline** is Friday 18:00 (later outcomes are marked LATE).
 - **Day 1 tab and New Starts List order (always, Angad 25 Oct):** JUSS on top, LINK below; in each company Monday's starters then Tuesday's, by name, no-shows at the bottom (`d1Order`). That's the default; the tab can also sort *Name A–Z* and show one campaign (`d1View`), and the PDF follows what's on screen.
