@@ -2078,11 +2078,11 @@ async function fillEval(p) {
     const bTabs = await bp.$$eval('.tabbar button', e => e.map(x => x.innerText.trim().replace(/\s+/g, ' ')));
     await bp.click('.tabbar button[data-tab=avail]'); await bp.waitForSelector('.avrow');
     const allNow = (await api(admin, 'availWeek', { weekEnding: WE })).rows;
-    const bNames = await bp.$$eval('.avrow .name', e => e.map(x => x.textContent));
+    const nsNames = await bp.$$eval('.avrow .name', e => e.map(x => x.textContent));
     ok(bTabs.includes('New starts') && (await bp.textContent('#abTitle')) === 'New starts' && (await bp.$eval('#abBack', b => b.hidden)) &&
-      bNames.length === allNow.length && allNow.every(r => bNames.includes(r.full_name)) && bNames.includes('Adham Soliman') &&
+      nsNames.length === allNow.length && allNow.every(r => nsNames.includes(r.full_name)) && nsNames.includes('Adham Soliman') &&
       !(await bp.$('.avA')) && !(await bp.$('button.avrow')) && !(await bp.$('#avadd')) && (await ap.$$('.tabbar button[data-tab=avail]')).length === 0,
-      'every booker has a New starts tab (' + bTabs.join(' · ') + '): all ' + bNames.length + ' new starters in the office, anyone\'s coach (Adham is Abdullahi\'s), read-only; admins keep it in Day 1');
+      'every booker has a New starts tab (' + bTabs.join(' · ') + '): all ' + nsNames.length + ' new starters in the office, anyone\'s coach (Adham is Abdullahi\'s), read-only; admins keep it in Day 1');
     await shot(bp, '50d-booker-new-starts');
     // On the phone: Day 1 → 🗓️ Availability
     await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button[data-tab=academy]');
