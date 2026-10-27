@@ -298,7 +298,7 @@ No more highlighters on the printed list:
 ## New starters' availability: Week 1 and Week 2 (replaces the NS Availability sheet)
 **Day 1 → 🗓️ Availability · Week 1 & Week 2** (or the menu → **🗓️ New starters' availability**).
 
-**Coaches (bookers and leaders):** your own new starters are on your **Mine** tab, under your target: **🗓️ Your new starters**, with the days each one is in this week. Tap one for the full list. Turn on alerts to hear at 18:00 when their days are in.
+**Bookers and leaders:** tap **New starts** in the bottom bar: every new starter in the office, with their days, coach and notes (view only). Turn on alerts to hear at 18:00 when your own starters' days are in.
 
 - **The week:**
   - **Monday (Jess / Rubal):** on the Day 1 list, tick **Arrived**, then tap **📷 Photo** on the same row. That's their availability photo; it shows as their picture.

@@ -1629,7 +1629,7 @@ const STAFF_ACTIONS = {
   onboardStep: onboardStep, onboardPreview: onboardPreview, onboardSend: onboardSend, setBrand: setBrand,
   saveBooking: saveBooking, bookingAction: bookingAction, bookingList: bookingList,
   setCampaign: setCampaign, fixName: fixName, day1Photo: day1Photo,
-  availWeek: availWeek, saveAvail: saveAvail, addStarter: addStarter, removeStarter: removeStarter, restoreStarter: restoreStarter, gradeStarter: gradeStarter, myStarters: myStarters, saveStarterPhoto: saveStarterPhoto, availPhotos: availPhotos,
+  availWeek: availWeek, saveAvail: saveAvail, addStarter: addStarter, removeStarter: removeStarter, restoreStarter: restoreStarter, gradeStarter: gradeStarter, saveStarterPhoto: saveStarterPhoto, availPhotos: availPhotos,
   setBellSheets: setBellSheets,
 };
 
@@ -1679,14 +1679,6 @@ function availWeek(req, u) {
   return { weekEnding: we, today: todayStr(), canEdit: edit, rows: availRows(we).map(r => (edit ? r : Object.assign(r, { grade: '' }))), bell: isAdmin(u) ? bellStatus(we) : null,
     removed: edit ? readTable('Availability').filter(r => r.week_ending === we && r.removed_at).map(r => ({ id: r.id, full_name: r.full_name, removed_by: r.removed_by })) : [],
     coaches: edit ? usersAll().filter(x => truthy(x.active) && has(x, 'booker')).map(x => ({ id: x.id, name: x.name, company: x.company })).sort((a, b) => a.name.localeCompare(b.name)) : [] };
-}
-/** A coach's own new starters (Angad, 27 Oct: Hasini, coaching in the BA Academy, couldn't find hers): this week's (Week 1) and
- *  last week's (their Week 2), with the days they're in this week, for the card on their home screen. */
-function myStarters(req, u) {
-  const thisWe = weekEnding(todayStr()), out = [];
-  [thisWe, addDays(thisWe, -7)].forEach((we, i) => availRows(we).filter(r => r.coach_id === u.id && !r.no_longer).forEach(r => out.push({
-    id: r.id, full_name: r.full_name, day1_date: r.day1_date, week_ending: we, wk: i + 1, days: i ? r.w2 : r.w1, campaign: r.campaign, driver: r.driver })));
-  return { starters: out };
 }
 function availRecord(id) {
   const r = rowOfId('Availability', id);

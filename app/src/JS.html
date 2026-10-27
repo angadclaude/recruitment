@@ -1296,6 +1296,7 @@ const ICONS = {
   academy: '<path d="M22 10 12 5 2 10l10 5 10-5z"/><path d="M6 12v5c3 2 9 2 12 0v-5"/><path d="M22 10v6"/>',
   pay: '<path d="M17 7.5A4.5 4.5 0 0 0 9 10v9M6 13.5h8M6 19h12"/>',
   book: '<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4M12 13.5v5M9.5 16h5"/>',
+  avail: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 11.5l2 2 4-4.5"/>',
   team: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17.5" cy="9" r="2.5"/><path d="M16.5 14.6A5 5 0 0 1 21.5 19.5"/>',
   back: '<path d="M15 5l-7 7 7 7"/>',
   phone: '<path d="M5 4h3.5l2 5-2.4 1.6a11 11 0 0 0 5.3 5.3L15 13.5l5 2V19a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/>',
@@ -1310,6 +1311,7 @@ function tabs() {
   if (canBook()) t.push(['book', 'Book Appts']);  // Jess, Rubal, Angad: book after the call, send the details (Angad, 23 Oct)
   if (isBooker()) t.push(['mine', 'Mine']);
   if (isAdmin() || isBooker()) t.push(['chase', 'Chase']);
+  if (isBooker() && !isAdmin()) t.push(['avail', 'New starts']);  // every new starter in the office, read-only (Angad, 27 Oct); admins have it in Day 1
   if (isAdmin()) t.push(['academy', 'Day 1']);
   if (isAdmin()) t.push(['all', 'All']);
   t.push(['pay', 'Appts Attended']);  // was "Incentive" (Angad, 20 Oct)
@@ -1426,7 +1428,7 @@ function toggleMenu() {
   document.getElementById('mRefresh').onclick = () => { m.hidden = true; pullRefresh(); };
   const mt = document.getElementById('mTeam'); if (mt) mt.onclick = () => { m.hidden = true; nav('team', {}, true); };
   const mm = document.getElementById('mMine'); if (mm) mm.onclick = () => { m.hidden = true; nav('mine', {}, true); };
-  document.getElementById('mAvail').onclick = () => { m.hidden = true; nav('avail', {}, true); };
+  document.getElementById('mAvail').onclick = () => { m.hidden = true; nav('avail', {}, !tabs().some(t => t[0] === 'avail')); };
   document.getElementById('mLogout').onclick = () => {
     if (outbox().length && !navigator.onLine) { toast('Wait for signal first: you have changes that haven\'t synced'); return; }
     store.del('outbox'); store.del('tok'); store.del('cache'); S.token = ''; S.me = null; S.data = {}; S.users = null; S.chase = null; S.chaseN = 0; S.chaseCarry = 0; S.academy = null; S.d1Old = null; S.d1Pick = null; S.booted = false; S.tab = '';
@@ -1720,39 +1722,15 @@ function viewMine(quiet) {
       '<div class="hero-body">' + ring(r.net, d.pay.target) + '<div class="hero-txt"><b>' + (left ? left + ' more to hit ' + d.pay.target : 'Target smashed 🔥') + '</b>' +
       '<span>' + r.attended + ' checked in · ' + r.excluded.length + ' don\'t count</span>' +
       (r.excluded.length ? '<span class="small">' + r.excluded.map(x => h(x.name) + ' (' + h(x.why) + ')').join(' · ') + '</span>' : '') + '</div></div>') + '</div>' +
-      '<!--mystarters-->' +
       (toCall.length ? '<div class="section-h"><b>📞 To call · ' + toCall.length + '</b><span>log by ' + h(S.me.deadlineLabel || 'Sat ' + S.me.deadlineTime) + '</span></div><div class="list">' + toCall.map(c => item(c, true, 'call')).join('') + '</div>' : '') +
       (toSend.length ? '<div class="section-h"><b>🎉 Send Day 1 details · ' + toSend.length + '</b></div><div class="list">' + toSend.map(c => item(c, true, 'offer')).join('') + '</div>' : '') +
       (noAnswer.length ? '<div class="section-h"><b>📵 No answer · ' + noAnswer.length + '</b><span>WhatsApp = "we tried calling you"</span></div><div class="list">' + noAnswer.map(c => item(c, true, 'noanswer')).join('') + '</div>' : '') +
       (items.length > toCall.length + toSend.length + noAnswer.length ? '<div class="section-h"><b>' + (toCall.length || toSend.length || noAnswer.length ? 'Everyone else' : 'This week') + '</b></div>' + groupByDate(items.filter(c => toCall.indexOf(c) < 0 && toSend.indexOf(c) < 0 && noAnswer.indexOf(c) < 0))
         : items.length ? '' : empty('🗓️', 'No candidates this week yet.'));
   }
-  const page = paint('', body.replace('<!--mystarters-->', thisWeek ? myStartersCard() : '') + (d ? '<button class="btn ghost block" id="goAcademy" style="margin-top:14px">🎓 My Day 1 starters</button>' : ''), quiet);
+  const page = paint('', body + (d ? '<button class="btn ghost block" id="goAcademy" style="margin-top:14px">🎓 My Day 1 starters</button>' : ''), quiet);
   bindItems(page); bindWeekNav();
   const ga = document.getElementById('goAcademy'); if (ga) ga.onclick = () => nav('academy', {}, true);
-  page.querySelectorAll('[data-myav]').forEach(b => { b.onclick = () => nav('avail', { we: b.dataset.myav, wk: Number(b.dataset.wk) }, true); });
-}
-/** A coach's own new starters on their home screen (Angad, 27 Oct: Hasini, coaching new starters in the BA Academy, couldn't
- *  find their availability): this week's and last week's, the days they're in this week, a tap for the full list. */
-function myStartersCard() {
-  const m = S.mySt;
-  if (!m || Date.now() - m.at > LIST_STALE_MS) {
-    if (!S.myStLoading) {
-      S.myStLoading = true;
-      call('myStarters', {}).then(r => { S.mySt = { at: Date.now(), starters: r.starters }; if (S.view === 'mine') render(true); })
-        .catch(() => {}).then(() => { S.myStLoading = false; });
-    }
-  }
-  const st = (m && m.starters) || [];
-  if (!st.length) return '';
-  return '<div class="section-h"><b>🗓️ Your new starters · ' + st.length + '</b><span>the days they\'re in this week</span></div><div class="list">' + st.map(x => {
-    const mon = addDays(x.week_ending, -6 + (x.wk === 2 ? 7 : 0)), days = String(x.days || '-------'), none = !/[IO]/.test(days), ph = thumbNow(x.id);
-    return '<button type="button" class="item avrow mystart" data-myav="' + h(x.week_ending) + '" data-wk="' + x.wk + '">' +
-      (ph ? '<img class="av avph avpic" src="' + ph + '" alt="">' : '<span class="av avpic co-' + (x.campaign === 'HF' ? 'JUSS' : 'LINK') + '">' + h(initials(x.full_name)) + '</span>') +
-      '<div class="main"><div class="name">' + h(x.full_name) + '</div><div class="sub">' + (x.campaign === 'HF' ? 'HelloFresh' : 'Fundraising') + ' · Week ' + x.wk + ' · Day 1 ' + h(fmt(x.day1_date)) + (x.driver === 'Yes' ? ' · 🚗' : '') + '</div>' +
-      '<div class="avchips">' + days.split('').map((c, i) => '<span class="avc ' + (x.wk === 1 && addDays(mon, i) < x.day1_date ? 'pre' : c === 'I' ? 'in' : c === 'O' ? 'out' : 'na') + '">' + AV_DAY[i].slice(0, 2) + '</span>').join('') + '</div>' +
-      (none ? '<div class="small muted avnote">Days not in yet: they\'re filled in at the one-to-one (Tuesday afternoon).</div>' : '') + '</div></button>';
-  }).join('') + '</div>';
 }
 
 // ───── All (admin) ─────
@@ -2207,17 +2185,18 @@ function loadAvail(we) {
   });
 }
 function viewAvail(quiet) {
+  const asTab = S.tab === 'avail', title = asTab ? 'New starts' : 'Availability';
   const today = S.me.today, thisWe = weekEndingOf(today), we = S.params.we || thisWe, wk = S.params.wk === 2 ? 2 : 1, id = S.viewId;
   const d = (S.avail || {})[we];
   if (!d || Date.now() - d.at > STALE_MS) loadAvail(we).then(() => { if (S.viewId === id && !document.querySelector('.sheet-back')) render(true); })
-    .catch(e => { if (S.viewId === id && !(S.avail || {})[we]) paint('Availability', '<div class="err">' + h(e.message) + '</div>', false, true); });
+    .catch(e => { if (S.viewId === id && !(S.avail || {})[we]) paint(title, '<div class="err">' + h(e.message) + '</div>', false, !asTab); });
   const mon = addDays(we, -6 + (wk === 2 ? 7 : 0)), days = AV_DAY.map((x, i) => addDays(mon, i));
   const go = p => { S.params = Object.assign({ we: we, wk: wk }, p); hist('replace', { v: 'avail', p: S.params }); render(); };
   const top = '<div class="seg bullseg" id="avwk"><button data-wk="1" class="' + (wk === 1 ? 'on' : '') + '">Week 1</button><button data-wk="2" class="' + (wk === 2 ? 'on' : '') + '">Week 2</button></div>' +
     '<div class="seg-nav"><div class="lbl"><span>' + (we === thisWe ? 'Started this week · Day 1 w/e' : we === addDays(thisWe, -7) ? 'Started last week · Day 1 w/e' : 'Started · Day 1 w/e') + '</span><b>' + fmt(we) + '</b></div>' +
     '<button class="iconbtn" id="avprev" aria-label="Previous week">‹</button><button class="iconbtn" id="avnext" aria-label="Next week"' + (we >= thisWe ? ' disabled' : '') + '>›</button></div>' +
     '<p class="small muted avrange">Week ' + wk + ': ' + fmt(days[0]) + ' – ' + fmt(days[6]) + '</p>';
-  if (!d) { bindAvail(paint('Availability', top + skeleton(4), quiet, true), go, we); return; }
+  if (!d) { bindAvail(paint(title, top + skeleton(4), quiet, !asTab), go, we); return; }
   const rows = avOrder(d.rows), edit = d.canEdit, key = wk === 2 ? 'w2' : 'w1';
   const pre = (r, i) => wk === 1 && days[i] < r.day1_date;  // before their Day 1
   const inOn = i => rows.filter(r => r[key][i] === 'I'), drivers = i => inOn(i).filter(r => r.driver === 'Yes').length;
@@ -2254,11 +2233,11 @@ function viewAvail(quiet) {
     '<p class="muted" style="margin:6px 0 0">Each starter goes under New Starts (name and coach in capitals, OFFICE if there\'s no coach) by themselves, from ' + h(bl.time) +
       ' the day after their Day 1, once their Week 1 days are in. FR → FR bell sheet, HF → HF bell sheet. You get an alert.</p>' +
     '<button type="button" class="linkbtn" id="avbellset">🔗 ' + (bl.sheets.some(x => x.url) ? 'Change the links' : 'Add the bell sheets\' links') + '</button></div>' : '';
-  const page = paint('Availability', top + strip + warn + tools + gone +
+  const page = paint(title, top + strip + warn + tools + gone +
     (rows.length ? group('JUSS', 'HelloFresh') + group('LINK', 'Fundraising') : empty('🗓️', we > addDays(thisWe, -7) && we >= thisWe ? 'Nobody\'s started this week yet. Starters appear here when they\'re ticked Arrived on Day 1.' : 'Nobody started that week.')) + bell +
     '<p class="hint">' + (edit ? 'Tap a starter to fill in their days (tap a day: in → out → not said), driver, notes and photo, or to remove them. ' : '') +
       'Week 1 is their Day 1 week, Week 2 the week after. Everyone who started is here as soon as they\'re ticked Arrived on Day 1, with the photo taken there (📷 on the Day 1 list); their coach is whoever booked them. Days stay blank until the one-to-one (Tuesday afternoon); at 18:00 you hear it\'s ready, or who\'s missing. ' +
-      (edit ? 'Days changed after the one-to-one? Their coach gets an alert. Tap <b>A</b> on your best new starts: it goes green (only the people who do the one-to-ones see it). ' : 'Only Angad, Satpal and the people they pick can change it. ') + 'Every week is kept: ‹ › to go back.</p>', quiet, true);
+      (edit ? 'Days changed after the one-to-one? Their coach gets an alert. Tap <b>A</b> on your best new starts: it goes green (only the people who do the one-to-ones see it). ' : 'Only Angad, Satpal and the people they pick can change it. ') + 'Every week is kept: ‹ › to go back.</p>', quiet, !asTab);
   bindAvail(page, go, we);
   page.querySelectorAll('[data-av]').forEach(b => { if (edit) b.onclick = () => availSheet(rows.filter(r => r.id === b.dataset.av)[0], we, wk); });
   page.querySelectorAll('[data-ava]').forEach(b => {
