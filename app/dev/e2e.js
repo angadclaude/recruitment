@@ -2102,6 +2102,23 @@ async function fillEval(p) {
     ok(bsWas === 'https://docs.google.com/spreadsheets/d/' + FRID + '/edit' && /doesn't look like a Google Sheets link \(HF\)/.test(bsErr) &&
       (await api(admin, 'availWeek', { weekEnding: WE })).bell.sheets.find(x => x.key === 'HF').url.includes(HFID),
       '🔗 Change the links: the current ones are filled in; something that isn\'t a link is refused ("' + bsErr.trim() + '"), and nothing changes');
+    // A = one of the best new starts (Angad, 27 Oct: "so I can just tap on that"): green, one tap on and one off, for the people
+    // who do the one-to-ones only
+    const aSel = '.avcell:has-text("' + s1.full_name + '") .avA', aOf = async tok => ((await api(tok, 'availWeek', { weekEnding: WE })).rows.find(r => r.id === s1.id) || {}).grade;
+    const aSaved = async want => { for (let i = 0; i < 50 && (await aOf(admin)) !== want; i++) await new Promise(r => setTimeout(r, 100)); return aOf(admin); };  // the tap shows at once, saves just after
+    const aBtns = (await ap.$$('.avA')).length, aRows = (await ap.$$('.avrow')).length;
+    await ap.click(aSel); await ap.waitForSelector(aSel + '.on');
+    const aBg = await ap.$eval(aSel, b => getComputedStyle(b).backgroundColor), aSheet = !!(await ap.$('.sheet-back'));
+    const aOn = await aSaved('A'), aBooker = await aOf(abdT);
+    let aNo = null; try { await api(abdT, 'gradeStarter', { id: s1.id, grade: 'A' }); } catch (e) { aNo = e.message; }
+    let aBad = null; try { await api(admin, 'gradeStarter', { id: s1.id, grade: 'B' }); } catch (e) { aBad = e.message; }
+    await ap.click(aSel); await ap.waitForSelector(aSel + ':not(.on)');
+    const aOff = await aSaved('');
+    await ap.click(aSel); await ap.waitForSelector(aSel + '.on');
+    ok(aBtns === aRows && aRows > 0 && aBg === 'rgb(22, 128, 74)' && !aSheet && aOn === 'A' && aBooker === '' && /Not allowed/.test(aNo || '') && /A, or nothing/.test(aBad || '') &&
+      aOff === '' && (await aSaved('A')) === 'A',
+      'tap A on a starter: it goes green (' + aBg + ') and is kept, without opening their page; tap again and it\'s off; bookers can\'t see or set it');
+    await ap.$eval(aSel, b => b.scrollIntoView({ block: 'center' })); await shot(ap, '50c-availability-A');
     await ap.click('.avrow:has-text("Mira Manual")'); await ap.waitForSelector('#avw1');
     ok(await ap.$('#avw1 button[data-i="0"][disabled]') && !(await ap.$('#avw1 button[data-i="1"][disabled]')), 'her Monday is before her Day 1 (Tuesday): blank, can\'t be ticked');
     await ap.click('#avw1 button[data-i="1"]'); await ap.click('#avw1 button[data-i="2"]'); await ap.click('#avw1 button[data-i="2"]');

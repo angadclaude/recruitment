@@ -967,6 +967,13 @@ img.av.avph.avpic { border-radius: 12px; object-position: 50% 50%; }
 .sheet-h img.av.avph.avpic { border-radius: 14px; }
 .avgone { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
 .avgone .avback { display: inline-flex; align-items: center; gap: 6px; }
+/* A = one of the best new starts: a round tap at the card's top right, green when on */
+.avcell { position: relative; }
+.avcell .avrow { padding-right: 60px; }
+.avA { position: absolute; top: 12px; right: 12px; width: 40px; height: 40px; border-radius: 50%; border: 2px solid var(--line); background: #fff; color: var(--muted);
+  font: inherit; font-size: 18px; font-weight: 800; line-height: 1; cursor: pointer; display: grid; place-items: center; padding: 0; }
+.avA.on { background: var(--green); border-color: var(--green); color: #fff; box-shadow: 0 2px 8px rgba(22, 128, 74, .35); }
+.avA:active { transform: scale(.92); }
 .avbell .avbl { margin-top: 6px; }
 .avbell .avbl a { font-weight: 600; }
 .avbell .avbp { margin-top: 3px; color: var(--amber); }

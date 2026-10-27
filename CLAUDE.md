@@ -152,6 +152,7 @@ This replaces the "Juss & Link - NS Availability - 2026" Google Sheet (a W1 / Pi
     - **↩️ Put back** (`restoreStarter`) at the top of the list returns them as they were.
   - **Pictures on availability and the Day 1 list are cropped to the face** (`avThumb` / `fillThumbs`, 168 × 200, made once per photo), and on availability they're bigger (64 × 76).
   - **Pictures:** a photo of each starter; the app makes the poster.
+  - **A = one of his best new starts (Angad, 27 Oct: "so I can just tap on that").** A round **A** at the top right of each card: one tap and it's green, tap again and it's off (`gradeStarter`, columns `grade` / `grade_by` / `grade_at`). He first said A / B / C (green / amber / red), then settled on **A only**; don't add B or C unless he asks. Editors (`canAvail`) see and set it; `availWeek` blanks it for everyone else. It's not on the poster or the PDF.
 - **The poster (Angad, 27 Oct, don't redesign it):**
   - **Kept from the app's poster:** the top (JUSS | LINK, 🎉 "WELCOME OUR NEW STARTERS", "WEEK 1 | DAY 1 W/E dd/mm/yyyy"), the **HELLO FRESH** and **FUNDRAISING** ribbons, and the Mission footer. It's one page, HelloFresh then Fundraising (`drawStarters` in `Bulletin.html`, 1536 × 2304).
   - **Each starter, as on the team's Canva pages** (his NS w/e 01/11/26 pages; he first asked to "match it exactly… you can't even see someone's face"):

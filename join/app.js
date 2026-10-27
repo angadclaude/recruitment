@@ -1,4 +1,4 @@
-window.APP_VERSION = '7e79cf11';
+window.APP_VERSION = '9fd6b2e7';
 
 (function () {
 'use strict';
@@ -2217,7 +2217,10 @@ function viewAvail(quiet) {
         (short ? '<span class="pill amber">Said ' + said + ' days, in ' + avIn(w) + '</span>' : '') + (r.left ? '<span class="pill red">🚪 Didn\'t continue</span>' : r.no_longer ? '<span class="pill red">Not ticked Arrived any more</span>' : '') + '</div>' +
       (r.notes ? '<div class="small muted avnote">' + h(r.notes) + '</div>' : '') + '</div></' + (edit ? 'button' : 'div') + '>';
   };
-  const group = (co, label) => { const l = rows.filter(r => avCamp(r) === (co === 'JUSS' ? 'HF' : 'FR')); return l.length ? '<div class="section-h"><b>' + label + '</b><span>' + l.length + '</span></div><div class="list">' + l.map(card).join('') + '</div>' : ''; };
+  // A = one of the best new starts (Angad, 27 Oct: "so I can just tap on that"): green when on, for the people who do the one-to-ones
+  const cell = r => edit ? '<div class="avcell">' + card(r) + '<button type="button" class="avA' + (r.grade === 'A' ? ' on' : '') + '" data-ava="' + h(r.id) + '" aria-pressed="' +
+    (r.grade === 'A') + '" aria-label="A: one of the best new starts">A</button></div>' : card(r);
+  const group = (co, label) => { const l = rows.filter(r => avCamp(r) === (co === 'JUSS' ? 'HF' : 'FR')); return l.length ? '<div class="section-h"><b>' + label + '</b><span>' + l.length + '</span></div><div class="list">' + l.map(cell).join('') + '</div>' : ''; };
   // Taken off (Angad, 27 Oct): kept, and one tap puts them back
   const gone = edit && (d.removed || []).length ? '<div class="card tight small avgone"><b>Removed this week:</b> ' + d.removed.map(x => '<span class="avback">' + h(x.full_name) +
     ' <button type="button" class="btn ghost sm" data-avback="' + h(x.id) + '">↩️ Put back</button></span>').join(' ') + '</div>' : '';
@@ -2232,9 +2235,18 @@ function viewAvail(quiet) {
     (rows.length ? group('JUSS', 'HelloFresh') + group('LINK', 'Fundraising') : empty('🗓️', we > addDays(thisWe, -7) && we >= thisWe ? 'Nobody\'s started this week yet. Starters appear here when they\'re ticked Arrived on Day 1.' : 'Nobody started that week.')) + bell +
     '<p class="hint">' + (edit ? 'Tap a starter to fill in their days (tap a day: in → out → not said), driver, notes and photo, or to remove them. ' : '') +
       'Week 1 is their Day 1 week, Week 2 the week after. Everyone who started is here as soon as they\'re ticked Arrived on Day 1, with the photo taken there (📷 on the Day 1 list); their coach is whoever booked them. Days stay blank until the one-to-one (Tuesday afternoon); at 18:00 you hear it\'s ready, or who\'s missing. ' +
-      (edit ? 'Days changed after the one-to-one? Their coach gets an alert. ' : 'Only Angad, Satpal and the people they pick can change it. ') + 'Every week is kept: ‹ › to go back.</p>', quiet, true);
+      (edit ? 'Days changed after the one-to-one? Their coach gets an alert. Tap <b>A</b> on your best new starts: it goes green (only the people who do the one-to-ones see it). ' : 'Only Angad, Satpal and the people they pick can change it. ') + 'Every week is kept: ‹ › to go back.</p>', quiet, true);
   bindAvail(page, go, we);
   page.querySelectorAll('[data-av]').forEach(b => { if (edit) b.onclick = () => availSheet(rows.filter(r => r.id === b.dataset.av)[0], we, wk); });
+  page.querySelectorAll('[data-ava]').forEach(b => {
+    b.onclick = () => {
+      const r = d.rows.filter(x => x.id === b.dataset.ava)[0]; if (!r) return;
+      const was = r.grade || '', now = was === 'A' ? '' : 'A';
+      r.grade = now; render(true);
+      call('gradeStarter', { id: r.id, grade: now }).then(() => toast(now ? '🟢 A: ' + r.full_name.split(' ')[0] + ', one of the best new starts' : 'A taken off ' + r.full_name.split(' ')[0]))
+        .catch(e => { r.grade = was; render(true); toast(e.message); });
+    };
+  });
   page.querySelectorAll('[data-avback]').forEach(b => {
     b.onclick = () => { busy(b, true, '…'); call('restoreStarter', { id: b.dataset.avback }).then(() => loadAvail(we)).then(() => { render(true); toast('Put back ✓'); }).catch(e => { busy(b, false); toast(e.message); }); };
   });
