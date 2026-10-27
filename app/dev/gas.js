@@ -30,6 +30,7 @@ function load(opts) {
       }
       return this;
     }
+    getDisplayValues() { return this.getValues().map(r => r.map(v => (v === null || v === undefined ? '' : String(v)))); }
     clearContent() { return this.setValues(Array.from({ length: this.nr }, () => Array(this.nc).fill(''))); }
     setFontWeight() { return this; }
     setNumberFormat() { return this; }
@@ -65,6 +66,11 @@ function load(opts) {
     deleteSheet: s => { delete state.sheets[s.name]; },
   };
 
+  function otherBook(b) {
+    const sheets = Object.keys(b.tabs).map(n => { const sh = new Sheet(n); sh.data = b.tabs[n]; return sh; });
+    return { getName: () => b.title, getSheets: () => sheets, getSheetByName: n => sheets.filter(x => x.name === n)[0] || null };
+  }
+
   function fmtDate(d, tz, f) {
     const parts = new Intl.DateTimeFormat('en-GB', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
       .formatToParts(d).reduce((a, p) => (a[p.type] = p.value, a), {});
@@ -73,7 +79,8 @@ function load(opts) {
 
   const ctx = {
     console,
-    SpreadsheetApp: { getActive: () => book, openById: () => book, flush: () => {} },
+    // Other people's spreadsheets (the bell sheets): globalThis.__books = { id: { title, tabs: { 'WE 01.11.26': [[…], …] } } }; any other id = this one
+    SpreadsheetApp: { getActive: () => book, openById: id => (ctx.__books && ctx.__books[id] ? otherBook(ctx.__books[id]) : book), flush: () => {} },
     PropertiesService: { getScriptProperties: () => ({
       getProperty: k => (k in state.props ? state.props[k] : null), setProperty: (k, v) => { state.props[k] = String(v); },
       getProperties: () => Object.assign({}, state.props), deleteProperty: k => { delete state.props[k]; },

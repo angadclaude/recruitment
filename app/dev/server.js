@@ -126,6 +126,19 @@ ready.then(gas => http.createServer(async (req, res) => {
       const rows = await gas.sql(b.sql, b.params);
       res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ rows }));
     }
+    if (u.pathname === '/dev/bell' && req.method === 'POST') {  // Vercel's 5-minute bell-sheet step (server/bell.js), as api/cron.js runs it
+      const b = await body(req);
+      // The relay: this Code.gs's relayBell (Google back end, bell sheets in globalThis.__books), or b.fake = { [section]: { rows: [status, …], error } }
+      const relay = async (action, extra) => {
+        const f = b.fake && (b.fake[extra.section] || {});  // a section not named: all added
+        if (f) return { title: 'Fake bell sheet', tab: f.error ? '' : 'WE fake', error: f.error || '', rows: f.error ? [] : extra.rows.map((x, i) => (f.rows || [])[i] || 'added') };
+        const r = await gas.api(Object.assign({ action, secret: b.secret }, extra));
+        if (!r.ok) throw new Error('relay ' + action + ': ' + r.error);
+        return r.data;
+      };
+      const out = await require('../../server/bell').bellToSheets({ call: (fn, ...args) => gas.run(fn, args) }, relay);
+      res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ out: out === undefined ? null : JSON.parse(JSON.stringify(out)) }));
+    }
     if (u.pathname === '/dev/sheet') {
       const data = await gas.sheet(u.searchParams.get('name'));
       res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify(data));

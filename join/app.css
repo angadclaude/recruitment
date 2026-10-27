@@ -966,6 +966,10 @@ img.av.avph.avpic { border-radius: 12px; object-position: 50% 50%; }
 .sheet-h img.av.avph.avpic { border-radius: 14px; }
 .avgone { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
 .avgone .avback { display: inline-flex; align-items: center; gap: 6px; }
+.avbell .avbl { margin-top: 6px; }
+.avbell .avbl a { font-weight: 600; }
+.avbell .avbp { margin-top: 3px; color: var(--amber); }
+.avbell .linkbtn { margin-top: 6px; padding-left: 0; }
 /* Photos put in from a file */
 .avimp { display: block; text-align: center; margin: 2px 0 8px; }
 .impgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 10px; }
