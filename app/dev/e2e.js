@@ -2074,8 +2074,9 @@ async function fillEval(p) {
       /Save (\d+ Images|Image)/.test(iosToast || ''),
       'iPhone: ⬇️ Save opens the Share sheet with the JPEGs ("' + (iosToast || '').trim() + '"), not the grey file page (poster: ' + shared.slice(0, nP).join(', ') + '; bulletin: ' + shared[nP] + ')');
     await iosCtx.close();
-    // 🗑️ Remove from the phone: two taps, then "↩️ Put back" at the top of the list
-    await ap.click('.sheet-back', { position: { x: 5, y: 5 } }); await ap.waitForFunction(() => !document.querySelector('.sheet-back'));
+    // 🗑️ Remove from the phone: two taps, then "↩️ Put back" at the top of the list. The poster fills the screen, so it has a ✕ (Angad, 27 Oct)
+    ok(await ap.isVisible('#avpx'), 'the poster has a ✕ at the top to close it');
+    await ap.click('#avpx'); await ap.waitForFunction(() => !document.querySelector('.sheet-back'));
     await ap.click('.avrow:has-text("Mira Manual")'); await ap.waitForSelector('#avdel');
     await ap.click('#avdel');
     const armTxt = await ap.textContent('#avdel');

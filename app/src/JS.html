@@ -2468,12 +2468,14 @@ function availPoster(we, wk, rows) {
         closeSheet(true);
         const back = document.createElement('div');
         back.className = 'sheet-back';
-        back.innerHTML = '<div class="sheet pdfprev" role="dialog" aria-label="Poster"><div class="grab"></div><div class="sheet-h"><div style="min-width:0"><div class="label muted">Poster · ' + rows.length + ' starters</div><div class="display">New starters</div></div></div>' +
+        back.innerHTML = '<div class="sheet pdfprev" role="dialog" aria-label="Poster"><div class="grab"></div><div class="sheet-h"><div style="min-width:0"><div class="label muted">Poster · ' + rows.length + ' starters</div><div class="display">New starters</div></div>' +
+          '<button type="button" class="iconbtn sheetx" id="avpx" aria-label="Close">✕</button></div>' +
           '<img id="avpimg" src="' + url + '" alt="New starters poster" style="width:100%;border-radius:14px" data-info="' + h(JSON.stringify(info)) + '">' +
           '<div class="bullbtns pdfbtns"><button class="btn wa" id="avpshare">📤 Share to WhatsApp</button><button class="btn ghost" id="avpsave">⬇️ Save</button></div></div>';
         document.body.appendChild(back);
         document.body.style.overflow = 'hidden';
         back.onclick = e => { if (e.target === back) closeSheet(); };
+        back.querySelector('#avpx').onclick = () => closeSheet();  // the poster fills the screen: nothing outside it to tap (Angad, 27 Oct)
         back.querySelector('#avpshare').onclick = () => {
           if (navigator.canShare && navigator.canShare({ files: [file] })) navigator.share({ files: [file] }).catch(() => {});
           else { savePoster(file, url); toast('Saved. Open WhatsApp and attach the image.'); }
@@ -3978,7 +3980,8 @@ function savePdf(bytes, name) {
   const back = document.createElement('div');
   back.className = 'sheet-back';
   back.innerHTML = '<div class="sheet pdfprev" role="dialog" aria-label="PDF preview"><div class="grab"></div>' +
-    '<div class="sheet-h"><div style="min-width:0"><div class="label muted">Preview · ' + bytes.pages.length + ' page' + (bytes.pages.length === 1 ? '' : 's') + '</div><div class="display">' + h(name.replace(/\.pdf$/i, '')) + '</div></div></div>' +
+    '<div class="sheet-h"><div style="min-width:0"><div class="label muted">Preview · ' + bytes.pages.length + ' page' + (bytes.pages.length === 1 ? '' : 's') + '</div><div class="display">' + h(name.replace(/\.pdf$/i, '')) + '</div></div>' +
+    '<button type="button" class="iconbtn sheetx" id="pdfxt" aria-label="Close">✕</button></div>' +
     '<div class="pdfpages"></div>' +
     '<div class="bullbtns pdfbtns"><button class="btn" id="pdfgo">📤 Share / Save</button><button class="btn ghost" id="pdfx">Close</button></div></div>';
   document.body.appendChild(back);
@@ -3991,7 +3994,7 @@ function savePdf(bytes, name) {
     try { drawPdfPage(cv, stream); } catch (e) { console.error('preview', e); }
   });
   back.onclick = e => { if (e.target === back) closeSheet(); };
-  back.querySelector('#pdfx').onclick = () => closeSheet();
+  back.querySelector('#pdfx').onclick = back.querySelector('#pdfxt').onclick = () => closeSheet();
   back.querySelector('#pdfgo').onclick = () => { sharePdf(bytes, name); closeSheet(); };  // the tap itself opens the Share sheet
 }
 /** The PDF to the phone's Share sheet (save to Files, WhatsApp, email…), or a download where there isn't one. */

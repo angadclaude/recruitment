@@ -160,9 +160,9 @@ This replaces the "Juss & Link - NS Availability - 2026" Google Sheet (a W1 / Pi
     - Office first, then each coach's starters together;
     - fixed columns, a part-filled last row on the left;
     - the biggest cards that fit (`STEP` / `PITCH` as a share of the frame).
-  - **Share / Save:** one JPEG `JL-new-starters-<we>.jpg`; on iPhone Save = the Share sheet → Save Image (`savePoster`).
+  - **Share / Save:** one JPEG `JL-new-starters-<we>.jpg`; on iPhone Save = the Share sheet → Save Image (`savePoster`). The preview fills the phone, so it has a ✕ at the top (as does the PDF preview).
   - **Faces:**
-    - Every photo goes through `framePhoto`: the face is found (`findFace`, our own runner of the pico cascade `img/facefinder.bin`, MIT, `img/face-LICENSE.txt`) and framed like the Canva crops (face ≈ 37% of the height, centre 30% down: `faceFrame`).
+    - Every photo goes through `framePhoto`: the face is found (`findFace`, our own runner of the pico cascade `img/facefinder.bin`, MIT, `img/face-LICENSE.txt`) and framed head and shoulders with room above the head (face ≈ 32% of the height, centre 40% down: `faceFrame`). The Canva-tight 37% / 30% cut the tops of heads (Angad, 27 Oct).
     - The crop screen lets them drag, pinch or slide, then ✅ Use photo.
     - Older square photos are framed from their face when the poster is drawn (`autoFrame`); they're soft, so retaking them gives a sharper poster.
     - Checked against all 15 of his 26 Oct photos: the face was found in every one.

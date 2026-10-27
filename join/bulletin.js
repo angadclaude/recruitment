@@ -555,14 +555,15 @@
       return found[0].q >= 10 ? found[0] : null;
     });
   }
-  /** The head-and-shoulders crop around a face, as on the Canva pages (face ≈ 37% of the height, its centre 30% down),
+  /** The head-and-shoulders crop around a face, as on the Canva pages but with room above the head,
    *  kept inside the picture. No face: the top-middle of the picture. */
   function faceFrame(w, h, face, aspect) {
     aspect = aspect || NS_ASPECT;
-    let fh = face ? face.size / 0.37 : Math.min(h, w / aspect) * 0.62;
+    // Room above the head (Angad, 27 Oct: heads were cut at the top): the face about a third of the height, its centre 40% down
+    let fh = face ? face.size / 0.32 : Math.min(h, w / aspect) * 0.66;
     fh = Math.min(fh, h, w / aspect);
     const fw = fh * aspect;
-    let x = face ? face.cx - fw / 2 : (w - fw) / 2, y = face ? face.cy - 0.3 * fh : h * 0.02;
+    let x = face ? face.cx - fw / 2 : (w - fw) / 2, y = face ? face.cy - 0.4 * fh : 0;
     x = Math.max(0, Math.min(w - fw, x)); y = Math.max(0, Math.min(h - fh, y));
     return { x: x, y: y, w: fw, h: fh };
   }

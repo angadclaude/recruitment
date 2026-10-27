@@ -467,6 +467,7 @@ details.carry .list { margin-top: 8px; }
 .sheet .grab { width: 44px; height: 5px; border-radius: 3px; background: var(--soft2); margin: 0 auto 12px; }
 .sheet-h { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
 .sheet-h .av { box-shadow: none; }
+.sheet-h .sheetx { margin-left: auto; flex: none; font-size: 18px; }
 .sheet-h .display { font-size: 26px; }
 .sheet.closing { animation: sheetDown .22s ease forwards; }
 /* PDF preview before sharing: the pages as they'll print, then Share / Save */
