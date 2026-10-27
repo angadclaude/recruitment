@@ -2142,7 +2142,7 @@ async function fillEval(p) {
     await ap.fill('#bsFR', ''); await ap.fill('#bsHF', ''); await ap.click('#bssave'); await ap.waitForSelector('#bserr .err');
     const bsEmpty = await ap.innerText('#bserr');
     await ap.fill('#bsFR', bsWas); await ap.fill('#bsHF', bsWasHF);
-    await ap.fill('#bsHF', 'not a link'); await ap.click('#bssave'); await ap.waitForSelector('#bserr .err, #bserr:not(:empty)');
+    await ap.fill('#bsHF', 'not a link'); await ap.click('#bssave'); await ap.waitForFunction(() => /doesn't look like/.test(document.querySelector('#bserr').textContent), null, { timeout: 8000 }).catch(() => {});
     const bsErr = await ap.innerText('#bserr');
     await ap.click('#bscancel'); await ap.waitForSelector('#bsHF', { state: 'detached' });
     ok(bsWas === 'https://docs.google.com/spreadsheets/d/' + FRID + '/edit' && /doesn't look like a Google Sheets link \(HF\)/.test(bsErr) && /Paste each bell sheet's link into its box first/.test(bsEmpty) &&
