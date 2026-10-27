@@ -1931,7 +1931,7 @@ async function fillEval(p) {
     await api(admin, 'saveUser', { user: Object.assign({}, abdU, { roles: ['booker'] }) });
     ok(deleg.canEdit && deleg.coaches.length > 0, 'Team → tick "Availability" on a BA (Abdullahi): he can fill it in; untick and he can\'t');
     await api(admin, 'saveAvail', { id: mira.id, w1: '-------', w2: '-------', driver: '', notes: '' });
-    // 17:00 from the day after Day 1 (Angad, 27 Oct: the one-to-one is Tuesday 2-3pm). Satpal, Rubal, Jess and Angad (the admins)
+    // 18:00 from the day after Day 1 (Angad, 27 Oct: the one-to-one is Tuesday 2-3pm and can run long). Satpal, Rubal, Jess and Angad (the admins)
     // get all the new starters, done vs missing, then "✅ ready" once; each coach gets their own starters, done vs missing
     const blanks = (await api(admin, 'availWeek', { weekEnding: WE })).rows.filter(r => r.day1_date <= '2026-10-20' && !/[IO]/.test(r.w1)), bNames = blanks.map(r => r.full_name.split(' ')[0]);
     const due = (await api(admin, 'availWeek', { weekEnding: WE })).rows.filter(r => r.day1_date < '2026-10-20'), dueBlank = due.filter(r => !/[IO]/.test(r.w1));
@@ -1943,13 +1943,13 @@ async function fillEval(p) {
       return { title: left.length ? '🗓️ Your new starters: ' + (mine.length - left.length) + ' of ' + mine.length + ' done' : '✅ Your new starters\' days',
         body: mine.map(r => r.full_name.split(' ')[0] + ': ' + (/[IO]/.test(r.w1) ? r.w1.split('').map((x, i) => x === 'I' ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][i] : '').filter(Boolean).join(' ') || 'none' : 'not filled in yet')).join('\n') }; };
     const coachOk = (pushes, ids, rows) => ids.every(id => { const got = pushes.filter(x => to(x).includes(id)), m = coachMsg(id, rows); return got.length === 1 && ttl(got[0]) === m.title && got[0].body.contents.en === m.body; });
-    await setTime('2026-10-20T17:05:00+01:00');
+    await setTime('2026-10-20T18:05:00+01:00');
     const rem = await runRem(), again = await runRem();
     const miss = rem.filter(x => /^🗓️ Availability: /.test(ttl(x))), coachP = rem.filter(x => /Your new starters/.test(ttl(x)));
     ok(dueBlank.length >= 1 && !due.some(r => r.full_name === 'Mira Manual') && miss.length === adminIds.length && adminIds.every(id => miss.some(x => to(x).join() === id)) &&
       ttl(miss[0]) === '🗓️ Availability: ' + (due.length - dueBlank.length) + ' of ' + due.length + ' done' &&
       miss[0].body.contents.en.startsWith('Still to fill in: ' + dueBlank.map(r => r.full_name.split(' ')[0]).join(', ') + '.') && !again.length,
-      '17:00 the day after Day 1: "' + (miss[0] ? ttl(miss[0]) + ' · ' + miss[0].body.contents.en : 'none') + '" to the ' + adminIds.length + ' admins only (Satpal, Rubal, Jess and Angad in real life), once a day (Mira, Day 1 today, isn\'t due yet)');
+      '18:00 the day after Day 1: "' + (miss[0] ? ttl(miss[0]) + ' · ' + miss[0].body.contents.en : 'none') + '" to the ' + adminIds.length + ' admins only (Satpal, Rubal, Jess and Angad in real life), once a day (Mira, Day 1 today, isn\'t due yet)');
     const jasCoach = coachP.find(x => to(x).join() === s1.coach_id), blankCoach = coachIds.find(id => due.some(r => r.coach_id === id && !/[IO]/.test(r.w1)));
     ok(coachIds.length >= 2 && coachP.length === coachIds.length && coachP.every(x => to(x).length === 1 && !isAdm(to(x)[0])) && coachOk(coachP, coachIds, due) &&
       jasCoach && ttl(jasCoach) === '✅ Your new starters\' days' && /^Jasraj: Mon Tue Wed Thu Fri$/m.test(jasCoach.body.contents.en) && !!blankCoach,

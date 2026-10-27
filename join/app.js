@@ -1,4 +1,4 @@
-window.APP_VERSION = '1020c8c1';
+window.APP_VERSION = 'f993d9d2';
 
 (function () {
 'use strict';
@@ -2224,7 +2224,7 @@ function viewAvail(quiet) {
   const page = paint('Availability', top + strip + warn + tools + gone +
     (rows.length ? group('JUSS', 'HelloFresh') + group('LINK', 'Fundraising') : empty('🗓️', we > addDays(thisWe, -7) && we >= thisWe ? 'Nobody\'s started this week yet. Starters appear here when they\'re ticked Arrived on Day 1.' : 'Nobody started that week.')) +
     '<p class="hint">' + (edit ? 'Tap a starter to fill in their days (tap a day: in → out → not said), driver, notes and photo, or to remove them. ' : '') +
-      'Week 1 is their Day 1 week, Week 2 the week after. Everyone who started is here as soon as they\'re ticked Arrived on Day 1, with the photo taken there (📷 on the Day 1 list); their coach is whoever booked them. Days stay blank until the one-to-one (Tuesday afternoon); at 17:00 you hear it\'s ready, or who\'s missing. ' +
+      'Week 1 is their Day 1 week, Week 2 the week after. Everyone who started is here as soon as they\'re ticked Arrived on Day 1, with the photo taken there (📷 on the Day 1 list); their coach is whoever booked them. Days stay blank until the one-to-one (Tuesday afternoon); at 18:00 you hear it\'s ready, or who\'s missing. ' +
       (edit ? 'Days changed after the one-to-one? Their coach gets an alert. ' : 'Only Angad, Satpal and the people they pick can change it. ') + 'Every week is kept: ‹ › to go back.</p>', quiet, true);
   bindAvail(page, go, we);
   page.querySelectorAll('[data-av]').forEach(b => { if (edit) b.onclick = () => availSheet(rows.filter(r => r.id === b.dataset.av)[0], we, wk); });
