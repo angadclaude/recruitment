@@ -47,6 +47,7 @@ const CONFIG = {
   BOOK_TIME: '10:00',             // presentations: Mon–Fri at 10:00
   BOOK_REMIND_TIME: '18:00',      // the evening before (Sunday for Monday's): whoever booked them gets "N to remind for tomorrow"
   BOOK_MISSED_TIME: '10:30',      // on the day: anyone booked who hasn't checked in by now "didn't come" (and their booker is told)
+  AVAIL_REMIND_TIME: '18:00',     // new starters with no Week 1 days yet → the people who fill it in (Angad, Satpal, delegates, admins)
   EMAIL_ALERTS: false,            // true = also email every alert. Push is used when OneSignal keys are set.
   SESSION_DAYS: 30,               // staff stay logged in for this long
   SHEET_ID: '',                   // the data Sheet; only needed if this script isn't opened from the Sheet itself
@@ -151,6 +152,12 @@ const SHEETS = {
   Codes: ['email', 'code_hash', 'expires', 'attempts'],
   Sessions: ['token', 'user_id', 'expires'],
   Log: ['at', 'user', 'action', 'candidate_id', 'detail'],
+  // New starters' availability, Week 1 and Week 2 (Angad, 27 Oct: replaces the "NS Availability" Google Sheet). One row per
+  // starter, kept for good (his call): name and mobile are copied in, so the 6-month clear-out of Candidates doesn't touch it.
+  // w1 / w2: Monday to Sunday, one letter a day: I = in, O = out, - = not said yet.
+  Availability: ['id', 'created_at', 'week_ending', 'candidate_id', 'day1_date', 'full_name', 'mobile', 'company', 'coach_id', 'coach_name',
+    'driver', 'w1', 'w2', 'notes', 'has_photo', 'updated_at', 'updated_by'],
+  StarterPhotos: ['id', 'data', 'updated_at'],  // one photo per Availability row (same id), a small JPEG as a data: URL
 };
 
 // ───────────────────────── WEB APP ─────────────────────────
@@ -1322,7 +1329,7 @@ function saveUser(req, u) {
   if (!String(x.name || '').trim()) throw new Error('Name required');
   if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error('That email doesn\'t look right.');
   if (['LINK', 'JUSS'].indexOf(x.company) < 0) throw new Error('Company must be LINK or JUSS');
-  const roles = (x.roles || []).filter(r => ['admin', 'presenter', 'booker'].indexOf(r) >= 0);
+  const roles = (x.roles || []).filter(r => ['admin', 'presenter', 'booker', 'availability'].indexOf(r) >= 0);
   if (!roles.length) throw new Error('Pick at least one role');
   if (!email && roles.indexOf('booker') < 0) throw new Error('Add their email: only bookers can be added by name alone.');
   const isNew = !x.id;
@@ -1531,7 +1538,137 @@ const STAFF_ACTIONS = {
   chaseOutcomes: chaseOutcomes, chaseList: chaseList, academyList: academyList, markDay1: markDay1, markConfirmed: markConfirmed,
   onboardStep: onboardStep, onboardPreview: onboardPreview, onboardSend: onboardSend, setBrand: setBrand,
   saveBooking: saveBooking, bookingAction: bookingAction, bookingList: bookingList,
+  availWeek: availWeek, saveAvail: saveAvail, addStarter: addStarter, removeStarter: removeStarter, saveStarterPhoto: saveStarterPhoto, availPhotos: availPhotos,
 };
+
+// ───────────────────────── NEW STARTERS' AVAILABILITY (Angad, 27 Oct) ─────────────────────────
+// Week 1 and Week 2 for everyone who started, as on the old "NS Availability" sheet: driver, Monday to Sunday in or out, notes
+// and a photo. Filled in at the one-to-one on Day 1 by Angad, Satpal or whoever they tick in Team; everyone else can see it,
+// phone numbers included (like the sheet). The coach is whoever booked them. Every week is kept, for good.
+const AV_BLANK = '-------';
+function canAvail(u) { return has(u, 'availability'); }
+function availFilled(r) { return !!(r.driver || /[IO]/.test(String(r.w1) + String(r.w2)) || r.notes || truthy(r.has_photo)); }
+/** A week's starters (their Day 1 that week): everyone ticked Arrived gets a row the first time it's needed, plus anyone added
+ *  by hand. Someone no longer ticked Arrived drops off while nothing has been filled in for them. */
+function availRows(we) {
+  const mon = addDays(we, -6), cands = readTable('Candidates'), byId = {};
+  cands.forEach(c => { byId[c.id] = c; });
+  const arrived = cands.filter(c => c.outcome === 'Academy booked' && c.admin_status !== 'rejected' && c.day1_status === 'arrived' && c.academy_date >= mon && c.academy_date <= we);
+  let rows = readTable('Availability').filter(r => r.week_ending === we);
+  if (arrived.some(c => !rows.some(r => r.candidate_id === c.id))) {
+    withLock(() => {
+      const have = readTable('Availability').filter(r => r.week_ending === we);
+      arrived.filter(c => !have.some(r => r.candidate_id === c.id)).forEach(c => {
+        // Coach = whoever booked them; if they've left, whoever took over from them (Fiza → Angad)
+        const b = userById(c.booker_id), coach = b && !truthy(b.active) ? successorOf(b) || b : b;
+        appendRow('Availability', { id: uid(), created_at: nowStr(), week_ending: we, candidate_id: c.id, day1_date: c.academy_date, full_name: c.full_name, mobile: c.mobile,
+          company: c.company === 'JUSS' ? 'JUSS' : 'LINK', coach_id: coach ? coach.id : '', coach_name: coach ? coach.name : c.booker_name, driver: '', w1: AV_BLANK, w2: AV_BLANK, notes: '' });
+      });
+    });
+    rows = readTable('Availability').filter(r => r.week_ending === we);
+  }
+  return rows.filter(r => !r.candidate_id || !byId[r.candidate_id] || byId[r.candidate_id].day1_status === 'arrived' || availFilled(r)).map(r => {
+    const c = byId[r.candidate_id];
+    return { id: r.id, week_ending: r.week_ending, candidate_id: r.candidate_id, day1_date: r.day1_date, full_name: r.full_name, mobile: r.mobile,
+      company: r.company, coach_id: r.coach_id, coach_name: r.coach_name, driver: r.driver, w1: r.w1 || AV_BLANK, w2: r.w2 || AV_BLANK, notes: r.notes,
+      has_photo: truthy(r.has_photo), updated_at: r.updated_at, updated_by: r.updated_by, manual: !r.candidate_id,
+      said_days: c ? c.q6_days : '', no_longer: !!(c && c.day1_status !== 'arrived') };
+  });
+}
+function availWeek(req, u) {
+  const we = weekEnding(/^\d{4}-\d\d-\d\d$/.test(req.weekEnding || '') ? req.weekEnding : todayStr());
+  const edit = canAvail(u);
+  return { weekEnding: we, today: todayStr(), canEdit: edit, rows: availRows(we),
+    coaches: edit ? usersAll().filter(x => truthy(x.active) && has(x, 'booker')).map(x => ({ id: x.id, name: x.name, company: x.company })).sort((a, b) => a.name.localeCompare(b.name)) : [] };
+}
+function availRecord(id) {
+  const r = rowOfId('Availability', id);
+  if (!r) throw new Error('That starter isn\'t on the list any more. Pull down to refresh.');
+  return readRow('Availability', r);
+}
+const AV_DAY = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+function availDaysText(w) { const d = AV_DAY.filter((x, i) => w[i] === 'I'); return d.length ? d.join(' ') : 'none'; }
+function saveAvail(req, u) {
+  if (!canAvail(u)) throw new Error('Only Angad, Satpal and the people they pick (Team → Availability) can fill this in.');
+  const ok = w => /^[IO-]{7}$/.test(String(w || ''));
+  if (!ok(req.w1) || !ok(req.w2)) throw new Error('Tap in or out for each day.');
+  if (['Yes', 'No', ''].indexOf(req.driver || '') < 0) throw new Error('Driver: yes or no.');
+  const coach = req.coach_id ? userById(req.coach_id) : null;
+  if (req.coach_id && !coach) throw new Error('Coach not found');
+  const res = withLock(() => {
+    const r = availRecord(req.id), was = { w1: r.w1 || AV_BLANK, w2: r.w2 || AV_BLANK };
+    r.w1 = req.w1; r.w2 = req.w2; r.driver = req.driver || ''; r.notes = String(req.notes || '').trim().slice(0, 500);
+    if (coach) { r.coach_id = coach.id; r.coach_name = coach.name; }
+    r.updated_at = nowStr(); r.updated_by = u.name;
+    writeRow('Availability', r);
+    return { r: r, was: was };
+  });
+  const r = res.r, filledBefore = /[IO]/.test(res.was.w1 + res.was.w2), changed = res.was.w1 !== r.w1 || res.was.w2 !== r.w2;
+  log(u, 'availability', r.candidate_id, r.full_name + ': W1 ' + r.w1 + ' · W2 ' + r.w2 + (r.driver ? ' · driver ' + r.driver : ''));
+  // Days changed after the one-to-one: their coach hears (not on the first fill, not when the coach made the change)
+  const ch = userById(r.coach_id);
+  if (filledBefore && changed && ch && ch.id !== u.id) notify([ch], '🗓️ ' + r.full_name.split(' ')[0] + '\'s days changed',
+    'Week 1: ' + availDaysText(r.w1) + '\nWeek 2: ' + availDaysText(r.w2) + '\nChanged by ' + u.name.split(' ')[0] + '.', 'avail');
+  return availRows(r.week_ending).filter(x => x.id === r.id)[0] || null;
+}
+/** Someone who started without coming through the app (a referral, another office): added by hand to a week. */
+function addStarter(req, u) {
+  if (!canAvail(u)) throw new Error('Only Angad, Satpal and the people they pick can add starters.');
+  const name = cleanName(req.full_name), mobile = normMobile(req.mobile);
+  if (name.split(' ').length < 2) throw new Error('First and last name, please.');
+  if (req.mobile && !mobile) throw new Error('That mobile doesn\'t look right (07…).');
+  if (['LINK', 'JUSS'].indexOf(req.company) < 0) throw new Error('HelloFresh or Fundraising?');
+  const we = weekEnding(/^\d{4}-\d\d-\d\d$/.test(req.weekEnding || '') ? req.weekEnding : todayStr()), coach = req.coach_id ? userById(req.coach_id) : null;
+  const day1 = /^\d{4}-\d\d-\d\d$/.test(req.day1_date || '') && weekEnding(req.day1_date) === we ? req.day1_date : addDays(we, -6);
+  const r = withLock(() => appendRow('Availability', { id: uid(), created_at: nowStr(), week_ending: we, candidate_id: '', day1_date: day1, full_name: name, mobile: mobile,
+    company: req.company, coach_id: coach ? coach.id : '', coach_name: coach ? coach.name : '', driver: '', w1: AV_BLANK, w2: AV_BLANK, notes: '', updated_at: nowStr(), updated_by: u.name }));
+  log(u, 'availability_add', '', name + ' (w/e ' + we + ')');
+  return availRows(we).filter(x => x.id === r.id)[0];
+}
+function removeStarter(req, u) {
+  if (!canAvail(u)) throw new Error('Not allowed');
+  const r = availRecord(req.id);
+  if (r.candidate_id) throw new Error('They came through the app: untick Arrived on Day 1 instead.');
+  withLock(() => { deleteWhere('Availability', x => x.id === r.id); deleteWhere('StarterPhotos', x => x.id === r.id); });
+  log(u, 'availability_remove', '', r.full_name);
+  return { ok: true };
+}
+/** The photo taken in the app: a small JPEG (the phone shrinks it first), or '' to take it off. */
+function saveStarterPhoto(req, u) {
+  if (!canAvail(u)) throw new Error('Not allowed');
+  const data = String(req.data || '');
+  if (data && (!/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(data) || data.length > 48000)) throw new Error('That photo didn\'t come through. Try again.');
+  withLock(() => {
+    const a = availRecord(req.id), pr = rowOfId('StarterPhotos', a.id);
+    if (!data) { if (pr) deleteWhere('StarterPhotos', x => x.id === a.id); }
+    else if (pr) writeRow('StarterPhotos', { _row: pr, id: a.id, data: data, updated_at: nowStr() });
+    else appendRow('StarterPhotos', { id: a.id, data: data, updated_at: nowStr() });
+    a.has_photo = data ? 'TRUE' : ''; a.updated_at = nowStr(); a.updated_by = u.name;
+    writeRow('Availability', a);
+  });
+  return { ok: true, has_photo: !!data };
+}
+/** A week's photos in one go: { id: data URL }. Read by position, so all the other weeks' photos aren't loaded. */
+function availPhotos(req, u) {
+  const we = weekEnding(/^\d{4}-\d\d-\d\d$/.test(req.weekEnding || '') ? req.weekEnding : todayStr());
+  const want = {}; readTable('Availability').filter(r => r.week_ending === we && truthy(r.has_photo)).forEach(r => { want[r.id] = 1; });
+  const sh = sheet('StarterPhotos'), last = sh.getLastRow(), out = {};
+  if (last < 2 || !Object.keys(want).length) return { photos: out };
+  sh.getRange(2, 1, last - 1, 1).getValues().forEach((v, i) => { if (want[String(v[0])]) out[String(v[0])] = String(sh.getRange(i + 2, 2, 1, 1).getValues()[0][0]); });
+  return { photos: out };
+}
+/** 18:00, Monday to Saturday: anyone who's had their Day 1 this week with no days filled in yet → the people who fill it in. */
+function maybeAvailReminder() {
+  const now = nowStr(), today = now.slice(0, 10), hm = now.slice(11, 16);
+  if (hm < (CONFIG.AVAIL_REMIND_TIME || '18:00') || hm > '20:59' || weekday(today) === 0) return;
+  const p = PropertiesService.getScriptProperties();
+  if (p.getProperty('AVAIL_REMINDED') === today) return;
+  p.setProperty('AVAIL_REMINDED', today);
+  const blank = availRows(weekEnding(today)).filter(r => r.day1_date <= today && !/[IO]/.test(r.w1));
+  if (!blank.length) return;
+  notify(usersAll().filter(x => truthy(x.active) && canAvail(x)), '🗓️ ' + plural(blank.length, 'new starter') + ' with no availability yet',
+    firstNames(blank.map(r => ({ full_name: r.full_name })), 6) + '. Tap to fill in their Week 1 and Week 2.', 'avail');
+}
 
 // ───────────────────────── LINKS ─────────────────────────
 function scriptUrl() { return ScriptApp.getService().getUrl(); }
@@ -1734,6 +1871,7 @@ function keepWarm() {
   try { backfillSends(); } catch (e) { console.error(e); }  // once each, after this version goes live
   try { backfillOutcomes(); } catch (e) { console.error(e); }
   try { undoHandoverOpen(); } catch (e) { console.error(e); }  // once
+  try { maybeAvailReminder(); } catch (e) { console.error(e); }
   maybeDailyDigest();
   maybeThanksReminder();
   try { maybeCallbackReminders(); } catch (e) { console.error(e); }

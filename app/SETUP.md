@@ -272,6 +272,28 @@ The app sends through the script owner's Gmail, so that Gmail has to be allowed 
 
 **Changing the email:** the links, numbers, playbooks, sending addresses (`from`) and wording are in `ONBOARD` and `onboardEmail` at the top of `Code.gs`. The Sheet keeps `recruit_source`, `databyte_at/by` and `onboard_email_at/by`.
 
+## New starters' availability: Week 1 and Week 2 (replaces the NS Availability sheet)
+**Day 1 → 🗓️ Availability · Week 1 & Week 2** (or the menu → **🗓️ New starters' availability**).
+
+- **Who's on it:** everyone ticked **Arrived** on Day 1 appears by themselves, grouped HelloFresh then Fundraising. Their coach is whoever booked them.
+  - Someone started without coming through the app? **＋ Add someone**.
+  - ‹ › goes back through every week, and nothing is ever deleted.
+- **The one-to-one** (Angad, Satpal, or anyone ticked **Availability** in Team):
+  1. Tap the starter.
+  2. **📷 Take photo**.
+  3. Driver yes / no.
+  4. Tap each day for Week 1 and Week 2: in → out → not said ("Mon–Fri in, weekend out" in one tap).
+  5. Add notes, then **Save**.
+  - Their Week 1 days before their Day 1 stay blank.
+- **Everyone else** can see it all, numbers included, but can't change it.
+- **At a glance:**
+  - how many are in each day, and how many of them drive;
+  - who has no days yet (and an 18:00 alert to the people who fill it in);
+  - anyone ticked in for fewer days than they said at their evaluation.
+- **Changed after the one-to-one:** their coach gets an alert with the new days.
+- **📸 Poster:** "Welcome our new starters" with everyone's photo, name and coach. **📤 Share to WhatsApp**: no Canva, no uploading.
+- **📄 PDF:** the old sheet's layout, Monday to Sunday IN / OUT, a table per campaign.
+
 ## The numbers: one meaning everywhere (Angad, 26 Oct)
 Every screen, PDF and alert counts the same way, so they always agree:
 

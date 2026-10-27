@@ -1176,6 +1176,8 @@ function boot() {
     let tries = 0;
     const open = () => { if (S.view !== 'today') return; if (S.data[weekEndingOf(S.day)] || tries++ > 40) thanksSheet(); else setTimeout(open, 250); };
     if (S.tab === 'today') setTimeout(open, 300);
+  } else if (BOOT.cid === 'avail') {
+    BOOT.cid = ''; nav(S.tab, {}, false); nav('avail', {}, true);
   } else if (BOOT.cid === 'chase') {
     BOOT.cid = ''; if (isAdmin() || isBooker()) S.tab = 'chase'; nav(S.tab, {}, false);
   } else if (BOOT.cid === 'academy' || BOOT.cid === 'remind') {
@@ -1267,9 +1269,9 @@ function nav(view, params, push) {
   render();
 }
 function hist(kind, st) { try { kind === 'push' ? history.pushState(st, '') : history.replaceState(st, ''); S.hist = kind === 'push' ? (S.hist || 0) + 1 : (S.hist || 0); } catch (e) { /* not allowed in this frame */ } }
-function back() { if (S.hist > 0 && history.state && ['cand', 'user', 'slideqr', 'bulletin', 'alerts', 'academy'].indexOf(history.state.v) >= 0) { S.hist--; history.back(); } else nav(S.tab); }
+function back() { if (S.hist > 0 && history.state && ['cand', 'user', 'slideqr', 'bulletin', 'alerts', 'academy', 'avail'].indexOf(history.state.v) >= 0) { S.hist--; history.back(); } else nav(S.tab); }
 function go(tab) { nav(tab, {}, false); }
-function titleOf(v) { return { today: 'Today', mine: 'My candidates', all: 'All candidates', pay: 'Appts Attended', team: 'Team', slideqr: 'Slide QR codes', user: 'Team', bulletin: 'Bulletin', alerts: 'Alerts check', chase: 'Chase', academy: 'Day 1', book: 'Book Appts' }[v] || ''; }
+function titleOf(v) { return { today: 'Today', mine: 'My candidates', all: 'All candidates', pay: 'Appts Attended', team: 'Team', slideqr: 'Slide QR codes', user: 'Team', bulletin: 'Bulletin', alerts: 'Alerts check', chase: 'Chase', academy: 'Day 1', book: 'Book Appts', avail: 'Availability' }[v] || ''; }
 
 function render(quiet) {
   const v = S.view;
@@ -1281,6 +1283,7 @@ function render(quiet) {
   if (v === 'academy') return viewAcademy(quiet);
   if (v === 'book') return viewBook(quiet);
   if (v === 'bulletin') return viewBulletin();
+  if (v === 'avail') return viewAvail(quiet);
   ({ today: viewToday, mine: viewMine, all: viewAll, pay: viewPay, team: viewTeam }[v] || viewToday)(quiet);
 }
 
@@ -1414,6 +1417,7 @@ function toggleMenu() {
     '<div class="small muted"><span class="co ' + h(u.company) + '">' + h(u.company) + '</span> · ' + (isAdmin() ? '<b>Admin</b>' : '<b>BA</b> · ' + h(u.roles.join(', '))) + '</div></div></div>' +
     (isAdmin() && !tabs().some(t => t[0] === 'team') ? '<button class="btn ghost block" id="mTeam" style="margin-top:12px">👥 Team</button>' : '') +
     (isBooker() && !tabs().some(t => t[0] === 'mine') ? '<button class="btn ghost block" id="mMine" style="margin-top:8px">📞 My candidates</button>' : '') +
+    '<button class="btn ghost block" id="mAvail" style="margin-top:8px">🗓️ New starters\' availability</button>' +
     '<button class="btn ghost block" id="mRefresh" style="margin-top:8px">↻ Refresh now</button>' +
     '<button class="btn ghost block" id="mLogout" style="margin-top:8px;color:var(--red)">Log out</button>' +
     '<p class="small muted center" style="margin:10px 0 0">App version ' + h(window.APP_VERSION || 'dev') + '<br>Alerts: ' + h(pushStatus()) + '</p></div>';
@@ -1422,6 +1426,7 @@ function toggleMenu() {
   document.getElementById('mRefresh').onclick = () => { m.hidden = true; pullRefresh(); };
   const mt = document.getElementById('mTeam'); if (mt) mt.onclick = () => { m.hidden = true; nav('team', {}, true); };
   const mm = document.getElementById('mMine'); if (mm) mm.onclick = () => { m.hidden = true; nav('mine', {}, true); };
+  document.getElementById('mAvail').onclick = () => { m.hidden = true; nav('avail', {}, true); };
   document.getElementById('mLogout').onclick = () => {
     if (outbox().length && !navigator.onLine) { toast('Wait for signal first: you have changes that haven\'t synced'); return; }
     store.del('outbox'); store.del('tok'); store.del('cache'); S.token = ''; S.me = null; S.data = {}; S.users = null; S.chase = null; S.chaseN = 0; S.chaseCarry = 0; S.academy = null; S.d1Old = null; S.d1Pick = null; S.booted = false; S.tab = '';
@@ -2096,7 +2101,7 @@ function editUser(u) {
     '<label class="q">Other names they use</label><textarea id="ual" class="short" placeholder="One per line, e.g.\nDaniel Thompson\nStones Recruitment\nSophie - Skye Promotions">' + h((x.aliases || []).join('\n')) + '</textarea>' +
     '<div class="help" style="margin-top:6px">Team members or company names candidates might say booked them. A check-in with any of these names is credited to ' + h(x.name ? x.name.split(' ')[0] : 'them') + ' automatically (bulletin, incentive, alerts), and so are the last 2 weeks\' check-ins that typed them.</div>' +
     '<label class="q">Access</label><div class="chips" data-name="roles" data-multi="1">' +
-    [['booker', 'Booker'], ['presenter', 'Presenter'], ['admin', 'Admin (adds/removes people, sees everything)']].map(r => '<button type="button" class="chip' + (x.roles.indexOf(r[0]) >= 0 ? ' on' : '') + '" data-v="' + r[0] + '">' + r[1] + '</button>').join('') + '</div>' +
+    [['booker', 'Booker'], ['presenter', 'Presenter'], ['admin', 'Admin (adds/removes people, sees everything)'], ['availability', 'Availability (fills in new starters\' days)']].map(r => '<button type="button" class="chip' + (x.roles.indexOf(r[0]) >= 0 ? ' on' : '') + '" data-v="' + r[0] + '">' + r[1] + '</button>').join('') + '</div>' +
     '<div class="help" style="margin-top:8px">Booker or presenter = they log in with <b>BA login</b>. Admin = <b>Admin login</b>.</div>' +
     '<label class="check"><input type="checkbox" id="ua"' + (x.active ? ' checked' : '') + '> Has access (untick to switch off instantly)</label>' +
     '<div id="uerr"></div><button class="btn block" id="usave">Save</button>' +
@@ -2150,6 +2155,228 @@ function editUser(u) {
       }).catch(x2 => toast(x2.message));
     };
   }
+}
+
+// ───── New starters' availability, Week 1 and Week 2 (Angad, 27 Oct: replaces the "NS Availability" Google Sheet and the Canva
+// poster) ─────
+// Everyone who started (ticked Arrived on Day 1, or added by hand), grouped HelloFresh then Fundraising, Monday to Sunday in or
+// out, driver, notes and a photo. Filled in at the one-to-one on Day 1 by Angad, Satpal or whoever they tick in Team; everyone
+// can see it, phone numbers included (like the sheet). Every week is kept: ‹ › goes back through them.
+const AV_DAY = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+function canAvail() { return isAdmin() || (S.me.user.roles || []).indexOf('availability') >= 0; }
+function avIn(w) { return String(w || '').split('').filter(x => x === 'I').length; }
+/** "5 days" → 5 (their evaluation answer), so someone ticked in for fewer days than they said stands out. */
+function saidDays(s) { const m = /^(\d)/.exec(String(s || '')); return m ? Number(m[1]) : 0; }
+function avOrder(rows) { return rows.slice().sort((a, b) => (a.company === 'JUSS' ? 0 : 1) - (b.company === 'JUSS' ? 0 : 1) || a.day1_date.localeCompare(b.day1_date) || a.full_name.localeCompare(b.full_name)); }
+function avName(we, wk) { return 'NS Availability W' + wk + ' w-e ' + we.slice(8, 10) + '.' + we.slice(5, 7) + '.' + we.slice(0, 4); }
+function loadAvail(we) {
+  return call('availWeek', { weekEnding: we }).then(r => {
+    (S.avail = S.avail || {})[we] = Object.assign(r, { at: Date.now() });
+    if (r.rows.some(x => x.has_photo && !(S.avPh || {})[x.id])) call('availPhotos', { weekEnding: we }).then(p => {
+      S.avPh = Object.assign(S.avPh || {}, p.photos);
+      if (S.view === 'avail' && !document.querySelector('.sheet-back')) render(true);
+    }).catch(() => {});
+    return r;
+  });
+}
+function viewAvail(quiet) {
+  const today = S.me.today, thisWe = weekEndingOf(today), we = S.params.we || thisWe, wk = S.params.wk === 2 ? 2 : 1, id = S.viewId;
+  const d = (S.avail || {})[we];
+  if (!d || Date.now() - d.at > STALE_MS) loadAvail(we).then(() => { if (S.viewId === id && !document.querySelector('.sheet-back')) render(true); })
+    .catch(e => { if (S.viewId === id && !(S.avail || {})[we]) paint('Availability', '<div class="err">' + h(e.message) + '</div>', false, true); });
+  const mon = addDays(we, -6 + (wk === 2 ? 7 : 0)), days = AV_DAY.map((x, i) => addDays(mon, i));
+  const go = p => { S.params = Object.assign({ we: we, wk: wk }, p); hist('replace', { v: 'avail', p: S.params }); render(); };
+  const top = '<div class="seg bullseg" id="avwk"><button data-wk="1" class="' + (wk === 1 ? 'on' : '') + '">Week 1</button><button data-wk="2" class="' + (wk === 2 ? 'on' : '') + '">Week 2</button></div>' +
+    '<div class="seg-nav"><div class="lbl"><span>' + (we === thisWe ? 'Started this week · Day 1 w/e' : we === addDays(thisWe, -7) ? 'Started last week · Day 1 w/e' : 'Started · Day 1 w/e') + '</span><b>' + fmt(we) + '</b></div>' +
+    '<button class="iconbtn" id="avprev" aria-label="Previous week">‹</button><button class="iconbtn" id="avnext" aria-label="Next week"' + (we >= thisWe ? ' disabled' : '') + '>›</button></div>' +
+    '<p class="small muted avrange">Week ' + wk + ': ' + fmt(days[0]) + ' – ' + fmt(days[6]) + '</p>';
+  if (!d) { bindAvail(paint('Availability', top + skeleton(4), quiet, true), go, we); return; }
+  const rows = avOrder(d.rows), edit = d.canEdit, key = wk === 2 ? 'w2' : 'w1';
+  const pre = (r, i) => wk === 1 && days[i] < r.day1_date;  // before their Day 1
+  const inOn = i => rows.filter(r => r[key][i] === 'I'), drivers = i => inOn(i).filter(r => r.driver === 'Yes').length;
+  const strip = rows.length ? '<div class="avdays">' + days.map((x, i) => '<div class="avd' + (inOn(i).length ? '' : ' none') + '"><b>' + AV_DAY[i] + '</b><span>' + Number(x.slice(8)) + '</span><i>' + inOn(i).length + '</i>' +
+    '<em>' + (drivers(i) ? '🚗 ' + drivers(i) : '&nbsp;') + '</em></div>').join('') + '</div><p class="small muted center" style="margin:4px 0 10px">In each day · 🚗 drivers</p>' : '';
+  const blank = rows.filter(r => r.day1_date <= today && !/[IO]/.test(r[key]));
+  const warn = blank.length ? '<div class="card tight small avwarn">⚠️ <b>' + blank.length + ' with no Week ' + wk + ' days yet:</b> ' + blank.map(r => h(r.full_name.split(' ')[0])).join(', ') + (edit ? '. Tap a name to fill it in.' : '.') + '</div>' : '';
+  const tools = '<div class="bullbtns avtools">' + (rows.length ? '<button class="btn ghost" id="avposter">📸 Poster</button><button class="btn ghost" id="avpdf">📄 PDF</button>' : '') +
+    (edit ? '<button class="btn ghost" id="avadd">＋ Add someone</button>' : '') + '</div>';
+  const card = r => {
+    const w = r[key], ph = (S.avPh || {})[r.id], said = saidDays(r.said_days), short = wk === 1 && said && /[IO]/.test(w) && avIn(w) < said;
+    const tag = edit ? 'button type="button"' : 'div';
+    return '<' + tag + ' class="item avrow" data-av="' + h(r.id) + '">' +
+      (ph ? '<img class="av avph" src="' + ph + '" alt="">' : '<span class="av co-' + h(r.company) + '">' + h(initials(r.full_name)) + '</span>') +
+      '<div class="main"><div class="name">' + h(r.full_name) + '</div>' +
+      '<div class="sub">' + (r.coach_name ? 'Coach ' + h(r.coach_name.split(' ')[0]) + ' · ' : '') + (r.mobile ? (edit ? h(r.mobile) : '<a href="tel:' + h(r.mobile) + '">' + h(r.mobile) + '</a>') + ' · ' : '') + 'Day 1 ' + h(fmt(r.day1_date)) + '</div>' +
+      '<div class="avchips">' + w.split('').map((x, i) => '<span class="avc ' + (pre(r, i) ? 'pre' : x === 'I' ? 'in' : x === 'O' ? 'out' : 'na') + '">' + AV_DAY[i].slice(0, 2) + '</span>').join('') + '</div>' +
+      '<div class="pills">' + (r.driver === 'Yes' ? '<span class="pill green">🚗 Driver</span>' : r.driver === 'No' ? '<span class="pill">No car</span>' : '') +
+        (short ? '<span class="pill amber">Said ' + said + ' days, in ' + avIn(w) + '</span>' : '') + (r.no_longer ? '<span class="pill red">Not ticked Arrived any more</span>' : '') + '</div>' +
+      (r.notes ? '<div class="small muted avnote">' + h(r.notes) + '</div>' : '') + '</div></' + (edit ? 'button' : 'div') + '>';
+  };
+  const group = (co, label) => { const l = rows.filter(r => (r.company === 'JUSS' ? 'JUSS' : 'LINK') === co); return l.length ? '<div class="section-h"><b>' + label + '</b><span>' + l.length + '</span></div><div class="list">' + l.map(card).join('') + '</div>' : ''; };
+  const page = paint('Availability', top + strip + warn + tools +
+    (rows.length ? group('JUSS', 'HelloFresh') + group('LINK', 'Fundraising') : empty('🗓️', we > addDays(thisWe, -7) && we >= thisWe ? 'Nobody\'s started this week yet. Starters appear here when they\'re ticked Arrived on Day 1.' : 'Nobody started that week.')) +
+    '<p class="hint">' + (edit ? 'Tap a starter to fill in their days (tap a day: in → out → not said), driver, notes and photo. ' : '') +
+      'Week 1 is their Day 1 week, Week 2 the week after. Everyone who started is here as soon as they\'re ticked Arrived on Day 1; their coach is whoever booked them. ' +
+      (edit ? 'Days changed after the one-to-one? Their coach gets an alert. ' : 'Only Angad, Satpal and the people they pick can change it. ') + 'Every week is kept: ‹ › to go back.</p>', quiet, true);
+  bindAvail(page, go, we);
+  page.querySelectorAll('[data-av]').forEach(b => { if (edit) b.onclick = () => availSheet(rows.filter(r => r.id === b.dataset.av)[0], we, wk); });
+  const ps = page.querySelector('#avposter'); if (ps) ps.onclick = () => availPoster(we, wk, rows);
+  const pd = page.querySelector('#avpdf'); if (pd) pd.onclick = () => savePdf(availPdf(we, wk, rows), avName(we, wk) + '.pdf');
+  const ad = page.querySelector('#avadd'); if (ad) ad.onclick = () => addStarterSheet(we, d.coaches);
+}
+function bindAvail(page, go, we) {
+  page.querySelectorAll('#avwk button').forEach(b => { b.onclick = () => go({ wk: Number(b.dataset.wk) }); });
+  page.querySelector('#avprev').onclick = () => go({ we: addDays(we, -7) });
+  page.querySelector('#avnext').onclick = () => go({ we: addDays(we, 7) });
+}
+/** Tap a day: in → out → not said. Days before their Day 1 (Week 1) stay blank. */
+function avDayBtns(id, w, from) {
+  return '<div class="avpick" id="' + id + '">' + w.split('').map((x, i) => '<button type="button" class="avc ' + (from && from[i] ? 'pre' : x === 'I' ? 'in' : x === 'O' ? 'out' : 'na') + '" data-i="' + i + '"' + (from && from[i] ? ' disabled' : '') + '>' +
+    AV_DAY[i] + '<small>' + (from && from[i] ? '–' : x === 'I' ? 'IN' : x === 'O' ? 'OUT' : '?') + '</small></button>').join('') + '</div>';
+}
+function availSheet(r, we, wk) {
+  if (!r) return;
+  closeSheet(true);
+  const d = S.avail[we], mon = addDays(we, -6), pre1 = AV_DAY.map((x, i) => addDays(mon, i) < r.day1_date);
+  const st = { w1: r.w1.split(''), w2: r.w2.split(''), photo: (S.avPh || {})[r.id] || '' };
+  const said = saidDays(r.said_days);
+  const back = document.createElement('div');
+  back.className = 'sheet-back';
+  const ph = () => st.photo ? '<img class="av lg avph" src="' + st.photo + '" alt="">' : '<span class="av lg co-' + h(r.company) + '">' + h(initials(r.full_name)) + '</span>';
+  back.innerHTML = '<div class="sheet" role="dialog" aria-label="Availability"><div class="grab"></div>' +
+    '<div class="sheet-h"><span id="avph">' + ph() + '</span><div style="min-width:0"><div class="label muted">' + (r.company === 'JUSS' ? 'HelloFresh' : 'Fundraising') + ' · Day 1 ' + h(fmt(r.day1_date)) + '</div><div class="display">' + h(r.full_name) + '</div></div></div>' +
+    '<div id="avf"><div class="row" style="gap:8px;margin:2px 0 6px"><label class="btn ghost sm" style="margin:0">📷 ' + (st.photo ? 'New photo' : 'Take photo') + '<input type="file" id="avcam" accept="image/*" capture="user" hidden></label>' +
+      '<button type="button" class="btn ghost sm" id="avphx"' + (st.photo ? '' : ' hidden') + '>Remove photo</button></div>' +
+    '<label class="q">Driver</label>' + chips('driver', ['Yes', 'No'], r.driver) +
+    '<label class="q">Week 1 · ' + h(fmt(mon)) + ' – ' + h(fmt(we)) + '</label>' + avDayBtns('avw1', r.w1, pre1) +
+    '<button type="button" class="btn ghost sm avfill" data-w="w1">Mon–Fri in, weekend out</button>' +
+    '<label class="q">Week 2 · ' + h(fmt(addDays(mon, 7))) + ' – ' + h(fmt(addDays(we, 7))) + '</label>' + avDayBtns('avw2', r.w2) +
+    '<button type="button" class="btn ghost sm avfill" data-w="w2">Mon–Fri in, weekend out</button>' +
+    (said ? '<p class="small muted" style="margin:8px 0 0">At their evaluation they said <b>' + h(r.said_days) + '</b> a week.</p>' : '') +
+    '<label class="q">Coach</label><select id="avcoach"><option value="">—</option>' + (d.coaches || []).map(c => '<option value="' + h(c.id) + '"' + (c.id === r.coach_id ? ' selected' : '') + '>' + h(c.name) + '</option>').join('') +
+      (r.coach_id && !(d.coaches || []).some(c => c.id === r.coach_id) ? '<option value="' + h(r.coach_id) + '" selected>' + h(r.coach_name) + '</option>' : '') + '</select>' +
+    '<label class="q">Notes</label><textarea id="avnotes" class="short" placeholder="Where they live, background… (e.g. Windsor | Law graduate)">' + h(r.notes) + '</textarea>' +
+    '<div id="averr"></div><button class="btn block" id="avsave" style="margin-top:14px">Save</button>' +
+    (r.manual ? '<button class="btn ghost block" id="avdel" style="margin-top:8px;color:var(--red)">Remove from the list</button>' : '') +
+    '<button class="btn ghost block" id="avcancel" style="margin-top:8px">Cancel</button></div></div>';
+  document.body.appendChild(back);
+  document.body.style.overflow = 'hidden';
+  const f = back.querySelector('#avf');
+  bindChips(f);
+  const paintDays = k => { const el = back.querySelector('#av' + k); el.outerHTML = avDayBtns('av' + k, st[k].join(''), k === 'w1' ? pre1 : null); bindDays(k); };
+  const bindDays = k => back.querySelectorAll('#av' + k + ' button[data-i]').forEach(b => {
+    b.onclick = () => { const i = Number(b.dataset.i); st[k][i] = st[k][i] === '-' ? 'I' : st[k][i] === 'I' ? 'O' : '-'; paintDays(k); };
+  });
+  bindDays('w1'); bindDays('w2');
+  back.querySelectorAll('.avfill').forEach(b => { b.onclick = () => { const k = b.dataset.w; st[k] = st[k].map((x, i) => k === 'w1' && pre1[i] ? '-' : i < 5 ? 'I' : 'O'); paintDays(k); }; });
+  back.onclick = e => { if (e.target === back) closeSheet(); };
+  back.querySelector('#avcancel').onclick = () => closeSheet();
+  const setPhoto = (data, btn) => call('saveStarterPhoto', { id: r.id, data: data }).then(() => {
+    st.photo = data; S.avPh = S.avPh || {}; if (data) S.avPh[r.id] = data; else delete S.avPh[r.id];
+    r.has_photo = !!data; back.querySelector('#avph').innerHTML = ph(); back.querySelector('#avphx').hidden = !data; toast(data ? 'Photo saved ✓' : 'Photo removed');
+  }).catch(e => toast(e.message)).then(() => { if (btn) busy(btn, false); });
+  back.querySelector('#avcam').onchange = e => {
+    const file = e.target.files && e.target.files[0]; if (!file) return;
+    shrinkPhoto(file).then(data => setPhoto(data)).catch(() => toast('Couldn\'t read that photo. Try again.'));
+  };
+  back.querySelector('#avphx').onclick = e => { busy(e.currentTarget, true, 'Removing…'); setPhoto('', e.currentTarget); };
+  const del = back.querySelector('#avdel');
+  if (del) { let armed = false; del.onclick = () => {
+    if (!armed) { armed = true; del.textContent = 'Tap again to remove'; return; }
+    call('removeStarter', { id: r.id }).then(() => { d.rows = d.rows.filter(x => x.id !== r.id); closeSheet(); render(true); toast('Removed'); }).catch(x => toast(x.message));
+  }; }
+  back.querySelector('#avsave').onclick = e => {
+    const btn = e.currentTarget; busy(btn, true, 'Saving…');
+    call('saveAvail', { id: r.id, w1: st.w1.join(''), w2: st.w2.join(''), driver: chipVal(f, 'driver') || '', coach_id: back.querySelector('#avcoach').value, notes: back.querySelector('#avnotes').value })
+      .then(nr => { if (nr) d.rows = d.rows.map(x => x.id === nr.id ? nr : x); closeSheet(); render(true); toast('Saved ✓'); })
+      .catch(x => { busy(btn, false); showErr(back.querySelector('#averr'), x.message); });
+  };
+}
+/** The phone's photo, cropped square and made small (360 px JPEG, under ~45k characters) so it's quick to save and to load. */
+function shrinkPhoto(file) {
+  return new Promise((res, rej) => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const side = Math.min(img.naturalWidth, img.naturalHeight), cv = document.createElement('canvas'), SZ = 360;
+      cv.width = SZ; cv.height = SZ;
+      cv.getContext('2d').drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, SZ, SZ);
+      let q = 0.82, data = cv.toDataURL('image/jpeg', q);
+      while (data.length > 45000 && q > 0.3) { q -= 0.08; data = cv.toDataURL('image/jpeg', q); }
+      res(data);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('bad image')); };
+    img.src = url;
+  });
+}
+/** Someone who started without coming through the app (a referral, another office). */
+function addStarterSheet(we, coaches) {
+  closeSheet(true);
+  const mon = addDays(we, -6), back = document.createElement('div');
+  back.className = 'sheet-back';
+  back.innerHTML = '<div class="sheet" role="dialog" aria-label="Add a starter"><div class="grab"></div>' +
+    '<div class="sheet-h"><div style="min-width:0"><div class="label muted">Day 1 week ending ' + h(fmt(we)) + '</div><div class="display">Add someone who started</div></div></div>' +
+    '<div id="asf"><p class="small muted" style="margin:0 0 6px">Only for someone who didn\'t come through the app. Everyone ticked Arrived on Day 1 is on the list already.</p>' +
+    '<label class="q">Full name</label><input type="text" id="asname" autocomplete="off" placeholder="First and last name">' +
+    '<label class="q">Mobile</label><input type="tel" id="asmob" placeholder="07…">' +
+    '<label class="q">Campaign</label>' + chips('co', ['HelloFresh', 'Fundraising'], 'HelloFresh') +
+    '<label class="q">Day 1</label>' + chips('day1', [fmt(mon), fmt(addDays(mon, 1))], fmt(mon)) +
+    '<label class="q">Coach</label><select id="ascoach"><option value="">—</option>' + (coaches || []).map(c => '<option value="' + h(c.id) + '">' + h(c.name) + '</option>').join('') + '</select>' +
+    '<div id="aserr"></div><button class="btn block" id="assave" style="margin-top:14px">Add</button><button class="btn ghost block" id="ascancel" style="margin-top:8px">Cancel</button></div></div>';
+  document.body.appendChild(back);
+  document.body.style.overflow = 'hidden';
+  const f = back.querySelector('#asf'); bindChips(f);
+  back.onclick = e => { if (e.target === back) closeSheet(); };
+  back.querySelector('#ascancel').onclick = () => closeSheet();
+  back.querySelector('#assave').onclick = e => {
+    const btn = e.currentTarget; busy(btn, true, 'Adding…');
+    call('addStarter', { weekEnding: we, full_name: back.querySelector('#asname').value, mobile: back.querySelector('#asmob').value,
+      company: chipVal(f, 'co') === 'Fundraising' ? 'LINK' : 'JUSS', day1_date: chipVal(f, 'day1') === fmt(addDays(mon, 1)) ? addDays(mon, 1) : mon, coach_id: back.querySelector('#ascoach').value })
+      .then(nr => { S.avail[we].rows.push(nr); closeSheet(); render(true); toast('Added ✓ Tap them to fill in their days'); })
+      .catch(x => { busy(btn, false); showErr(back.querySelector('#aserr'), x.message); });
+  };
+}
+/** The week as the old sheet looked: a table per campaign, Monday to Sunday IN / OUT, in the Appointments PDF's look. */
+function availPdf(we, wk, rows) {
+  const mon = addDays(we, -6 + (wk === 2 ? 7 : 0)), key = wk === 2 ? 'w2' : 'w1', inN = i => rows.filter(r => r[key][i] === 'I').length;
+  const row = r => ({ fill: /[IO]/.test(r[key]) ? '' : 'amber', cells: [r.full_name, r.mobile || '', (r.coach_name || '').split(' ')[0], r.driver || ''].concat(
+    r[key].split('').map((x, i) => wk === 1 && addDays(mon, i) < r.day1_date ? ['-', 'grey'] : x === 'I' ? ['IN', 'green', true] : x === 'O' ? ['OUT', 'grey'] : '')).concat([r.notes || '']) });
+  const g = (co, head) => { const l = rows.filter(r => (r.company === 'JUSS' ? 'JUSS' : 'LINK') === co); return { head: head + ' · ' + l.length, rows: l.map(row) }; };
+  return listPdf({
+    name: avName(we, wk), heading: 'NS Availability · Week ' + wk, sub: 'Started week ending ' + fmtLong(we) + ' ' + we.slice(0, 4) + '  ·  Week ' + wk + ': ' + fmt(mon) + ' – ' + fmt(addDays(mon, 6)) + '  ·  LINK Marketing & JUSS Marketing',
+    boxes: [[rows.length, 'Starters'], [rows.filter(r => r.driver === 'Yes').length, 'Drivers', 'green'], [rows.filter(r => !/[IO]/.test(r[key])).length, 'No days yet', rows.some(r => !/[IO]/.test(r[key])) ? 'amber' : '']],
+    line: 'In each day: ' + AV_DAY.map((d, i) => d + ' ' + inN(i)).join(' · '),
+    cols: [['#', 16], ['Name', 104], ['Contact', 62], ['Coach', 56], ['Driver', 36]].concat(AV_DAY.map(d => [d, 26])).concat([['Notes', 67]]),
+    groups: [g('JUSS', 'HelloFresh'), g('LINK', 'Fundraising')], empty: 'Nobody started that week.',
+  });
+}
+/** "Welcome our new starters": their photos, names and coaches, HelloFresh then Fundraising, ready for WhatsApp (no Canva). */
+function availPoster(we, wk, rows) {
+  if (!window.JLBulletin) return toast('Posters work in the installed app. Open it from your home-screen icon.');
+  const img = src => new Promise(res => { if (!src) return res(null); const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; });
+  toast('Making the poster…');
+  Promise.all(rows.map(r => img((S.avPh || {})[r.id]))).then(pics => JLBulletin.load('').then(assets => {
+    const person = (r, i) => ({ name: r.full_name, coach: (r.coach_name || '').split(' ')[0], photo: pics[i] });
+    const groups = [['JUSS', 'HELLO FRESH'], ['LINK', 'FUNDRAISING']].map(g => ({ co: g[0], label: g[1], people: rows.map((r, i) => (r.company === 'JUSS' ? 'JUSS' : 'LINK') === g[0] ? person(r, i) : null).filter(Boolean) }));
+    const cv = JLBulletin.draw(document.createElement('canvas'), 'starters', { title: 'WELCOME OUR NEW STARTERS', sub: 'WEEK ' + wk + '  |  DAY 1 W/E ' + we.slice(8, 10) + '/' + we.slice(5, 7) + '/' + we.slice(0, 4), groups: groups },
+      Object.assign({}, BULL_DEFAULTS, store.get('bullOpts') || {}), assets);
+    cv.toBlob(blob => {
+      const name = 'JL-new-starters-' + we + '.jpg', file = new File([blob], name, { type: 'image/jpeg' }), url = URL.createObjectURL(blob);
+      closeSheet(true);
+      const back = document.createElement('div');
+      back.className = 'sheet-back';
+      back.innerHTML = '<div class="sheet pdfprev" role="dialog" aria-label="Poster"><div class="grab"></div><div class="sheet-h"><div style="min-width:0"><div class="label muted">Poster · ' + rows.length + ' starters</div><div class="display">New starters</div></div></div>' +
+        '<img id="avpimg" src="' + url + '" alt="New starters poster" style="width:100%;border-radius:14px" data-info="' + h(JSON.stringify({ we: we, people: groups.map(g => g.label + ':' + g.people.map(p => p.name + (p.photo ? '+photo' : '')).join(',')) })) + '">' +
+        '<div class="bullbtns pdfbtns"><button class="btn wa" id="avpshare">📤 Share to WhatsApp</button><a class="btn ghost" id="avpsave" href="' + url + '" download="' + name + '">⬇️ Save</a></div></div>';
+      document.body.appendChild(back);
+      document.body.style.overflow = 'hidden';
+      back.onclick = e => { if (e.target === back) closeSheet(); };
+      back.querySelector('#avpshare').onclick = () => {
+        if (navigator.canShare && navigator.canShare({ files: [file] })) navigator.share({ files: [file] }).catch(() => {});
+        else { back.querySelector('#avpsave').click(); toast('Saved. Open WhatsApp and attach the image.'); }
+      };
+    }, 'image/jpeg', 0.9);
+  })).catch(e => toast('Couldn\'t make the poster: ' + e.message));
 }
 
 // ───── QR codes for the presentation slides (admin) ─────
@@ -2520,6 +2747,7 @@ function drawAcademy(r, quiet) {
     (behind.length ? '<div class="card needs d1behind"><b>↩️ Still to sort from an earlier week · ' + behind.length + '</b><p class="small muted" style="margin:4px 0 2px">A no-show to rebook, or nobody ticked Arrived / No-show. Tap a name to go to that week.</p>' +
       behind.map(c => '<button class="nm" data-wk="' + weekEndingOf(c.academy_date) + '">' + h(c.first_name) + ' · ' + (c.day1_status === 'no_show' ? 'no-show' : 'not ticked') + '</button>').join('') + '</div>' : '') +
     (pend.length || toOnb.length || behind.length ? '<div style="height:14px"></div>' : '') +
+    '<button class="btn ghost block" id="goAvail" style="margin:0 0 12px">🗓️ Availability · Week 1 &amp; Week 2</button>' +
     weekNav1 + weekTools + filt +
     (!wk ? skeleton(3) : dates.length ? dates.map(block).join('')
       : empty('🎓', we === thisWe ? 'Nobody booked to start this week.' : we > thisWe ? 'Nobody booked to start that week yet.' : 'Nobody started that week.')) +
@@ -2527,6 +2755,7 @@ function drawAcademy(r, quiet) {
     'Pulled out? Tap 🚫 Dropped out (twice), any time: they leave the reminders and the expected count (↩️ Undo puts them back). On Day 1, tap Arrived or No-show for everyone: that\'s your show-up rate. Booked for Tuesday instead of Monday? Tap 📅 Tuesday (twice), before the day or on it: they move to Tuesday\'s list (📅 Monday moves them back). The PDF shows the same ticks. ‹ › go week by week.</p>', quiet, !admin);
   const go = w => { S.d1Pick = { on: today, auto: false, we: w }; drawAcademy(r, true); window.scrollTo(0, 0); };
   page.querySelector('#d1prev').onclick = () => go(addDays(we, -7));
+  page.querySelector('#goAvail').onclick = () => nav('avail', { we: we }, true);
   page.querySelector('#d1next').onclick = () => go(addDays(we, 7));
   page.querySelectorAll('.nm[data-wk]').forEach(b => { b.onclick = () => go(b.dataset.wk); });
   page.querySelectorAll('.trow[data-cand] .main').forEach(el => { el.onclick = () => nav('cand', { id: el.parentNode.dataset.cand }, true); });

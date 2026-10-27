@@ -1862,6 +1862,111 @@ async function fillEval(p) {
   await post('/dev/eval', { js: 'CONFIG.HANDOVER = ' + hoWas + '; "ok"' });
   const fa2 = await figuresAgree('2026-10-25', ['2026-10-19', '2026-10-20']);
   ok(/^Bookers \d+ \+ booked by admins \d+ = \d+ attended$/.test(fa2.paySum), 'Appts Attended shows how its list adds up when admins booked some (they\'re not on the incentive): "' + fa2.paySum + '"');
+  // ── 🗓️ New starters' availability, Week 1 and Week 2 (Angad, 27 Oct): replaces the "NS Availability" Google Sheet and the
+  //    Canva poster. Filled in at the one-to-one by admins and whoever's ticked "Availability"; everyone sees it, numbers too. ──
+  console.log('availability');
+  {
+    const WE = '2026-10-25';
+    const arrived = (await api(admin, 'academyList', { weekEnding: WE })).items.filter(c => c.day1_status === 'arrived');
+    let av = await api(admin, 'availWeek', { weekEnding: WE });
+    ok(arrived.length >= 1 && av.canEdit && av.rows.length === arrived.length && arrived.every(c => av.rows.some(r => r.candidate_id === c.id && r.full_name === c.full_name &&
+      r.mobile === c.mobile && r.coach_id === c.booker_id && r.w1 === '-------' && r.w2 === '-------')),
+      'everyone ticked Arrived on Day 1 (w/e 25 Oct) is on the list by themselves: name, mobile, coach = who booked them (' + av.rows.map(r => r.full_name + ' · coach ' + r.coach_name).join('; ') + ')');
+    const s1 = av.rows[0], viewer = await api(abdT, 'availWeek', { weekEnding: WE });
+    let refused = null; try { await api(abdT, 'saveAvail', { id: s1.id, w1: 'IIIIIOO', w2: '-------', driver: '' }); } catch (e) { refused = e.message; }
+    ok(!viewer.canEdit && viewer.rows.length === av.rows.length && viewer.rows.every(r => r.mobile) && /Only Angad, Satpal and the people they pick/.test(refused || ''),
+      'a booker sees every starter, phone numbers included (like the sheet), but can\'t change anything');
+    const coachPush = async fn => { const n0 = (await getJson('/dev/pushes')).length; await fn(); return (await getJson('/dev/pushes')).slice(n0).filter(x => /days changed$/.test(x.body.headings.en)); };
+    let first = await coachPush(() => api(admin, 'saveAvail', { id: s1.id, w1: 'IIIIIOO', w2: 'IIIIIIO', driver: 'Yes', notes: 'Windsor | Law graduate', coach_id: s1.coach_id }));
+    av = await api(admin, 'availWeek', { weekEnding: WE });
+    const s1b = av.rows.find(r => r.id === s1.id);
+    ok(s1b.w1 === 'IIIIIOO' && s1b.w2 === 'IIIIIIO' && s1b.driver === 'Yes' && s1b.notes === 'Windsor | Law graduate' && s1b.updated_by === 'Angad Oshan' && !first.length,
+      'the one-to-one: driver, Week 1 Mon–Fri, Week 2 Mon–Sat, notes saved (no alert on the first fill)');
+    const changed = await coachPush(() => api(admin, 'saveAvail', { id: s1.id, w1: 'IIIIIOO', w2: 'IIIOOOO', driver: 'Yes', notes: s1b.notes }));
+    ok(changed.length === 1 && changed[0].body.include_aliases.external_id.join() === s1.coach_id && /Week 2: Mon Tue Wed/.test(changed[0].body.contents.en),
+      'days changed afterwards → their coach hears: "' + (changed[0] ? changed[0].body.headings.en + ' · ' + changed[0].body.contents.en.replace(/\n/g, ' · ') : 'none') + '"');
+    let bad = null; try { await api(admin, 'saveAvail', { id: s1.id, w1: 'YES', w2: '-------' }); } catch (e) { bad = e.message; }
+    ok(/Tap in or out/.test(bad || ''), 'nothing but in / out / not said is saved');
+    // A photo, made small on the phone first; a week's photos load in one go
+    const jpg = await ap.evaluate(() => { const c = document.createElement('canvas'); c.width = c.height = 360; const g = c.getContext('2d'); g.fillStyle = '#3BB4C1'; g.fillRect(0, 0, 360, 360);
+      g.fillStyle = '#fff'; g.beginPath(); g.arc(180, 150, 70, 0, 7); g.fill(); g.fillRect(95, 240, 170, 120); return c.toDataURL('image/jpeg', 0.8); });
+    await api(admin, 'saveStarterPhoto', { id: s1.id, data: jpg });
+    let badPh = null; try { await api(admin, 'saveStarterPhoto', { id: s1.id, data: 'data:text/html;base64,PHNjcmlwdD4=' }); } catch (e) { badPh = e.message; }
+    const phs = (await api(abdT, 'availPhotos', { weekEnding: WE })).photos;
+    ok(phs[s1.id] === jpg && /didn't come through/.test(badPh || '') && (await api(admin, 'availWeek', { weekEnding: WE })).rows.find(r => r.id === s1.id).has_photo,
+      'photo saved (' + jpg.length + ' characters) and anyone can see it; anything that isn\'t a photo is refused');
+    // Someone who started without coming through the app; delegating = one tick in Team
+    let noAdd = null; try { await api(abdT, 'addStarter', { weekEnding: WE, full_name: 'Not Allowed', company: 'LINK' }); } catch (e) { noAdd = e.message; }
+    const mira = await api(admin, 'addStarter', { weekEnding: WE, full_name: 'mira manual', mobile: '07700 900555', company: 'LINK', coach_id: fiza.id, day1_date: '2026-10-20' });
+    ok(/Only Angad, Satpal/.test(noAdd || '') && mira.full_name === 'Mira Manual' && mira.manual && mira.day1_date === '2026-10-20' && mira.mobile === '07700900555' && mira.coach_name === 'Fiza Iqbal',
+      'admins add someone who started without the app (Mira, Day 1 Tue 20 Oct); bookers can\'t');
+    const tmp = await api(admin, 'addStarter', { weekEnding: WE, full_name: 'Temp Person', company: 'JUSS' });
+    let keepApp = null; try { await api(admin, 'removeStarter', { id: s1.id }); } catch (e) { keepApp = e.message; }
+    await api(admin, 'removeStarter', { id: tmp.id });
+    ok(/untick Arrived/.test(keepApp || '') && !(await api(admin, 'availWeek', { weekEnding: WE })).rows.some(r => r.id === tmp.id), 'a hand-added one can be removed; someone from Day 1 can\'t (untick Arrived instead)');
+    const abdU = await userOf(abd.id);
+    await api(admin, 'saveUser', { user: Object.assign({}, abdU, { roles: ['booker', 'availability'] }) });
+    const deleg = await api(abdT, 'availWeek', { weekEnding: WE });
+    await api(abdT, 'saveAvail', { id: mira.id, w1: '-IIIIOO', w2: 'IIIIIOO', driver: 'No', notes: '' });
+    await api(admin, 'saveUser', { user: Object.assign({}, abdU, { roles: ['booker'] }) });
+    ok(deleg.canEdit && deleg.coaches.length > 0, 'Team → tick "Availability" on a BA (Abdullahi): he can fill it in; untick and he can\'t');
+    await api(admin, 'saveAvail', { id: mira.id, w1: '-------', w2: '-------', driver: '', notes: '' });
+    // 18:00: anyone who's had their Day 1 with no Week 1 days yet → the people who fill it in
+    const blanks = (await api(admin, 'availWeek', { weekEnding: WE })).rows.filter(r => r.day1_date <= '2026-10-20' && !/[IO]/.test(r.w1)), bNames = blanks.map(r => r.full_name.split(' ')[0]);
+    await setTime('2026-10-20T18:05:00+01:00');
+    const r0 = (await getJson('/dev/pushes')).length;
+    await post('/dev/run', { fn: 'maybeAvailReminder' });
+    const rem = (await getJson('/dev/pushes')).slice(r0).filter(x => /with no availability yet$/.test(x.body.headings.en)), r1 = (await getJson('/dev/pushes')).length;
+    await post('/dev/run', { fn: 'maybeAvailReminder' });
+    const again = (await getJson('/dev/pushes')).length - r1;
+    await setTime('2026-10-20T10:00:00+01:00');
+    console.log('    reminder pushes:', rem.length, rem.map(x => x.body.include_aliases.external_id.join('+')).join(' / '));
+    ok(blanks.length >= 1 && bNames.includes('Mira') && rem.length >= 1 && !again && rem.every(x => x.body.headings.en === rem[0].body.headings.en) && rem[0].body.headings.en === '🗓️ ' + blanks.length + ' new starter' + (blanks.length > 1 ? 's' : '') + ' with no availability yet' &&
+      rem[0].body.contents.en.startsWith(bNames.join(', ') + '. ') && rem.some(x => x.body.include_aliases.external_id.includes(angadU.id)),
+      '18:00: "' + (rem[0] ? rem[0].body.headings.en + ' · ' + rem[0].body.contents.en : 'none') + '" (once a day, to admins and the ticked)');
+    // On the phone: Day 1 → 🗓️ Availability
+    await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button[data-tab=academy]');
+    await ap.click('.tabbar button[data-tab=academy]'); await ap.waitForSelector('#goAvail');
+    await ap.click('#goAvail'); await ap.waitForSelector('#avprev');
+    for (let i = 0; i < 4 && (await ap.textContent('.seg-nav b')) !== 'Sun 25 Oct'; i++) {  // it opens on the Day 1 tab's week (this one or next)
+      const was = await ap.textContent('.seg-nav b'); await ap.click('#avprev'); await ap.waitForFunction(w => document.querySelector('.seg-nav b').textContent !== w, was);
+    }
+    await ap.waitForSelector('.avrow');
+    const avTxt = await ap.innerText('#page'), monIn = av.rows.filter(r => r.id === s1.id ? true : false).length;
+    ok(/Started .*Day 1 w\/e/i.test(avTxt) && /Sun 25 Oct/.test(avTxt) && (await ap.$$('.avrow')).length === av.rows.length + 1 && new RegExp(blanks.length + ' with no Week 1 days yet: ' + bNames.join(', '), 'i').test(avTxt) &&
+      (await ap.$$eval('.avd i', e => e.map(x => x.textContent)))[0] === String(monIn) && /🚗 1/.test(await ap.innerText('.avdays')) && !!(await ap.$('.avrow img.avph')),
+      'Day 1 → 🗓️ Availability: Week 1 w/e 25 Oct, headcount per day (Mon ' + monIn + ', 🚗 1), each starter\'s days, photo, and "' + blanks.length + ' with no Week 1 days yet: ' + bNames.join(', ') + '"');
+    await shot(ap, '50-availability');
+    await ap.click('.avrow:has-text("Mira Manual")'); await ap.waitForSelector('#avw1');
+    ok(await ap.$('#avw1 button[data-i="0"][disabled]') && !(await ap.$('#avw1 button[data-i="1"][disabled]')), 'her Monday is before her Day 1 (Tuesday): blank, can\'t be ticked');
+    await ap.click('#avw1 button[data-i="1"]'); await ap.click('#avw1 button[data-i="2"]'); await ap.click('#avw1 button[data-i="2"]');
+    ok((await ap.textContent('#avw1 button[data-i="1"] small')) === 'IN' && (await ap.textContent('#avw1 button[data-i="2"] small')) === 'OUT', 'tap a day: in, tap again: out');
+    await ap.click('.avfill[data-w="w2"]'); await ap.click('.sheet .chip[data-v="No"]');
+    const photoBuf = Buffer.from(jpg.split(',')[1], 'base64');
+    await ap.setInputFiles('#avcam', { name: 'mira.jpg', mimeType: 'image/jpeg', buffer: photoBuf });
+    await ap.waitForSelector('.sheet #avph img.avph');
+    await ap.fill('#avnotes', 'Slough | retail');
+    await shot(ap, '51-availability-edit');
+    await ap.click('#avsave'); await ap.waitForFunction(() => !document.querySelector('.sheet-back'));
+    const miraNow = (await api(admin, 'availWeek', { weekEnding: WE })).rows.find(r => r.id === mira.id);
+    ok(miraNow.w1 === '-IO----' && miraNow.w2 === 'IIIIIOO' && miraNow.driver === 'No' && miraNow.notes === 'Slough | retail' && miraNow.has_photo,
+      'saved from the phone: Week 1 Tue in, Wed out; Week 2 "Mon–Fri in, weekend out"; no car; notes; the photo taken with the camera');
+    await ap.click('#avwk button[data-wk="2"]'); await ap.waitForSelector('#avwk button.on[data-wk="2"]');
+    ok(/Week 2: Mon 26 Oct – Sun 1 Nov/.test(await ap.innerText('#page')), 'Week 2 = the week after their Day 1 week');
+    const apd = await pdfDl(ap, '#avpdf'), apPath = `${SHOTS}/52-availability.pdf`; await apd.saveAs(apPath);
+    const apRaw = fs.readFileSync(apPath, 'latin1');
+    ok(apd.suggestedFilename() === 'NS Availability W2 w-e 25.10.2026.pdf' && /\(NS Availability · Week 2\) Tj/.test(apRaw) && /\(Mira Manual\) Tj/.test(apRaw) && /\(IN\) Tj/.test(apRaw) &&
+      /\(Fundraising · \d+\) Tj/.test(apRaw) && /\(Sun\) Tj/.test(apRaw), '📄 PDF like the old sheet: "NS Availability W2 w-e 25.10.2026.pdf", a table per campaign, Monday to Sunday IN / OUT');
+    try { require('child_process').execFileSync('pdftoppm', ['-png', '-r', '70', '-singlefile', apPath, `${SHOTS}/52-availability`]); } catch (e) { /* no renderer here */ }
+    await ap.click('#avposter'); await ap.waitForSelector('#avpimg[data-info]', { timeout: 15000 });
+    const pInfo = JSON.parse(await ap.getAttribute('#avpimg', 'data-info'));
+    ok(pInfo.we === WE && pInfo.people.join('|').includes('Mira Manual+photo') && pInfo.people.join('|').includes(s1.full_name + '+photo'),
+      '📸 Poster: "Welcome our new starters", their photos, names and coaches, HelloFresh then Fundraising (' + pInfo.people.join(' / ') + ')');
+    fs.writeFileSync(`${SHOTS}/53-new-starters-poster.jpg`, Buffer.from(await ap.$eval('#avpimg', i => fetch(i.src).then(r => r.arrayBuffer()).then(b => Array.from(new Uint8Array(b))))));
+    await ap.click('.sheet-back', { position: { x: 5, y: 5 } }); await ap.waitForFunction(() => !document.querySelector('.sheet-back'));
+    await ap.click('#abMe'); await ap.waitForSelector('#mAvail');
+    ok(/New starters' availability/.test(await ap.textContent('#mAvail')), 'everyone has it in the menu: "🗓️ New starters\' availability"');
+  }
   await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button'); await openTeam(ap);
   await ap.click('.item[data-u="' + mo.id + '"]'); await ap.waitForSelector('#ual');
   ok(await ap.inputValue('#ual') === 'Ramis - Ali Abbas', 'Team → Mo: "Other names they use" shows what he has');
@@ -2330,6 +2435,9 @@ async function fillEval(p) {
   await setTime('2027-10-25T03:00:00+01:00');
   await post('/dev/run', { fn: 'dailyMaintenance' });
   ok((await getJson('/dev/sheet?name=Candidates')).length === 1, 'records older than 6 months deleted automatically');
+  const avKept = await getJson('/dev/sheet?name=Availability');
+  ok(avKept.length >= 3 && avKept.some(r => r.includes('Mira Manual')) && (await getJson('/dev/sheet?name=StarterPhotos')).length >= 3,
+    'new starters\' availability is kept for good (Angad, 27 Oct): every week\'s starters, numbers, notes and photos still there a year on');
   ok(!(await getJson('/dev/sheet?name=Log')).slice(1).some(r => /2026/.test(String(r[0]))), 'Log entries older than 6 months deleted too, including ones whose times the Sheet turned into dates');
 
   // ── 11. Moving to Supabase: Google's email relay, handover and switch (Google only; switched off on Supabase) ──
