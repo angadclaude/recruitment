@@ -574,6 +574,10 @@ async function fillEval(p) {
   ok(/welcome-link\.html/.test(links[0]), 'first link is the welcome page (so WhatsApp shows the poster card)');
   ok(links.some(l => l.indexOf('forms.office.com') >= 0 && l.indexOf('QT4blMNFxEuaVSUMKK6uNT5Z') > 0), 'LINK message carries the Pre-Coaching Module link');
   ok(links.indexOf('https://maps.app.goo.gl/f4pkh222EHHTyQSM9') >= 0, 'LINK message carries LINK Marketing\'s Google Maps listing');
+  // Their company's playbook, after the Pre-Coaching Module; they make their own login there (Angad, 27 Oct)
+  ok(/📘 \*Read your Link Org Playbook\* so you walk in on Day 1 already knowing how we work 👇\nhttps:\/\/link-fr-playbook\.vercel\.app\/\nFirst time\? Tap \*New BA – set up profile\* to make your login 🔐\n/.test(msg) &&
+    msg.indexOf('link-fr-playbook') > msg.indexOf('forms.office.com') && msg.indexOf('juss-playbook') < 0,
+    'LINK Day 1 details carry the Link Org Playbook (after the Pre-Coaching Module), with "First time? Tap New BA – set up profile"');
   ok(/⏳ Not confirmed yet/.test(await bp.innerText('body')), 'snapshot shows "not confirmed yet"');
 
   // ── 5. Candidate opens their welcome page from WhatsApp → confirms ──
@@ -645,6 +649,8 @@ async function fillEval(p) {
   ok(/JUSS Marketing BA Academy/.test(jmsg) && /welcome-juss\.html/.test(jmsg) && !/Pre-Coaching/.test(jmsg), 'JUSS booker → JUSS message + JUSS welcome page');
   ok(jmsg.indexOf('https://maps.app.goo.gl/zeP4MjS2hMJzB9V9A') >= 0 && jmsg.indexOf('f4pkh222') < 0 && !/forms\.office\.com/.test(jmsg), 'JUSS message carries JUSS Marketing\'s Google Maps listing (no LINK pre-coaching)');
   ok(/– Rubal, JUSS Marketing$/.test(jmsg), 'JUSS message signed by Rubal (sent by Angad)');
+  ok(/📘 \*Read your JUSS Playbook\* so you walk in on Day 1 already knowing how we work 👇\nhttps:\/\/juss-playbook\.vercel\.app\/\nFirst time\? Tap \*New BA – set up profile\*/.test(jmsg) && jmsg.indexOf('link-fr-playbook') < 0,
+    'JUSS Day 1 details carry the JUSS Playbook (not LINK\'s), with the set-up-profile line');
   const jwurl = jmsg.match(/https:\/\/\S+welcome-juss\.html\?t=\w+/)[0];
   const jp = await cand.newPage();
   await jp.goto(jwurl.replace(PUBLIC, APP));
@@ -1887,8 +1893,8 @@ async function fillEval(p) {
       'everyone ticked Arrived on Day 1 (w/e 25 Oct) is on the list by themselves: name, mobile, coach = who booked them (' + av.rows.map(r => r.full_name + ' · coach ' + r.coach_name).join('; ') + ')');
     const s1 = av.rows[0], viewer = await api(abdT, 'availWeek', { weekEnding: WE });
     let refused = null; try { await api(abdT, 'saveAvail', { id: s1.id, w1: 'IIIIIOO', w2: '-------', driver: '' }); } catch (e) { refused = e.message; }
-    ok(!viewer.canEdit && viewer.rows.length === av.rows.length && viewer.rows.every(r => r.mobile) && /Only Angad, Satpal and the people they pick/.test(refused || ''),
-      'a booker sees every starter, phone numbers included (like the sheet), but can\'t change anything');
+    ok(!viewer.canEdit && viewer.rows.length === av.rows.length && viewer.rows.every(r => r.mobile) && viewer.rows.every(r => !r.said_days) && /Only Angad, Satpal and the people they pick/.test(refused || ''),
+      'a booker sees every starter (numbers and notes too, for the PDF; Angad 27 Oct), but can\'t change anything');
     const coachPush = async fn => { const n0 = (await getJson('/dev/pushes')).length; await fn(); return (await getJson('/dev/pushes')).slice(n0).filter(x => /days changed$/.test(x.body.headings.en)); };
     let first = await coachPush(() => api(admin, 'saveAvail', { id: s1.id, w1: 'IIIIIOO', w2: 'IIIIIIO', driver: 'Yes', notes: 'Windsor | Law graduate', coach_id: s1.coach_id }));
     av = await api(admin, 'availWeek', { weekEnding: WE });
@@ -2074,6 +2080,7 @@ async function fillEval(p) {
     await setTime('2026-10-20T10:00:00+01:00');
     // Every booker has a New starts tab (Angad, 27 Oct: Hasini, coaching in the BA Academy, couldn't find hers; "they can see the
     // entire availability for everyone"): every new starter in the office, read-only, no back arrow
+    await api(admin, 'gradeStarter', { id: s1.id, grade: 'A' });  // everyone sees the A (Angad, 27 Oct: "whatever I see on my account is what the booker should be able to see")
     await bp.goto(APP + 'index.html'); await bp.waitForSelector('.tabbar button[data-tab=avail]');
     const bTabs = await bp.$$eval('.tabbar button', e => e.map(x => x.innerText.trim().replace(/\s+/g, ' ')));
     await bp.click('.tabbar button[data-tab=avail]'); await bp.waitForSelector('.avrow');
@@ -2081,8 +2088,32 @@ async function fillEval(p) {
     const nsNames = await bp.$$eval('.avrow .name', e => e.map(x => x.textContent));
     ok(bTabs.includes('New starts') && (await bp.textContent('#abTitle')) === 'New starts' && (await bp.$eval('#abBack', b => b.hidden)) &&
       nsNames.length === allNow.length && allNow.every(r => nsNames.includes(r.full_name)) && nsNames.includes('Adham Soliman') &&
-      !(await bp.$('.avA')) && !(await bp.$('button.avrow')) && !(await bp.$('#avadd')) && (await ap.$$('.tabbar button[data-tab=avail]')).length === 0,
-      'every booker has a New starts tab (' + bTabs.join(' · ') + '): all ' + nsNames.length + ' new starters in the office, anyone\'s coach (Adham is Abdullahi\'s), read-only; admins keep it in Day 1');
+      !(await bp.$('button.avrow')) && !(await bp.$('#avadd')) && (await ap.$$('.tabbar button[data-tab=avail]')).length === 0 &&
+      !(await bp.$('#avposter')) && !(await bp.$('#avpdf')) && !!(await bp.$('#avpdfw1')) && !!(await bp.$('#avpdfw2')) && !(await bp.$('.avdays')) && !(await bp.$('#avwk')) && !(await bp.$('a[href^="tel:"]')) &&
+      (await bp.$$('.avrow .avwk2')).length === 2 * nsNames.length && !/Windsor \| Law graduate/.test(await bp.innerText('#page')) &&
+      (await bp.$$('.avA')).length === 1 && !!(await bp.$('.avcell:has-text("' + s1.full_name + '") .avA.on')) && !(await bp.$('[data-ava]')),
+      'every booker has a New starts tab (' + bTabs.join(' · ') + '): all ' + nsNames.length + ' new starters in the office, anyone\'s coach (Adham is Abdullahi\'s): name, coach, Week 1 and Week 2 days on screen (no poster, day counts, numbers or notes); admins keep the full page in Day 1');
+    // …and the details in the PDF, a week at a time (Angad, 27 Oct: "bookers should be able to click on the PDF and see the details")
+    const bpd = await pdfDl(bp, '#avpdfw2'), bpdPath = `${SHOTS}/52b-booker-availability.pdf`; await bpd.saveAs(bpdPath);
+    const bpdRaw = fs.readFileSync(bpdPath, 'latin1');
+    ok(bpd.suggestedFilename() === 'NS Availability W2 w-e 25.10.2026.pdf' && bpdRaw.includes('(' + s1.mobile + ') Tj') && /\(Notes: Windsor \| Law graduate\) Tj/.test(bpdRaw) &&
+      [...bpdRaw.matchAll(/0\.5 0\.66 0\.18 rg [\d.]+ [\d.]+ 133 19 re f\n[^\n]*\n[^\n]*\(([^)]*)\) Tj/g)].map(m => m[1]).join() === s1.full_name,
+      'a booker\'s 📄 Week 2 PDF has the details: numbers, coach, days and notes, and the A\'s name in green, as on everyone\'s');
+    // Presenters fill it in (Angad, 27 Oct: "whoever is the presenter… the ability to edit the availability"): the full page in their own
+    // New starts tab, but the A is the admins'
+    await pp.goto(APP + 'index.html'); await pp.waitForSelector('.tabbar button[data-tab=avail]');
+    await pp.click('.tabbar button[data-tab=avail]'); await pp.waitForSelector('.avrow');
+    const pSave = await api(nathan, 'saveAvail', { id: s1.id, w1: s1b.w1, w2: (await api(admin, 'availWeek', { weekEnding: WE })).rows.find(r => r.id === s1.id).w2, driver: 'Yes', notes: 'Windsor | Law graduate' });
+    ok(!!(await pp.$('button.avrow')) && !!(await pp.$('#avposter')) && !!(await pp.$('#avpdf')) && !!(await pp.$('#avadd')) && !(await pp.$('[data-ava]')) && !!(await pp.$('.avA.on.ro')) &&
+      (await pp.textContent('#abTitle')) === 'New starts' && pSave && pSave.updated_by === 'Nathan Smith',
+      'a presenter (Nathan) has New starts with the full page and fills it in (saved by Nathan Smith); the A shows for them, but only admins set it');
+    await api(admin, 'gradeStarter', { id: s1.id, grade: '' });
+    const jasW = await bp.$eval('.avrow:has-text("' + s1.full_name + '")', e => [...e.querySelectorAll('.avwk2')].map(w => w.querySelector('b').textContent + ' ' + [...w.querySelectorAll('.avc.in')].map(x => x.textContent).join(' ')).join(' | '));
+    ok(/^W1 Mo Tu We Th Fr \| W2 /i.test(jasW), 'each starter shows Week 1 and Week 2 together: "' + jasW + '"');
+    await bp.click('#abMe'); await bp.waitForSelector('#mLogout');
+    const noMenu = !(await bp.$('#mAvail'));
+    await bp.evaluate(() => { document.getElementById('menu').hidden = true; });
+    ok(noMenu, 'with New starts in the bottom bar, the account menu doesn\'t repeat it');
     await shot(bp, '50d-booker-new-starts');
     // On the phone: Day 1 → 🗓️ Availability
     await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button[data-tab=academy]');
@@ -2121,15 +2152,16 @@ async function fillEval(p) {
     const aBtns = (await ap.$$('.avA')).length, aRows = (await ap.$$('.avrow')).length;
     await ap.click(aSel); await ap.waitForSelector(aSel + '.on');
     const aBg = await ap.$eval(aSel, b => getComputedStyle(b).backgroundColor), aSheet = !!(await ap.$('.sheet-back'));
-    const aOn = await aSaved('A'), aBooker = await aOf(abdT);
+    const aOn = await aSaved('A'), aBooker = await aOf(abdT), aPres = await aOf(nathan);
     let aNo = null; try { await api(abdT, 'gradeStarter', { id: s1.id, grade: 'A' }); } catch (e) { aNo = e.message; }
+    let aNoP = null; try { await api(nathan, 'gradeStarter', { id: s1.id, grade: '' }); } catch (e) { aNoP = e.message; }
     let aBad = null; try { await api(admin, 'gradeStarter', { id: s1.id, grade: 'B' }); } catch (e) { aBad = e.message; }
     await ap.click(aSel); await ap.waitForSelector(aSel + ':not(.on)');
     const aOff = await aSaved('');
     await ap.click(aSel); await ap.waitForSelector(aSel + '.on');
-    ok(aBtns === aRows && aRows > 0 && aBg === 'rgb(22, 128, 74)' && !aSheet && aOn === 'A' && aBooker === '' && /Not allowed/.test(aNo || '') && /A, or nothing/.test(aBad || '') &&
+    ok(aBtns === aRows && aRows > 0 && aBg === 'rgb(22, 128, 74)' && !aSheet && aOn === 'A' && aBooker === 'A' && aPres === 'A' && /Only admins mark an A/.test(aNo || '') && /Only admins mark an A/.test(aNoP || '') && /A, or nothing/.test(aBad || '') &&
       aOff === '' && (await aSaved('A')) === 'A',
-      'tap A on a starter: it goes green (' + aBg + ') and is kept, without opening their page; tap again and it\'s off; bookers can\'t see or set it');
+      'tap A on a starter: it goes green (' + aBg + ') and is kept, without opening their page; tap again and it\'s off; bookers and presenters see it, only admins set it');
     await ap.$eval(aSel, b => b.scrollIntoView({ block: 'center' })); await shot(ap, '50c-availability-A');
     await ap.click('.avrow:has-text("Mira Manual")'); await ap.waitForSelector('#avw1');
     ok(await ap.$('#avw1 button[data-i="0"][disabled]') && !(await ap.$('#avw1 button[data-i="1"][disabled]')), 'her Monday is before her Day 1 (Tuesday): blank, can\'t be ticked');

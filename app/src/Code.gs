@@ -1638,7 +1638,8 @@ const STAFF_ACTIONS = {
 // and a photo. Filled in at the one-to-one on Day 1 by Angad, Satpal or whoever they tick in Team; everyone else can see it,
 // phone numbers included (like the sheet). The coach is whoever booked them. Every week is kept, for good.
 const AV_BLANK = '-------';
-function canAvail(u) { return has(u, 'availability'); }
+// Who fills it in: admins, presenters (Angad, 27 Oct: "whoever is the presenter… the ability to edit the availability") and anyone ticked Availability
+function canAvail(u) { return has(u, 'availability') || has(u, 'presenter'); }
 function availFilled(r) { return !!(r.driver || /[IO]/.test(String(r.w1) + String(r.w2)) || r.notes || truthy(r.has_photo)); }
 /** A week's starters (their Day 1 that week): everyone ticked Arrived gets a row the first time it's needed, plus anyone added
  *  by hand. Someone no longer ticked Arrived drops off while nothing has been filled in for them. */
@@ -1675,8 +1676,9 @@ function availRows(we) {
 function availWeek(req, u) {
   const we = weekEnding(/^\d{4}-\d\d-\d\d$/.test(req.weekEnding || '') ? req.weekEnding : todayStr());
   const edit = canAvail(u);
-  // The A (best new start) is for the people who do the one-to-ones, not the whole team
-  return { weekEnding: we, today: todayStr(), canEdit: edit, rows: availRows(we).map(r => (edit ? r : Object.assign(r, { grade: '' }))), bell: isAdmin(u) ? bellStatus(we) : null,
+  // Bookers see the names, coaches, Week 1 / Week 2 days and the green A on screen, and the details (number, notes) in the PDF
+  // (Angad, 27 Oct: "whatever I see on my account is what the booker should be able to see")
+  return { weekEnding: we, today: todayStr(), canEdit: edit, rows: availRows(we).map(r => (edit ? r : Object.assign(r, { said_days: '' }))), bell: isAdmin(u) ? bellStatus(we) : null,
     removed: edit ? readTable('Availability').filter(r => r.week_ending === we && r.removed_at).map(r => ({ id: r.id, full_name: r.full_name, removed_by: r.removed_by })) : [],
     coaches: edit ? usersAll().filter(x => truthy(x.active) && has(x, 'booker')).map(x => ({ id: x.id, name: x.name, company: x.company })).sort((a, b) => a.name.localeCompare(b.name)) : [] };
 }
@@ -1688,7 +1690,7 @@ function availRecord(id) {
 const AV_DAY = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 function availDaysText(w) { const d = AV_DAY.filter((x, i) => w[i] === 'I'); return d.length ? d.join(' ') : 'none'; }
 function saveAvail(req, u) {
-  if (!canAvail(u)) throw new Error('Only Angad, Satpal and the people they pick (Team → Availability) can fill this in.');
+  if (!canAvail(u)) throw new Error('Only Angad, Satpal and the people they pick (presenters, Team → Availability) can fill this in.');
   const ok = w => /^[IO-]{7}$/.test(String(w || ''));
   if (!ok(req.w1) || !ok(req.w2)) throw new Error('Tap in or out for each day.');
   if (['Yes', 'No', ''].indexOf(req.driver || '') < 0) throw new Error('Driver: yes or no.');
@@ -1713,7 +1715,7 @@ function saveAvail(req, u) {
 }
 /** Someone who started without coming through the app (a referral, another office): added by hand to a week. */
 function addStarter(req, u) {
-  if (!canAvail(u)) throw new Error('Only Angad, Satpal and the people they pick can add starters.');
+  if (!canAvail(u)) throw new Error('Only Angad, Satpal and the people they pick (presenters, Team → Availability) can add starters.');
   const name = cleanName(req.full_name), mobile = normMobile(req.mobile);
   if (name.split(' ').length < 2) throw new Error('First and last name, please.');
   if (req.mobile && !mobile) throw new Error('That mobile doesn\'t look right (07…).');
@@ -1734,7 +1736,7 @@ function removeStarter(req, u) {
 }
 /** A = one of the best new starts (Angad, 27 Oct: "that's my best new start, so I can just tap on that"). One tap on, one off. */
 function gradeStarter(req, u) {
-  if (!canAvail(u)) throw new Error('Not allowed');
+  if (!isAdmin(u)) throw new Error('Only admins mark an A.');  // his best new starts: Angad, Satpal, Jess, Rubal; everyone sees them
   if (['A', ''].indexOf(req.grade || '') < 0) throw new Error('A, or nothing.');
   const r = withLock(() => { const a = availRecord(req.id); a.grade = req.grade || ''; a.grade_by = u.name; a.grade_at = nowStr(); writeRow('Availability', a); return a; });
   log(u, 'availability_grade', r.candidate_id || '', r.full_name + ': ' + (r.grade || 'not A'));
