@@ -50,7 +50,7 @@ const CONFIG = {
   D1_RESULTS_TIME: '09:00',       // the morning after a Day 1: the results to admins (Angad's Tuesday list, 27 Oct)
   D1_RESULTS_FROM: '2026-11-02',  // the first Day 1 with FR / HF set in the app (26 Oct's were only on paper): no alert with a wrong split
   OFFICE_BOOKERS: ['Fiza Iqbal'],  // with the admins, "Office" in the results' starts by booker (bookings made from the office)
-  AVAIL_REMIND_TIME: '17:00',     // after Tuesday's 2-3pm one-to-ones: availability ready (or who's missing) → admins + delegates; coaches their starters
+  AVAIL_REMIND_TIME: '17:00',     // after Tuesday's 2-3pm one-to-ones: done vs missing → admins (all starters) and each coach (their own)
   EMAIL_ALERTS: false,            // true = also email every alert. Push is used when OneSignal keys are set.
   SESSION_DAYS: 30,               // staff stay logged in for this long
   SHEET_ID: '',                   // the data Sheet; only needed if this script isn't opened from the Sheet itself
@@ -1704,10 +1704,9 @@ function day1Photo(req, u) {
   return { avail_id: row.id, weekEnding: we, has_photo: !!req.data };
 }
 /** The afternoon after Day 1 (AVAIL_REMIND_TIME, Angad 27 Oct: the one-to-one where they commit to their days is Tuesday around
- *  2-3pm), every day Monday to Saturday for the week's starters who've had their Day 1 before today:
- *  - the people who fill it in: who's still without Week 1 days, every day until done; then "✅ Availability ready" once,
- *    with how many are in each day and how many drive (poster and PDF a tap away);
- *  - each coach (once a week): their own starters' Week 1 days, as soon as they're filled in. */
+ *  2-3pm), every day Monday to Saturday, for the week's starters who've had their Day 1 before today. Done = Week 1 days in.
+ *  - Admins (Satpal, Rubal, Jess, Angad): every starter, done vs missing, daily until all done; then "✅ ready" once.
+ *  - Each coach (whoever booked them): their own starters, done vs missing, daily until all theirs are done; then once. */
 function maybeAvailReminder() {
   const now = nowStr(), today = now.slice(0, 10), hm = now.slice(11, 16);
   if (hm < (CONFIG.AVAIL_REMIND_TIME || '17:00') || hm > '20:59' || weekday(today) === 0) return;
@@ -1716,26 +1715,27 @@ function maybeAvailReminder() {
   p.setProperty('AVAIL_REMINDED', today);
   const we = weekEnding(today), rows = availRows(we).filter(r => r.day1_date < today && !r.no_longer);
   if (!rows.length) return;
-  const editors = usersAll().filter(x => truthy(x.active) && canAvail(x)), blank = rows.filter(r => !/[IO]/.test(r.w1));
-  if (blank.length) notify(editors, '🗓️ Availability: ' + (rows.length - blank.length) + ' of ' + rows.length + ' done',
+  const done = r => /[IO]/.test(r.w1), line = r => r.full_name.split(' ')[0] + ': ' + (done(r) ? availDaysText(r.w1) : 'not filled in yet');
+  const admins = usersAll().filter(x => truthy(x.active) && isAdmin(x)), blank = rows.filter(r => !done(r));
+  if (blank.length) notify(admins, '🗓️ Availability: ' + (rows.length - blank.length) + ' of ' + rows.length + ' done',
     'Still to fill in: ' + firstNames(blank.map(r => ({ full_name: r.full_name })), 8) + '. Tap to fill in their Week 1 and Week 2.', 'avail');
   else if (p.getProperty('AVAIL_READY') !== we) {
     p.setProperty('AVAIL_READY', we);
     const inOn = i => rows.filter(r => r.w1[i] === 'I'), days = AV_DAY.map((d, i) => d + ' ' + inOn(i).length).filter((x, i) => inOn(i).length);
-    notify(editors, '✅ Availability ready: ' + plural(rows.length, 'new starter'), 'Week 1 in: ' + days.join(' · ') + ' · 🚗 ' + rows.filter(r => r.driver === 'Yes').length + ' drive' +
+    notify(admins, '✅ Availability ready: ' + plural(rows.length, 'new starter'), 'Week 1 in: ' + days.join(' · ') + ' · 🚗 ' + rows.filter(r => r.driver === 'Yes').length + ' drive' +
       '\nTap for the poster (WhatsApp) and the PDF.', 'avail');
   }
-  // Coaches: their own starters' Week 1, once a week each, as soon as there's something to say
-  let told = []; try { told = JSON.parse(p.getProperty('AVAIL_COACHED_' + we) || '[]'); } catch (e) { told = []; }
+  // Coaches: their own new starters, done vs missing (admins have the whole list above)
+  let ready = []; try { ready = JSON.parse(p.getProperty('AVAIL_COACH_READY_' + we) || '[]'); } catch (e) { ready = []; }
   const byCoach = {};
-  rows.filter(r => /[IO]/.test(r.w1) && r.coach_id).forEach(r => { (byCoach[r.coach_id] = byCoach[r.coach_id] || []).push(r); });
-  Object.keys(byCoach).filter(id => told.indexOf(id) < 0).forEach(id => {
-    const ch = userById(id);
-    if (!ch || !truthy(ch.active) || canAvail(ch)) return;  // switched off, or already told above
-    told.push(id);
-    notify([ch], '🗓️ Your new starters this week', byCoach[id].map(r => r.full_name.split(' ')[0] + ': ' + availDaysText(r.w1)).join('\n'), 'avail');
+  rows.filter(r => r.coach_id).forEach(r => { (byCoach[r.coach_id] = byCoach[r.coach_id] || []).push(r); });
+  Object.keys(byCoach).forEach(id => {
+    const ch = userById(id), mine = byCoach[id], left = mine.filter(r => !done(r));
+    if (!ch || !truthy(ch.active) || isAdmin(ch)) return;
+    if (left.length) notify([ch], '🗓️ Your new starters: ' + (mine.length - left.length) + ' of ' + mine.length + ' done', mine.map(line).join('\n'), 'avail');
+    else if (ready.indexOf(id) < 0) { ready.push(id); notify([ch], '✅ Your new starters\' days', mine.map(line).join('\n'), 'avail'); }
   });
-  p.setProperty('AVAIL_COACHED_' + we, JSON.stringify(told));
+  p.setProperty('AVAIL_COACH_READY_' + we, JSON.stringify(ready));
 }
 
 // ───────────────────────── LINKS ─────────────────────────

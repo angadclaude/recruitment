@@ -1,4 +1,4 @@
-window.APP_VERSION = 'b6de072f';
+window.APP_VERSION = '3ab51494';
 
 (function () {
 'use strict';
@@ -1990,7 +1990,7 @@ function viewBulletin() {
   const bar = barSet();
   const warn = [];
   if (kind === 'daily' && n.unrated) warn.push(n.unrated + ' checked in but not rated by the presenter yet, so not counted.');
-  if (kind === 'daily' ? n.noBooker : n.weekNoBooker) warn.push((kind === 'daily' ? n.noBooker : n.weekNoBooker) + ' with no confirmed booker' + (kind === 'daily' ? ' (on the poster as "No booker yet")' : ', so not on the poster') + '. Assign them in Incentive.');
+  if (kind === 'daily' ? n.noBooker : n.weekNoBooker) warn.push((kind === 'daily' ? n.noBooker : n.weekNoBooker) + ' with no confirmed booker, so nobody\'s credited for them. Assign them in Appts Attended.');
   const field = (id, label, val, area) => '<label class="q">' + label + '</label>' + (area ? '<textarea id="' + id + '" rows="2">' + h(val) + '</textarea>' : '<input type="text" id="' + id + '" value="' + h(val) + '">');
   const edit = '<details class="card" id="bedit"><summary><b>✏️ Edit wording</b> <span class="small muted">· optional</span></summary>' +
     (kind === 'daily'
@@ -2011,7 +2011,7 @@ function viewBulletin() {
     const opts = Object.assign({}, BULL_DEFAULTS, store.get('bullOpts') || {}, { tagline: S.bull.tagline });
     const data = kind === 'daily'
       ? { day: day, weekday: n.weekday, target: n.target, attended: n.attended, nonQual: n.nonQual, walkOuts: n.walkOuts, weekTotal: n.weekday === 5 ? n.weekAttended : null,
-          rows: JLBulletin.dailyRows(n.today.map(r => Object.assign({}, r, { bar: !!barSet()[r.key] })), n.noBooker) }
+          rows: JLBulletin.dailyRows(n.today.map(r => Object.assign({}, r, { bar: !!barSet()[r.key] }))) }
       : { target: n.target, rows: JLBulletin.weeklyRows(n.week, n.target), msgs: S.bull.msgs };
     return JLBulletin.load('').then(assets => new Promise(res => {
       const cv = JLBulletin.draw(document.createElement('canvas'), kind, data, opts, assets);
@@ -2024,7 +2024,7 @@ function viewBulletin() {
         if (S.bullUrl) URL.revokeObjectURL(S.bullUrl);
         S.bullUrl = URL.createObjectURL(blob);
         img.src = S.bullUrl;
-        img.dataset.info = JSON.stringify({ kind: kind, day: kind === 'daily' ? day : we, attended: data.attended, nonQual: data.nonQual, walkOuts: data.walkOuts, weekTotal: data.weekTotal, rows: data.rows.map(r => r.medal + ' ' + r.name + (r.who && r.who.length ? ' [' + r.who.join(', ') + ']' : '') + ' ' + r.n + (r.bar ? ' BAR' : '')) });
+        img.dataset.info = JSON.stringify({ kind: kind, day: kind === 'daily' ? day : we, attended: data.attended, nonQual: data.nonQual, walkOuts: data.walkOuts, weekTotal: data.weekTotal, rows: data.rows.map(r => r.medal + ' ' + r.name + ' ' + r.n + (r.bar ? ' BAR' : '')) });
         document.getElementById('bload').hidden = true;
         document.getElementById('bshare').disabled = false;
         sv.href = S.bullUrl; sv.download = name; sv.hidden = false;

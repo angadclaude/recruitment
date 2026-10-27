@@ -11,28 +11,24 @@
   let X;  // the canvas context being drawn
 
   // ── Format rules (same as the hand-made posters) ──
-  /** Daily list: gold for the top booker, then silver/bronze, a 💪 for everyone else. 🔔 = 2, gong (💿) = 3+.
-   *  Recognition is for 2 and above (Angad, 26 Oct): only they're named. Everyone with 1 is still counted, on one line
-   *  with their total, so the list always adds up to "first appointments attended". No booker yet: a line too. */
+  /** Daily list: gold for the top booker, then silver/bronze, a 💪 for everyone else. 2 = 🔔 bell, 3+ = gong (💿).
+   *  Only bookers on 2 or more are on the poster (Angad, 26 + 27 Oct: "anyone that gets one appointment in should not be
+   *  on the bulletin"): nobody on 1, no "1 each" line, no "no booker yet" line. So the names don't add up to "first
+   *  appointments attended", by design. More 2+ bookers than fit: the lowest share the last line by name. */
   const DAILY_LINES = 7;
-  function dailyRows(list, noBooker) {
-    const ones = list.filter(r => r.n < 2), budget = DAILY_LINES - (noBooker ? 1 : 0);
+  function dailyRows(list) {
     let named = list.filter(r => r.n >= 2), spill = [];
-    // More 2+ bookers than fit: the lowest share the last line by name (two lines high)
-    while (named.length && named.length + (spill.length ? 2 : ones.length ? 1 : 0) > budget) spill.unshift(named.pop());
+    while (named.length && named.length + (spill.length ? 2 : 0) > DAILY_LINES) spill.unshift(named.pop());
     const rows = named.map(r => {
       const rank = list.filter(o => o.n > r.n).length + 1;
       const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : '💪';
       const icons = r.n >= 3 ? ['💿'].concat(alt(['🔥', '💥'], Math.min(r.n, 5))) : ['🔔', '👏', '👏'];
       return Object.assign({}, r, { medal: medal, icons: icons });
     });
-    if (spill.length || ones.length) {
-      const k = ones.length, parts = spill.map(r => r.name + ' ×' + r.n + (r.bar ? ' (BAR)' : ''));
-      if (k) parts.push((rows.length || spill.length ? '+ ' + k + ' more' : k) + ' booker' + (k > 1 ? 's, 1 each' : ''));
-      rows.push({ group: true, wide: spill.length > 0, names: parts, name: parts.join(', '), who: ones.map(r => r.name),
-        n: spill.concat(ones).reduce((t, r) => t + r.n, 0), medal: '👏', icons: [] });
+    if (spill.length) {
+      const names = spill.map(r => r.name + ' ×' + r.n + (r.bar ? ' (BAR)' : ''));
+      rows.push({ group: true, wide: true, names: names, name: names.join(', '), n: spill.reduce((t, r) => t + r.n, 0), medal: '💪', icons: [] });
     }
-    if (noBooker) rows.push({ name: 'No booker yet', n: noBooker, medal: '❓', icons: [], muted: true });
     return rows;
   }
   /** Weekly top 5 (ties share a medal) plus a 💪 row for anyone one short of the incentive. */
@@ -314,15 +310,15 @@
     text(th, rx + rw / 2 + 14, y + 66, { size: 42, weight: 700, align: 'center' });
     const space = h1 - 118, rh = Math.max(48, Math.min(84, space / Math.max(units, 1)));
     const top = y + 104 + Math.max(0, (space - rh * units) * 0.3);
-    if (!rows.length) text('First results coming soon…', rx + rw / 2, y + h1 / 2 + 50, { size: 30, weight: 500, italic: true, align: 'center', color: '#6b7280' });
+    if (!rows.length) text(d.attended ? 'Who\'s next to ring the bell? 🔔' : 'First results coming soon…', rx + rw / 2, y + h1 / 2 + 50, { size: 30, weight: 500, italic: true, align: 'center', color: '#6b7280', maxW: rw - 40 });
     let ry = top;
     rows.forEach((r, i) => {
       const rhi = r.wide ? rh * 2 : rh, mid = ry + rhi / 2, k = Math.min(1.3, rh / 62);
       if (i) { X.fillStyle = '#e7e9ef'; X.fillRect(rx + 18, ry, rw - 36, 2); }
-      if (!i && rows.length <= 3 && !r.group && !r.muted) { rr(rx + 14, ry + 4, rw - 28, rh - 8, 14); X.fillStyle = '#fff8e1'; X.fill(); X.lineWidth = 2; X.strokeStyle = '#f6d27a'; X.stroke(); }
+      if (!i && rows.length <= 3 && !r.group) { rr(rx + 14, ry + 4, rw - 28, rh - 8, 14); X.fillStyle = '#fff8e1'; X.fill(); X.lineWidth = 2; X.strokeStyle = '#f6d27a'; X.stroke(); }
       ry += rhi;
       emoji(r.medal, rx + 44, mid, 40 * k);
-      const right = rx + rw - 22, barW = r.bar ? 66 : 0, nsize = 46 * k, ink = r.muted ? '#6b7280' : NAVY;
+      const right = rx + rw - 22, barW = r.bar ? 66 : 0, nsize = 46 * k, ink = NAVY;
       text(String(r.n), right - barW, mid + nsize * 0.37, { size: nsize, weight: 700, align: 'right', color: ink });
       if (r.bar) { rr(right - 58, mid - 15, 58, 30, 8); X.fillStyle = NAVY; X.fill(); text('(BAR)', right - 29, mid + 7, { size: 18, weight: 700, align: 'center', color: '#fff' }); }
       const nx = rx + 54 + 26 * k;
