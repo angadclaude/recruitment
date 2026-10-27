@@ -212,12 +212,10 @@ Someone stuck later (email slow, in Spam, or "too many codes")? Same thing: Team
 ## 🚀 New starter onboarding (Jess / Rubal, admins only)
 When a booker books someone onto the Academy (or an admin approves a 🔴 booking), Jess (LINK) or Rubal (JUSS) gets **"🚀 New starter to onboard: Adham Soliman · Booked by Abdullahi for Monday 19th October"**. Tap it to open their page, which has the **🚀 Onboard** card at the top:
 
-1. **Add to Databyte:** tap **Open Databyte ↗** (the onboarding dashboard) and add them as a new starter.
-   - Copy each box across: first name, last name, email, phone (07700 900300), recruitment source.
+1. **Their details for Databyte:** Databyte is done by hand, in Databyte (there's no Databyte API). The card shows each box with **Copy**: first name, last name, email, phone (07700 900300), recruitment source.
    - **Recruitment source is a rule, not a choice:** booked by any booker → *Personal Recruitment*; booked by Jess / Rubal (any admin) or no booker → *Office Recruitment*. Wrong? Fix the booker on their page and it follows.
-   - Tap **✅ Added to Databyte**. (There's no Databyte API, so this step stays copy-and-paste.)
 2. **Welcome email:** **📧 Preview & send** shows the exact email ("LINK / JUSS Marketing - Your Brand Ambassador Journey Begins!"): their name, Day 1 date, Day 1 / Day 2 times, FieldIQ, pre-coaching (LINK), their Playbook (Link Org Playbook / JUSS Playbook), client, magazine, map and contact number. Tap **Send**.
-   - It's locked until step 1, because FieldIQ only works once they're on Databyte.
+   - It can go any time; it doesn't wait for Databyte (Angad, 27 Oct). FieldIQ's own invitation only comes once they're on Databyte, so do that the same day.
    - **FieldIQ says "Your account isn't activated yet"?** They haven't tapped the link in FieldIQ's own invitation (email or text, it often lands in Junk). The welcome email and heads-up now say so as step 1. Can't find it at all? Check the email and mobile you typed into Databyte are right, then get the invitation sent again.
    - **It only ever goes from the recruitment team's own addresses**, signed by whoever sends it: Jess from `jess@linkmarketing.org.uk`, Rubal from `rubal@jussmarketing.co.uk` (either can send either company's). Anyone else pressing Send (Angad, Satpal) sends from the company's person: LINK → Jess, JUSS → Rubal. Replies go to that address, and it gets a copy.
    - The card and preview say who it's from. If the app can't send as that address yet, Send stays off: it never falls back to another address.
@@ -266,7 +264,7 @@ The app sends through the script owner's Gmail, so that Gmail has to be allowed 
   - Fix, per domain: admin.google.com → Apps → Google Workspace → Gmail → **Authenticate email** → pick the domain → **Generate new record** (2048-bit) → add it at your DNS host as a TXT record named `google._domainkey` → wait an hour → **Start authentication**. Check: send an email to a Gmail address → ⋮ → **Show original** → DKIM: `PASS` with your domain.
 - **Before the first real one:** send a welcome email to the address mail-tester.com gives you (free). It scores it out of 10 and names anything wrong.
 
-**Day 1 tab:** **🚀 To onboard · N** lists everyone still to do. Each starter shows *Not on Databyte / Welcome email to send / Onboarded*.
+**Day 1 tab:** **🚀 To onboard · N** lists everyone still to get the welcome email. Each starter shows *Welcome email to send* or *Onboarded*.
 
 **Who sees it:** admins only. Bookers never see the card, and the Google side refuses them too.
 
