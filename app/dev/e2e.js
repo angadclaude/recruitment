@@ -902,9 +902,9 @@ async function fillEval(p) {
   const fizaPipe = (await api(fizaTok, 'chaseList', {})).items;
   const fNow = fizaPipe.filter(c => chaseWk(c) <= cw), fThis = fNow.filter(c => chaseWk(c) === cw), fCarry = fNow.filter(c => chaseWk(c) < cw);
   ok(fizaPipe.length && fizaPipe.every(c => c.booker_id === fiza.id && BL.includes(c.leak)), 'a booker\'s Chase list is their own people only');
-  ok(await fcp.$('.tabbar button.on[data-tab=chase]') && JSON.stringify(await fcp.$$eval('.tabbar button', b => b.map(x => x.dataset.tab))) === '["mine","chase","pay"]' &&
+  ok(await fcp.$('.tabbar button.on[data-tab=chase]') && JSON.stringify(await fcp.$$eval('.tabbar button', b => b.map(x => x.dataset.tab))) === '["mine","chase","avail","pay"]' &&
     new RegExp('^' + fThis.length + ' to chase this week').test(await fcp.innerText('.card .display')) && await fcp.textContent('.tabbar button[data-tab=chase] .tbadge') === badgeOf(fNow.length, fCarry.length),
-    'Fiza taps it → her Chase tab: "' + fThis.length + ' to chase this week" (tabs: Mine · Chase · Appts Attended)');
+    'Fiza taps it → her Chase tab: "' + fThis.length + ' to chase this week" (tabs: Mine · Chase · New starts · Appts Attended)');
   ok(/📞 Log the call · \d+/i.test(await fcp.innerText('#page')) && await fcp.$('.ccard .quick [data-out]'), 'grouped by what to do, with Call / WhatsApp / Log outcome on each');
   ok(!(await fcp.$('#chasePdf')), 'no Chase PDF for a booker (admins only, like the All tab\'s)');
   await shot(fcp, '26-chase-booker', true);
