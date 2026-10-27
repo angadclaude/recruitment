@@ -47,6 +47,8 @@ const CONFIG = {
   BOOK_TIME: '10:00',             // presentations: Mon–Fri at 10:00
   BOOK_REMIND_TIME: '18:00',      // the evening before (Sunday for Monday's): whoever booked them gets "N to remind for tomorrow"
   BOOK_MISSED_TIME: '10:30',      // on the day: anyone booked who hasn't checked in by now "didn't come" (and their booker is told)
+  D1_RESULTS_TIME: '09:00',       // the morning after a Day 1: the results to admins (Angad's Tuesday list, 27 Oct)
+  OFFICE_BOOKERS: ['Fiza Iqbal'],  // with the admins, "Office" in the results' starts by booker (bookings made from the office)
   AVAIL_REMIND_TIME: '18:00',     // new starters with no Week 1 days yet → the people who fill it in (Angad, Satpal, delegates, admins)
   EMAIL_ALERTS: false,            // true = also email every alert. Push is used when OneSignal keys are set.
   SESSION_DAYS: 30,               // staff stay logged in for this long
@@ -139,7 +141,9 @@ const SHEETS = {
     'outcome_log',  // every call outcome logged, oldest first: [{at, by, o: outcome, d: Day 1 date, cb: call back at, late: 1, n: notes}]
     'callback_at', 'callback_by_id', 'callback_nudged',  // "Thinking it over": when they asked to be called back, who logged it (gets the reminder), reminder sent for
     'booking_id', 'booking_note',  // booked from the app after a call (Bookings tab): which booking, and the notes for the presenter
-    'campaign',  // not used: the campaign always follows the company, JUSS = HF, LINK = FR (Angad, 26 Oct). Kept: columns are by position
+    'campaign',  // HF / FR: where they're placed, set on Day 1. Blank = their company's (JUSS = HF, LINK = FR). Angad's 26 Oct
+                 // list: 6 JUSS starters went to FR, so the company alone can't say (27 Oct)
+    'day1_left_at', 'day1_left_by',  // arrived on Day 1 but didn't come back after it (still a Day 1 start)
   ],
   // Presentations booked after a call. status: booked · came (checked in) · no_show (rebooked after missing it) · cancelled.
   // Each message sent (confirmation, reminder, "sorry we missed you"): when, by whom, how.
@@ -156,7 +160,7 @@ const SHEETS = {
   // starter, kept for good (his call): name and mobile are copied in, so the 6-month clear-out of Candidates doesn't touch it.
   // w1 / w2: Monday to Sunday, one letter a day: I = in, O = out, - = not said yet.
   Availability: ['id', 'created_at', 'week_ending', 'candidate_id', 'day1_date', 'full_name', 'mobile', 'company', 'coach_id', 'coach_name',
-    'driver', 'w1', 'w2', 'notes', 'has_photo', 'updated_at', 'updated_by'],
+    'driver', 'w1', 'w2', 'notes', 'has_photo', 'updated_at', 'updated_by', 'campaign'],
   StarterPhotos: ['id', 'data', 'updated_at'],  // one photo per Availability row (same id), a small JPEG as a data: URL
 };
 
@@ -991,7 +995,7 @@ function shape(c, u) {
   o.non_qual = nonQualifier(c);
   o.deadline = outcomeDeadline(c.attended_date);
   o.first_name = c.full_name.split(' ')[0];
-  if (isAdmin(u)) o.recruit_source = recruitSourceOf(c);
+  if (isAdmin(u)) { o.recruit_source = recruitSourceOf(c); o.office = isOffice(c.booker_name, c.booker_id); }  // office: "Office" in the Day 1 results
   // Walked out: their booker still sees them, but not how to reach them (Angad, 20 Oct: "not be able to call them")
   if (walkedOut(c) && !isAdmin(u)) { o.mobile = ''; o.email = ''; }
   return o;
@@ -1200,6 +1204,35 @@ function fixEligibility(req, u) {
   });
 }
 
+/** Where a starter goes, HF or FR, set on Day 1 (Angad, 27 Oct: his list had JUSS starters placed in FR). '' = their company's. */
+function setCampaign(req, u) {
+  if (!isAdmin(u)) throw new Error('Admin only');
+  if (['HF', 'FR', ''].indexOf(req.campaign) < 0) throw new Error('HF or FR');
+  const c = withLock(() => {
+    const c = getC(req.id);
+    c.campaign = req.campaign; writeRow('Candidates', c);
+    readTable('Availability').filter(r => r.candidate_id === c.id).forEach(r => { r.campaign = campaignOf(c); writeRow('Availability', r); });
+    return c;
+  });
+  log(u, 'campaign', c.id, campaignOf(c));
+  return shape(c, u);
+}
+/** HF or FR: the one picked on Day 1, else their company's (JUSS = HF, LINK = FR). */
+function campaignOf(c) { return c.campaign === 'HF' || c.campaign === 'FR' ? c.campaign : c.company === 'JUSS' ? 'HF' : 'FR'; }
+/** A name typed wrong at check-in ("Mel Anouman" → "Mel Abraham" on 26 Oct's list): fixed everywhere it shows. */
+function fixName(req, u) {
+  if (!isAdmin(u)) throw new Error('Admin only');
+  const name = cleanName(req.full_name);
+  if (name.split(' ').length < 2) throw new Error('First and last name, please.');
+  const res = withLock(() => {
+    const c = getC(req.id), was = c.full_name;
+    c.full_name = name; writeRow('Candidates', c);
+    readTable('Availability').filter(r => r.candidate_id === c.id).forEach(r => { r.full_name = name; writeRow('Availability', r); });
+    return { c: c, was: was };
+  });
+  log(u, 'name_fixed', res.c.id, res.was + ' → ' + name);
+  return shape(res.c, u);
+}
 function reassignBooker(req, u) {
   if (!isAdmin(u)) throw new Error('Admin only');
   return withLock(() => {
@@ -1538,6 +1571,7 @@ const STAFF_ACTIONS = {
   chaseOutcomes: chaseOutcomes, chaseList: chaseList, academyList: academyList, markDay1: markDay1, markConfirmed: markConfirmed,
   onboardStep: onboardStep, onboardPreview: onboardPreview, onboardSend: onboardSend, setBrand: setBrand,
   saveBooking: saveBooking, bookingAction: bookingAction, bookingList: bookingList,
+  setCampaign: setCampaign, fixName: fixName,
   availWeek: availWeek, saveAvail: saveAvail, addStarter: addStarter, removeStarter: removeStarter, saveStarterPhoto: saveStarterPhoto, availPhotos: availPhotos,
 };
 
@@ -1562,17 +1596,18 @@ function availRows(we) {
         // Coach = whoever booked them; if they've left, whoever took over from them (Fiza → Angad)
         const b = userById(c.booker_id), coach = b && !truthy(b.active) ? successorOf(b) || b : b;
         appendRow('Availability', { id: uid(), created_at: nowStr(), week_ending: we, candidate_id: c.id, day1_date: c.academy_date, full_name: c.full_name, mobile: c.mobile,
-          company: c.company === 'JUSS' ? 'JUSS' : 'LINK', coach_id: coach ? coach.id : '', coach_name: coach ? coach.name : c.booker_name, driver: '', w1: AV_BLANK, w2: AV_BLANK, notes: '' });
+          company: c.company === 'JUSS' ? 'JUSS' : 'LINK', campaign: campaignOf(c), coach_id: coach ? coach.id : '', coach_name: coach ? coach.name : c.booker_name, driver: '', w1: AV_BLANK, w2: AV_BLANK, notes: '' });
       });
     });
     rows = readTable('Availability').filter(r => r.week_ending === we);
   }
-  return rows.filter(r => !r.candidate_id || !byId[r.candidate_id] || byId[r.candidate_id].day1_status === 'arrived' || availFilled(r)).map(r => {
+  const still = c => c.day1_status === 'arrived' && !c.day1_left_at;  // didn't continue after Day 1: off the list (unless filled in)
+  return rows.filter(r => !r.candidate_id || !byId[r.candidate_id] || still(byId[r.candidate_id]) || availFilled(r)).map(r => {
     const c = byId[r.candidate_id];
     return { id: r.id, week_ending: r.week_ending, candidate_id: r.candidate_id, day1_date: r.day1_date, full_name: r.full_name, mobile: r.mobile,
-      company: r.company, coach_id: r.coach_id, coach_name: r.coach_name, driver: r.driver, w1: r.w1 || AV_BLANK, w2: r.w2 || AV_BLANK, notes: r.notes,
+      company: r.company, campaign: c ? campaignOf(c) : r.campaign || (r.company === 'JUSS' ? 'HF' : 'FR'), coach_id: r.coach_id, coach_name: r.coach_name, driver: r.driver, w1: r.w1 || AV_BLANK, w2: r.w2 || AV_BLANK, notes: r.notes,
       has_photo: truthy(r.has_photo), updated_at: r.updated_at, updated_by: r.updated_by, manual: !r.candidate_id,
-      said_days: c ? c.q6_days : '', no_longer: !!(c && c.day1_status !== 'arrived') };
+      said_days: c ? c.q6_days : '', no_longer: !!(c && !still(c)), left: !!(c && c.day1_left_at) };
   });
 }
 function availWeek(req, u) {
@@ -1621,7 +1656,7 @@ function addStarter(req, u) {
   const we = weekEnding(/^\d{4}-\d\d-\d\d$/.test(req.weekEnding || '') ? req.weekEnding : todayStr()), coach = req.coach_id ? userById(req.coach_id) : null;
   const day1 = /^\d{4}-\d\d-\d\d$/.test(req.day1_date || '') && weekEnding(req.day1_date) === we ? req.day1_date : addDays(we, -6);
   const r = withLock(() => appendRow('Availability', { id: uid(), created_at: nowStr(), week_ending: we, candidate_id: '', day1_date: day1, full_name: name, mobile: mobile,
-    company: req.company, coach_id: coach ? coach.id : '', coach_name: coach ? coach.name : '', driver: '', w1: AV_BLANK, w2: AV_BLANK, notes: '', updated_at: nowStr(), updated_by: u.name }));
+    company: req.company, campaign: req.company === 'JUSS' ? 'HF' : 'FR', coach_id: coach ? coach.id : '', coach_name: coach ? coach.name : '', driver: '', w1: AV_BLANK, w2: AV_BLANK, notes: '', updated_at: nowStr(), updated_by: u.name }));
   log(u, 'availability_add', '', name + ' (w/e ' + we + ')');
   return availRows(we).filter(x => x.id === r.id)[0];
 }
@@ -1872,6 +1907,7 @@ function keepWarm() {
   try { backfillOutcomes(); } catch (e) { console.error(e); }
   try { undoHandoverOpen(); } catch (e) { console.error(e); }  // once
   try { maybeAvailReminder(); } catch (e) { console.error(e); }
+  try { maybeDay1Results(); } catch (e) { console.error(e); }
   maybeDailyDigest();
   maybeThanksReminder();
   try { maybeCallbackReminders(); } catch (e) { console.error(e); }
@@ -2078,12 +2114,21 @@ function backfillOutcomes() {
  *  no-show. prev_day undoes it. dropped: they've pulled out (Angad, 26 Oct), before the day or on it: off the reminders and the
  *  expected count, at the bottom of the list; '' puts them back. */
 function markDay1(req, u) {
-  if (['arrived', 'no_show', 'dropped', 'next_day', 'prev_day', ''].indexOf(req.status) < 0) throw new Error('Choose arrived, no-show or dropped out');
+  if (['arrived', 'no_show', 'dropped', 'next_day', 'prev_day', 'left', 'stayed', ''].indexOf(req.status) < 0) throw new Error('Choose arrived, no-show or dropped out');
   const move = req.status === 'next_day' || req.status === 'prev_day';
   return withLock(() => {
     const c = getC(req.id);
     if (!fullAccess(u, c)) throw new Error('No access');
     if (c.outcome !== 'Academy booked') throw new Error('They aren\'t booked onto the Academy.');
+    // Came on Day 1 but didn't come back after it (Angad's Tuesday list, 27 Oct): still a Day 1 start, off availability. stayed = undo.
+    if (req.status === 'left' || req.status === 'stayed') {
+      if (c.day1_status !== 'arrived') throw new Error('Only someone who arrived on Day 1 can be marked as not continuing.');
+      c.day1_left_at = req.status === 'left' ? nowStr() : ''; c.day1_left_by = req.status === 'left' ? u.name : '';
+      writeRow('Candidates', c);
+      log(u, 'day1_' + req.status, c.id, '');
+      return shape(c, u);
+    }
+    if (req.status !== 'arrived') { c.day1_left_at = ''; c.day1_left_by = ''; }
     if (req.status && !move && req.status !== 'dropped' && c.academy_date > todayStr()) throw new Error('Their Day 1 hasn\'t happened yet.');
     if (move) {
       const from = c.academy_date, to = addDays(from, req.status === 'next_day' ? 1 : -1);
@@ -2109,6 +2154,38 @@ function markConfirmed(req, u) {
     return shape(c, u);
   });
 }
+/** Day 1 results (Angad, 27 Oct: what the team marks up on the printed list and brings him on Tuesday morning): how many
+ *  started of everyone booked, FR / HF, who didn't continue after the day, starts by booker ("Office" for admins and the
+ *  office team), and why the rest didn't start. Counted the same way as the Day 1 tab's results card (d1Results there). */
+function isOffice(name, id) { const b = id ? userById(id) : null; return !!(b && isAdmin(b)) || (CONFIG.OFFICE_BOOKERS || []).some(n => normName(n) === normName(name)); }
+function day1Results(date) {
+  const l = readTable('Candidates').filter(c => c.outcome === 'Academy booked' && c.admin_status !== 'rejected' && c.admin_status !== 'pending' && c.academy_date === date);
+  const started = l.filter(c => c.day1_status === 'arrived'), by = {};
+  started.forEach(c => { const k = !c.booker_name ? 'No booker' : isOffice(c.booker_name, c.booker_id) ? 'Office' : String(c.booker_name).split(' ')[0]; by[k] = (by[k] || 0) + 1; });
+  const rest = l.filter(c => c.day1_status !== 'arrived' && c.day1_status !== 'dropped');
+  return { date: date, booked: l.length, started: started.length, fr: started.filter(c => campaignOf(c) === 'FR').length, hf: started.filter(c => campaignOf(c) === 'HF').length,
+    left: started.filter(c => c.day1_left_at).length, dropped: l.filter(c => c.day1_status === 'dropped').length,
+    noShow: rest.filter(c => c.day1_status === 'no_show' || c.academy_confirmed_at).length, notConfirmed: rest.filter(c => c.day1_status !== 'no_show' && !c.academy_confirmed_at).length,
+    byBooker: Object.keys(by).map(k => [k, by[k]]).sort((a, b) => b[1] - a[1] || (a[0] === 'Office' ? -1 : b[0] === 'Office' ? 1 : a[0].localeCompare(b[0]))) };
+}
+function day1ResultsText(x) {
+  const not = [x.dropped ? x.dropped + ' dropped out' : '', x.notConfirmed ? x.notConfirmed + ' didn\'t confirm' : '', x.noShow ? plural(x.noShow, 'no-show') : ''].filter(String);
+  return { title: '🎓 Day 1 ' + longDate(x.date).split(' ').slice(0, 3).join(' ') + ': ' + x.started + ' of ' + x.booked + ' started',
+    body: 'FR ' + x.fr + ' · HF ' + x.hf + (x.left ? ' · ' + x.left + ' didn\'t continue' : '') + '\n' + x.byBooker.map(b => b[0] + ' ' + b[1]).join(' · ') + (not.length ? '\nDidn\'t start: ' + not.join(', ') : '') };
+}
+/** The morning after a Day 1 (CONFIG.D1_RESULTS_TIME): the results to the admins, once. Tap → the Day 1 tab. */
+function maybeDay1Results() {
+  const now = nowStr(), today = now.slice(0, 10), hm = now.slice(11, 16), day = addDays(today, -1);
+  if (hm < (CONFIG.D1_RESULTS_TIME || '09:00') || hm > '20:59') return;
+  const p = PropertiesService.getScriptProperties();
+  if (p.getProperty('D1_RESULTS') === day) return;
+  p.setProperty('D1_RESULTS', day);
+  const x = day1Results(day);
+  if (!x.booked) return;
+  const t = day1ResultsText(x);
+  notify(usersAll().filter(u => truthy(u.active) && isAdmin(u)), t.title, t.body, 'academy');
+}
+
 /** 18:00 the evening before an Academy day: each booker gets their starters (✅ confirmed / ⏳ not yet), admins the full count.
  *  Nobody starting tomorrow = no message. Tapping it opens the Day 1 list. */
 function maybeAcademyBriefing() {
