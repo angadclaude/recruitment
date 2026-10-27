@@ -48,6 +48,7 @@ const CONFIG = {
   BOOK_REMIND_TIME: '18:00',      // the evening before (Sunday for Monday's): whoever booked them gets "N to remind for tomorrow"
   BOOK_MISSED_TIME: '10:30',      // on the day: anyone booked who hasn't checked in by now "didn't come" (and their booker is told)
   D1_RESULTS_TIME: '09:00',       // the morning after a Day 1: the results to admins (Angad's Tuesday list, 27 Oct)
+  D1_RESULTS_FROM: '2026-11-02',  // the first Day 1 with FR / HF set in the app (26 Oct's were only on paper): no alert with a wrong split
   OFFICE_BOOKERS: ['Fiza Iqbal'],  // with the admins, "Office" in the results' starts by booker (bookings made from the office)
   AVAIL_REMIND_TIME: '18:00',     // new starters with no Week 1 days yet → the people who fill it in (Angad, Satpal, delegates, admins)
   EMAIL_ALERTS: false,            // true = also email every alert. Push is used when OneSignal keys are set.
@@ -2180,6 +2181,7 @@ function maybeDay1Results() {
   const p = PropertiesService.getScriptProperties();
   if (p.getProperty('D1_RESULTS') === day) return;
   p.setProperty('D1_RESULTS', day);
+  if (day < (CONFIG.D1_RESULTS_FROM || '')) return;
   const x = day1Results(day);
   if (!x.booked) return;
   const t = day1ResultsText(x);

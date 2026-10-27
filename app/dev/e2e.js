@@ -2013,7 +2013,12 @@ async function fillEval(p) {
     try { require('child_process').execFileSync('pdftoppm', ['-png', '-r', '70', '-singlefile', rPath, `${SHOTS}/55-day1-results`]); } catch (e) { /* no renderer here */ }
     // 09:00 the next morning: the results come to the admins by themselves
     await post('/dev/props', { D1_RESULTS: '' });
+    const fromWas = (await post('/dev/eval', { js: 'CONFIG.D1_RESULTS_FROM' })).out;
     await setTime('2026-10-20T09:05:00+01:00');
+    const pBefore = (await getJson('/dev/pushes')).length;
+    await post('/dev/run', { fn: 'maybeDay1Results' });
+    ok(fromWas === '2026-11-02' && (await getJson('/dev/pushes')).length === pBefore, 'the first results alert is for Day 1 on Mon 2 Nov (26 Oct\'s FR / HF were only on paper): none before');
+    await post('/dev/props', { D1_RESULTS: '' }); await post('/dev/eval', { js: 'CONFIG.D1_RESULTS_FROM = ""; "ok"' });
     const p0 = (await getJson('/dev/pushes')).length;
     await post('/dev/run', { fn: 'maybeDay1Results' });
     const d1p = (await getJson('/dev/pushes')).slice(p0).filter(x => /^🎓 Day 1 /.test(x.body.headings.en)), p1 = (await getJson('/dev/pushes')).length;
@@ -2023,6 +2028,7 @@ async function fillEval(p) {
     ok(d1p.length >= 1 && !d1again && d1p.every(x => x.body.headings.en === '🎓 Day 1 Monday 19th October: 2 of 2 started') && d1p.some(x => x.body.include_aliases.external_id.includes(angadU.id)) &&
       /^FR 2 · HF 0 · 1 didn't continue\nOffice 1 · Abdullahi 1/.test(d1p[0].body.contents.en) && d1p[0].body.web_url.endsWith('?c=academy'),
       '09:00 the morning after: "' + (d1p[0] ? d1p[0].body.headings.en + ' · ' + d1p[0].body.contents.en.replace(/\n/g, ' · ') : 'none') + '" → admins (once), tap → Day 1');
+    await post('/dev/eval', { js: 'CONFIG.D1_RESULTS_FROM = "' + fromWas + '"; "ok"' });
     // Undo, and put everything back for the rest of the run
     await api(admin, 'markDay1', { id: jasId, status: 'stayed' }); await api(admin, 'setCampaign', { id: adham.id, campaign: '' });
     ok(!(await api(admin, 'getCandidate', { id: jasId })).day1_left_at && JSON.parse((await post('/dev/eval', { js: `JSON.stringify(day1Results('${D1}'))` })).out).fr === 1,
