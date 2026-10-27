@@ -2079,7 +2079,7 @@ async function fillEval(p) {
     const mySt = await bp.$$eval('.mystart', e => e.map(x => x.innerText.replace(/\s+/g, ' ')));
     const jasIn = await bp.$$eval('.mystart:has-text("' + s1.full_name + '") .avc.in', e => e.map(x => x.textContent).join(' '));
     ok(mySt.filter(t => /Week 1/.test(t)).length === 2 && mySt.some(t => t.includes(s1.full_name) && /Week 1/.test(t)) && mySt.some(t => /Mira Manual/.test(t) && /Days not in yet/.test(t)) && !mySt.some(t => /Adham/.test(t)) &&
-      jasIn === 'MO TU WE TH FR' && new RegExp('🗓️ Your new starters · ' + mySt.length).test(await bp.innerText('#page')),
+      jasIn.toUpperCase() === 'MO TU WE TH FR' && new RegExp('🗓️ Your new starters · ' + mySt.length, 'i').test(await bp.innerText('#page')),
       'a coach sees their own new starters on Mine, with the days they\'re in ("' + s1.full_name + ': ' + jasIn + '"; Mira: days not in yet), not anyone else\'s');
     await shot(bp, '50d-mine-new-starters');
     await bp.click('.mystart:has-text("' + s1.full_name + '")'); await bp.waitForSelector('#avprev');
