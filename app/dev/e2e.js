@@ -2138,11 +2138,14 @@ async function fillEval(p) {
       (await ap.$$eval('.avbell a', a => a.map(x => x.href))).join() === 'https://docs.google.com/spreadsheets/d/' + FRID + '/edit,https://docs.google.com/spreadsheets/d/' + HFID + '/edit',
       'availability shows the admins the bell sheets card: "' + bellTxt.split('\n').slice(0, 3).join(' · ') + '"');
     await ap.click('#avbellset'); await ap.waitForSelector('#bsHF');
-    const bsWas = await ap.inputValue('#bsFR');
+    const bsWas = await ap.inputValue('#bsFR'), bsWasHF = await ap.inputValue('#bsHF');
+    await ap.fill('#bsFR', ''); await ap.fill('#bsHF', ''); await ap.click('#bssave'); await ap.waitForSelector('#bserr .err');
+    const bsEmpty = await ap.innerText('#bserr');
+    await ap.fill('#bsFR', bsWas); await ap.fill('#bsHF', bsWasHF);
     await ap.fill('#bsHF', 'not a link'); await ap.click('#bssave'); await ap.waitForSelector('#bserr .err, #bserr:not(:empty)');
     const bsErr = await ap.innerText('#bserr');
     await ap.click('#bscancel'); await ap.waitForSelector('#bsHF', { state: 'detached' });
-    ok(bsWas === 'https://docs.google.com/spreadsheets/d/' + FRID + '/edit' && /doesn't look like a Google Sheets link \(HF\)/.test(bsErr) &&
+    ok(bsWas === 'https://docs.google.com/spreadsheets/d/' + FRID + '/edit' && /doesn't look like a Google Sheets link \(HF\)/.test(bsErr) && /Paste each bell sheet's link into its box first/.test(bsEmpty) &&
       (await api(admin, 'availWeek', { weekEnding: WE })).bell.sheets.find(x => x.key === 'HF').url.includes(HFID),
       '🔗 Change the links: the current ones are filled in; something that isn\'t a link is refused ("' + bsErr.trim() + '"), and nothing changes');
     // A = one of the best new starts (Angad, 27 Oct: "so I can just tap on that"): green, one tap on and one off, for the people
