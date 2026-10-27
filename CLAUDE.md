@@ -141,6 +141,11 @@ This replaces the "Juss & Link - NS Availability - 2026" Google Sheet (a W1 / Pi
   - **Who fills it in:** the one-to-one on Day 1 is done by Angad, Satpal or someone they delegate. Editors are `canAvail` = admins plus anyone ticked **Availability** in Team.
   - **Everyone can view, phone numbers included**, like the sheet.
   - **Kept for good:** numbers, notes and photos. The 6-month clear-out only touches Candidates.
+  - **Anyone can be removed (Angad, 27 Oct):** editors tap them → **🗑️ Remove from availability** (two taps).
+    - `removeStarter` sets `removed_at` / `_by`, so the row stays and Day 1 doesn't add them back.
+    - They're off the list, the poster, the PDF and the alerts.
+    - **↩️ Put back** (`restoreStarter`) at the top of the list returns them as they were.
+  - **Pictures on availability and the Day 1 list are cropped to the face** (`avThumb` / `fillThumbs`, 168 × 200, made once per photo), and on availability they're bigger (64 × 76).
   - **Pictures:** a photo of each starter; the app makes the poster.
 - **The poster (Angad, 27 Oct, don't redesign it):**
   - **Kept from the app's poster:** the top (JUSS | LINK, 🎉 "WELCOME OUR NEW STARTERS", "WEEK 1 | DAY 1 W/E dd/mm/yyyy"), the **HELLO FRESH** and **FUNDRAISING** ribbons, and the Mission footer. It's one page, HelloFresh then Fundraising (`drawStarters` in `Bulletin.html`, 1536 × 2304).

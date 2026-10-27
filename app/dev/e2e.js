@@ -1916,9 +1916,16 @@ async function fillEval(p) {
     ok(/Only Angad, Satpal/.test(noAdd || '') && mira.full_name === 'Mira Manual' && mira.manual && mira.day1_date === '2026-10-20' && mira.mobile === '07700900555' && mira.coach_name === 'Fiza Iqbal',
       'admins add someone who started without the app (Mira, Day 1 Tue 20 Oct); bookers can\'t');
     const tmp = await api(admin, 'addStarter', { weekEnding: WE, full_name: 'Temp Person', company: 'JUSS' });
-    let keepApp = null; try { await api(admin, 'removeStarter', { id: s1.id }); } catch (e) { keepApp = e.message; }
-    await api(admin, 'removeStarter', { id: tmp.id });
-    ok(/untick Arrived/.test(keepApp || '') && !(await api(admin, 'availWeek', { weekEnding: WE })).rows.some(r => r.id === tmp.id), 'a hand-added one can be removed; someone from Day 1 can\'t (untick Arrived instead)');
+    // Anyone can be taken off (Angad, 27 Oct: "add option to delete someone"): kept, so Day 1 doesn't add them back, and put back in one tap
+    let bkRm = null; try { await api(abdT, 'removeStarter', { id: s1.id }); } catch (e) { bkRm = e.message; }
+    await api(admin, 'removeStarter', { id: tmp.id }); await api(admin, 'removeStarter', { id: s1.id });
+    const afterRm = await api(admin, 'availWeek', { weekEnding: WE });
+    ok(/Not allowed/.test(bkRm || '') && !afterRm.rows.some(r => r.id === tmp.id || r.id === s1.id) && afterRm.removed.map(x => x.full_name).sort().join() === [s1.full_name, 'Temp Person'].sort().join() &&
+      !(await api(abdT, 'availWeek', { weekEnding: WE })).removed.length,
+      'remove anyone, hand-added (Temp) or from Day 1 (' + s1.full_name + '): off the list, listed as removed for the editors; bookers can\'t');
+    const s1Back = await api(admin, 'restoreStarter', { id: s1.id }), afterBack = await api(admin, 'availWeek', { weekEnding: WE });
+    ok(s1Back && s1Back.w1 === s1b.w1 && s1Back.has_photo && afterBack.rows.some(r => r.id === s1.id) && afterBack.removed.map(x => x.full_name).join() === 'Temp Person',
+      '↩️ put back: ' + s1.full_name + ' returns with their days and photo as they were');
     const abdU = await userOf(abd.id);
     await api(admin, 'saveUser', { user: Object.assign({}, abdU, { roles: ['booker', 'availability'] }) });
     const deleg = await api(abdT, 'availWeek', { weekEnding: WE });
@@ -1976,6 +1983,10 @@ async function fillEval(p) {
     ok(/Started .*Day 1 w\/e/i.test(avTxt) && /Sun 25 Oct/.test(avTxt) && (await ap.$$('.avrow')).length === av.rows.length + 1 && new RegExp(blanks.length + ' with no Week 1 days yet: ' + bNames.join(', '), 'i').test(avTxt) &&
       (await ap.$$eval('.avd i', e => e.map(x => x.textContent)))[0] === String(monIn) && /🚗 1/.test(await ap.innerText('.avdays')) && !!(await ap.$('.avrow img.avph')),
       'Day 1 → 🗓️ Availability: Week 1 w/e 25 Oct, headcount per day (Mon ' + monIn + ', 🚗 1), each starter\'s days, photo, and "' + blanks.length + ' with no Week 1 days yet: ' + bNames.join(', ') + '"');
+    // Pictures on the list: bigger, and cropped to the face (Angad, 27 Oct: "so it's clearly visible")
+    await ap.waitForFunction(() => { const i = document.querySelector('.avrow img[data-thumb]'); return i && i.naturalWidth === 168; }, null, { timeout: 15000 });
+    const thumb = await ap.$eval('.avrow img[data-thumb]', i => i.naturalWidth + '×' + i.naturalHeight + ' shown ' + i.clientWidth + '×' + i.clientHeight);
+    ok(thumb === '168×200 shown 64×76', 'each starter\'s picture on availability is bigger and cropped to the face (' + thumb + ')');
     await shot(ap, '50-availability');
     await ap.click('.avrow:has-text("Mira Manual")'); await ap.waitForSelector('#avw1');
     ok(await ap.$('#avw1 button[data-i="0"][disabled]') && !(await ap.$('#avw1 button[data-i="1"][disabled]')), 'her Monday is before her Day 1 (Tuesday): blank, can\'t be ticked');
@@ -2065,7 +2076,20 @@ async function fillEval(p) {
       /Save (\d+ Images|Image)/.test(iosToast || ''),
       'iPhone: ⬇️ Save opens the Share sheet with the JPEGs ("' + (iosToast || '').trim() + '"), not the grey file page (poster: ' + shared.slice(0, nP).join(', ') + '; bulletin: ' + shared[nP] + ')');
     await iosCtx.close();
+    // 🗑️ Remove from the phone: two taps, then "↩️ Put back" at the top of the list
     await ap.click('.sheet-back', { position: { x: 5, y: 5 } }); await ap.waitForFunction(() => !document.querySelector('.sheet-back'));
+    await ap.click('.avrow:has-text("Mira Manual")'); await ap.waitForSelector('#avdel');
+    await ap.click('#avdel');
+    const armTxt = await ap.textContent('#avdel');
+    await ap.click('#avdel'); await ap.waitForFunction(() => !document.querySelector('.sheet-back'));
+    await ap.waitForSelector('.avgone [data-avback]');
+    const goneTxt = await ap.innerText('.avgone');
+    ok(/Tap again to remove Mira/.test(armTxt) && !(await ap.$('.avrow:has-text("Mira Manual")')) && /Removed this week:[\s\S]*Mira Manual/.test(goneTxt) && !(await api(admin, 'availWeek', { weekEnding: WE })).rows.some(r => r.id === mira.id),
+      '🗑️ Remove from availability (two taps): off the list, and "' + goneTxt.replace(/\n/g, ' ') + '"');
+    await shot(ap, '54-availability-removed');
+    await ap.click('.avgone [data-avback="' + mira.id + '"]'); await ap.waitForSelector('.avrow:has-text("Mira Manual")');
+    const miraBack = (await api(admin, 'availWeek', { weekEnding: WE })).rows.find(r => r.id === mira.id);
+    ok(miraBack && miraBack.has_photo && miraBack.notes === 'Slough | retail' && miraBack.w2 === 'IIIIIOO', '↩️ Put back: Mira is on the list again, days, notes and photo as they were');
     await ap.click('#abMe'); await ap.waitForSelector('#mAvail');
     ok(/New starters' availability/.test(await ap.textContent('#mAvail')), 'everyone has it in the menu: "🗓️ New starters\' availability"');
   }

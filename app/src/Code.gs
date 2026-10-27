@@ -161,7 +161,7 @@ const SHEETS = {
   // starter, kept for good (his call): name and mobile are copied in, so the 6-month clear-out of Candidates doesn't touch it.
   // w1 / w2: Monday to Sunday, one letter a day: I = in, O = out, - = not said yet.
   Availability: ['id', 'created_at', 'week_ending', 'candidate_id', 'day1_date', 'full_name', 'mobile', 'company', 'coach_id', 'coach_name',
-    'driver', 'w1', 'w2', 'notes', 'has_photo', 'updated_at', 'updated_by', 'campaign'],
+    'driver', 'w1', 'w2', 'notes', 'has_photo', 'updated_at', 'updated_by', 'campaign', 'removed_at', 'removed_by'],
   StarterPhotos: ['id', 'data', 'updated_at'],  // one photo per Availability row (same id), a small JPEG as a data: URL
 };
 
@@ -1573,7 +1573,7 @@ const STAFF_ACTIONS = {
   onboardStep: onboardStep, onboardPreview: onboardPreview, onboardSend: onboardSend, setBrand: setBrand,
   saveBooking: saveBooking, bookingAction: bookingAction, bookingList: bookingList,
   setCampaign: setCampaign, fixName: fixName, day1Photo: day1Photo,
-  availWeek: availWeek, saveAvail: saveAvail, addStarter: addStarter, removeStarter: removeStarter, saveStarterPhoto: saveStarterPhoto, availPhotos: availPhotos,
+  availWeek: availWeek, saveAvail: saveAvail, addStarter: addStarter, removeStarter: removeStarter, restoreStarter: restoreStarter, saveStarterPhoto: saveStarterPhoto, availPhotos: availPhotos,
 };
 
 // ───────────────────────── NEW STARTERS' AVAILABILITY (Angad, 27 Oct) ─────────────────────────
@@ -1603,7 +1603,9 @@ function availRows(we) {
     rows = readTable('Availability').filter(r => r.week_ending === we);
   }
   const still = c => c.day1_status === 'arrived' && !c.day1_left_at;  // didn't continue after Day 1: off the list (unless filled in)
-  return rows.filter(r => !r.candidate_id || !byId[r.candidate_id] || still(byId[r.candidate_id]) || availFilled(r)).map(r => {
+  // Removed by an editor (Angad, 27 Oct): off the list, the poster, the PDF and the alerts. The row stays (so Day 1 doesn't add
+  // them back) and can be put back.
+  return rows.filter(r => !r.removed_at).filter(r => !r.candidate_id || !byId[r.candidate_id] || still(byId[r.candidate_id]) || availFilled(r)).map(r => {
     const c = byId[r.candidate_id];
     return { id: r.id, week_ending: r.week_ending, candidate_id: r.candidate_id, day1_date: r.day1_date, full_name: r.full_name, mobile: r.mobile,
       company: r.company, campaign: c ? campaignOf(c) : r.campaign || (r.company === 'JUSS' ? 'HF' : 'FR'), coach_id: r.coach_id, coach_name: r.coach_name, driver: r.driver, w1: r.w1 || AV_BLANK, w2: r.w2 || AV_BLANK, notes: r.notes,
@@ -1616,6 +1618,7 @@ function availWeek(req, u) {
   const we = weekEnding(/^\d{4}-\d\d-\d\d$/.test(req.weekEnding || '') ? req.weekEnding : todayStr());
   const edit = canAvail(u);
   return { weekEnding: we, today: todayStr(), canEdit: edit, rows: availRows(we),
+    removed: edit ? readTable('Availability').filter(r => r.week_ending === we && r.removed_at).map(r => ({ id: r.id, full_name: r.full_name, removed_by: r.removed_by })) : [],
     coaches: edit ? usersAll().filter(x => truthy(x.active) && has(x, 'booker')).map(x => ({ id: x.id, name: x.name, company: x.company })).sort((a, b) => a.name.localeCompare(b.name)) : [] };
 }
 function availRecord(id) {
@@ -1663,13 +1666,18 @@ function addStarter(req, u) {
   log(u, 'availability_add', '', name + ' (w/e ' + we + ')');
   return availRows(we).filter(x => x.id === r.id)[0];
 }
+/** Take anyone off availability (Angad, 27 Oct: "add option to delete someone"). Kept, so they can be put back. */
 function removeStarter(req, u) {
   if (!canAvail(u)) throw new Error('Not allowed');
-  const r = availRecord(req.id);
-  if (r.candidate_id) throw new Error('They came through the app: untick Arrived on Day 1 instead.');
-  withLock(() => { deleteWhere('Availability', x => x.id === r.id); deleteWhere('StarterPhotos', x => x.id === r.id); });
-  log(u, 'availability_remove', '', r.full_name);
-  return { ok: true };
+  const r = withLock(() => { const a = availRecord(req.id); a.removed_at = nowStr(); a.removed_by = u.name; writeRow('Availability', a); return a; });
+  log(u, 'availability_remove', r.candidate_id || '', r.full_name);
+  return { ok: true, id: r.id, full_name: r.full_name };
+}
+function restoreStarter(req, u) {
+  if (!canAvail(u)) throw new Error('Not allowed');
+  const r = withLock(() => { const a = availRecord(req.id); a.removed_at = ''; a.removed_by = ''; a.updated_at = nowStr(); a.updated_by = u.name; writeRow('Availability', a); return a; });
+  log(u, 'availability_restore', r.candidate_id || '', r.full_name);
+  return availRows(r.week_ending).filter(x => x.id === r.id)[0] || null;
 }
 /** The photo taken in the app: a small JPEG (the phone shrinks it first), or '' to take it off. */
 function saveStarterPhoto(req, u) {
@@ -1702,7 +1710,7 @@ function day1Photo(req, u) {
   const c = getC(req.id);
   if (c.day1_status !== 'arrived') throw new Error('Tick them Arrived first.');
   const we = weekEnding(c.academy_date), row = availRows(we).filter(r => r.candidate_id === c.id)[0];
-  if (!row) throw new Error('They aren\'t on availability yet. Pull down to refresh.');
+  if (!row) throw new Error(readTable('Availability').some(r => r.candidate_id === c.id && r.removed_at) ? 'They were taken off availability. Put them back there first.' : 'They aren\'t on availability yet. Pull down to refresh.');
   saveStarterPhoto({ id: row.id, data: req.data }, u);
   return { avail_id: row.id, weekEnding: we, has_photo: !!req.data };
 }
