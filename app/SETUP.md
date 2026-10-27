@@ -309,6 +309,8 @@ No more highlighters on the printed list:
   - **📤 Share to WhatsApp** sends it. **⬇️ Save** on an iPhone opens the Share sheet: tap **Save Image** and it's in Photos (the daily bulletin's Save works the same way).
   - **Photos:** take or pick one and the app finds their face and frames it head and shoulders. Drag, pinch or use the slider if it needs moving, then **✅ Use photo**. **✂️ Adjust** re-frames a saved one.
   - **Coach → 🏢 Office** makes someone show as OFFICE (bookings by admins already do).
+- **🗑️ Remove someone:** tap them → **🗑️ Remove from availability** → tap again. They come off the list, the poster, the PDF and the alerts. Changed your mind? **↩️ Put back** at the top of the list.
+- **Pictures:** everyone's picture on the list is cropped to their face, so you can see who's who.
 - **📄 PDF:** the old sheet's layout, Monday to Sunday IN / OUT, a table per campaign.
 
 ## The numbers: one meaning everywhere (Angad, 26 Oct)

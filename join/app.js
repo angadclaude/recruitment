@@ -1,4 +1,4 @@
-window.APP_VERSION = 'd5643ce0';
+window.APP_VERSION = '655a7e15';
 
 (function () {
 'use strict';
@@ -2208,7 +2208,7 @@ function viewAvail(quiet) {
     const w = r[key], ph = (S.avPh || {})[r.id], said = saidDays(r.said_days), short = wk === 1 && said && /[IO]/.test(w) && avIn(w) < said;
     const tag = edit ? 'button type="button"' : 'div';
     return '<' + tag + ' class="item avrow" data-av="' + h(r.id) + '">' +
-      (ph ? '<img class="av avph" src="' + ph + '" alt="">' : '<span class="av co-' + (avCamp(r) === 'HF' ? 'JUSS' : 'LINK') + '">' + h(initials(r.full_name)) + '</span>') +
+      (ph ? '<img class="av avph avpic" src="' + (thumbNow(r.id) || ph) + '" data-thumb="' + h(r.id) + '" alt="">' : '<span class="av avpic co-' + (avCamp(r) === 'HF' ? 'JUSS' : 'LINK') + '">' + h(initials(r.full_name)) + '</span>') +
       '<div class="main"><div class="name">' + h(r.full_name) + '</div>' +
       '<div class="sub">' + (r.coach_name ? 'Coach ' + h(r.coach_name.split(' ')[0]) + ' · ' : '') + (r.mobile ? (edit ? h(r.mobile) : '<a href="tel:' + h(r.mobile) + '">' + h(r.mobile) + '</a>') + ' · ' : '') + 'Day 1 ' + h(fmt(r.day1_date)) + '</div>' +
       '<div class="avchips">' + w.split('').map((x, i) => '<span class="avc ' + (pre(r, i) ? 'pre' : x === 'I' ? 'in' : x === 'O' ? 'out' : 'na') + '">' + AV_DAY[i].slice(0, 2) + '</span>').join('') + '</div>' +
@@ -2217,13 +2217,20 @@ function viewAvail(quiet) {
       (r.notes ? '<div class="small muted avnote">' + h(r.notes) + '</div>' : '') + '</div></' + (edit ? 'button' : 'div') + '>';
   };
   const group = (co, label) => { const l = rows.filter(r => avCamp(r) === (co === 'JUSS' ? 'HF' : 'FR')); return l.length ? '<div class="section-h"><b>' + label + '</b><span>' + l.length + '</span></div><div class="list">' + l.map(card).join('') + '</div>' : ''; };
-  const page = paint('Availability', top + strip + warn + tools +
+  // Taken off (Angad, 27 Oct): kept, and one tap puts them back
+  const gone = edit && (d.removed || []).length ? '<div class="card tight small avgone"><b>Removed this week:</b> ' + d.removed.map(x => '<span class="avback">' + h(x.full_name) +
+    ' <button type="button" class="btn ghost sm" data-avback="' + h(x.id) + '">↩️ Put back</button></span>').join(' ') + '</div>' : '';
+  const page = paint('Availability', top + strip + warn + tools + gone +
     (rows.length ? group('JUSS', 'HelloFresh') + group('LINK', 'Fundraising') : empty('🗓️', we > addDays(thisWe, -7) && we >= thisWe ? 'Nobody\'s started this week yet. Starters appear here when they\'re ticked Arrived on Day 1.' : 'Nobody started that week.')) +
-    '<p class="hint">' + (edit ? 'Tap a starter to fill in their days (tap a day: in → out → not said), driver, notes and photo. ' : '') +
+    '<p class="hint">' + (edit ? 'Tap a starter to fill in their days (tap a day: in → out → not said), driver, notes and photo, or to remove them. ' : '') +
       'Week 1 is their Day 1 week, Week 2 the week after. Everyone who started is here as soon as they\'re ticked Arrived on Day 1, with the photo taken there (📷 on the Day 1 list); their coach is whoever booked them. Days stay blank until the one-to-one (Tuesday afternoon); at 17:00 you hear it\'s ready, or who\'s missing. ' +
       (edit ? 'Days changed after the one-to-one? Their coach gets an alert. ' : 'Only Angad, Satpal and the people they pick can change it. ') + 'Every week is kept: ‹ › to go back.</p>', quiet, true);
   bindAvail(page, go, we);
   page.querySelectorAll('[data-av]').forEach(b => { if (edit) b.onclick = () => availSheet(rows.filter(r => r.id === b.dataset.av)[0], we, wk); });
+  page.querySelectorAll('[data-avback]').forEach(b => {
+    b.onclick = () => { busy(b, true, '…'); call('restoreStarter', { id: b.dataset.avback }).then(() => loadAvail(we)).then(() => { render(true); toast('Put back ✓'); }).catch(e => { busy(b, false); toast(e.message); }); };
+  });
+  fillThumbs(page);
   const ps = page.querySelector('#avposter'); if (ps) ps.onclick = () => availPoster(we, wk, rows);
   const pd = page.querySelector('#avpdf'); if (pd) pd.onclick = () => savePdf(availPdf(we, wk, rows), avName(we, wk) + '.pdf');
   const ad = page.querySelector('#avadd'); if (ad) ad.onclick = () => addStarterSheet(we, d.coaches);
@@ -2246,7 +2253,7 @@ function availSheet(r, we, wk) {
   const said = saidDays(r.said_days);
   const back = document.createElement('div');
   back.className = 'sheet-back';
-  const ph = () => st.photo ? '<img class="av lg avph" src="' + st.photo + '" alt="">' : '<span class="av lg co-' + h(r.company) + '">' + h(initials(r.full_name)) + '</span>';
+  const ph = () => st.photo ? '<img class="av lg avph avpic" src="' + (thumbNow(r.id) || st.photo) + '" data-thumb="' + h(r.id) + '" alt="">' : '<span class="av lg avpic co-' + h(r.company) + '">' + h(initials(r.full_name)) + '</span>';
   back.innerHTML = '<div class="sheet" role="dialog" aria-label="Availability"><div class="grab"></div>' +
     '<div class="sheet-h"><span id="avph">' + ph() + '</span><div style="min-width:0"><div class="label muted">' + (avCamp(r) === 'HF' ? 'HelloFresh' : 'Fundraising') + ' · Day 1 ' + h(fmt(r.day1_date)) + '</div><div class="display">' + h(r.full_name) + '</div></div></div>' +
     '<div id="avf"><div class="row" style="gap:8px;margin:2px 0 6px"><label class="btn ghost sm" style="margin:0">📷 ' + (st.photo ? 'New photo' : 'Add photo') + '<input type="file" id="avcam" accept="image/*" hidden></label>' +
@@ -2262,7 +2269,7 @@ function availSheet(r, we, wk) {
       (r.coach_id && r.coach_id !== 'office' && !(d.coaches || []).some(c => c.id === r.coach_id) ? '<option value="' + h(r.coach_id) + '" selected>' + h(r.coach_name) + '</option>' : '') + '</select>' +
     '<label class="q">Notes</label><textarea id="avnotes" class="short" placeholder="Where they live, background… (e.g. Windsor | Law graduate)">' + h(r.notes) + '</textarea>' +
     '<div id="averr"></div><button class="btn block" id="avsave" style="margin-top:14px">Save</button>' +
-    (r.manual ? '<button class="btn ghost block" id="avdel" style="margin-top:8px;color:var(--red)">Remove from the list</button>' : '') +
+    '<button class="btn ghost block" id="avdel" style="margin-top:8px;color:var(--red)">🗑️ Remove from availability</button>' +
     '<button class="btn ghost block" id="avcancel" style="margin-top:8px">Cancel</button></div></div>';
   document.body.appendChild(back);
   document.body.style.overflow = 'hidden';
@@ -2278,7 +2285,7 @@ function availSheet(r, we, wk) {
   back.querySelector('#avcancel').onclick = () => closeSheet();
   const setPhoto = (data, btn) => call('saveStarterPhoto', { id: r.id, data: data }).then(() => {
     st.photo = data; S.avPh = S.avPh || {}; if (data) S.avPh[r.id] = data; else delete S.avPh[r.id];
-    r.has_photo = !!data; back.querySelector('#avph').innerHTML = ph(); back.querySelector('#avphx').hidden = back.querySelector('#avphadj').hidden = !data; toast(data ? 'Photo saved ✓' : 'Photo removed');
+    r.has_photo = !!data; back.querySelector('#avph').innerHTML = ph(); fillThumbs(back); back.querySelector('#avphx').hidden = back.querySelector('#avphadj').hidden = !data; toast(data ? 'Photo saved ✓' : 'Photo removed');
   }).catch(e => toast(e.message)).then(() => { if (btn) busy(btn, false); });
   back.querySelector('#avcam').onchange = e => {
     const file = e.target.files && e.target.files[0]; e.target.value = ''; if (!file) return;
@@ -2286,17 +2293,48 @@ function availSheet(r, we, wk) {
   };
   back.querySelector('#avphadj').onclick = () => { if (st.photo) framePhoto(st.photo, r.full_name).then(data => { if (data) setPhoto(data); }).catch(() => toast('Couldn\'t open that photo.')); };
   back.querySelector('#avphx').onclick = e => { busy(e.currentTarget, true, 'Removing…'); setPhoto('', e.currentTarget); };
+  // Anyone can be taken off (Angad, 27 Oct). Two taps, and "↩️ Put back" on the list undoes it.
   const del = back.querySelector('#avdel');
-  if (del) { let armed = false; del.onclick = () => {
-    if (!armed) { armed = true; del.textContent = 'Tap again to remove'; return; }
-    call('removeStarter', { id: r.id }).then(() => { d.rows = d.rows.filter(x => x.id !== r.id); closeSheet(); render(true); toast('Removed'); }).catch(x => toast(x.message));
-  }; }
+  let armed = false;
+  del.onclick = () => {
+    if (!armed) { armed = true; del.textContent = 'Tap again to remove ' + r.full_name.split(' ')[0]; return; }
+    busy(del, true, 'Removing…');
+    call('removeStarter', { id: r.id }).then(x => {
+      d.rows = d.rows.filter(y => y.id !== r.id); d.removed = (d.removed || []).concat([{ id: x.id, full_name: x.full_name }]);
+      closeSheet(); render(true); toast(r.full_name.split(' ')[0] + ' removed. ↩️ Put back is at the top.');
+    }).catch(x => { busy(del, false); toast(x.message); });
+  };
+  fillThumbs(back);
   back.querySelector('#avsave').onclick = e => {
     const btn = e.currentTarget; busy(btn, true, 'Saving…');
     call('saveAvail', { id: r.id, w1: st.w1.join(''), w2: st.w2.join(''), driver: chipVal(f, 'driver') || '', coach_id: back.querySelector('#avcoach').value, notes: back.querySelector('#avnotes').value })
       .then(nr => { if (nr) d.rows = d.rows.map(x => x.id === nr.id ? nr : x); closeSheet(); render(true); toast('Saved ✓'); })
       .catch(x => { busy(btn, false); showErr(back.querySelector('#averr'), x.message); });
   };
+}
+/** A starter's picture in the app, cropped to their face so it's clearly visible (Angad, 27 Oct). New photos are head and
+ *  shoulders already; the first ones (360 px squares, head to waist) are framed from the face. Made once per photo, kept. */
+function thumbKey(src) { return src ? src.length + src.slice(-24) : ''; }
+function thumbNow(id) { const t = (S.avTh || {})[id], src = (S.avPh || {})[id]; return t && t.url && t.key === thumbKey(src) ? t.url : null; }
+function avThumb(id) {
+  const src = (S.avPh || {})[id], key = thumbKey(src);
+  if (!src || !window.JLBulletin) return Promise.resolve(src || '');
+  S.avTh = S.avTh || {};
+  if (S.avTh[id] && S.avTh[id].key === key) return S.avTh[id].p;
+  const p = new Promise(res => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; })
+    .then(img => (!img ? src : JLBulletin.autoFrame(img, '').then(f => {
+      const cv = document.createElement('canvas'); cv.width = 168; cv.height = 200;
+      cv.getContext('2d').drawImage(img, f.x, f.y, f.w, f.h, 0, 0, 168, 200);
+      return cv.toDataURL('image/jpeg', 0.86);
+    }))).catch(() => src);
+  S.avTh[id] = { key: key, p: p, url: null };
+  p.then(u => { if (S.avTh[id] && S.avTh[id].key === key) S.avTh[id].url = u; });
+  return p;
+}
+/** Swap each picture on screen for its face crop, one at a time (the face finder takes a moment per photo). */
+function fillThumbs(root) {
+  const todo = Array.from(root.querySelectorAll('img[data-thumb]')).filter(im => !thumbNow(im.dataset.thumb) || im.src !== thumbNow(im.dataset.thumb));
+  todo.reduce((chain, im) => chain.then(() => avThumb(im.dataset.thumb).then(u => { if (u && im.isConnected) im.src = u; })), Promise.resolve()).catch(() => {});
 }
 /** A starter's photo, framed head and shoulders like the team's Canva pages (Angad, 27 Oct: "you can't even see someone's
  *  face"). Their face is found and framed by itself; drag or pinch (or the slider) if it needs moving, then ✅ Use photo.
@@ -2771,7 +2809,7 @@ function drawAcademy(r, quiet) {
     const left = c.day1_status === 'arrived' && c.day1_left_at;
     // Their photo, taken here on Day 1 by Jess / Rubal (Angad, 27 Oct): it's their availability photo, and it shows as their picture
     const avr = ((S.avail || {})[weekEndingOf(c.academy_date)] || { rows: [] }).rows.filter(x => x.candidate_id === c.id)[0], ph = avr && (S.avPh || {})[avr.id];
-    const pic = ph ? '<img class="av avph" src="' + ph + '" alt="">' : avatar(c);
+    const pic = ph ? '<img class="av avph" src="' + (thumbNow(avr.id) || ph) + '" data-thumb="' + h(avr.id) + '" alt="">' : avatar(c);
     const camBtn = admin && started && c.day1_status === 'arrived' && !left ? '<label class="btn sm ghost d1cam">📷 ' + (ph ? 'Retake' : 'Photo') +
       '<input type="file" accept="image/*" capture="environment" data-cam="' + h(c.id) + '" hidden></label>' : '';
     if (dropped) return '<div class="trow dropped" data-cand="' + h(c.id) + '"' + dq + '>' + avatar(c) + '<div class="main"><div class="name">' + h(c.full_name) + ' <span class="co ' + h(c.company) + '">' + h(c.company) + '</span></div>' +
@@ -2870,6 +2908,7 @@ function drawAcademy(r, quiet) {
   }));
   page.querySelectorAll('[data-remall]').forEach(b => { b.onclick = () => day1Sheet(b.dataset.remall); });
   // 📷 on an arrived starter: the phone's camera, made small, saved as their availability photo
+  fillThumbs(page);
   page.querySelectorAll('[data-cam]').forEach(inp => {
     inp.onchange = () => {
       const file = inp.files && inp.files[0], c = pool.filter(x => x.id === inp.dataset.cam)[0]; inp.value = ''; if (!file || !c) return;
