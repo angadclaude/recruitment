@@ -2535,13 +2535,14 @@ function addStarterSheet(we, coaches) {
 /** The week as the old sheet looked: a table per campaign, Monday to Sunday IN / OUT, in the Appointments PDF's look. */
 function availPdf(we, wk, rows) {
   const mon = addDays(we, -6 + (wk === 2 ? 7 : 0)), key = wk === 2 ? 'w2' : 'w1', inN = i => rows.filter(r => r[key][i] === 'I').length;
-  const row = r => ({ fill: /[IO]/.test(r[key]) ? '' : 'amber', note: r.notes || '', cells: [r.full_name, r.mobile || '', (r.coach_name || '').split(' ')[0], r.driver || ''].concat(
+  // A = one of the best new starts (Angad, 27 Oct): their name highlighted in HelloFresh green
+  const row = r => ({ fill: /[IO]/.test(r[key]) ? '' : 'amber', mark: r.grade === 'A' ? 'hf' : '', note: r.notes || '', cells: [r.full_name, r.mobile || '', (r.coach_name || '').split(' ')[0], r.driver || ''].concat(
     r[key].split('').map((x, i) => wk === 1 && addDays(mon, i) < r.day1_date ? ['-', 'grey'] : x === 'I' ? ['IN', 'green', true] : x === 'O' ? ['OUT', 'grey'] : '')) });
   const g = (co, head) => { const l = rows.filter(r => avCamp(r) === (co === 'JUSS' ? 'HF' : 'FR')); return { head: head + ' · ' + l.length, rows: l.map(row) }; };
   return listPdf({
     name: avName(we, wk), heading: 'NS Availability · Week ' + wk, sub: 'Started week ending ' + fmtLong(we) + ' ' + we.slice(0, 4) + '  ·  Week ' + wk + ': ' + fmt(mon) + ' – ' + fmt(addDays(mon, 6)) + '  ·  LINK Marketing & JUSS Marketing',
     boxes: [[rows.length, 'Starters'], [rows.filter(r => r.driver === 'Yes').length, 'Drivers', 'green'], [rows.filter(r => !/[IO]/.test(r[key])).length, 'No days yet', rows.some(r => !/[IO]/.test(r[key])) ? 'amber' : '']],
-    line: 'In each day: ' + AV_DAY.map((d, i) => d + ' ' + inN(i)).join(' · '),
+    line: 'In each day: ' + AV_DAY.map((d, i) => d + ' ' + inN(i)).join(' · ') + (rows.some(r => r.grade === 'A') ? '   ·   Name in green = A, one of the best new starts' : ''),
     cols: [['#', 16], ['Name', 133], ['Contact', 68], ['Coach', 70], ['Driver', 40]].concat(AV_DAY.map(d => [d, 28])),  // notes in full under each row
     groups: [g('JUSS', 'HelloFresh'), g('LINK', 'Fundraising')], empty: 'Nobody started that week.',
   });
@@ -3888,12 +3889,13 @@ function weekPdf(we, list) {
 // they stand. ─────
 /** o: { name (title + file name), heading, sub, boxes [[n, label, ink]], line, cols [[head, width]] ('#' first, 523 in all),
  *  groups [{ head, note, rows [{ cells [text or [text, ink, bold]], fill: green / red / amber, note }] }], empty }
- *  A row's note is printed in full under it, across the table (Angad, 27 Oct: "I want to see all the notes"). */
+ *  A row's note is printed in full under it, across the table (Angad, 27 Oct: "I want to see all the notes").
+ *  A row's mark highlights its name: 'hf' = HelloFresh green (an A on availability). */
 function listPdf(o) {
   const W = 595.28, H = 841.89, M = 36, RH = 19, BOTTOM = 48, TW = 523, cols = o.cols;
   const colX = []; cols.reduce((x, c) => { colX.push(x + 4); return x + c[1]; }, M);
   const INK = { grey: '0.42 0.42 0.47', green: '0.05 0.5 0.3', amber: '0.75 0.38 0.02', red: '0.75 0.15 0.15' };
-  const FILL = { green: '0.88 0.96 0.9', red: '0.99 0.88 0.88', amber: '1 0.95 0.86' };
+  const FILL = { green: '0.88 0.96 0.9', red: '0.99 0.88 0.88', amber: '1 0.95 0.86' }, MARK = { hf: '0.5 0.66 0.18' };  // #7FA82E, the app's HelloFresh green
   const shrink = (s, i, size, min, bold) => { let z = size; while (z > min && pdfTextW(s, z, bold) > cols[i][1] - 7) z -= 0.5; return [pdfFit(s, cols[i][1] - 7, z, bold), z]; };
   const pages = [];
   let out, y;
@@ -3921,6 +3923,7 @@ function listPdf(o) {
   const row = (r, i) => {
     const yy = y - 13, rh = rowH(r);
     if (r.fill) out.push(FILL[r.fill] + ' rg ' + M + ' ' + (y - rh).toFixed(2) + ' ' + TW + ' ' + rh.toFixed(2) + ' re f');
+    if (MARK[r.mark]) out.push(MARK[r.mark] + ' rg ' + (colX[1] - 4).toFixed(2) + ' ' + (y - RH).toFixed(2) + ' ' + cols[1][1] + ' ' + RH + ' re f');
     txt(colX[0], yy, String(i + 1), 8, false, 'grey');
     r.cells.forEach((c, j) => {
       const v = Array.isArray(c) ? c : [c], z = shrink(String(v[0] == null ? '' : v[0]), j + 1, j ? 8.5 : 9, 6.5, j === 0 || v[2]);

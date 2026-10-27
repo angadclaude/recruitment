@@ -2172,6 +2172,10 @@ async function fillEval(p) {
     const noteTxt = noteAt < 0 ? '' : pdfLines.slice(noteAt).filter((l, i, a) => i === 0 || !/^Notes: |^\d+$/.test(l)).slice(0, 4).join(' ');
     ok(noteTxt.startsWith('Notes: ' + MIRA_NOTE) && pdfLines.slice(noteAt, noteAt + 3).every(l => !/\.\.\.$/.test(l)) && !pdfLines.includes('Notes'),
       'every note in full on the PDF, under the starter, across the table (no Notes column cutting it short): "' + pdfLines.slice(noteAt, noteAt + 2).join(' / ') + '"');
+    // An A (best new start) shows on the PDF as their name highlighted in HelloFresh green (Angad, 27 Oct), with a key
+    const greens = [...apRaw.matchAll(/0\.5 0\.66 0\.18 rg ([\d.]+) ([\d.]+) 133 19 re f\n[^\n]*\n[^\n]*\(([^)]*)\) Tj/g)].map(m => m[3]);
+    ok(greens.join() === s1.full_name && pdfLines.some(l => /Name in green = A, one of the best new starts/.test(l)),
+      'an A on availability = their name highlighted in HelloFresh green on the PDF (' + greens.join() + '), and a key: "Name in green = A, one of the best new starts"');
     try { require('child_process').execFileSync('pdftoppm', ['-png', '-r', '70', '-singlefile', apPath, `${SHOTS}/52-availability`]); } catch (e) { /* no renderer here */ }
     // 📸 The poster (Angad, 27 Oct): the app's welcome header, HELLO FRESH and FUNDRAISING ribbons and Mission footer, with each
     // starter as on the team's Canva pages: photo, NAME, then "OFFICE" (booked from the office) or "<COACH> - PR". 🏢 Office can be the coach.
