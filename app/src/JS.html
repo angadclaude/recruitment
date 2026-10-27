@@ -2299,6 +2299,8 @@ function bellLinksSheet(we, bl) {
   back.querySelector('#bssave').onclick = e => {
     const btn = e.currentTarget, links = {};
     bl.sheets.forEach(x => { links[x.key] = back.querySelector('#bs' + x.key).value; });
+    // Nothing pasted: say so (Angad, 27 Oct: tapped it twice and the card still said "no link yet")
+    if (!Object.keys(links).some(k => links[k].trim())) return showErr(back.querySelector('#bserr'), 'Paste each bell sheet\'s link into its box first (in Google Sheets: Share → Copy link), then tap Save.');
     busy(btn, true, 'Saving…');
     call('setBellSheets', { links: links }).then(() => loadAvail(we)).then(() => { closeSheet(); render(true); toast('Saved ✓'); })
       .catch(x => { busy(btn, false); showErr(back.querySelector('#bserr'), x.message); });
