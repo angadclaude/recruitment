@@ -77,6 +77,7 @@ The recruitment app for **LINK Marketing** and **JUSS Marketing** (Angad runs bo
   - **Day 1** has a **Dropped out** option (two taps, Undo), left out of counts and onboarding.
   - **New Starts List:** *Closed by* comes after *Booked by*.
   - **Today's summary:** Checked in · Non-qual · Rated · Evaluated · To call.
+  - **The Day 1 details WhatsApp (`msgAcademy`) carries their company's playbook (Angad approved the mock-up, 27 Oct):** "📘 *Read your Link Org Playbook* / *JUSS Playbook* so you walk in on Day 1 already knowing how we work 👇", the link (`PLAYBOOKS` in `JS.html`, same as `CONFIG.<co>.playbook`), then "First time? Tap *New BA – set up profile* to make your login 🔐". New starters make their own playbook login; nobody hands them one. It follows the company the message is sent as, after the Pre-Coaching link. Not on the Day 1 reminder.
   - **The booking confirmation** says "approximately 60–90 minutes". There's one confirmed state (⏳ Not confirmed yet / ✅ Mark as confirmed).
   - **Book Appts:** day by day with ‹ ›, or the week. Each has PDFs: who was booked and who came. Chase has a week PDF of who hasn't responded.
 - **"Thinking it over"** needs a call-back time. **"No answer" / "Thinking it over"** older than 2 weeks shows as 🔴 Stale on Chase until a final answer is logged.

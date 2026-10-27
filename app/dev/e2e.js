@@ -574,6 +574,10 @@ async function fillEval(p) {
   ok(/welcome-link\.html/.test(links[0]), 'first link is the welcome page (so WhatsApp shows the poster card)');
   ok(links.some(l => l.indexOf('forms.office.com') >= 0 && l.indexOf('QT4blMNFxEuaVSUMKK6uNT5Z') > 0), 'LINK message carries the Pre-Coaching Module link');
   ok(links.indexOf('https://maps.app.goo.gl/f4pkh222EHHTyQSM9') >= 0, 'LINK message carries LINK Marketing\'s Google Maps listing');
+  // Their company's playbook, after the Pre-Coaching Module; they make their own login there (Angad, 27 Oct)
+  ok(/📘 \*Read your Link Org Playbook\* so you walk in on Day 1 already knowing how we work 👇\nhttps:\/\/link-fr-playbook\.vercel\.app\/\nFirst time\? Tap \*New BA – set up profile\* to make your login 🔐\n/.test(msg) &&
+    msg.indexOf('link-fr-playbook') > msg.indexOf('forms.office.com') && msg.indexOf('juss-playbook') < 0,
+    'LINK Day 1 details carry the Link Org Playbook (after the Pre-Coaching Module), with "First time? Tap New BA – set up profile"');
   ok(/⏳ Not confirmed yet/.test(await bp.innerText('body')), 'snapshot shows "not confirmed yet"');
 
   // ── 5. Candidate opens their welcome page from WhatsApp → confirms ──
@@ -645,6 +649,8 @@ async function fillEval(p) {
   ok(/JUSS Marketing BA Academy/.test(jmsg) && /welcome-juss\.html/.test(jmsg) && !/Pre-Coaching/.test(jmsg), 'JUSS booker → JUSS message + JUSS welcome page');
   ok(jmsg.indexOf('https://maps.app.goo.gl/zeP4MjS2hMJzB9V9A') >= 0 && jmsg.indexOf('f4pkh222') < 0 && !/forms\.office\.com/.test(jmsg), 'JUSS message carries JUSS Marketing\'s Google Maps listing (no LINK pre-coaching)');
   ok(/– Rubal, JUSS Marketing$/.test(jmsg), 'JUSS message signed by Rubal (sent by Angad)');
+  ok(/📘 \*Read your JUSS Playbook\* so you walk in on Day 1 already knowing how we work 👇\nhttps:\/\/juss-playbook\.vercel\.app\/\nFirst time\? Tap \*New BA – set up profile\*/.test(jmsg) && jmsg.indexOf('link-fr-playbook') < 0,
+    'JUSS Day 1 details carry the JUSS Playbook (not LINK\'s), with the set-up-profile line');
   const jwurl = jmsg.match(/https:\/\/\S+welcome-juss\.html\?t=\w+/)[0];
   const jp = await cand.newPage();
   await jp.goto(jwurl.replace(PUBLIC, APP));

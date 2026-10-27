@@ -1,4 +1,4 @@
-window.APP_VERSION = 'c286b937';
+window.APP_VERSION = 'f696e818';
 
 (function () {
 'use strict';
@@ -776,6 +776,9 @@ function magCard(co) {
     '<div class="mag-cover"><img src="' + LOGOS[co] + '" alt=""><span>Organisation<br>Magazine</span><b>2026</b></div>' +
     '<div class="mag-txt"><span class="label">While you wait</span><b>' + h(m.title) + '</b><span class="mag-go">Flick through it 📖</span></div></a>';
 }
+// Their company's playbook, in the Day 1 details (Angad, 27 Oct); the same as Code.gs CONFIG.<co>.playbook. New starters make their own
+// login there ("New BA – set up profile"): nobody hands them one
+const PLAYBOOKS = { LINK: ['Link Org Playbook', 'https://link-fr-playbook.vercel.app/'], JUSS: ['JUSS Playbook', 'https://juss-playbook.vercel.app/'] };
 const PRE_COACHING = { LINK: 'https://forms.office.com/pages/responsepage.aspx?id=QT4blMNFxEuaVSUMKK6uNT5ZuU1A_UdDsSk-r6KY6olUQ0JEWFU0NDU1MEI5REZZRzY3WEc1SEVaTC4u&route=shorturl' };
 
 function startWelcome() {
@@ -4455,6 +4458,7 @@ function msgAcademy(c) {
   // Welcome link first: WhatsApp previews the first link, which is the poster card.
   if (c.welcome_url) lines.push('👇 Your Week 1 game plan + Sales Skill Ladder 📈 + tap *CONFIRM* to lock in your spot:', welcomeLink(c), '');
   if (PRE_COACHING[co]) lines.push('⚡ *Before Day 1:* complete your *Pre-Coaching Module* 👇', PRE_COACHING[co], '');
+  lines.push('📘 *Read your ' + PLAYBOOKS[co][0] + '* so you walk in on Day 1 already knowing how we work 👇', PLAYBOOKS[co][1], 'First time? Tap *New BA – set up profile* to make your login 🔐', '');
   lines.push('🗺️ Find us on Google Maps:', OFFICES[co].maps, '');
   // The recruitment team sign with their own name, whichever company; anyone else: Jess (LINK) / Rubal (JUSS)
   const sign = (canPickBrand() ? '' : (S.me.signoff || {})[co]) || S.me.user.name.split(' ')[0];
