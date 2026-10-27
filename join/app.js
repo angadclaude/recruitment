@@ -1,4 +1,4 @@
-window.APP_VERSION = '3ab51494';
+window.APP_VERSION = 'dfca9426';
 
 (function () {
 'use strict';
@@ -2001,7 +2001,7 @@ function viewBulletin() {
     '<div class="bullopts">' + field('bmis', 'Mission', o.mission) + field('bhash', 'Hashtag', o.tag) + field('bcash', 'Cash £', o.cash) + '</div>' +
     '<button class="btn ghost sm" id="breset" style="margin-top:12px">↺ Reset wording</button></details>';
   const page = paint('Bulletin', seg + dayBar +
-    '<div class="bullbtns"><button class="btn wa" id="bshare" disabled>📤 Share to WhatsApp</button><a class="btn ghost" id="bsave" hidden>⬇️ Save</a></div>' +
+    '<div class="bullbtns"><button class="btn wa" id="bshare" disabled>📤 Share to WhatsApp</button><button class="btn ghost" id="bsave" hidden>⬇️ Save</button></div>' +
     (warn.length ? '<div class="card tight small">⚠️ ' + warn.map(h).join('<br>⚠️ ') + '</div>' : '') +
     '<div class="bullimg"><img id="bimg" alt="Bulletin"><div class="loading" id="bload"><span class="spinner inline"></span> Making your bulletin…</div></div>' + edit, false, true);
   bindBullSeg(page, day);
@@ -2027,7 +2027,7 @@ function viewBulletin() {
         img.dataset.info = JSON.stringify({ kind: kind, day: kind === 'daily' ? day : we, attended: data.attended, nonQual: data.nonQual, walkOuts: data.walkOuts, weekTotal: data.weekTotal, rows: data.rows.map(r => r.medal + ' ' + r.name + ' ' + r.n + (r.bar ? ' BAR' : '')) });
         document.getElementById('bload').hidden = true;
         document.getElementById('bshare').disabled = false;
-        sv.href = S.bullUrl; sv.download = name; sv.hidden = false;
+        sv.hidden = false;
         res();
       }, 'image/jpeg', 0.92);
     }));
@@ -2040,8 +2040,9 @@ function viewBulletin() {
     if (!f) return;
     if (navigator.canShare && navigator.canShare({ files: [f] })) {
       navigator.share({ files: [f] }).catch(e => { if (e && e.name !== 'AbortError') toast('Couldn\'t open sharing. Use Save image instead.'); });
-    } else { document.getElementById('bsave').click(); toast('Saved. Open WhatsApp and attach the image.'); }
+    } else { savePoster(f, S.bullUrl); toast('Saved. Open WhatsApp and attach the image.'); }
   };
+  document.getElementById('bsave').onclick = () => { if (S.bullFile) savePoster(S.bullFile, S.bullUrl); };
   const on = (id, fn) => { const el = document.getElementById(id); if (el) el.oninput = () => { fn(el.value); redraw(); }; };
   on('btag', v => { S.bull.tagline = v; S.bull.edited = true; });
   [0, 1, 2].forEach(i => on('bm' + i, v => { S.bull.msgs[i] = v; S.bull.edited = true; }));
@@ -2353,6 +2354,16 @@ function availPdf(we, wk, rows) {
     groups: [g('JUSS', 'HelloFresh'), g('LINK', 'Fundraising')], empty: 'Nobody started that week.',
   });
 }
+/** ⬇️ Save on a poster. iPhone: the Share sheet, whose "Save Image" puts it in Photos (a download there only lands in Files,
+ *  as a grey "JPG" page with "Open in Preview": Angad, 27 Oct). Everywhere else: a normal download. */
+function savePoster(file, url) {
+  if (IS_IOS && navigator.canShare && navigator.canShare({ files: [file] })) {
+    toast('Tap "Save Image" to put it in Photos.');
+    navigator.share({ files: [file] }).catch(e => { if (e && e.name !== 'AbortError') toast('Press and hold the poster, then "Save to Photos".'); });
+    return;
+  }
+  const a = document.createElement('a'); a.href = url; a.download = file.name; document.body.appendChild(a); a.click(); a.remove();
+}
 /** "Welcome our new starters": their photos, names and coaches, HelloFresh then Fundraising, ready for WhatsApp (no Canva). */
 function availPoster(we, wk, rows) {
   if (!window.JLBulletin) return toast('Posters work in the installed app. Open it from your home-screen icon.');
@@ -2370,14 +2381,15 @@ function availPoster(we, wk, rows) {
       back.className = 'sheet-back';
       back.innerHTML = '<div class="sheet pdfprev" role="dialog" aria-label="Poster"><div class="grab"></div><div class="sheet-h"><div style="min-width:0"><div class="label muted">Poster · ' + rows.length + ' starters</div><div class="display">New starters</div></div></div>' +
         '<img id="avpimg" src="' + url + '" alt="New starters poster" style="width:100%;border-radius:14px" data-info="' + h(JSON.stringify({ we: we, people: groups.map(g => g.label + ':' + g.people.map(p => p.name + (p.photo ? '+photo' : '')).join(',')) })) + '">' +
-        '<div class="bullbtns pdfbtns"><button class="btn wa" id="avpshare">📤 Share to WhatsApp</button><a class="btn ghost" id="avpsave" href="' + url + '" download="' + name + '">⬇️ Save</a></div></div>';
+        '<div class="bullbtns pdfbtns"><button class="btn wa" id="avpshare">📤 Share to WhatsApp</button><button class="btn ghost" id="avpsave">⬇️ Save</button></div></div>';
       document.body.appendChild(back);
       document.body.style.overflow = 'hidden';
       back.onclick = e => { if (e.target === back) closeSheet(); };
       back.querySelector('#avpshare').onclick = () => {
         if (navigator.canShare && navigator.canShare({ files: [file] })) navigator.share({ files: [file] }).catch(() => {});
-        else { back.querySelector('#avpsave').click(); toast('Saved. Open WhatsApp and attach the image.'); }
+        else { savePoster(file, url); toast('Saved. Open WhatsApp and attach the image.'); }
       };
+      back.querySelector('#avpsave').onclick = () => savePoster(file, url);
     }, 'image/jpeg', 0.9);
   })).catch(e => toast('Couldn\'t make the poster: ' + e.message));
 }

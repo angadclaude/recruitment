@@ -304,7 +304,7 @@ No more highlighters on the printed list:
   - who has no days yet;
   - anyone ticked in for fewer days than they said at their evaluation.
 - **Changed after the one-to-one:** their coach gets an alert with the new days.
-- **📸 Poster:** "Welcome our new starters" with everyone's photo, name and coach. **📤 Share to WhatsApp**: no Canva, no uploading.
+- **📸 Poster:** "Welcome our new starters" with everyone's photo, name and coach. **📤 Share to WhatsApp**: no Canva, no uploading. **⬇️ Save** on an iPhone opens the Share sheet: tap **Save Image** and it's in Photos (same on the daily bulletin). The cards grow to fill the poster, and long names go on two lines.
 - **📄 PDF:** the old sheet's layout, Monday to Sunday IN / OUT, a table per campaign.
 
 ## The numbers: one meaning everywhere (Angad, 26 Oct)

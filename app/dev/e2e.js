@@ -2003,6 +2003,32 @@ async function fillEval(p) {
     ok(pInfo.we === WE && pInfo.people.join('|').includes('Mira Manual+photo') && pInfo.people.join('|').includes(s1.full_name + '+photo'),
       '📸 Poster: "Welcome our new starters", their photos, names and coaches, HelloFresh then Fundraising (' + pInfo.people.join(' / ') + ')');
     fs.writeFileSync(`${SHOTS}/53-new-starters-poster.jpg`, Buffer.from(await ap.$eval('#avpimg', i => fetch(i.src).then(r => r.arrayBuffer()).then(b => Array.from(new Uint8Array(b))))));
+    const [posterDl] = await Promise.all([ap.waitForEvent('download'), ap.click('#avpsave')]);
+    ok(posterDl.suggestedFilename() === 'JL-new-starters-' + WE + '.jpg', '⬇️ Save on a computer / Android: downloads "JL-new-starters-' + WE + '.jpg"');
+    // iPhone (Angad, 27 Oct): a download there only reaches Files, as a grey "JPG" page with "Open in Preview". Save opens the
+    // Share sheet instead, whose "Save Image" puts it in Photos. Same for the daily bulletin's Save.
+    const iosCtx = await browser.newContext(Object.assign({ userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1' }, PHONE));
+    await iosCtx.addInitScript(() => { navigator.canShare = d => !!(d && d.files); navigator.share = d => { window.__shared = (window.__shared || []).concat(d.files.map(f => f.name + ' ' + f.type)); return Promise.resolve(); }; });
+    const ip = await iosCtx.newPage();
+    let iosDl = 0; ip.on('download', () => { iosDl++; });
+    await loginUi(ip, 'angad@linkmarketing.org.uk');
+    await ip.click('.tabbar button[data-tab=academy]'); await ip.waitForSelector('#goAvail');
+    await ip.click('#goAvail'); await ip.waitForSelector('#avprev');
+    for (let i = 0; i < 4 && (await ip.textContent('.seg-nav b')) !== 'Sun 25 Oct'; i++) {
+      const was = await ip.textContent('.seg-nav b'); await ip.click('#avprev'); await ip.waitForFunction(w => document.querySelector('.seg-nav b').textContent !== w, was);
+    }
+    await ip.waitForSelector('#avposter'); await ip.click('#avposter'); await ip.waitForSelector('#avpimg[data-info]', { timeout: 15000 });
+    await ip.click('#avpsave');
+    await ip.waitForFunction(() => (window.__shared || []).length === 1);
+    const iosToast = await ip.textContent('#toast').catch(() => '');
+    await ip.click('.sheet-back', { position: { x: 5, y: 5 } }); await ip.waitForFunction(() => !document.querySelector('.sheet-back'));
+    await ip.click('.tabbar button[data-tab=today]'); await ip.waitForSelector('#bullDaily'); await ip.click('#bullDaily');
+    await ip.waitForSelector('#bsave:not([hidden])', { timeout: 15000 }); await ip.click('#bsave');
+    await ip.waitForFunction(() => (window.__shared || []).length === 2);
+    const shared = await ip.evaluate(() => window.__shared);
+    ok(shared[0] === 'JL-new-starters-' + WE + '.jpg image/jpeg' && /^JL-stats-\d{4}-\d\d-\d\d\.jpg image\/jpeg$/.test(shared[1]) && iosDl === 0 && /Save Image/.test(iosToast || ''),
+      'iPhone: ⬇️ Save opens the Share sheet with the JPEG ("' + (iosToast || '').trim() + '"), not the grey file page (poster: ' + shared[0] + '; bulletin: ' + shared[1] + ')');
+    await iosCtx.close();
     await ap.click('.sheet-back', { position: { x: 5, y: 5 } }); await ap.waitForFunction(() => !document.querySelector('.sheet-back'));
     await ap.click('#abMe'); await ap.waitForSelector('#mAvail');
     ok(/New starters' availability/.test(await ap.textContent('#mAvail')), 'everyone has it in the menu: "🗓️ New starters\' availability"');

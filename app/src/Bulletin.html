@@ -442,15 +442,20 @@
     emoji('🎉', 92, 236, 62);
     text(d.title || 'WELCOME OUR NEW STARTERS', 560, 266, { size: 62, weight: 700, align: 'center', maxW: 820 });
     text(d.sub || '', W / 2, 336, { size: 40, weight: 700, align: 'center', color: ORANGE, maxW: 900 });
-    const groups = d.groups.filter(g => g.people.length), top = 372, avail = FOOT - 20 - top, GH = 58, GAP = 14;
-    // The biggest cards that fit: fewest columns whose rows still fit the space
-    let cols = 2, cw = 0, chh = 0;
-    for (cols = 2; cols <= 7; cols++) {
-      cw = Math.min(250, (W - 64 - (cols - 1) * GAP) / cols); chh = cw * 1.3;
-      const need = groups.reduce((t, g) => t + GH + 12 + Math.ceil(g.people.length / cols) * (chh + GAP), 0);
-      if (need <= avail) break;
+    const groups = d.groups.filter(g => g.people.length), top = 372, avail = FOOT - 20 - top, GH = 58, GAP = 14, heads = groups.length * (GH + 12);
+    // The biggest cards that fit across and down. Within 5% of the biggest, the fewest rows wins (6 + 6/3 beats 5/1 + 5/4).
+    const fits = [];
+    for (let c = 2; c <= 7; c++) {
+      const rows = groups.reduce((t, g) => t + Math.ceil(g.people.length / c), 0);
+      fits.push({ cols: c, rows: rows, cw: Math.min(250, (W - 64 - (c - 1) * GAP) / c, ((avail - heads) / Math.max(rows, 1) - GAP) / 1.3) });
     }
-    let y = top;
+    const biggest = Math.max.apply(null, fits.map(f => f.cw));
+    const pick = fits.filter(f => f.cw >= biggest * 0.95).sort((a, b) => a.rows - b.rows || a.cols - b.cols)[0];
+    const cols = pick.cols, cw = pick.cw;
+    // Room left over (26 Oct's 15 starters left a big gap): taller cards first (long names on two lines), then spread the rest
+    const chh = Math.min(cw * 1.55, (avail - heads) / Math.max(pick.rows, 1) - GAP);
+    const spare = Math.max(0, avail - heads - pick.rows * (chh + GAP)), pad = spare / (groups.length + 1);
+    let y = top + pad;
     if (!groups.length) text('No starters this week yet', W / 2, top + 200, { size: 34, weight: 500, italic: true, align: 'center', color: '#6b7280' });
     groups.forEach(g => {
       const col = g.co === 'JUSS' ? TEAL : ORANGE, light = g.co === 'JUSS' ? '#25a5b8' : '#f7931e';
@@ -462,18 +467,24 @@
         const x = (W - rw) / 2 + k * (cw + GAP), cy = y + r * (chh + GAP);
         X.save(); X.shadowColor = 'rgba(20,28,59,.12)'; X.shadowBlur = 12; X.shadowOffsetY = 4; rr(x, cy, cw, chh, 18); X.fillStyle = '#fff'; X.fill(); X.restore();
         rr(x, cy, cw, chh, 18); X.lineWidth = 3; X.strokeStyle = col; X.stroke();
-        const dia = cw * 0.66, px = x + (cw - dia) / 2, py = cy + cw * 0.08;
+        // Bigger faces when the cards are taller (room kept for a two-line name and the coach)
+        const reserve = Math.max(17, cw * 0.135) * 2.3 + Math.max(13, cw * 0.095) * 1.55 + 16;
+        const dia = Math.max(cw * 0.6, Math.min(cw * 0.8, chh - cw * 0.08 - reserve)), px = x + (cw - dia) / 2, py = cy + cw * 0.08;
         X.save(); X.beginPath(); X.arc(px + dia / 2, py + dia / 2, dia / 2, 0, 7); X.clip();
         if (p.photo) X.drawImage(p.photo, px, py, dia, dia);
         else { X.fillStyle = grad(0, py, 0, py + dia, [light, col]); X.fillRect(px, py, dia, dia);
           text(p.name.split(' ').filter(String).slice(0, 2).map(w => w[0].toUpperCase()).join(''), px + dia / 2, py + dia * 0.64, { size: dia * 0.38, weight: 700, align: 'center', color: '#fff' }); }
         X.restore();
         X.beginPath(); X.arc(px + dia / 2, py + dia / 2, dia / 2, 0, 7); X.lineWidth = 4; X.strokeStyle = col; X.stroke();
-        const ny = py + dia + cw * 0.17;
-        text(p.name, x + cw / 2, ny, { size: Math.max(16, cw * 0.13), weight: 700, align: 'center', maxW: cw - 16 });
-        if (p.coach) text('Coach: ' + p.coach, x + cw / 2, ny + cw * 0.13, { size: Math.max(12, cw * 0.085), weight: 500, align: 'center', color: '#6b7280', maxW: cw - 16 });
+        // Name (two lines when it's long, so it isn't squashed or spilling out of the card), then the coach, centred under the photo
+        const ns = Math.max(17, cw * 0.135), cs = Math.max(13, cw * 0.095), maxW = cw - 16, words = p.name.split(' ').filter(String);
+        const lines = measure(p.name, ns, 700) > maxW && words.length > 1 ? [words[0], words.slice(1).join(' ')] : [p.name];
+        const lh = ns * 1.15, block = lines.length * lh + (p.coach ? cs * 1.55 : 0), below = py + dia + 4;
+        const ty = below + Math.max(4, (cy + chh - below - block) / 2) + ns * 0.9;
+        lines.forEach((ln, j) => text(ln, x + cw / 2, ty + j * lh, { size: ns, weight: 700, align: 'center', maxW: maxW }));
+        if (p.coach) text('Coach: ' + p.coach, x + cw / 2, ty + (lines.length - 1) * lh + cs * 1.5, { size: cs, weight: 500, align: 'center', color: '#6b7280', maxW: maxW });
       });
-      y += Math.ceil(g.people.length / cols) * (chh + GAP) + 6;
+      y += Math.ceil(g.people.length / cols) * (chh + GAP) + pad;
     });
     footer(o);
   }
