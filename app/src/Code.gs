@@ -50,7 +50,7 @@ const CONFIG = {
   D1_RESULTS_TIME: '09:00',       // the morning after a Day 1: the results to admins (Angad's Tuesday list, 27 Oct)
   D1_RESULTS_FROM: '2026-11-02',  // the first Day 1 with FR / HF set in the app (26 Oct's were only on paper): no alert with a wrong split
   OFFICE_BOOKERS: ['Fiza Iqbal'],  // with the admins, "Office" in the results' starts by booker (bookings made from the office)
-  AVAIL_REMIND_TIME: '17:00',     // after Tuesday's 2-3pm one-to-ones: done vs missing → admins (all starters) and each coach (their own)
+  AVAIL_REMIND_TIME: '18:00',     // after Tuesday's 2-3pm one-to-ones: done vs missing → admins (all starters) and each coach (their own)
   EMAIL_ALERTS: false,            // true = also email every alert. Push is used when OneSignal keys are set.
   SESSION_DAYS: 30,               // staff stay logged in for this long
   SHEET_ID: '',                   // the data Sheet; only needed if this script isn't opened from the Sheet itself
@@ -1720,7 +1720,7 @@ function day1Photo(req, u) {
  *  - Each coach (whoever booked them): their own starters, done vs missing, daily until all theirs are done; then once. */
 function maybeAvailReminder() {
   const now = nowStr(), today = now.slice(0, 10), hm = now.slice(11, 16);
-  if (hm < (CONFIG.AVAIL_REMIND_TIME || '17:00') || hm > '20:59' || weekday(today) === 0) return;
+  if (hm < (CONFIG.AVAIL_REMIND_TIME || '18:00') || hm > '20:59' || weekday(today) === 0) return;
   const p = PropertiesService.getScriptProperties();
   if (p.getProperty('AVAIL_REMINDED') === today) return;
   p.setProperty('AVAIL_REMINDED', today);

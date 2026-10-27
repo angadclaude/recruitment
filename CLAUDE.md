@@ -175,7 +175,7 @@ This replaces the "Juss & Link - NS Availability - 2026" Google Sheet (a W1 / Pi
 - **The week's rhythm (Angad, 27 Oct, don't re-ask):**
   - **Monday, Day 1:** Jess and Rubal (admins) tick **Arrived**, then tap **📷 Photo** on the same Day 1 row (`day1Photo`, back camera). The photo is their availability photo and shows as their picture on the Day 1 list.
   - **Tuesday around 2–3pm:** the one-to-one where they commit to their days. Days stay **blank until then** (not pre-filled).
-  - **17:00 from the day after their Day 1** (`maybeAvailReminder`, `AVAIL_REMIND_TIME`):
+  - **18:00 from the day after their Day 1** (`maybeAvailReminder`, `AVAIL_REMIND_TIME`; Angad moved it from 17:00 on 27 Oct because the availability chat can run long):
     - **Satpal, Rubal, Jess and Angad (the admins, Angad 27 Oct)** get all the new starters, done vs missing: "🗓️ Availability: 12 of 15 done · Still to fill in: …" daily until everyone has Week 1 days, then "✅ Availability ready: 15 new starters · Week 1 in: Tue 13 · … · 🚗 4 drive · tap for the poster and the PDF" once a week. Delegates ticked **Availability** don't get it (he named the four);
     - **each coach** (non-admin, active) gets their own new starters, done vs missing: "🗓️ Your new starters: 1 of 2 done" with a line each ("Jasraj: Mon Tue Wed Thu Fri", "Adham: not filled in yet") daily while any are missing, then "✅ Your new starters' days" once (`AVAIL_COACH_READY_<week>`).
   - **Tuesday he wants ready:** the poster in the team WhatsApp, who's in each day, that alert, and the PDF.
@@ -208,9 +208,33 @@ The app now does all of it, and **he decided the flow is mine to set**:
 - **Fix their name** (admins, on their page, `fixName`) updates availability too. Only for a real typo against their documents: the app's names are the source (see Rules).
 - **Not built, ask if needed:** the ✓ ticks the team put next to some pink (HF) rows. Meaning unknown.
 
+## Bell sheets: new starters each week (Angad, 27 Oct 2026)
+Once availability is filled in, the new starters go into the **NEW STARTS** section at the bottom of that week's bell sheet. The team used to copy them across from the old availability Google Sheet.
+- **Which sheet:** by campaign (`campaignOf`).
+  - FR → "🧏🏻‍♂️LINK 2026 FR BELL SHEET", section **NEW STARTS**.
+  - HF → "🍋JUSS HF🍋 BELLSHEET", section **NEW STARTS - SLOUGH**.
+  - The tab is the Day 1 week, "WE dd.mm.yy" (e.g. `WE 01.11.26`).
+- **Only columns A and B are filled in:**
+  - A = their full name in capitals, as the app has it (the New Starts List);
+  - B = their coach in capitals: the first name of whoever booked them.
+  - **OFFICE** when there's no coach (Angad: "just put it as office"): booked by an admin, by `OFFICE_BOOKERS` (Fiza), or availability coach 🏢 Office.
+  - Office first, then each coach's starters together.
+- **What the other letters mean (Angad, 27 Oct):** the days are typed into the template rows already, and they're the plan, not formulas.
+  - **BA AC = BA Academy**, in-house, on Monday and Tuesday.
+  - **S = Shadow day**, on Wednesday.
+  - Thursday onwards is blank. FR also has **NS** in column C.
+  - Never change, move or delete any of these.
+- **Filling:** use the empty template rows. Never overwrite a row that already has a name, and never delete rows.
+- **w/e 01/11/26** was done by hand through the Sheets connector (FR 9, HF 6). The weekly automation is still to build (Open items).
+
 ## Data fixes Angad asked for
 - **26 Oct 2026:** Fiza's 2 appointments that day were Angad's (he entered them under her by mistake). Angad moved both himself (candidate → **Booker** → Angad → **Save**, `reassignBooker`, which also moves the candidate's company to the booker's). The rest of that week is automatic (`HANDOVER`, above). Her earlier candidates stay hers, and their alerts go to Angad (the PR #140 move was undone on 27 Oct, see Rules).
 
 ## Open items (ask Angad when relevant)
+- **Bell sheets every week (Angad asked, 27 Oct):** add the new starters by themselves when availability is ready (rules above). The plan:
+  - a Google-side `relayBell` (one Apps Script paste);
+  - a cron step that sends only names not sent before;
+  - an alert to admins with what went in.
+  - Keep the bell sheets' IDs out of this public repo if they're link-shared.
 - **Optional:** auto-deploy `Code.gs` from GitHub with `clasp`, to remove the paste step. It needs the Apps Script API turned on and a `CLASPRC_JSON` GitHub secret, which he sets himself and never pastes in chat.
 - The full team guide is `app/SETUP.md`.
