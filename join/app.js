@@ -1,4 +1,4 @@
-window.APP_VERSION = 'a1402585';
+window.APP_VERSION = '858baeec';
 
 (function () {
 'use strict';
@@ -2208,7 +2208,9 @@ function viewAvail(quiet) {
     '<em>' + (drivers(i) ? '🚗 ' + drivers(i) : '&nbsp;') + '</em></div>').join('') + '</div><p class="small muted center" style="margin:4px 0 10px">In each day · 🚗 drivers</p>' : '';
   const blank = rows.filter(r => r.day1_date <= today && !/[IO]/.test(r[key]));
   const warn = edit && blank.length ? '<div class="card tight small avwarn">⚠️ <b>' + blank.length + ' with no Week ' + wk + ' days yet:</b> ' + blank.map(r => h(r.full_name.split(' ')[0])).join(', ') + (edit ? '. Tap a name to fill it in.' : '.') + '</div>' : '';
-  const tools = !edit ? '' : '<div class="bullbtns avtools">' + (rows.length ? '<button class="btn ghost" id="avposter">📸 Poster</button><button class="btn ghost" id="avpdf">📄 PDF</button>' : '') +
+  // Bookers: no poster, but the PDF for each week, with everyone's details (Angad, 27 Oct: "click on the PDF and see the details")
+  const tools = !edit ? (rows.length ? '<div class="bullbtns avtools"><button class="btn ghost" id="avpdfw1">📄 Week 1 PDF</button><button class="btn ghost" id="avpdfw2">📄 Week 2 PDF</button></div>' : '') :
+    '<div class="bullbtns avtools">' + (rows.length ? '<button class="btn ghost" id="avposter">📸 Poster</button><button class="btn ghost" id="avpdf">📄 PDF</button>' : '') +
     (edit ? '<button class="btn ghost" id="avadd">＋ Add someone</button>' : '') + '</div>' +
     (edit ? '<label class="linkbtn avimp">📥 Add photos from a file<input type="file" id="avimpf" accept=".json,application/json" hidden></label>' : '');
   // A booker's card: their picture, name, coach, and Week 1 / Week 2 days
@@ -2249,10 +2251,10 @@ function viewAvail(quiet) {
     '<button type="button" class="linkbtn" id="avbellset">🔗 ' + (bl.sheets.some(x => x.url) ? 'Change the links' : 'Add the bell sheets\' links') + '</button></div>' : '';
   const page = paint(title, top + strip + warn + tools + gone +
     (rows.length ? group('JUSS', 'HelloFresh') + group('LINK', 'Fundraising') : empty('🗓️', we > addDays(thisWe, -7) && we >= thisWe ? 'Nobody\'s started this week yet. Starters appear here when they\'re ticked Arrived on Day 1.' : 'Nobody started that week.')) + bell +
-    (!edit ? '<p class="hint">W1 is their Day 1 week, W2 the week after. Green = in, crossed out = out, blank = not said yet (the days are filled in at the one-to-one, Tuesday afternoon). ‹ › for other weeks.</p>' :
+    (!edit ? '<p class="hint">W1 is their Day 1 week, W2 the week after. Green = in, crossed out = out, blank = not said yet (the days are filled in at the one-to-one, Tuesday afternoon). Their number and notes are in the PDF. ‹ › for other weeks.</p>' :
     '<p class="hint">Tap a starter to fill in their days (tap a day: in → out → not said), driver, notes and photo, or to remove them. ' +
       'Week 1 is their Day 1 week, Week 2 the week after. Everyone who started is here as soon as they\'re ticked Arrived on Day 1, with the photo taken there (📷 on the Day 1 list); their coach is whoever booked them. Days stay blank until the one-to-one (Tuesday afternoon); at 18:00 you hear it\'s ready, or who\'s missing. ' +
-      'Days changed after the one-to-one? Their coach gets an alert. Tap <b>A</b> on your best new starts: it goes green (only the people who do the one-to-ones see it). Bookers see the names and their Week 1 and Week 2 days only. Every week is kept: ‹ › to go back.</p>'), quiet, !asTab);
+      'Days changed after the one-to-one? Their coach gets an alert. Tap <b>A</b> on your best new starts: it goes green (only the people who do the one-to-ones see it). Bookers see the names and their Week 1 and Week 2 days, and the details in the PDF. Every week is kept: ‹ › to go back.</p>'), quiet, !asTab);
   bindAvail(page, go, we);
   page.querySelectorAll('[data-av]').forEach(b => { if (edit) b.onclick = () => availSheet(rows.filter(r => r.id === b.dataset.av)[0], we, wk); });
   page.querySelectorAll('[data-ava]').forEach(b => {
@@ -2270,6 +2272,7 @@ function viewAvail(quiet) {
   fillThumbs(page);
   const ps = page.querySelector('#avposter'); if (ps) ps.onclick = () => availPoster(we, wk, rows);
   const pd = page.querySelector('#avpdf'); if (pd) pd.onclick = () => savePdf(availPdf(we, wk, rows), avName(we, wk) + '.pdf');
+  [1, 2].forEach(n => { const b = page.querySelector('#avpdfw' + n); if (b) b.onclick = () => savePdf(availPdf(we, n, rows), avName(we, n) + '.pdf'); });
   const ad = page.querySelector('#avadd'); if (ad) ad.onclick = () => addStarterSheet(we, d.coaches);
   const im = page.querySelector('#avimpf'); if (im) im.onchange = () => { const f = im.files && im.files[0]; im.value = ''; if (f) photoImportFile(f); };
   const bs = page.querySelector('#avbellset'); if (bs) bs.onclick = () => bellLinksSheet(we, bl);
