@@ -142,18 +142,17 @@ This replaces the "Juss & Link - NS Availability - 2026" Google Sheet (a W1 / Pi
   - **Everyone can view, phone numbers included**, like the sheet.
   - **Kept for good:** numbers, notes and photos. The 6-month clear-out only touches Candidates.
   - **Pictures:** a photo of each starter; the app makes the poster.
-- **The poster = the team's Canva pages, exactly (Angad, 27 Oct: "match it exactly… you can't even see someone's face"; don't redesign it):**
-  - `drawNS` in `Bulletin.html`, measured off his NS w/e 01/11/26 pages (1180 wide, drawn at 1.4×: 1652 × 2336 JPEGs).
-  - **One A4 page per campaign**, Fundraising first: LINK logo + NDCS logo, then JUSS logo + HelloFresh logo (`img/logo-link-ns.png`, `logo-ndcs.png`, `logo-hellofresh.png`, cut from his pages).
-  - **Layout:**
-    - title "NS - WE - dd/mm/yy" (Roboto Bold, #1d49a4), a blue rule;
-    - 4 across, fixed columns, a part-filled last row on the left;
-    - rounded blue frames 220 × 261 with head-and-shoulders photos;
-    - the NAME in capitals (Roboto Bold; two lines over ~258 px, as TARANIH / RAGAGURU);
+- **The poster (Angad, 27 Oct, don't redesign it):**
+  - **Kept from the app's poster:** the top (JUSS | LINK, 🎉 "WELCOME OUR NEW STARTERS", "WEEK 1 | DAY 1 W/E dd/mm/yyyy"), the **HELLO FRESH** and **FUNDRAISING** ribbons, and the Mission footer. It's one page, HelloFresh then Fundraising (`drawStarters` in `Bulletin.html`, 1536 × 2304).
+  - **Each starter, as on the team's Canva pages** (his NS w/e 01/11/26 pages; he first asked to "match it exactly… you can't even see someone's face"):
+    - a head-and-shoulders photo in a rounded blue frame (220 × 261 proportions);
+    - the NAME in capitals (Roboto Bold; two lines when long, as TARANIH / RAGAGURU);
     - then the coach in italics (Arimo Italic): **OFFICE** (`office` flag = coach is an admin, in `OFFICE_BOOKERS`, or 🏢 Office), else **"HASINI - PR"**.
-    - Office first, then each coach's starters together.
-    - More than 12 on a page: the grid shrinks (or goes 5 across) to stay on it.
-  - **Share / Save** send both pages (`NS-WE-dd-mm-yy-LINK.jpg`, `…-JUSS.jpg`); on iPhone Save = the Share sheet → Save 2 Images (`savePoster`).
+  - **Order and layout:**
+    - Office first, then each coach's starters together;
+    - fixed columns, a part-filled last row on the left;
+    - the biggest cards that fit (`STEP` / `PITCH` as a share of the frame).
+  - **Share / Save:** one JPEG `JL-new-starters-<we>.jpg`; on iPhone Save = the Share sheet → Save Image (`savePoster`).
   - **Faces:**
     - Every photo goes through `framePhoto`: the face is found (`findFace`, our own runner of the pico cascade `img/facefinder.bin`, MIT, `img/face-LICENSE.txt`) and framed like the Canva crops (face ≈ 37% of the height, centre 30% down: `faceFrame`).
     - The crop screen lets them drag, pinch or slide, then ✅ Use photo.

@@ -2404,47 +2404,44 @@ function savePoster(file, url) {
   }
   files.forEach((f, i) => { const a = document.createElement('a'); a.href = urls[i]; a.download = f.name; document.body.appendChild(a); a.click(); a.remove(); });
 }
-/** The new starters poster, as the team made it in Canva (Angad, 27 Oct: "match it exactly"): an A4 page per campaign,
- *  Fundraising (LINK + NDCS) then HelloFresh (JUSS + HelloFresh), "NS - WE - dd/mm/yy", photos 4 across, NAME, and
- *  "OFFICE" (booked from the office) or "HASINI - PR" (their coach). Office first, then each coach's starters together. */
+/** The new starters poster (Angad, 27 Oct): the app's welcome header, HELLO FRESH and FUNDRAISING ribbons and Mission footer,
+ *  with each starter as on the team's Canva pages: their head-and-shoulders photo, NAME, and "OFFICE" (booked from the office)
+ *  or "HASINI - PR" (their coach). Office first, then each coach's starters together. */
 function availPoster(we, wk, rows) {
   if (!window.JLBulletin) return toast('Posters work in the installed app. Open it from your home-screen icon.');
   const img = src => new Promise(res => { if (!src) return res(null); const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; });
   toast('Making the poster…');
-  const dd = we.slice(8, 10) + '-' + we.slice(5, 7) + '-' + we.slice(2, 4);
   Promise.all(rows.map(r => img((S.avPh || {})[r.id]))).then(pics => JLBulletin.load('').then(assets =>
     Promise.all(pics.map(p => (p ? JLBulletin.autoFrame(p, '') : null))).then(frames => {
       const coach = r => (r.office ? '' : (r.coach_name || '').split(' ')[0]);
       const n = {}; rows.forEach(r => { n[coach(r)] = (n[coach(r)] || 0) + 1; });
-      const pages = [['FR', 'LINK'], ['HF', 'JUSS']].map(g => {
-        const mine = rows.map((r, i) => ({ r: r, i: i })).filter(x => avCamp(x.r) === g[0]).sort((a, b) => {
+      const groups = [['JUSS', 'HELLO FRESH', 'HF'], ['LINK', 'FUNDRAISING', 'FR']].map(g => {
+        const mine = rows.map((r, i) => ({ r: r, i: i })).filter(x => avCamp(x.r) === g[2]).sort((a, b) => {
           const ca = coach(a.r), cb = coach(b.r);
           return (ca ? 1 : 0) - (cb ? 1 : 0) || n[cb] - n[ca] || ca.localeCompare(cb) || a.r.full_name.localeCompare(b.r.full_name);
         });
-        return { camp: g[0], co: g[1], people: mine.map(x => ({ name: x.r.full_name, label: coach(x.r) ? coach(x.r) + ' - PR' : 'Office', photo: pics[x.i], frame: frames[x.i] })) };
-      }).filter(pg => pg.people.length);
-      if (!pages.length) return toast('Nobody on availability that week yet.');
-      return Promise.all(pages.map(pg => new Promise(res => {
-        const cv = JLBulletin.draw(document.createElement('canvas'), 'ns', { we: we, camp: pg.camp, people: pg.people }, {}, assets);
-        cv.toBlob(blob => res({ pg: pg, blob: blob }), 'image/jpeg', 0.9);
-      }))).then(outs => {
-        const files = outs.map(o => new File([o.blob], 'NS-WE-' + dd + '-' + o.pg.co + '.jpg', { type: 'image/jpeg' })), urls = outs.map(o => URL.createObjectURL(o.blob));
-        const info = { we: we, pages: outs.map(o => ({ camp: o.pg.camp, people: o.pg.people.map(p => p.name + ' · ' + p.label.toUpperCase() + (p.photo ? ' · photo' : '')) })) };
+        return { co: g[0], label: g[1], camp: g[2], people: mine.map(x => ({ name: x.r.full_name, label: coach(x.r) ? coach(x.r) + ' - PR' : 'Office', photo: pics[x.i], frame: frames[x.i] })) };
+      });
+      const cv = JLBulletin.draw(document.createElement('canvas'), 'starters', { title: 'WELCOME OUR NEW STARTERS', sub: 'WEEK ' + wk + '  |  DAY 1 W/E ' + we.slice(8, 10) + '/' + we.slice(5, 7) + '/' + we.slice(0, 4), groups: groups },
+        Object.assign({}, BULL_DEFAULTS, store.get('bullOpts') || {}), assets);
+      cv.toBlob(blob => {
+        const name = 'JL-new-starters-' + we + '.jpg', file = new File([blob], name, { type: 'image/jpeg' }), url = URL.createObjectURL(blob);
+        const info = { we: we, groups: groups.filter(g => g.people.length).map(g => ({ camp: g.camp, people: g.people.map(p => p.name + ' · ' + p.label.toUpperCase() + (p.photo ? ' · photo' : '')) })) };
         closeSheet(true);
         const back = document.createElement('div');
         back.className = 'sheet-back';
-        back.innerHTML = '<div class="sheet pdfprev" role="dialog" aria-label="Poster"><div class="grab"></div><div class="sheet-h"><div style="min-width:0"><div class="label muted">Poster · ' + rows.length + ' starters · ' + outs.length + ' page' + (outs.length > 1 ? 's' : '') + '</div><div class="display">New starters</div></div></div>' +
-          '<div id="avpimgs" data-info="' + h(JSON.stringify(info)) + '">' + urls.map((u, i) => '<img class="avpimg" src="' + u + '" alt="New starters, ' + (outs[i].pg.camp === 'HF' ? 'HelloFresh' : 'Fundraising') + '" data-camp="' + outs[i].pg.camp + '">').join('') + '</div>' +
+        back.innerHTML = '<div class="sheet pdfprev" role="dialog" aria-label="Poster"><div class="grab"></div><div class="sheet-h"><div style="min-width:0"><div class="label muted">Poster · ' + rows.length + ' starters</div><div class="display">New starters</div></div></div>' +
+          '<img id="avpimg" src="' + url + '" alt="New starters poster" style="width:100%;border-radius:14px" data-info="' + h(JSON.stringify(info)) + '">' +
           '<div class="bullbtns pdfbtns"><button class="btn wa" id="avpshare">📤 Share to WhatsApp</button><button class="btn ghost" id="avpsave">⬇️ Save</button></div></div>';
         document.body.appendChild(back);
         document.body.style.overflow = 'hidden';
         back.onclick = e => { if (e.target === back) closeSheet(); };
         back.querySelector('#avpshare').onclick = () => {
-          if (navigator.canShare && navigator.canShare({ files: files })) navigator.share({ files: files }).catch(() => {});
-          else { savePoster(files, urls); toast('Saved. Open WhatsApp and attach the images.'); }
+          if (navigator.canShare && navigator.canShare({ files: [file] })) navigator.share({ files: [file] }).catch(() => {});
+          else { savePoster(file, url); toast('Saved. Open WhatsApp and attach the image.'); }
         };
-        back.querySelector('#avpsave').onclick = () => savePoster(files, urls);
-      });
+        back.querySelector('#avpsave').onclick = () => savePoster(file, url);
+      }, 'image/jpeg', 0.9);
     }))).catch(e => toast('Couldn\'t make the poster: ' + e.message));
 }
 

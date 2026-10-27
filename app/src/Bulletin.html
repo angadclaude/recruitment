@@ -434,58 +434,60 @@
     footer(o);
   }
 
-  // ── New starters poster (Angad, 27 Oct): the team's Canva pages, one A4 page per campaign. FR = LINK + NDCS logos,
-  //    HF = JUSS + HelloFresh. "NS - WE - 01/11/26", a blue rule, then 4 across: a head-and-shoulders photo in a rounded blue
-  //    frame, the NAME in capitals, the coach in italics ("OFFICE" or "HASINI - PR"). Measured off his 1 Nov pages (1180 wide).
-  //    d: { we, camp: 'FR' | 'HF', people: [{ name, label, photo: Image | null, frame: { x, y, w, h } | null }] }
-  const NS = { W: 1180, H: 1669, BLUE: '#1d49a4', INK: '#25499a', EDGE: '#234a99', FW: 220, FH: 261, TOP: 237, PITCH: 385, STEP: 289.5, CX0: 148 };
-  const NS_ASPECT = (NS.FW - 6) / (NS.FH - 6);  // the photo inside the frame
-  function drawNS(canvas, d, o, assets) {
-    const s = o.scale || 1.4;
-    canvas.width = NS.W * s; canvas.height = NS.H * s;
-    X = canvas.getContext('2d'); X.setTransform(s, 0, 0, s, 0, 0);
-    X.fillStyle = '#fff'; X.fillRect(0, 0, NS.W, NS.H);
-    const fr = d.camp !== 'HF', L = fr ? assets.linkNs : assets.juss, R = fr ? assets.ndcs : assets.hellofresh;
-    if (L) fr ? X.drawImage(L, 1, 29, 186, 136) : X.drawImage(L, 15, 22, 209, 209 * L.height / L.width);
-    if (R) fr ? X.drawImage(R, 1011, 57, 125, 99) : X.drawImage(R, 1005, 45, 108, 99);
-    // "NS - WE - 01/11/26": Roboto Bold, set a little tight, the dashes with some air either side (as on the Canva pages)
-    const we = d.we || '', title = 'NS - WE - ' + we.slice(8, 10) + '/' + we.slice(5, 7) + '/' + we.slice(2, 4), ts = 74.6, track = -2.5;
-    font(ts, 700, 'Roboto');
-    const adv = ch => (ch === ' ' ? 7 : X.measureText(ch).width + track), total = title.split('').reduce((t, ch) => t + adv(ch), 0) - track;
-    let tx = NS.W / 2 - 16 - total / 2;
-    X.fillStyle = NS.BLUE; X.textAlign = 'left'; X.textBaseline = 'alphabetic';
-    title.split('').forEach(ch => { if (ch !== ' ') X.fillText(ch, tx, 125); tx += adv(ch); });
-    X.fillStyle = NS.BLUE; X.fillRect(67, 177.5, 976, 2.5);
-    const people = d.people || [];
-    // 4 across at full size; more than 3 rows: smaller (and 5 across when that's bigger) so it stays on the page
-    let best = null;
-    [4, 5, 6].forEach(cols => {
-      const rows = Math.ceil(people.length / cols) || 1;
-      const k = Math.min(1, (NS.W - 2 * 34) / (NS.FW + (cols - 1) * NS.STEP), (NS.H - NS.TOP - 30) / (rows * NS.PITCH - 40));
-      if (!best || k > best.k + 0.001) best = { cols: cols, k: k };
+  // ── New starters poster (Angad, 27 Oct). The app's own top and bottom: JUSS | LINK, 🎉 "WELCOME OUR NEW STARTERS",
+  //    "WEEK 1 | DAY 1 W/E …", a HELLO FRESH and a FUNDRAISING ribbon, the Mission footer. Between them, each starter as on
+  //    the team's Canva pages: a head-and-shoulders photo in a rounded blue frame, the NAME in capitals, then "OFFICE" or
+  //    "HASINI - PR" in italics (sizes as a share of the frame, measured off his NS w/e 01/11/26 pages).
+  //    d: { title, sub, groups: [{ label, co: 'JUSS' | 'LINK', people: [{ name, label, photo: Image | null, frame }] }] }
+  const NS = { INK: '#25499a', EDGE: '#234a99' };
+  const NS_ASPECT = 214 / 255;  // the photo inside a Canva frame (220 × 261 with a 3 px edge)
+  function drawStarters(canvas, d, o, assets) {
+    begin(canvas, o.scale || 1.5);
+    logos(assets, 16, 168);
+    emoji('🎉', 92, 236, 62);
+    text(d.title || 'WELCOME OUR NEW STARTERS', 560, 266, { size: 62, weight: 700, align: 'center', maxW: 820 });
+    text(d.sub || '', W / 2, 336, { size: 40, weight: 700, align: 'center', color: ORANGE, maxW: 900 });
+    const groups = d.groups.filter(g => g.people.length), top = 372, avail = FOOT - 20 - top, GH = 58, heads = groups.length * (GH + 12);
+    // Frame width F; across, a column every 1.22 F; down, a row every 1.68 F (frame, name, coach). The biggest F that fits;
+    // within 5% of the biggest, the fewest rows wins.
+    const STEP = 1.22, PITCH = 1.68, fits = [];
+    for (let c = 3; c <= 8; c++) {
+      const rows = groups.reduce((t, g) => t + Math.ceil(g.people.length / c), 0);
+      fits.push({ cols: c, rows: rows, F: Math.min(230, (W - 64) / (1 + (c - 1) * STEP), (avail - heads) / Math.max(rows, 1) / PITCH) });
+    }
+    const biggest = Math.max.apply(null, fits.map(f => f.F));
+    const pick = fits.filter(f => f.F >= biggest * 0.95).sort((a, b) => a.rows - b.rows || a.cols - b.cols)[0];
+    const cols = pick.cols, F = pick.F, k = F / 220, step = F * STEP, pitch = F * PITCH, FH = F * 261 / 220;
+    const pad = Math.max(0, avail - heads - pick.rows * pitch) / (groups.length + 1);
+    const x0 = W / 2 - (cols - 1) * step / 2;
+    let y = top + pad;
+    if (!groups.length) text('No starters this week yet', W / 2, top + 200, { size: 34, weight: 500, italic: true, align: 'center', color: '#6b7280' });
+    groups.forEach(g => {
+      const col = g.co === 'JUSS' ? TEAL : ORANGE, light = g.co === 'JUSS' ? '#25a5b8' : '#f7931e';
+      ribbon(32, y, W - 64, GH, grad(0, y, 0, y + GH, [light, col]));
+      text(g.label + '  ·  ' + g.people.length, W / 2, y + GH * 0.72, { size: 34, weight: 700, align: 'center', color: '#fff' });
+      y += GH + 12 + 6 * k;
+      g.people.forEach((p, i) => {
+        // fixed columns, a part-filled last row starting on the left (as on the Canva pages)
+        const cx = x0 + (i % cols) * step, fx = cx - F / 2, fy = y + Math.floor(i / cols) * pitch, rad = 15 * k;
+        rr(fx, fy, F, FH, rad); X.fillStyle = '#e9eaee'; X.fill();
+        if (p.photo) {
+          const f = p.frame || coverRect(p.photo.width, p.photo.height, NS_ASPECT);
+          X.save(); rr(fx, fy, F, FH, rad); X.clip(); X.drawImage(p.photo, f.x, f.y, f.w, f.h, fx, fy, F, FH); X.restore();
+        } else {
+          text(p.name.split(' ').filter(String).slice(0, 2).map(w => w[0].toUpperCase()).join(''), cx, fy + FH * 0.62, { size: F * 0.3, weight: 700, align: 'center', color: '#b4b8c4' });
+        }
+        rr(fx + 1.5 * k, fy + 1.5 * k, F - 3 * k, FH - 3 * k, rad - 1.5 * k); X.lineWidth = Math.max(2, 3 * k); X.strokeStyle = NS.EDGE; X.stroke();
+        // NAME, on two lines when it's long (TARANIH / RAGAGURU and MUHAMMAD / GONDAL were, DEMETRI HAMILTON wasn't), then the coach
+        const ns = 26.8 * k, words = String(p.name || '').toUpperCase().split(' ').filter(String), full = words.join(' '), maxW = step - 8 * k;
+        const lines = measure(full, ns, 700, 'Roboto') > Math.min(258 * k, maxW) && words.length > 1 ? [words[0], words.slice(1).join(' ')] : [full];
+        const two = lines.length > 1, base = fy + FH + (two ? 27 : 44) * k;  // a two-line name starts just under the frame
+        lines.forEach((ln, j) => text(ln, cx, base + j * 23 * k, { size: ns, weight: 700, fam: 'Roboto', align: 'center', color: NS.INK, maxW: maxW }));
+        if (p.label) text(String(p.label).toUpperCase(), cx, base + (two ? 23 : 0) * k + 35 * k, { size: 25 * k, weight: 'italic 400', fam: 'Arimo', align: 'center', color: NS.INK, maxW: maxW });
+      });
+      y += Math.ceil(g.people.length / cols) * pitch + pad - 6 * k;
     });
-    const cols = best.cols, k = best.k, fw = NS.FW * k, fh = NS.FH * k, step = NS.STEP * k, pitch = NS.PITCH * k;
-    people.forEach((p, i) => {
-      // fixed columns, a part-filled last row starting on the left (as on the Canva pages)
-      const r = Math.floor(i / cols), c = i % cols;
-      const cx = cols === 4 && k === 1 ? NS.CX0 + c * step : NS.W / 2 - 16 + (c - (cols - 1) / 2) * step;
-      const x = cx - fw / 2, y = NS.TOP + r * pitch, rad = 15 * k;
-      // the photo, cropped to the frame (the crop chosen when it was taken, or found from their face)
-      rr(x, y, fw, fh, rad); X.fillStyle = '#e9eaee'; X.fill();
-      if (p.photo) {
-        const f = p.frame || coverRect(p.photo.width, p.photo.height, NS_ASPECT);
-        X.save(); rr(x, y, fw, fh, rad); X.clip();
-        X.drawImage(p.photo, f.x, f.y, f.w, f.h, x, y, fw, fh);
-        X.restore();
-      }
-      rr(x + 1.5 * k, y + 1.5 * k, fw - 3 * k, fh - 3 * k, rad - 1.5 * k); X.lineWidth = 3 * k; X.strokeStyle = NS.EDGE; X.stroke();
-      // NAME, on two lines when it's long (TARANIH / RAGAGURU and MUHAMMAD / GONDAL were, DEMETRI HAMILTON wasn't), then the coach
-      const ns = 26.8 * k, words = String(p.name || '').toUpperCase().split(' ').filter(String), full = words.join(' '), maxW = step - 22 * k;
-      const lines = measure(full, ns, 700, 'Roboto') > 258 * k && words.length > 1 ? [words[0], words.slice(1).join(' ')] : [full];
-      const base = y + 305 * k;
-      lines.forEach((ln, j) => text(ln, cx, base - (lines.length - 1 - j) * 23 * k, { size: ns, weight: 700, fam: 'Roboto', align: 'center', color: NS.INK, maxW: maxW }));
-      if (p.label) text(String(p.label).toUpperCase(), cx, y + 340 * k, { size: 25 * k, weight: 'italic 400', fam: 'Arimo', align: 'center', color: NS.INK, maxW: maxW });
-    });
+    footer(o);
   }
   /** The biggest centred rectangle of this aspect inside a w × h picture. */
   function coverRect(w, h, aspect) {
@@ -581,16 +583,15 @@
       ['Oswald', 'oswald-latin-700-normal.woff2', '700'], ['Anton', 'anton-latin-400-normal.woff2', '400'],
       ['Roboto', 'roboto-latin-700-normal.woff2', '700'], ['Arimo', 'arimo-latin-400-italic.woff2', '400', 'italic'],
     ].map(f => new FontFace(f[0], 'url(' + base + 'fonts/' + f[1] + ')', { weight: f[2], style: f[3] || 'normal' }).load().then(ff => document.fonts.add(ff)).catch(() => {})));
-    ready = Promise.all([fonts, img(base + 'img/logo-juss.png'), img(base + 'img/logo-link.png'), img(base + 'img/logo-link-ns.png'), img(base + 'img/logo-ndcs.png'), img(base + 'img/logo-hellofresh.png')])
-      .then(r => ({ juss: r[1], link: r[2], linkNs: r[3], ndcs: r[4], hellofresh: r[5] }));
+    ready = Promise.all([fonts, img(base + 'img/logo-juss.png'), img(base + 'img/logo-link.png')]).then(r => ({ juss: r[1], link: r[2] }));
     return ready;
   }
 
   window.JLBulletin = {
     DAY_TITLES: DAY_TITLES, dailyRows: dailyRows, weeklyRows: weeklyRows, load: load,
     NS_ASPECT: NS_ASPECT, findFace: findFace, faceFrame: faceFrame, autoFrame: autoFrame,
-    /** kind 'daily' | 'weekly' | 'ns' (a new starters page) → draws onto canvas. */
-    draw: function (canvas, kind, d, o, assets) { (kind === 'weekly' ? drawWeekly : kind === 'ns' ? drawNS : drawDaily)(canvas, d, o, assets || {}); return canvas; },
+    /** kind 'daily' | 'weekly' | 'starters' → draws onto canvas. */
+    draw: function (canvas, kind, d, o, assets) { (kind === 'weekly' ? drawWeekly : kind === 'starters' ? drawStarters : drawDaily)(canvas, d, o, assets || {}); return canvas; },
   };
 })();
 </script>
