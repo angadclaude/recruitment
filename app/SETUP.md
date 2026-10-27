@@ -326,7 +326,7 @@ No more highlighters on the printed list:
   - **Coach → 🏢 Office** makes someone show as OFFICE (bookings by admins already do).
 - **🗑️ Remove someone:** tap them → **🗑️ Remove from availability** → tap again. They come off the list, the poster, the PDF and the alerts. Changed your mind? **↩️ Put back** at the top of the list.
 - **Pictures:** everyone's picture on the list is cropped to their face, so you can see who's who.
-- **📄 PDF:** the old sheet's layout, Monday to Sunday IN / OUT, a table per campaign.
+- **📄 PDF:** the old sheet's layout, Monday to Sunday IN / OUT, a table per campaign. Everyone's notes are printed in full under their name.
 
 ## 🔔 Bell sheets: new starters go on by themselves (replaces copying names across)
 - **What happens:** from **18:00 the day after their Day 1**, every new starter with their Week 1 days in goes into the **NEW STARTS** section at the bottom of that week's tab ("WE 01.11.26").

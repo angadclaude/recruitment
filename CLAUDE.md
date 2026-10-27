@@ -185,7 +185,7 @@ This replaces the "Juss & Link - NS Availability - 2026" Google Sheet (a W1 / Pi
   - "N with no Week 1 days yet" on screen;
   - "Said 5 days, in 3" against their evaluation answer (`q6_days`);
   - their coach gets an alert when days change after the first fill;
-  - a PDF like the sheet (`availPdf`, "NS Availability W1 w-e dd.mm.yyyy").
+  - a PDF like the sheet (`availPdf`, "NS Availability W1 w-e dd.mm.yyyy"). Notes print in full under each starter, across the table (Angad, 27 Oct: "I want to see all the notes"; a row's `note` in `listPdf`), not in a Notes column that cut them short.
 - **e2e section "availability"** covers all of it, on both back ends.
 
 ## Done: the morning after Day 1 (27 Oct 2026)

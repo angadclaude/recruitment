@@ -1,4 +1,4 @@
-window.APP_VERSION = '1e5efb96';
+window.APP_VERSION = '7e79cf11';
 
 (function () {
 'use strict';
@@ -2500,14 +2500,14 @@ function addStarterSheet(we, coaches) {
 /** The week as the old sheet looked: a table per campaign, Monday to Sunday IN / OUT, in the Appointments PDF's look. */
 function availPdf(we, wk, rows) {
   const mon = addDays(we, -6 + (wk === 2 ? 7 : 0)), key = wk === 2 ? 'w2' : 'w1', inN = i => rows.filter(r => r[key][i] === 'I').length;
-  const row = r => ({ fill: /[IO]/.test(r[key]) ? '' : 'amber', cells: [r.full_name, r.mobile || '', (r.coach_name || '').split(' ')[0], r.driver || ''].concat(
-    r[key].split('').map((x, i) => wk === 1 && addDays(mon, i) < r.day1_date ? ['-', 'grey'] : x === 'I' ? ['IN', 'green', true] : x === 'O' ? ['OUT', 'grey'] : '')).concat([r.notes || '']) });
+  const row = r => ({ fill: /[IO]/.test(r[key]) ? '' : 'amber', note: r.notes || '', cells: [r.full_name, r.mobile || '', (r.coach_name || '').split(' ')[0], r.driver || ''].concat(
+    r[key].split('').map((x, i) => wk === 1 && addDays(mon, i) < r.day1_date ? ['-', 'grey'] : x === 'I' ? ['IN', 'green', true] : x === 'O' ? ['OUT', 'grey'] : '')) });
   const g = (co, head) => { const l = rows.filter(r => avCamp(r) === (co === 'JUSS' ? 'HF' : 'FR')); return { head: head + ' · ' + l.length, rows: l.map(row) }; };
   return listPdf({
     name: avName(we, wk), heading: 'NS Availability · Week ' + wk, sub: 'Started week ending ' + fmtLong(we) + ' ' + we.slice(0, 4) + '  ·  Week ' + wk + ': ' + fmt(mon) + ' – ' + fmt(addDays(mon, 6)) + '  ·  LINK Marketing & JUSS Marketing',
     boxes: [[rows.length, 'Starters'], [rows.filter(r => r.driver === 'Yes').length, 'Drivers', 'green'], [rows.filter(r => !/[IO]/.test(r[key])).length, 'No days yet', rows.some(r => !/[IO]/.test(r[key])) ? 'amber' : '']],
     line: 'In each day: ' + AV_DAY.map((d, i) => d + ' ' + inN(i)).join(' · '),
-    cols: [['#', 16], ['Name', 104], ['Contact', 62], ['Coach', 56], ['Driver', 36]].concat(AV_DAY.map(d => [d, 26])).concat([['Notes', 67]]),
+    cols: [['#', 16], ['Name', 133], ['Contact', 68], ['Coach', 70], ['Driver', 40]].concat(AV_DAY.map(d => [d, 28])),  // notes in full under each row
     groups: [g('JUSS', 'HelloFresh'), g('LINK', 'Fundraising')], empty: 'Nobody started that week.',
   });
 }
@@ -3743,6 +3743,19 @@ function pdfTextW(s, size, bold) {
   for (const ch of pdfStr(s).replace(/\\(.)/g, '$1')) { const k = ch.charCodeAt(0) - 32; w += k >= 0 && k < 95 ? HELV_W[k] : 556; }
   return w * size / 1000 * (bold ? 1.07 : 1);  // Helvetica-Bold runs ~7% wider
 }
+/** s in lines no wider than w points (a word too long for a line is cut). */
+function pdfWrap(s, w, size, bold) {
+  const fits = t => pdfTextW(t, size, bold) <= w, lines = [];
+  let line = '';
+  String(s == null ? '' : s).replace(/\s+/g, ' ').trim().split(' ').forEach(word => {
+    if (line && fits(line + ' ' + word)) { line += ' ' + word; return; }
+    if (line) lines.push(line);
+    line = word;
+    while (!fits(line)) { let n = line.length - 1; while (n > 1 && !fits(line.slice(0, n))) n--; lines.push(line.slice(0, n)); line = line.slice(n); }
+  });
+  if (line) lines.push(line);
+  return lines;
+}
 /** s, shortened with "..." if it's wider than w points. */
 function pdfFit(s, w, size, bold) {
   s = String(s == null ? '' : s);
@@ -3839,7 +3852,8 @@ function weekPdf(we, list) {
 // the All tab's): title, summary boxes, a line of totals, then a table per group (a day, a booker), rows coloured by how
 // they stand. ─────
 /** o: { name (title + file name), heading, sub, boxes [[n, label, ink]], line, cols [[head, width]] ('#' first, 523 in all),
- *  groups [{ head, note, rows [{ cells [text or [text, ink, bold]], fill: green / red / amber }] }], empty } */
+ *  groups [{ head, note, rows [{ cells [text or [text, ink, bold]], fill: green / red / amber, note }] }], empty }
+ *  A row's note is printed in full under it, across the table (Angad, 27 Oct: "I want to see all the notes"). */
 function listPdf(o) {
   const W = 595.28, H = 841.89, M = 36, RH = 19, BOTTOM = 48, TW = 523, cols = o.cols;
   const colX = []; cols.reduce((x, c) => { colX.push(x + 4); return x + c[1]; }, M);
@@ -3867,16 +3881,19 @@ function listPdf(o) {
     if (!cont && g.note) { const x = M + pdfTextW(head, 12, true) + 14; txt(x, y - 12, pdfFit(g.note, M + TW - x, 8.5), 8.5, false, 'grey'); }
     y -= 20;
   };
+  const noteLines = r => (r.note ? pdfWrap('Notes: ' + r.note, M + TW - colX[1] - 6, 8) : []);
+  const rowH = r => RH + (r.note ? noteLines(r).length * 10.5 + 3 : 0);
   const row = (r, i) => {
-    const yy = y - 13;
-    if (r.fill) out.push(FILL[r.fill] + ' rg ' + M + ' ' + (y - RH).toFixed(2) + ' ' + TW + ' ' + RH + ' re f');
+    const yy = y - 13, rh = rowH(r);
+    if (r.fill) out.push(FILL[r.fill] + ' rg ' + M + ' ' + (y - rh).toFixed(2) + ' ' + TW + ' ' + rh.toFixed(2) + ' re f');
     txt(colX[0], yy, String(i + 1), 8, false, 'grey');
     r.cells.forEach((c, j) => {
       const v = Array.isArray(c) ? c : [c], z = shrink(String(v[0] == null ? '' : v[0]), j + 1, j ? 8.5 : 9, 6.5, j === 0 || v[2]);
       txt(colX[j + 1], yy, z[0], z[1], j === 0 || v[2], v[1]);
     });
-    out.push('0.85 0.84 0.82 RG 0.5 w ' + M + ' ' + (y - RH).toFixed(2) + ' m ' + (M + TW) + ' ' + (y - RH).toFixed(2) + ' l S');
-    y -= RH;
+    noteLines(r).forEach((l, k) => txt(colX[1], yy - 12 - k * 10.5, l, 8, false, 'grey'));
+    out.push('0.85 0.84 0.82 RG 0.5 w ' + M + ' ' + (y - rh).toFixed(2) + ' m ' + (M + TW) + ' ' + (y - rh).toFixed(2) + ' l S');
+    y -= rh;
   };
 
   newPage();
@@ -3897,9 +3914,9 @@ function listPdf(o) {
   const groups = o.groups.filter(g => g.rows.length);
   if (!groups.length) { y -= 24; txt(M, y, o.empty, 11, false, 'grey'); }
   groups.forEach(g => {
-    room(30 + 17 + RH);
+    room(30 + 17 + rowH(g.rows[0]));
     groupHead(g, false); colHead();
-    g.rows.forEach((r, i) => { if (room(RH)) { groupHead(g, true); colHead(); } row(r, i); });
+    g.rows.forEach((r, i) => { if (room(rowH(r))) { groupHead(g, true); colHead(); } row(r, i); });
   });
   const streams = pages.map((p, i) => {
     out = p;
