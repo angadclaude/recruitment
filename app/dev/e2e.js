@@ -2013,8 +2013,8 @@ async function fillEval(p) {
     ok(apd.suggestedFilename() === 'NS Availability W2 w-e 25.10.2026.pdf' && /\(NS Availability · Week 2\) Tj/.test(apRaw) && /\(Mira Manual\) Tj/.test(apRaw) && /\(IN\) Tj/.test(apRaw) &&
       /\(Fundraising · \d+\) Tj/.test(apRaw) && /\(Sun\) Tj/.test(apRaw), '📄 PDF like the old sheet: "NS Availability W2 w-e 25.10.2026.pdf", a table per campaign, Monday to Sunday IN / OUT');
     try { require('child_process').execFileSync('pdftoppm', ['-png', '-r', '70', '-singlefile', apPath, `${SHOTS}/52-availability`]); } catch (e) { /* no renderer here */ }
-    // 📸 The poster, as the team made it in Canva (Angad, 27 Oct): an A4 page per campaign, FR (LINK + NDCS) then HF (JUSS +
-    // HelloFresh), photos 4 across, NAME, then "OFFICE" (booked from the office) or "<COACH> - PR". 🏢 Office can be picked as the coach.
+    // 📸 The poster (Angad, 27 Oct): the app's welcome header, HELLO FRESH and FUNDRAISING ribbons and Mission footer, with each
+    // starter as on the team's Canva pages: photo, NAME, then "OFFICE" (booked from the office) or "<COACH> - PR". 🏢 Office can be the coach.
     const avNow = (await api(admin, 'availWeek', { weekEnding: WE })).rows, frOne = avNow.find(r => !r.office && r.coach_id);
     if (frOne) {
       await ap.click('.avrow:has-text("' + frOne.full_name + '")'); await ap.waitForSelector('#avcoach');
@@ -2023,24 +2023,23 @@ async function fillEval(p) {
     const avOff = (await api(admin, 'availWeek', { weekEnding: WE })).rows;
     const frOff = frOne && avOff.find(r => r.id === frOne.id);
     ok(frOff && frOff.coach_id === 'office' && frOff.coach_name === 'Office' && frOff.office, 'Coach → 🏢 Office: saved, and marked office (' + (frOne ? frOne.full_name : '?') + ')');
-    await ap.click('#avposter'); await ap.waitForSelector('#avpimgs[data-info]', { timeout: 15000 });
-    const pInfo = JSON.parse(await ap.getAttribute('#avpimgs', 'data-info')), allP = pInfo.pages.map(pg => pg.camp + ': ' + pg.people.join(', ')).join(' / ');
+    await ap.click('#avposter'); await ap.waitForSelector('#avpimg[data-info]', { timeout: 15000 });
+    const pInfo = JSON.parse(await ap.getAttribute('#avpimg', 'data-info')), allP = pInfo.groups.map(pg => pg.camp + ': ' + pg.people.join(', ')).join(' / ');
     const expLabel = r => (r.office ? 'OFFICE' : (r.coach_name || '').split(' ')[0].toUpperCase() + ' - PR');
-    const camps = pInfo.pages.map(pg => pg.camp).join(), pageDims = await ap.$$eval('#avpimgs img', a => a.map(i => i.naturalWidth + '×' + i.naturalHeight));
-    ok(pInfo.we === WE && (camps === 'FR,HF' || camps === 'FR' || camps === 'HF') && pageDims.every(d => d === '1652×2336') &&
+    const camps = pInfo.groups.map(pg => pg.camp).join(), pageDims = await ap.$$eval('#avpimg', a => a.map(i => i.naturalWidth + '×' + i.naturalHeight));
+    ok(pInfo.we === WE && (camps === 'HF,FR' || camps === 'FR' || camps === 'HF') && pageDims.join() === '1536×2304' &&
       avOff.every(r => allP.includes(r.full_name + ' · ' + expLabel(r))) && allP.includes('Mira Manual · OFFICE · photo') && allP.includes(s1.full_name + ' · ' + expLabel(s1) + ' · photo') &&
-      pInfo.pages.every(pg => { const ls = pg.people.map(x => / · OFFICE/.test(x)); return ls.indexOf(false) < 0 || ls.lastIndexOf(true) < ls.indexOf(false); }),
-      '📸 Poster: A4 pages (' + pageDims.join(', ') + '), Fundraising then HelloFresh, Office first, then each coach\'s: ' + allP);
-    for (const [i, pg] of pInfo.pages.entries()) fs.writeFileSync(`${SHOTS}/53-new-starters-${pg.camp}.jpg`, Buffer.from(await ap.$eval('#avpimgs img:nth-child(' + (i + 1) + ')', im => fetch(im.src).then(r => r.arrayBuffer()).then(b => Array.from(new Uint8Array(b))))));
+      pInfo.groups.every(pg => { const ls = pg.people.map(x => / · OFFICE/.test(x)); return ls.indexOf(false) < 0 || ls.lastIndexOf(true) < ls.indexOf(false); }),
+      '📸 Poster (' + pageDims.join() + '): HelloFresh then Fundraising, Office first, then each coach\'s: ' + allP);
+    fs.writeFileSync(`${SHOTS}/53-new-starters-poster.jpg`, Buffer.from(await ap.$eval('#avpimg', im => fetch(im.src).then(r => r.arrayBuffer()).then(b => Array.from(new Uint8Array(b))))));
     if (frOne) await api(admin, 'saveAvail', { id: frOne.id, w1: frOne.w1, w2: frOne.w2, driver: frOne.driver, notes: frOne.notes, coach_id: frOne.coach_id });
-    const nsName = co => 'NS-WE-' + WE.slice(8, 10) + '-' + WE.slice(5, 7) + '-' + WE.slice(2, 4) + '-' + co + '.jpg';
-    const posterNames = pInfo.pages.map(pg => nsName(pg.camp === 'HF' ? 'JUSS' : 'LINK'));
+    const posterNames = ['JL-new-starters-' + WE + '.jpg'];
     const posterDls = [], onDl = d => posterDls.push(d.suggestedFilename());
     ap.on('download', onDl);
     await ap.click('#avpsave');
     for (let i = 0; i < 50 && posterDls.length < posterNames.length; i++) await ap.waitForTimeout(100);
     ap.off('download', onDl);
-    ok(JSON.stringify(posterDls) === JSON.stringify(posterNames), '⬇️ Save on a computer / Android: downloads each page (' + posterDls.join(', ') + ')');
+    ok(JSON.stringify(posterDls) === JSON.stringify(posterNames), '⬇️ Save on a computer / Android: downloads it (' + posterDls.join(', ') + ')');
     // iPhone (Angad, 27 Oct): a download there only reaches Files, as a grey "JPG" page with "Open in Preview". Save opens the
     // Share sheet instead, whose "Save Image" puts it in Photos. Same for the daily bulletin's Save.
     const iosCtx = await browser.newContext(Object.assign({ userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1' }, PHONE));
@@ -2053,7 +2052,7 @@ async function fillEval(p) {
     for (let i = 0; i < 4 && (await ip.textContent('.seg-nav b')) !== 'Sun 25 Oct'; i++) {
       const was = await ip.textContent('.seg-nav b'); await ip.click('#avprev'); await ip.waitForFunction(w => document.querySelector('.seg-nav b').textContent !== w, was);
     }
-    await ip.waitForSelector('#avposter'); await ip.click('#avposter'); await ip.waitForSelector('#avpimgs[data-info]', { timeout: 15000 });
+    await ip.waitForSelector('#avposter'); await ip.click('#avposter'); await ip.waitForSelector('#avpimg[data-info]', { timeout: 15000 });
     await ip.click('#avpsave');
     await ip.waitForFunction(n => (window.__shared || []).length === n, posterNames.length);
     const iosToast = await ip.textContent('#toast').catch(() => '');
