@@ -1273,6 +1273,21 @@ function setCampaign(req, u) {
 function campaignOf(c) { return c.campaign === 'HF' || c.campaign === 'FR' ? c.campaign : c.company === 'JUSS' ? 'HF' : 'FR'; }
 /** The company someone placed in HF or FR joins: HF = JUSS, FR = LINK ('' when not placed). */
 function campBrand(k) { return k === 'HF' ? 'JUSS' : k === 'FR' ? 'LINK' : ''; }
+/** Their booker's company is now co (a booker corrected, or their booker moved company in Team). The company they join follows
+ *  it, unless they're placed in HF / FR (then the placement's). A company the recruitment team chose that wasn't the old one stays. */
+function followCompany(c, co) {
+  const was = c.company; c.company = co;
+  if (campBrand(c.campaign)) c.brand = campBrand(c.campaign);
+  else if (c.brand === was) c.brand = '';
+}
+/** A booker moved company in Team (Angad, 28 Oct: Mamadou Bamba LINK → JUSS, and Ellexie, booked by him that week, still said
+ *  LINK): their candidates from this week on follow them. Earlier weeks read as they happened. Returns how many moved. */
+function bookerMovedCompany(b) {
+  const since = weekMonday(todayStr());
+  const rows = readTable('Candidates').filter(c => c.booker_id === b.id && c.attended_date >= since && c.company !== b.company);
+  rows.forEach(c => { const was = c.company; followCompany(c, b.company); writeRow('Candidates', c); log({ name: 'App' }, 'company', c.id, was + ' → ' + b.company + ' (' + b.name + ' is ' + b.company + ' now)'); });
+  return rows.length;
+}
 /** A name typed wrong at check-in ("Mel Anouman" → "Mel Abraham" on 26 Oct's list): fixed everywhere it shows. */
 function fixName(req, u) {
   if (!isAdmin(u)) throw new Error('Admin only');
@@ -1294,12 +1309,8 @@ function reassignBooker(req, u) {
     const b = userById(req.booker_id);
     if (!b) throw new Error('Booker not found');
     if (c.booker_id === b.id) return shape(c, u);
-    const before = c.booker_name || c.booker_typed, was = c.company;
-    c.booker_id = b.id; c.booker_name = b.name; c.company = b.company;
-    // The company their messages and welcome email come from: their placement's, else the new booker's (a company the
-    // recruitment team chose that wasn't the old booker's stays)
-    if (campBrand(c.campaign)) c.brand = campBrand(c.campaign);
-    else if (c.brand === was) c.brand = '';
+    const before = c.booker_name || c.booker_typed;
+    c.booker_id = b.id; c.booker_name = b.name; followCompany(c, b.company);
     writeRow('Candidates', c);
     log(u, 'reassign', c.id, before + ' → ' + b.name);
     return shape(c, u);
@@ -1425,7 +1436,7 @@ function saveUser(req, u) {
   if (!roles.length) throw new Error('Pick at least one role');
   if (!email && roles.indexOf('booker') < 0) throw new Error('Add their email: only bookers can be added by name alone.');
   const isNew = !x.id;
-  let oldEmail = '';
+  let oldEmail = '', moved = 0;
   const saved = withLock(() => {
     const all = readTable('Users');
     if (email && all.some(o => o.email.toLowerCase() === email && o.id !== x.id)) throw new Error('That email is already used.');
@@ -1436,7 +1447,7 @@ function saveUser(req, u) {
     let rec = x.id ? all.filter(o => o.id === x.id)[0] : null;
     if (x.id && !rec) throw new Error('User not found');
     oldEmail = rec ? normEmail(rec.email) : '';
-    const renamed = rec && rec.name !== cleanName(x.name);
+    const renamed = rec && rec.name !== cleanName(x.name), oldCo = rec ? rec.company : '';
     if (rec && rec.id === u.id && (roles.indexOf('admin') < 0 || !x.active)) throw new Error("You can't remove your own admin access.");
     if (!rec) rec = { id: uid(), created_at: nowStr() };
     if (x.aliases !== undefined) rec.aliases = checkAliases(x.aliases, rec, x.name, all);
@@ -1447,13 +1458,14 @@ function saveUser(req, u) {
     usersChanged();
     // Renamed: their candidates show the new name too
     if (renamed) readTable('Candidates').filter(c => c.booker_id === rec.id && c.booker_name !== rec.name).forEach(c => { c.booker_name = rec.name; writeRow('Candidates', c); });
+    if (oldCo && oldCo !== rec.company) moved = bookerMovedCompany(rec);
     log(u, 'user_save', '', rec.name + ' ' + rec.roles + ' active=' + rec.active + (rec.aliases ? ' · other names: ' + rec.aliases : ''));
     return publicUser(rec);
   });
   // New person, email just added, or email corrected: the setup steps land in the (new) inbox
   if (saved.active && saved.email && normEmail(saved.email) !== oldEmail) sendSetupEmail(saved);
   const linked = saved.active && rolesOf(saved).indexOf('booker') >= 0 ? linkTypedBookings(saved, u) : 0;
-  return Object.assign(saved, { linked: linked });
+  return Object.assign(saved, { linked: linked, moved: moved });
 }
 
 function normName(s) { return String(s || '').toLowerCase().replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim(); }
@@ -1531,6 +1543,22 @@ function brandFollowsPlacement() {
       log({ name: 'App' }, 'brand', c.id, k + ' (follows their ' + c.campaign + ' placement)');
     });
     p.setProperty('BRAND_FOLLOWS_PLACEMENT', nowStr() + ' · ' + n);
+  });
+}
+/** Once (Angad, 28 Oct): bookers moved company in Team before their candidates followed them (Mamadou Bamba, LINK → JUSS).
+ *  This week's catch up, as bookerMovedCompany would have done. */
+function companyFollowsBooker() {
+  const p = PropertiesService.getScriptProperties();
+  if (p.getProperty('COMPANY_FOLLOWS_BOOKER')) return;
+  withLock(() => {
+    if (p.getProperty('COMPANY_FOLLOWS_BOOKER')) return;
+    const since = weekMonday(todayStr()), moved = {};
+    readTable('Candidates').forEach(c => {
+      const b = c.booker_id && c.attended_date >= since && userById(c.booker_id);
+      if (b && (b.company === 'LINK' || b.company === 'JUSS') && c.company !== b.company) moved[b.id] = b;
+    });
+    const n = Object.keys(moved).reduce((t, k) => t + bookerMovedCompany(moved[k]), 0);
+    p.setProperty('COMPANY_FOLLOWS_BOOKER', nowStr() + ' · ' + n);
   });
 }
 /** Who gets the credit for a booker picked or found: themselves, or (switched off) whoever took over from them, else nobody. */
@@ -2129,6 +2157,7 @@ function keepWarm() {
   try { backfillOutcomes(); } catch (e) { console.error(e); }
   try { undoHandoverOpen(); } catch (e) { console.error(e); }  // once
   try { brandFollowsPlacement(); } catch (e) { console.error(e); }  // once
+  try { companyFollowsBooker(); } catch (e) { console.error(e); }  // once
   try { maybeAvailReminder(); } catch (e) { console.error(e); }
   try { maybeDay1Results(); } catch (e) { console.error(e); }
   maybeDailyDigest();
