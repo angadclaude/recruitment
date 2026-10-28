@@ -1,4 +1,4 @@
-window.APP_VERSION = '7dd78515';
+window.APP_VERSION = '14a14413';
 
 (function () {
 'use strict';
@@ -73,7 +73,8 @@ function sendSoon(key, action, payload, onDone, onFail) {
   const q = sendq(); q[key] = { action: action, payload: payload }; store.set('sendq', q);
   const gen = SEND_GEN[key] = (SEND_GEN[key] || 0) + 1;
   const drop = () => { const x = sendq(); delete x[key]; store.set('sendq', x); };
-  const go = n => call(action, payload).then(r => {
+  // A check-in says how long it waited on the phone (made → sent, both by the phone's clock): the day they came, even if sent later
+  const go = n => call(action, payload.form && payload.form.made ? Object.assign({}, payload, { form: Object.assign({}, payload.form, { sent: Date.now() }) }) : payload).then(r => {
     if (SEND_GEN[key] === gen) drop();
     afterSend(action, payload, r); if (onDone) onDone(r);
   }, e => {
@@ -382,7 +383,7 @@ function renderCheckin(then, pre, preErr) {
       over18: chipVal(f, 'over18'), source: chipVal(f, 'source'),
       booker_id: booker ? booker.id : '', booker_typed: booker ? booker.name : typed,
       rtw: f.rtw.value, visa_expiry: f.visa_expiry.value, privacy_ok: f.privacy_ok.checked,
-      day: londonToday(),  // waiting for signal and sent tomorrow: still today's check-in
+      made: Date.now(),  // waiting for signal and sent tomorrow: still today's check-in (see sendSoon)
     };
     if (!form.full_name.trim() || !form.mobile.trim() || !form.email.trim()) return showErr(err, 'Please fill in your name, mobile and email.');
     // Google's own checks, here first: a check-in shown as done is one Google will take

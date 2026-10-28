@@ -836,8 +836,10 @@ function checkin(req) {
   if (['Yes', 'No'].indexOf(f.over18) < 0) throw new Error('Please answer whether you are 18 or over.');
   if (!f.rtw) throw new Error('Please choose your right to work status.');
   if (!truthy(f.privacy_ok)) throw new Error('Please tick the privacy notice to continue.');
-  // Kept on the phone with no signal and sent later: the day they came (up to 3 days back), not the day it got through
-  const now = todayStr(), today = /^\d{4}-\d\d-\d\d$/.test(f.day || '') && f.day < now && f.day >= addDays(now, -3) ? f.day : now;
+  // Kept on the phone with no signal and sent later: the day they came, not the day it got through. The phone says how long it
+  // waited (made → sent, both by its own clock, so a phone set to the wrong date can't move a check-in); up to 3 days.
+  const waited = Number(f.sent) - Number(f.made);
+  const today = waited > 0 && waited <= 3 * 86400000 ? Utilities.formatDate(new Date(new Date().getTime() - waited), CONFIG.TZ, 'yyyy-MM-dd') : todayStr();
   // Picked from a list that's out of date (someone since switched off): whoever took over from them, else nobody
   let pick = f.booker_id ? userById(f.booker_id) : null;
   // Picked by another name that isn't theirs any more (a form left open since a handover ended: "Fiza Iqbal" under Angad):

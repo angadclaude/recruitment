@@ -3083,8 +3083,9 @@ async function fillEval(p) {
     })()`);
     ok(rb.join('|') === '||', 'rebooked after "didn\'t continue": the new Day 1 starts clean (not marked as left again)');
     // A check-in that waited for signal and got through the next day: the day they came
-    const yd = await ev('addDays(todayStr(), -1)'), late = await ci({ full_name: 'Sig Nal', mobile: '07700900405', email: 'signal@example.com', booker_id: mo.id, day: yd });
-    const lateC = await api(admin, 'getCandidate', { id: late.id }), far = await ci({ full_name: 'Far Back', mobile: '07700900406', email: 'far@example.com', booker_id: mo.id, day: '2020-01-01' });
+    // (made → sent by the phone's own clock: a phone set to 2020 still lands today)
+    const yd = await ev('addDays(todayStr(), -1)'), late = await ci({ full_name: 'Sig Nal', mobile: '07700900405', email: 'signal@example.com', booker_id: mo.id, made: 1e12, sent: 1e12 + 26 * 3600000 });
+    const lateC = await api(admin, 'getCandidate', { id: late.id }), far = await ci({ full_name: 'Far Back', mobile: '07700900406', email: 'far@example.com', booker_id: mo.id, made: Date.UTC(2020, 0, 1), sent: Date.UTC(2020, 0, 1) + 60000 });
     const farC = await api(admin, 'getCandidate', { id: far.id });
     await post('/dev/eval', { js: `['${late.id}', '${far.id}'].forEach(id => { sheet('Candidates').deleteRow(rowOfId('Candidates', id)); delete MEMO.Candidates; }); 'ok'` });
     ok(lateC.attended_date === yd && lateC.week_ending === await ev(`weekEnding('${yd}')`) && farC.attended_date === t,

@@ -94,7 +94,7 @@ The recruitment app for **LINK Marketing** and **JUSS Marketing** (Angad runs bo
   - An admin's decision note lives on the candidate only (the Log says "with a note"). Emails' copies in `jl.outbox` are deleted after 14 days.
   - **The convictions answer (q13) is never sent back to the evaluation page** (`myEval`): anyone with the mobile can open "Change my answers" on the day, so they answer it again.
 - **Search:** a presenter finds someone else's candidate by name only, never by mobile or email (`search`, `fullAccess`).
-- **Check-in:** one kept on the phone with no signal counts on the day it was made (`form.day`, up to 3 days back). The same email twice in a day on another mobile is a repeat (counted once). A pick from an old list under another name that isn't theirs any more is read as typed (a form left open since a handover ended).
+- **Check-in:** one kept on the phone with no signal counts on the day it was made (the phone sends how long it waited, `made` → `sent` by its own clock, so a phone set to the wrong date can't move it; up to 3 days). The same email twice in a day on another mobile is a repeat (counted once). A pick from an old list under another name that isn't theirs any more is read as typed (a form left open since a handover ended).
 - **Names** keep accents and their capitals ("José García", "Ştefan"): `cleanName` / `firstOf`.
 - **Never:** paste passwords in chat; log into Cube; pull IQ Suite / Acwyre data without Angad's sign-off; recreate the old web-app mailer (welcome emails go through Gmail "send mail as" from Apps Script).
 
