@@ -1,4 +1,4 @@
-window.APP_VERSION = '6e8193d2';
+window.APP_VERSION = '25c33487';
 
 (function () {
 'use strict';
@@ -1516,7 +1516,8 @@ function statusPill(c) {
     return '<span class="pill orange">🎉 Send congratulations</span>';
   if (c.outcome === 'Academy booked') return '<span class="pill green">' + (c.academy_confirmed_at ? '✅ Day 1 confirmed' : 'Academy ' + fmt(c.academy_date)) + (c.outcome_late ? ' · late' : '') + '</span>';
   if (c.outcome === 'Thinking it over' && c.callback_at) return '<span class="pill ' + (c.callback_at < londonNow() ? 'red' : 'blue') + '">🔁 Call back ' + h(fmtTs(c.callback_at)) + '</span>';
-  if (c.outcome) return '<span class="pill blue">' + h(c.outcome) + (c.outcome_late ? ' · late' : '') + '</span>';
+  const look = { Declined: ['red', '❌ '], 'Not suitable': ['red', '🚫 '], 'No answer': ['amber', '📵 '], 'Thinking it over': ['blue', '🤔 '] }[c.outcome] || ['blue', ''];
+  if (c.outcome) return '<span class="pill ' + look[0] + '">' + look[1] + h(c.outcome) + (c.outcome_late ? ' · late' : '') + '</span>';
   if (c.non_qual) return '';  // nqPill says it: no evaluation, no call needed
   if (c.rag === 'W') return '<span class="pill">🚶 Walked out</span>';  // left the presentation: no evaluation, no call needed
   if (c.eval_at) return '<span class="pill orange">📞 Call needed</span>';
@@ -1581,7 +1582,7 @@ function itemBtn(c, showStatus, rating) {
     '<div class="name">' + h(c.full_name) + (c.stars ? ' <span class="stars-sm">' + '★'.repeat(Number(c.stars)) + '</span>' : '') + '</div>' +
     '<div class="sub">' + (c.limited ? (bookedBy(c) ? bookedBy(c) + ' ' : '') + (c.company ? '<span class="co ' + h(c.company) + '">' + h(c.company) + '</span> ' : '') + '· in ' + h(String(c.created_at).slice(11, 16))
       : c.booker_name ? h(c.booker_name) + ' <span class="co ' + h(c.company) + '">' + h(c.company) + '</span>' : '<i>Booker not confirmed' + (c.booker_typed ? ': "' + h(c.booker_typed) + '"' : '') + '</i>') + '</div>' +
-    '<div class="pills">' + nqPill(c) + (showStatus ? statusPill(c) : '') + (c.in_room || rating || noRating(c) ? '' : '<span class="pill">Not rated yet</span>') +
+    '<div class="pills">' + nqPill(c) + (showStatus === 'outcome' ? (c.outcome && !c.limited ? statusPill(c) : '') : showStatus ? statusPill(c) : '') + (c.in_room || rating || noRating(c) ? '' : '<span class="pill">Not rated yet</span>') +
       (c.limited && c.no_rating && !c.in_room ? '<span class="pill">No rating needed</span>' : '') + (c._pending ? '<span class="pill">⏳ Syncing</span>' : '') + flagCounts(c) + '</div>' +
     '</div><span class="chev">›</span></button>';
 }
@@ -1693,7 +1694,8 @@ function viewToday(quiet) {
       (items.length ? '<div class="section-h"><b>In the room</b><span>' + rated + ' of ' + toRate.length + ' rated</span></div>' +
         (isPresenter() ? '<p class="hint">Tap Green, Amber or Red to rate. Rating = they were in the room (that\'s what counts for the recruitment incentive). Left before the end? Tap 🚶 Walk out. Under 18 or no right to work: no rating needed. Tap a name for stars and notes.</p>' : '') +
         (items.some(c => c.limited) ? '<p class="hint">🔒 You see your own candidates in full. Everyone else\'s: name, who booked them and the room rating only.</p>' : '') +
-        '<div class="list">' + items.map(c => item(c, false, isPresenter() && !c.in_room && !noRating(c) ? 'rate' : '')).join('') + '</div>'
+        // Their outcome next to their name once it's logged (Angad, 28 Oct: "rather than us opening his profile… it should say next to his name")
+        '<div class="list">' + items.map(c => item(c, 'outcome', isPresenter() && !c.in_room && !noRating(c) ? 'rate' : '')).join('') + '</div>'
         : empty('📷', 'No check-ins yet. They appear here live as people scan the check-in QR on your first slide.'));
   }
   const page = paint('', body, quiet);

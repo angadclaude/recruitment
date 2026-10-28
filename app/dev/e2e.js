@@ -2685,6 +2685,17 @@ async function fillEval(p) {
   await wb.close();
   await api(admin, 'saveOutcome', { id: wally.id, outcome: 'Declined', outcome_notes: 'walked out' });
   ok((await api(admin, 'getCandidate', { id: wally.id })).outcome === 'Declined', 'an admin can still log a final answer (anything but booked)');
+  // The outcome shows on Today next to their name (Angad, 28 Oct: "rather than us opening his profile and seeing at the bottom that
+  // he is declined… it should say next to his name"); someone else's candidate in a presenter's view shows no outcome
+  const todayPills = async page => {
+    await page.goto(APP + 'index.html'); await page.waitForSelector('.tabbar button[data-tab=today]'); await page.click('.tabbar button[data-tab=today]');
+    await page.waitForSelector('.item[data-id="' + wally.id + '"]');
+    return page.$$eval('.item[data-id]', e => Object.fromEntries(e.map(x => [x.dataset.id, x.querySelector('.pills').innerText.replace(/\s+/g, ' ')])));
+  };
+  const tdA = await todayPills(ap), tdP = await todayPills(pp);
+  ok(/❌ Declined/.test(tdA[wally.id]) && tdP[wally.id] !== undefined && !/Declined/.test(tdP[wally.id]),
+    'Today shows the outcome next to their name (Wally: "' + tdA[wally.id] + '"); a presenter doesn\'t see other people\'s outcomes ("' + tdP[wally.id] + '")');
+  await shot(ap, '41b-today-outcome');
   await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button[data-tab=all]');
   await ap.click('.tabbar button[data-tab=all]'); await ap.waitForSelector('#flt .chip[data-f=walk]');
   ok(/Walk outs 1/.test(await ap.textContent('#flt .chip[data-f=walk]')) && await ap.$('.ccard.walkout .item[data-id="' + wally.id + '"]') &&
