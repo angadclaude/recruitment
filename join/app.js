@@ -1,4 +1,4 @@
-window.APP_VERSION = '25c33487';
+window.APP_VERSION = '5da7b91a';
 
 (function () {
 'use strict';
@@ -1815,6 +1815,14 @@ function viewPay(quiet) {
 // ───── Who ran the presentation: what they said on their evaluation, else whoever rated them in the room ─────
 /** The presenter we credit for this person: their evaluation answer (unless "Not sure"), else the presenter who rated them. */
 function presenterOf(c) { return c.presented_by && c.presented_by !== 'Not sure' ? c.presented_by : c.presenter_name || ''; }
+/** "🏢 Joining JUSS · HF" under "booked by", when the company they're joining isn't their booker's (placed in the other
+ *  campaign on Day 1, or chosen by the recruitment team): their messages, welcome page and welcome email come from it. */
+function joinLine(c) {
+  const co = brandCo(c);
+  if (co === (c.company === 'JUSS' ? 'JUSS' : 'LINK')) return '';
+  return '<div class="small" id="joinco">🏢 Joining <span class="co ' + co + '">' + co + '</span>' + (c.campaign === 'HF' || c.campaign === 'FR' ? ' · ' + c.campaign : '') +
+    ' · messages and welcome email from ' + brandOf(c) + '</div>';
+}
 /** "🎤 Presentation by Nathan Mcgrath" under "booked by", with the room rater if that's someone else. */
 function presentedLine(c) {
   const said = c.presented_by && c.presented_by !== 'Not sure' ? c.presented_by : '', rater = c.presenter_name || '';
@@ -3051,7 +3059,7 @@ function drawAcademy(r, quiet) {
       e.stopPropagation();
       const c = pool.filter(x => x.id === b.parentNode.dataset.campsw)[0]; if (!c || campaignOf(c) === b.dataset.camp) return;
       const was = c.campaign; c.campaign = b.dataset.camp; drawAcademy(r, true);
-      call('setCampaign', { id: c.id, campaign: b.dataset.camp }).then(nc => { Object.assign(c, nc); upsert(nc); toast(c.first_name + ' → ' + b.dataset.camp); })
+      call('setCampaign', { id: c.id, campaign: b.dataset.camp }).then(nc => { Object.assign(c, nc); upsert(nc); toast(c.first_name + ' → ' + b.dataset.camp + ' · joins ' + brandOf(c)); })
         .catch(x => { c.campaign = was; drawAcademy(r, true); toast(x.message); });
     };
   });
@@ -4738,7 +4746,7 @@ function renderCandidate(c, quiet) {
   const summary = '<div class="profile">' + FX + avatar(c, 'xl') + '<h1>' + h(c.full_name) + '</h1>' +
     '<div class="muted small">Attended ' + fmt(c.attended_date) + ' · ' + (c.booker_name ? 'booked by <b>' + h(c.booker_name) + '</b> <span class="co ' + h(c.company) + '">' + h(c.company) + '</span>' +
       (c.booker_typed && normName(c.booker_typed) !== normName(c.booker_name) ? ' <span class="small">(they said "' + h(c.booker_typed) + '")</span>' : '') : '<b>booker not confirmed</b>' + (c.booker_typed ? ' ("' + h(c.booker_typed) + '")' : '')) + '</div>' +
-    presentedLine(c) + day1SentLine(c) +
+    joinLine(c) + presentedLine(c) + day1SentLine(c) +
     (c.stars ? '<div class="stars-lg">' + '★'.repeat(Number(c.stars)) + '<span>' + '★'.repeat(5 - Number(c.stars)) + '</span></div>' : '') +
     (c.p_interesting ? '<div class="icebreak">💡 ' + h(c.p_interesting) + '</div>' : '') +
     '<div class="pills center-pills">' + nqPill(c) + statusPill(c) + (c._pending ? '<span class="pill">⏳ Syncing…</span>' : '') + '</div>' +
