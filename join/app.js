@@ -1,4 +1,4 @@
-window.APP_VERSION = '74ef4e6d';
+window.APP_VERSION = '7dd78515';
 
 (function () {
 'use strict';
@@ -64,7 +64,7 @@ function ukMobile(s) {
   d = d.replace(/\D/g, ''); if (/^7\d{9}$/.test(d)) d = '0' + d;
   return /^07\d{9}$/.test(d) ? d : '';
 }
-function firstOf(name) { return String(name || '').trim().split(/\s+/)[0].toLowerCase().replace(/\b\w/g, c => c.toUpperCase()); }
+function firstOf(name) { return String(name || '').trim().split(/\s+/)[0].toLowerCase().replace(/(^|[^\p{L}\p{M}\d_])(\p{L})/gu, (m, a, c) => a + c.toUpperCase()); }
 // ───── Candidate sends (check-in, evaluation, Confirm): shown as done straight away, delivered in the background ─────
 // Kept on the phone until Google has it: retried with back-off, and again the next time any of our pages opens.
 const SEND_GEN = {};
@@ -382,6 +382,7 @@ function renderCheckin(then, pre, preErr) {
       over18: chipVal(f, 'over18'), source: chipVal(f, 'source'),
       booker_id: booker ? booker.id : '', booker_typed: booker ? booker.name : typed,
       rtw: f.rtw.value, visa_expiry: f.visa_expiry.value, privacy_ok: f.privacy_ok.checked,
+      day: londonToday(),  // waiting for signal and sent tomorrow: still today's check-in
     };
     if (!form.full_name.trim() || !form.mobile.trim() || !form.email.trim()) return showErr(err, 'Please fill in your name, mobile and email.');
     // Google's own checks, here first: a check-in shown as done is one Google will take
@@ -1747,7 +1748,7 @@ function viewAll(quiet) {
     call: ['Needs outcome', c => !c.outcome && !c.non_qual && c.rag !== 'W'],
     pending: ['Awaiting admin', c => c.admin_status === 'pending'],
     red: ['Red flags', c => c.flags.some(f => f.level === 'red')],
-    nq: ['Non-qualifiers', c => !!c.non_qual],
+    nq: ['Non-qualifiers', c => notCounting(c)],  // = Today's Non-qual: not eligible, a repeat, removed by admin
     walk: ['Walk outs', c => c.rag === 'W'],
     nobooker: ['No booker', c => !c.booker_id],
     late: ['Late', c => !!c.outcome_late],
@@ -1939,7 +1940,7 @@ function joinAnd(a) { return a.length < 2 ? a.join('') : a.slice(0, -1).join(', 
 function counted(c) { return inRoom(c) || !!c.non_qual; }
 /** A non-qualifier on the poster and in Today's summary, so both show the same number: came in but doesn't count (not
  *  eligible, a repeat, removed by admin). A presenter's view of someone else's candidate only knows "no rating needed". */
-function notCounting(c) { return c.limited ? noRating(c) : counted(c) && !!c.pay_reason; }
+function notCounting(c) { return c.limited ? noRating(c) || !!c.not_counting : counted(c) && !!c.pay_reason; }
 /** Poster numbers, on the same rules as the recruitment incentive: rated by the presenter (or a non-qualifier), Mon–Fri,
  *  and only people who count. "First appointments attended" and the Friday weekly total leave the non-qualifiers out:
  *  they have their own bubble (Angad, 26 Oct). */
@@ -1971,7 +1972,7 @@ function bulletinNumbers(items, day, prevItems) {
   };
 }
 function bulletinWording(n) {
-  const close = n.week.filter(r => r.n === n.target - 1).map(r => r.name), top = n.week[0];
+  const close = n.week.filter(r => r.n === n.target - 1).map(r => r.name), top = n.week.filter(r => r.n >= 2)[0];  // 1 isn't on the bulletin
   return {
     tagline: n.weekday === 5 ? TAGLINE_FRI : TAGLINE,
     msgs: [
@@ -2215,12 +2216,14 @@ function viewAvail(quiet) {
     '<p class="small muted avrange">' + (edit ? 'Week ' + wk + ': ' + fmt(days[0]) + ' – ' + fmt(days[6]) :
       'Week 1: ' + fmt(addDays(we, -6)) + ' – ' + fmt(we) + ' · Week 2: ' + fmt(w2mon) + ' – ' + fmt(addDays(w2mon, 6))) + '</p>';
   if (!d) { bindAvail(paint(title, top + skeleton(4), quiet, !asTab), go, we); return; }
-  const rows = avOrder(d.rows), key = wk === 2 ? 'w2' : 'w1';
+  // Didn't continue (or not ticked Arrived any more): editors still see them, flagged; they're off the day counts, the poster,
+  // the PDFs and the bookers' list, like the alerts and the bell sheets
+  const all = avOrder(d.rows), live = all.filter(r => !r.no_longer), rows = edit ? all : live, key = wk === 2 ? 'w2' : 'w1';
   const pre = (r, i) => wk === 1 && days[i] < r.day1_date;  // before their Day 1
-  const inOn = i => rows.filter(r => r[key][i] === 'I'), drivers = i => inOn(i).filter(r => r.driver === 'Yes').length;
+  const inOn = i => live.filter(r => r[key][i] === 'I'), drivers = i => inOn(i).filter(r => r.driver === 'Yes').length;
   const strip = edit && rows.length ? '<div class="avdays">' + days.map((x, i) => '<div class="avd' + (inOn(i).length ? '' : ' none') + '"><b>' + AV_DAY[i] + '</b><span>' + Number(x.slice(8)) + '</span><i>' + inOn(i).length + '</i>' +
     '<em>' + (drivers(i) ? '🚗 ' + drivers(i) : '&nbsp;') + '</em></div>').join('') + '</div><p class="small muted center" style="margin:4px 0 10px">In each day · 🚗 drivers</p>' : '';
-  const blank = rows.filter(r => r.day1_date <= today && !/[IO]/.test(r[key]));
+  const blank = live.filter(r => r.day1_date <= today && !/[IO]/.test(r[key]));
   const warn = edit && blank.length ? '<div class="card tight small avwarn">⚠️ <b>' + blank.length + ' with no Week ' + wk + ' days yet:</b> ' + blank.map(r => h(r.full_name.split(' ')[0])).join(', ') + (edit ? '. Tap a name to fill it in.' : '.') + '</div>' : '';
   // Bookers: no poster, but the PDF for each week, with everyone's details (Angad, 27 Oct: "click on the PDF and see the details")
   const tools = !edit ? (rows.length ? '<div class="bullbtns avtools"><button class="btn ghost" id="avpdfw1">📄 Week 1 PDF</button><button class="btn ghost" id="avpdfw2">📄 Week 2 PDF</button></div>' : '') :
@@ -2286,9 +2289,9 @@ function viewAvail(quiet) {
     b.onclick = () => { busy(b, true, '…'); call('restoreStarter', { id: b.dataset.avback }).then(() => loadAvail(we)).then(() => { render(true); toast('Put back ✓'); }).catch(e => { busy(b, false); toast(e.message); }); };
   });
   fillThumbs(page);
-  const ps = page.querySelector('#avposter'); if (ps) ps.onclick = () => availPoster(we, wk, rows);
-  const pd = page.querySelector('#avpdf'); if (pd) pd.onclick = () => savePdf(availPdf(we, wk, rows), avName(we, wk) + '.pdf');
-  [1, 2].forEach(n => { const b = page.querySelector('#avpdfw' + n); if (b) b.onclick = () => savePdf(availPdf(we, n, rows), avName(we, n) + '.pdf'); });
+  const ps = page.querySelector('#avposter'); if (ps) ps.onclick = () => availPoster(we, wk, live);
+  const pd = page.querySelector('#avpdf'); if (pd) pd.onclick = () => savePdf(availPdf(we, wk, live), avName(we, wk) + '.pdf');
+  [1, 2].forEach(n => { const b = page.querySelector('#avpdfw' + n); if (b) b.onclick = () => savePdf(availPdf(we, n, live), avName(we, n) + '.pdf'); });
   const ad = page.querySelector('#avadd'); if (ad) ad.onclick = () => addStarterSheet(we, d.coaches);
   const im = page.querySelector('#avimpf'); if (im) im.onchange = () => { const f = im.files && im.files[0]; im.value = ''; if (f) photoImportFile(f); };
   const bs = page.querySelector('#avbellset'); if (bs) bs.onclick = () => bellLinksSheet(we, bl);
@@ -3058,7 +3061,8 @@ function drawAcademy(r, quiet) {
   page.querySelectorAll('[data-campsw] button').forEach(b => {
     b.onclick = e => {
       e.stopPropagation();
-      const c = pool.filter(x => x.id === b.parentNode.dataset.campsw)[0]; if (!c || campaignOf(c) === b.dataset.camp) return;
+      // A tap on the one already lit saves it too (their default, now set: it also sets the company they join)
+      const c = pool.filter(x => x.id === b.parentNode.dataset.campsw)[0]; if (!c || c.campaign === b.dataset.camp) return;
       const was = c.campaign; c.campaign = b.dataset.camp; drawAcademy(r, true);
       call('setCampaign', { id: c.id, campaign: b.dataset.camp }).then(nc => { Object.assign(c, nc); upsert(nc); toast(c.first_name + ' → ' + b.dataset.camp + ' · joins ' + brandOf(c)); })
         .catch(x => { c.campaign = was; drawAcademy(r, true); toast(x.message); });
@@ -4682,19 +4686,22 @@ function presCard(c, canNotes) {
   return pres;
 }
 function bindPres(c) {
-  const st = { rag: c.rag, stars: Number(c.stars) || 0 };
+  const st = { rag: c.rag, stars: Number(c.stars) || 0 }, was = { rag: st.rag || '', stars: st.stars };
   const presEl = document.getElementById('pres');
   bindChips(presEl);
   presEl.querySelectorAll('.rag button').forEach(b => { b.onclick = () => { st.rag = st.rag === b.dataset.r ? '' : b.dataset.r; presEl.querySelectorAll('.rag button').forEach(x => x.classList.toggle('on', x.dataset.r === st.rag)); }; });
   presEl.querySelectorAll('.stars button').forEach(b => { b.onclick = () => { st.stars = Number(b.dataset.s); presEl.querySelectorAll('.stars button').forEach(x => x.classList.toggle('on', Number(x.dataset.s) <= st.stars)); }; });
   document.getElementById('savenotes').onclick = () => {
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
-    const payload = { id: c.id, in_room: !!c.in_room, rag: st.rag || '', stars: st.stars, tags: chipVals(presEl, 'tags'), notes: document.getElementById('notes').value,
+    // Only what you changed here: a rating someone gave meanwhile (a tap on the list) isn't wiped by this page's older copy
+    const only = ['tags', 'notes'].concat((st.rag || '') !== was.rag ? ['rag'] : [], st.stars !== was.stars ? ['stars'] : []);
+    const payload = { id: c.id, only: only, rag: st.rag || '', stars: st.stars, tags: chipVals(presEl, 'tags'), notes: document.getElementById('notes').value,
       why_note: document.getElementById('whynote').value, interesting: document.getElementById('interesting').value };
+    const cur = findCand(c.id) || c;  // the latest copy on the phone
     const local = Object.assign({}, c, {
-      rag: payload.rag, stars: payload.stars ? String(payload.stars) : '', tags: payload.tags.join(', '), notes: payload.notes,
+      rag: only.indexOf('rag') >= 0 ? payload.rag : cur.rag, stars: only.indexOf('stars') >= 0 ? (payload.stars ? String(payload.stars) : '') : cur.stars, tags: payload.tags.join(', '), notes: payload.notes,
       p_why_sales_note: payload.why_note, p_interesting: payload.interesting,
-      in_room: (c.in_room || payload.rag || payload.stars) ? 'TRUE' : '', presenter_id: S.me.user.id, presenter_name: S.me.user.name, notes_at: londonNow(),
+      in_room: (cur.in_room || c.in_room || payload.rag || payload.stars) ? 'TRUE' : '', presenter_id: S.me.user.id, presenter_name: S.me.user.name, notes_at: londonNow(),
     });
     queueSave('saveNotes', payload, local, 'Notes saved ✓');
   };

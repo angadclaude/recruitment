@@ -4,10 +4,13 @@ const { waitUntil } = require('@vercel/functions');
 const { runtime, relay, REHEARSAL } = require('../server/live');
 
 // Until switch day the live address answers nothing (the data here is a rehearsal copy); test copies (REHEARSAL) do.
-let LIVE = false;
+// Asked again every 30 s, so an undo (switch.js notlive) reaches server copies that are already warm
+let LIVE = false, LIVE_AT = 0;
 async function isLive(rt) {
-  if (LIVE || REHEARSAL) return true;
+  if (REHEARSAL) return true;
+  if (LIVE && Date.now() - LIVE_AT < 30000) return true;
   LIVE = (await rt.withDb(q => q("select 1 from jl.props where key = 'VERCEL_LIVE'"))).length > 0;
+  LIVE_AT = Date.now();
   return LIVE;
 }
 

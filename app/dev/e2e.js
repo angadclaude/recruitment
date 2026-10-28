@@ -241,6 +241,11 @@ async function fillEval(p) {
   await shot(pp, '04-presenter-notes', true);
   ok((await api(admin, 'getCandidate', { id: (await api(admin, 'search', { q: 'Jasraj' })).items[0].id })).in_room === 'TRUE', 'rating Jasraj automatically confirmed "in the room"');
   const jasId = (await api(admin, 'search', { q: 'Jasraj' })).items[0].id;
+  // A presenter rating the room finds someone else's candidate by name, never by their mobile or email (28 Oct)
+  const nSearch = async q => (await api(nathan, 'search', { q: q })).items.map(c => c.id);
+  ok((await nSearch('Jasraj')).includes(jasId) && !(await nSearch('07700 900123')).includes(jasId) && !(await nSearch('jasraj@')).includes(jasId) &&
+    (await api(admin, 'search', { q: 'jasraj@' })).items.some(c => c.id === jasId),
+    'a presenter finds someone else\'s candidate by name, but not by their mobile or email (an admin can)');
   // Not their candidate (Fiza booked Jasraj): the presenter sees who booked them and the room rating, nothing else
   const lockedTxt = await pp.innerText('#page');
   ok(/Not your candidate/.test(lockedTxt) && /booked by Fiza Iqbal/.test(lockedTxt) && !/07700|jasraj@example|Call outcome|Graduate visa/.test(lockedTxt) && !(await pp.$('a[href^="tel:"]')) && !(await pp.$('a[data-kind]')) && !(await pp.$('#jump')),
@@ -384,6 +389,10 @@ async function fillEval(p) {
   await p2e.waitForSelector('text=Change your answers, Jasraj');
   ok((await p2e.$$('.chips[data-name=q3_reason] .chip.on')).length === 1 && await p2e.$eval('.chips[data-name=q0_presenter] .chip.on', b => b.textContent) === 'Nathan',
     'made a mistake → "Change my answers" opens the form with their answers filled in (Nathan still picked)');
+  // …except the convictions answer (senior admin only): anyone with their mobile can open this on the day (28 Oct)
+  ok(!(await p2e.$('.chips[data-name=q13_unspent] .chip.on')) && !(await api('', 'myEval', { id: jasId, resume: (await post('/dev/eval', { js: `getC('${jasId}').resume_token` })).out })).answers.q13_unspent,
+    '…except the convictions question, which comes back blank (only senior admin sees that answer): they answer it again');
+  await p2e.click('.chips[data-name=q13_unspent] .chip:has-text("No")');
   await p2e.fill('textarea[name=q14_questions]', 'Changed my mind: when is Day 1?');
   await post('/dev/eval', { js: 'globalThis.__lockBusy = 2' });  // Google busy: 2 people ahead in the queue
   const tEdit = Date.now();
@@ -1553,6 +1562,7 @@ async function fillEval(p) {
   const rebD1 = (await api(abdT, 'academyList', {})).items.find(c => c.id === adham.id);
   ok(reb.day1_status === '' && !reb.academy_confirmed_at && rebD1 && rebD1.academy_date === '2026-10-26' && !rebD1.day1_status && !rebD1.academy_confirmed_at,
     'rebooking (new Day 1 date) clears the no-show; on the Day 1 tab for 26 Oct, to be confirmed again');
+  ok(reb.outcome_late === '', 'rebooking a no-show the next week doesn\'t make his outcome (logged on time) LATE: last week\'s late count stays as it was');
   await api(abdT, 'saveOutcome', { id: adham.id, outcome: 'Academy booked', academy_date: '2026-10-19', outcome_notes: '' });
   // Starting Tuesday instead: a third button on the day moves their Day 1 (off Monday's list and its PDF, onto Tuesday's)
   await ap.goto(APP + 'index.html?c=academy');
@@ -1609,6 +1619,11 @@ async function fillEval(p) {
   await ap.click('.trow[data-cand="' + adham.id + '"] [data-campsw] button[data-camp="HF"]');
   ok(await campSaved(adham.id, 'HF') && await joinsNow(adham.id) === 'JUSS JUSS JUSS' && joinLineOf(await api(admin, 'getCandidate', { id: adham.id })) === '',
     '…and HF moves him back: JUSS again, and no "Joining" line (same as his booker\'s)');
+  // Their default, lit already: a tap saves it (it sets the company they join too)
+  ok((await api(admin, 'getCandidate', { id: jasId })).campaign === '', '(Jasraj: no placement saved yet, FR lit as his company\'s)');
+  await ap.click('.trow[data-cand="' + jasId + '"] [data-campsw] button[data-camp="FR"]');
+  ok(await campSaved(jasId, 'FR') && await toastSays(/Jasraj → FR · joins LINK Marketing/), 'a tap on the FR already lit saves it ("Jasraj → FR · joins LINK Marketing")');
+  await api(admin, 'setCampaign', { id: jasId, campaign: '' });
   // A LINK starter moved to HF (Ellexie's case), and a booker corrected afterwards
   await api(admin, 'setCampaign', { id: jasId, campaign: 'HF' });
   const jasHF = await joinsNow(jasId);
@@ -1917,6 +1932,16 @@ async function fillEval(p) {
   const putBack = (await getJson('/dev/sheet?name=Log')).filter(r => r[2] === 'reassign' && /→ Leah Leaver \(put back: who booked an appointment never changes\)/.test(r[4]));
   ok(await weekNow() === wkBefore && (await api(admin, 'getCandidate', { id: lc1.id })).company === 'JUSS' && putBack.length === 1,
     'put back once: hers again (JUSS, her company), the week reads exactly as before, one "put back" line in the Log');
+  // …and the alerts from the timers and Nudge about hers, not just one-off alerts (28 Oct: they skipped anyone switched off,
+  // so Fiza's and Megan Hyrre's people were never chased)
+  await api(nathan, 'saveNotes', { id: lc1.id, rag: 'G', stars: 3, tags: [], notes: '' });  // in the room, no outcome yet
+  const pLv = (await getJson('/dev/pushes')).length;
+  const lvNudge = await api(jessT, 'chaseOutcomes', { ids: [leah.id] });
+  await post('/dev/eval', { js: 'dailyDigests(todayStr()); "ok"' });
+  const lvP = (await getJson('/dev/pushes')).slice(pLv).filter(p => p.body.include_aliases.external_id.join() === angadU.id).map(p => p.body.headings.en);
+  ok(lvNudge.nudged.includes('Leah Leaver') && lvP.some(t => /^⏰ Jess: \d+ (person|people) to chase \(Leah's\)$/.test(t)) && lvP.some(t => /^📊 .* \(Leah's\)$/.test(t)) &&
+    !(await getJson('/dev/pushes')).slice(pLv).some(p => p.body.include_aliases.external_id.includes(leah.id)),
+    'Nudge and the evening digest about Leah\'s people go to ' + angadU.name + ', saying whose: "' + lvP.join('" / "') + '"');
   const pcH = await api('', 'publicConfig'), angB = pcH.bookers.find(b => b.id === angadU.id);
   ok(!pcH.bookers.some(b => b.id === leah.id) && angB && angB.aliases.includes('Leah Leaver'), 'check-in list: Leah is gone, and typing her name finds "Leah Leaver", credited to ' + angadU.name);
   const lc2 = await alc('Nineteen', 'Leahh'), lc3 = await alc('Twenty', 'leah'),
@@ -1929,6 +1954,9 @@ async function fillEval(p) {
   const lc6c = await api(admin, 'getCandidate', { id: lc6.id });
   ok(!(await bOf(lc5)) && !lc6c.booker_id && lc6c.booker_typed === 'Leah Leaver' && !(await api('', 'publicConfig')).bookers.find(b => b.id === angadU.id).aliases.includes('Leah Leaver'),
     'after the date: no booker (Jess + Rubal pick one); someone switched off is never credited, and the check-in keeps the name they picked');
+  const lc7 = await ci({ full_name: 'Alias Open Form', mobile: '077009008' + (alN++), email: 'alopenform@example.com', booker_id: angadU.id, booker_typed: 'Leah Leaver' });
+  const lc7c = await api(admin, 'getCandidate', { id: lc7.id });
+  ok(!lc7c.booker_id && lc7c.booker_typed === 'Leah Leaver', 'a check-in form left open since then: "Leah Leaver" picked from its old list (under ' + angadU.name + ') → no booker, like typing it today');
   await post('/dev/eval', { js: 'CONFIG.HANDOVER = ' + hoWas + '; "ok"' });
   const fa2 = await figuresAgree('2026-10-25', ['2026-10-19', '2026-10-20']);
   ok(/^Bookers \d+ \+ booked by admins \d+ = \d+ attended$/.test(fa2.paySum), 'Appts Attended shows how its list adds up when admins booked some (they\'re not on the incentive): "' + fa2.paySum + '"');
@@ -2101,6 +2129,22 @@ async function fillEval(p) {
     ok(on3.length === adminIds.length && ttl(on3[0]) === '🔔 On the bell sheets: 1 new starter' && on3[0].body.contents.en.startsWith('HF 1: ' + nb(lastHF)) &&
       bst2.sheets.find(x => x.key === 'HF').on === wHF.length && !bst2.sheets.find(x => x.key === 'HF').problems.length && b4.out === null && !b4.pushes.length,
       'a row copied in → on within 5 minutes ("' + (on3[0] ? on3[0].body.contents.en.split('\n')[0] : 'none') + '"), the warning goes; then nothing more to do');
+    // Switched FR → HF after going on the FR sheet (28 Oct): onto the HF sheet too, and the admins clear the FR row (the app never deletes rows)
+    const mvR = filled.find(r => r.campaign === 'FR' && r.candidate_id), sentB4 = (await post('/dev/eval', { js: 'PropertiesService.getScriptProperties().getProperty("BELL_SENT_' + WE + '")' })).out;
+    const mvWas = (await api(admin, 'getCandidate', { id: mvR.candidate_id })).campaign;
+    await api(admin, 'setCampaign', { id: mvR.candidate_id, campaign: 'HF' });
+    if (!PG) await books('globalThis.__books["' + HFID + '"].tabs[" WE 25.10.2026"].splice(3 + ' + wHF.length + ', 0, ' + JSON.stringify(hfRow) + ')');
+    const dueMv = await bellDue(), bMv = await bellRun({ 'NEW STARTS - SLOUGH': { rows: ['added'] } }), mvP = bMv.pushes.filter(x => /^🔔 Bell sheets: moved campaign/.test(ttl(x)));
+    ok(dueMv && dueMv.sheets.length === 1 && dueMv.sheets[0].key === 'HF' && dueMv.sheets[0].rows.map(x => x.name).join() === mvR.full_name.toUpperCase() &&
+      mvP.length === adminIds.length && mvP[0].body.contents.en.startsWith(mvR.full_name.toUpperCase() + ': clear them from the FR bell sheet'),
+      'placed in HF after going on the FR sheet: onto the HF one too, and the admins hear "' + (mvP[0] ? mvP[0].body.contents.en.split('\n')[0] : 'none') + '"');
+    await api(admin, 'setCampaign', { id: mvR.candidate_id, campaign: mvWas || '' });
+    await post('/dev/props', { ['BELL_SENT_' + WE]: sentB4 });
+    if (!PG) {  // the same person typed a little differently by hand is already there (28 Oct: "HILAIRE (EMMANUEL) EBILA" went on twice)
+      const hand = mvR.full_name.toUpperCase().split(' '), handName = hand[0] + ' (NICK) ' + hand.slice(1).join('-');
+      const relayB = rows => post('/api', { action: 'relayBell', secret: BRS, id: FRID, we: '2026-10-25', section: 'NEW STARTS', rows: rows });
+      ok((await relayB([[handName, 'OFFICE']])).data.rows[0] === 'already', '"' + handName + '" counts as ' + mvR.full_name.toUpperCase() + ', already on the sheet: not added again');
+    }
     await setTime('2026-10-21T18:05:00+01:00');
     const due5 = await bellDue(), b5 = await bellRun({}), on5 = b5.pushes.filter(x => /^🔔 On the bell sheets/.test(ttl(x)));
     ok(due5 && due5.sheets.length === 1 && due5.sheets[0].key === 'FR' && due5.sheets[0].rows.map(nb).join() === 'MIRA MANUAL (OFFICE)' && on5.length === adminIds.length &&
@@ -2135,7 +2179,7 @@ async function fillEval(p) {
     await bp.goto(APP + 'index.html'); await bp.waitForSelector('.tabbar button[data-tab=avail]');
     const bTabs = await bp.$$eval('.tabbar button', e => e.map(x => x.innerText.trim().replace(/\s+/g, ' ')));
     await bp.click('.tabbar button[data-tab=avail]'); await bp.waitForSelector('.avrow');
-    const allNow = (await api(admin, 'availWeek', { weekEnding: WE })).rows;
+    const allNow = (await api(admin, 'availWeek', { weekEnding: WE })).rows.filter(r => !r.no_longer);
     const nsNames = await bp.$$eval('.avrow .name', e => e.map(x => x.textContent));
     ok(bTabs.includes('New starts') && (await bp.textContent('#abTitle')) === 'New starts' && (await bp.$eval('#abBack', b => b.hidden)) &&
       nsNames.length === allNow.length && allNow.every(r => nsNames.includes(r.full_name)) && nsNames.includes('Adham Soliman') &&
@@ -2381,6 +2425,8 @@ async function fillEval(p) {
     const avAdPh = (await api(admin, 'availWeek', { weekEnding: '2026-10-25' })).rows.find(r => r.candidate_id === adham.id);
     ok(avAdPh && avAdPh.has_photo && /Retake/.test(await ap.textContent('.trow[data-cand="' + adham.id + '"] .d1cam')) && !(await ap.$('[data-cam="' + adham.id + '"][capture="user"]')),
       '📷 Photo on Adham\'s Day 1 row (back camera): saved as his availability photo, shows as his picture, the button says Retake');
+    const avJrow = (await api(admin, 'availWeek', { weekEnding: '2026-10-25' })).rows.find(r => r.candidate_id === jasId);
+    if (avJrow) await api(admin, 'saveAvail', { id: avJrow.id, w1: avJrow.w1, w2: avJrow.w2, driver: avJrow.driver || '', notes: 'Filled in before he left' });
     const lb = '[data-d1="left"][data-id="' + jasId + '"]';
     await ap.click(lb); await ap.waitForSelector(lb + '.sure'); await ap.click(lb);
     await ap.waitForSelector('.trow.left[data-cand="' + jasId + '"]');
@@ -2388,6 +2434,21 @@ async function fillEval(p) {
     const avJ = (await api(admin, 'availWeek', { weekEnding: '2026-10-25' })).rows.find(r => r.candidate_id === jasId);
     ok(jasNow.day1_status === 'arrived' && !!jasNow.day1_left_at && /1 didn't continue/.test(card2) && /2 of 2 started/.test(card2) && (!avJ || avJ.left),
       '🚪 Didn\'t continue (twice) on Jasraj: still a Day 1 start (2 of 2), "1 didn\'t continue", off availability (or flagged there if already filled in)');
+    // Flagged for the editors (his notes are kept), but off the bookers' New starts, the poster, the PDFs and the day counts (28 Oct)
+    if (avJ) {
+      await bp.goto(APP + 'index.html'); await bp.waitForSelector('.tabbar button[data-tab=avail]');
+      await bp.click('.tabbar button[data-tab=avail]'); await bp.waitForSelector('.avrow');
+      const bpNs = await bp.$$eval('.avrow .name', e => e.map(x => x.textContent));
+      ok(avJ.no_longer && bpNs.length > 0 && !bpNs.includes(jasNow.full_name), 'kept for the editors (flagged, notes kept), but off the bookers\' New starts (' + bpNs.length + ' there), the poster, the PDFs and the day counts');
+    } else ok(false, '(Jasraj\'s availability row should be there: he has notes)');
+    // C6: a booker corrected after Day 1 → their availability coach follows (poster, bell sheet, coach alerts)
+    const avCoach = async () => ((await api(admin, 'availWeek', { weekEnding: '2026-10-25' })).rows.find(r => r.candidate_id === adham.id) || {}).coach_name;
+    const coachWas = await avCoach();
+    await api(admin, 'reassignBooker', { id: adham.id, booker_id: mo.id });
+    const coachMo = await avCoach();
+    await api(admin, 'reassignBooker', { id: adham.id, booker_id: abd.id });
+    ok(coachWas === 'Abdullahi Ahmed' && coachMo === 'Mo Aden' && await avCoach() === 'Abdullahi Ahmed',
+      'a booker corrected after Day 1: their coach on availability follows (' + coachWas + ' → ' + coachMo + ' and back): the poster, the bell sheet and the coach alerts');
     await shot(ap, '54-day1-results');
     // The list, marked up the way the team did it by hand: rows in the campaign's colour (FR NDCS purple / HF HelloFresh green), struck through, results underneath
     const rDl = await pdfDl(ap, '[data-pdf="' + D1 + '"]'), rPath = `${SHOTS}/55-day1-results.pdf`; await rDl.saveAs(rPath);
@@ -2415,6 +2476,7 @@ async function fillEval(p) {
     await post('/dev/eval', { js: 'CONFIG.D1_RESULTS_FROM = "' + fromWas + '"; "ok"' });
     // Undo, and put everything back for the rest of the run
     await api(admin, 'markDay1', { id: jasId, status: 'stayed' }); await api(admin, 'setCampaign', { id: adham.id, campaign: '' });
+    if (avJrow) await api(admin, 'saveAvail', { id: avJrow.id, w1: avJrow.w1, w2: avJrow.w2, driver: avJrow.driver || '', notes: avJrow.notes || '' });
     ok(!(await api(admin, 'getCandidate', { id: jasId })).day1_left_at && JSON.parse((await post('/dev/eval', { js: `JSON.stringify(day1Results('${D1}'))` })).out).fr === 1,
       '↩️ Undo: back to continuing; and blank = their company\'s campaign again');
     // A name typed wrong at check-in ("Mel Anouman" → "Mel Abraham" on 26 Oct's list): fixed everywhere it shows
@@ -2954,6 +3016,94 @@ async function fillEval(p) {
     const e2 = (await relay('relayEarnings', { secret: RS, seen: ['m18'] })).data.emails;
     ok(!e2[0].files && e2[1].files && text(e2[1].files[0]) === 'HF 11.10.26', 'JUSS earnings: a week it already has comes back as names only, the next new one with its files');
     ok((await relay('relayEarnings', { secret: 'guess' })).error === 'Not allowed', 'JUSS earnings: refused without the key');
+  }
+
+  // ── Stress test, 28 Oct: what four reviewers found, each fixed ──
+  {
+    const ev = async js => JSON.parse((await post('/dev/eval', { js: 'JSON.stringify(' + js + ')' })).out);
+    const src = fs.readFileSync(require('path').join(__dirname, '..', 'src', 'JS.html'), 'utf8'), fnOf = re => src.match(re)[0];
+    // Names with accents (they came out "GarcíA", "şTefan", "BartłOmiej")
+    const cn = await ev("[cleanName('josé  garcía'), cleanName('ŞTEFAN bartłomiej'), cleanName(\"o'brien smith-jones\"), cleanName('hilaire (emmanuel) ebila')]");
+    const firstOf = new Function(fnOf(/function firstOf\(name\) \{[^\n]*\}/) + '; return firstOf;')();
+    ok(cn.join(' | ') === "José García | Ştefan Bartłomiej | O'Brien Smith-Jones | Hilaire (Emmanuel) Ebila" && firstOf('josé') === 'José' && firstOf('ŞTEFAN') === 'Ştefan',
+      'names with accents keep their capitals: ' + cn.join(', '));
+    // Someone checking in twice the same day on another mobile (a typo the first time), same email: counted once
+    const t = await ev('todayStr()');
+    const rp = await ev(`[findRepeat([{ id: 'x1', mobile: '07700900111', email: 'same@example.com', attended_date: '${t}', booker_name: 'Mo Aden' }], '07700900112', 'same@example.com', '${t}'),
+      findRepeat([{ id: 'x1', mobile: '07700900111', email: 'same@example.com', attended_date: '${t}' }], '07700900111', 'same@example.com', '${t}')]`);
+    ok(rp[0] && rp[0].ref === 'x1' && rp[1] === null, 'the same person twice today on another mobile (same email): flagged as a repeat, so they count once');
+    // A presenter's Today "Non-qual" counts someone else's repeat too (not why)
+    const rs = await ev(`[roomShape({ id: 'r1', full_name: 'Rita Repeat', attended_date: '${t}', in_room: 'TRUE', rag: 'G', over18: 'Yes', rtw: 'British or Irish citizen', repeat_of: 'x' }),
+      roomShape({ id: 'r2', full_name: 'Nina Normal', attended_date: '${t}', in_room: 'TRUE', rag: 'G', over18: 'Yes', rtw: 'British or Irish citizen' })]`);
+    const notCountingOf = new Function(['inRoom', 'noRating', 'counted', 'notCounting'].map(n => fnOf(new RegExp('function ' + n + '\\(c\\) \\{[^\\n]*\\}'))).join('\n') + '; return notCounting;')();
+    ok(rs[0].not_counting === true && !rs[0].repeat_info && !rs[0].pay_reason && !rs[1].not_counting && notCountingOf(rs[0]) && !notCountingOf(rs[1]),
+      'a presenter\'s view says that someone else\'s repeat doesn\'t count (not why), so their Today Non-qual matches the admins\'');
+    // Came at the weekend: due the coming Friday (they were LATE before they arrived)
+    const dl = await ev("[outcomeDeadline('2026-10-23'), outcomeDeadline('2026-10-24'), outcomeDeadline('2026-10-25'), outcomeDeadline('2026-10-26')]");
+    ok(dl.join() === '2026-10-23 18:00,2026-10-30 18:00,2026-10-30 18:00,2026-10-30 18:00', 'a Saturday or Sunday check-in is due the coming Friday: ' + dl.join(', '));
+    // The 12-week trim keeps what the figures stand on: a visa expired is still a non-qualifier, a walk out still a walk out
+    const tr = await ev(`(() => {
+      appendRow('Candidates', { id: 'trv1', created_at: '2027-06-01 10:00:00', attended_date: '2027-06-01', week_ending: '2027-06-06', full_name: 'Vee Expired', mobile: '07700900401', email: 'v@example.com',
+        over18: 'Yes', rtw: 'Graduate visa (PSW)', visa_expiry: '2027-05-30', in_room: 'TRUE', rag: 'G', notes: 'note' });
+      appendRow('Candidates', { id: 'trw1', created_at: '2027-06-01 10:00:00', attended_date: '2027-06-01', week_ending: '2027-06-06', full_name: 'Wally Out', mobile: '07700900402', email: 'w@example.com',
+        over18: 'Yes', rtw: 'British or Irish citizen', in_room: 'TRUE', rag: 'W', notes: 'left early' });
+      delete MEMO.Candidates; trimOldDetails('2027-06-15'); delete MEMO.Candidates;
+      const v = getC('trv1'), w = getC('trw1'), out = [nonQualifier(v), walkedOut(w), !!v.notes || !!w.notes];
+      [v, w].forEach(c => { sheet('Candidates').deleteRow(rowOfId('Candidates', c.id)); delete MEMO.Candidates; });
+      return out;
+    })()`);
+    ok(/^Visa expired/.test(tr[0]) && tr[1] === true && tr[2] === false, 'the 12-week trim wipes their notes but keeps a visa expired a non-qualifier and a walk out a walk out: past weeks and pay never change');
+    // The admin's decision note: on them (trimmed at 12 weeks), not in the Log (kept 6 months)
+    const ad = await ev(`(() => {
+      const a = usersAll().filter(u => u.email === 'angad@linkmarketing.org.uk')[0];
+      appendRow('Candidates', { id: 'adn1', created_at: nowStr(), attended_date: todayStr(), week_ending: weekEnding(todayStr()), full_name: 'Dee Cision', mobile: '07700900403', email: 'd@example.com',
+        over18: 'Yes', rtw: 'British or Irish citizen', in_room: 'TRUE', rag: 'R', booker_id: a.id, booker_name: a.name, company: 'LINK', outcome: 'Academy booked', academy_date: addDays(todayStr(), 7), admin_status: 'pending' });
+      delete MEMO.Candidates;
+      adminDecision({ id: 'adn1', decision: 'approved', note: 'spent conviction, fine' }, a);
+      const l = readTable('Log').filter(x => x.candidate_id === 'adn1' && /^admin_/.test(x.action)).map(x => x.detail), note = getC('adn1').admin_note;
+      sheet('Candidates').deleteRow(rowOfId('Candidates', 'adn1')); delete MEMO.Candidates;
+      return [l, note];
+    })()`);
+    ok(ad[0].join() === 'with a note' && ad[1] === 'spent conviction, fine', 'an admin\'s decision note stays on the candidate (trimmed at 12 weeks), and the Log just says "with a note"');
+    // Rebooked after "didn't continue": their new Day 1 starts clean (it said they'd left again)
+    const rb = await ev(`(() => {
+      const a = usersAll().filter(u => u.email === 'angad@linkmarketing.org.uk')[0];
+      appendRow('Candidates', { id: 'dlc1', created_at: nowStr(), attended_date: addDays(todayStr(), -14), week_ending: weekEnding(addDays(todayStr(), -14)), full_name: 'Dee Left', mobile: '07700900404', email: 'dl@example.com',
+        over18: 'Yes', rtw: 'British or Irish citizen', in_room: 'TRUE', rag: 'G', booker_id: a.id, booker_name: a.name, company: 'LINK', outcome: 'Academy booked', academy_date: addDays(todayStr(), -7),
+        day1_status: 'arrived', day1_left_at: nowStr(), day1_left_by: 'Jess Grace' });
+      delete MEMO.Candidates;
+      const c = saveOutcome({ id: 'dlc1', outcome: 'Academy booked', academy_date: addDays(todayStr(), 7), outcome_notes: 'second go' }, a);
+      sheet('Candidates').deleteRow(rowOfId('Candidates', 'dlc1')); delete MEMO.Candidates;
+      return [c.day1_status, c.day1_left_at, c.day1_left_by];
+    })()`);
+    ok(rb.join('|') === '||', 'rebooked after "didn\'t continue": the new Day 1 starts clean (not marked as left again)');
+    // A check-in that waited for signal and got through the next day: the day they came
+    const yd = await ev('addDays(todayStr(), -1)'), late = await ci({ full_name: 'Sig Nal', mobile: '07700900405', email: 'signal@example.com', booker_id: mo.id, day: yd });
+    const lateC = await api(admin, 'getCandidate', { id: late.id }), far = await ci({ full_name: 'Far Back', mobile: '07700900406', email: 'far@example.com', booker_id: mo.id, day: '2020-01-01' });
+    const farC = await api(admin, 'getCandidate', { id: far.id });
+    await post('/dev/eval', { js: `['${late.id}', '${far.id}'].forEach(id => { sheet('Candidates').deleteRow(rowOfId('Candidates', id)); delete MEMO.Candidates; }); 'ok'` });
+    ok(lateC.attended_date === yd && lateC.week_ending === await ev(`weekEnding('${yd}')`) && farC.attended_date === t,
+      'a check-in kept on the phone with no signal and sent the next day counts on the day they came (' + yd + '); one from long ago counts today');
+    // Notes saved from an open page don't wipe a rating given meanwhile (the app sends only what changed)
+    const nr = await ev(`(() => {
+      const a = usersAll().filter(u => u.email === 'angad@linkmarketing.org.uk')[0];
+      appendRow('Candidates', { id: 'nrt1', created_at: nowStr(), attended_date: todayStr(), week_ending: weekEnding(todayStr()), full_name: 'Rae Ting', mobile: '07700900407', email: 'r@example.com',
+        over18: 'Yes', rtw: 'British or Irish citizen', in_room: 'TRUE', rag: 'G', stars: '4' });
+      delete MEMO.Candidates;
+      const c = saveNotes({ id: 'nrt1', only: ['tags', 'notes'], rag: '', stars: 0, tags: ['Great energy'], notes: 'Typed while someone rated them' }, a);
+      sheet('Candidates').deleteRow(rowOfId('Candidates', 'nrt1')); delete MEMO.Candidates;
+      return [c.rag, c.stars, c.in_room, c.notes];
+    })()`);
+    ok(nr.join('|') === 'G|4|TRUE|Typed while someone rated them', 'notes saved from a page opened before someone rated them keep the rating and "in the room"');
+    // Week top 5's shout-out: only someone on 2 or more (anyone on 1 isn't on the bulletin)
+    const bw = new Function(fnOf(/const TAGLINE = [^\n]*/) + '\n' + fnOf(/const TAGLINE_FRI = [^\n]*/) + '\n' + fnOf(/function joinAnd\(a\) \{[^\n]*\}/) + '\n' +
+      fnOf(/function bulletinWording\(n\) \{[\s\S]*?\n\}/) + '; return bulletinWording;')();
+    const quiet = bw({ weekday: 5, target: 5, week: [{ name: 'Hasini', n: 1 }, { name: 'Ramis', n: 1 }], bars2w: [] }).msgs[1], busy = bw({ weekday: 5, target: 5, week: [{ name: 'Hasini', n: 3 }, { name: 'Ramis', n: 1 }], bars2w: [] }).msgs[1];
+    ok(quiet === 'Big shout out to everyone booking this week!!' && busy === 'Big shout out to {Hasini} leading the way with {3} this week!!',
+      'Week top 5\'s shout-out never names someone on 1: "' + quiet + '" / "' + busy + '"');
+    // The bell sheets: the same person typed a little differently is the same person
+    const bk = await ev("[bellKey('HILAIRE (EMMANUEL) EBILA'), bellKey('Hilaire Ebila'), bellKey('Jasraj Bhuller-Singh'), bellKey('JOSÉ  GARCÍA')]");
+    ok(bk.join() === 'HILAIRE EBILA,HILAIRE EBILA,JASRAJ SINGH,JOSE GARCIA', 'bell sheets match a name however it was typed: ' + bk.join(', '));
   }
 
   await browser.close();

@@ -32,12 +32,9 @@ module.exports = async (req, res) => {
   for (const s of SCHEDULE) {
     if (!s.days.includes(now.day) || now.hour < s.hour) continue;
     const key = 'CRON_LAST_' + s.fn;
-    const claimed = await rt.withDb(async q => {
-      const last = (await q('select val from jl.props where key = $1', [key]))[0];
-      if (last && last.val === now.date) return false;
-      await q('insert into jl.props (key, val) values ($1, $2) on conflict (key) do update set val = excluded.val', [key, now.date]);
-      return true;
-    });
+    // One statement, so two runs at the same moment can't both claim it
+    const claimed = (await rt.withDb(q => q('insert into jl.props (key, val) values ($1, $2) on conflict (key) do update set val = excluded.val ' +
+      'where jl.props.val is distinct from excluded.val returning key', [key, now.date]))).length > 0;
     if (!claimed) continue;
     try { await rt.call(s.fn); ran.push(s.fn); } catch (e) { console.error(s.fn, e); ran.push(s.fn + ' FAILED'); }
   }

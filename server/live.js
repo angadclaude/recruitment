@@ -106,13 +106,23 @@ function relay(db) {
     return call('relayMail', { mail: emailSafe(m) });
   }
   async function sendOne(id) {
-    const row = (await db.sql`select payload, sent_at from jl.outbox where id = ${id}::bigint`)[0];
-    if (!row || row.sent_at) return;
+    // Claimed first: a 5-minute retry landing while this one is with Google (4–15 s) can't send it a second time (28 Oct: about
+    // 1 email in 20 went twice). A claim over 5 minutes old is free again: the server copy sending it stopped.
+    let row;
+    try {
+      row = (await db.sql`update jl.outbox set claimed_at = now() where id = ${id}::bigint and sent_at is null
+        and (claimed_at is null or claimed_at < now() - interval '5 minutes') returning payload`)[0];
+    } catch (e) {  // the column isn't there yet (it's added on a server copy's start): as before
+      if (!/claimed_at/.test(String(e.message))) throw e;
+      row = (await db.sql`select payload from jl.outbox where id = ${id}::bigint and sent_at is null`)[0];
+    }
+    if (!row) return;
     try {
       if (allowed(row.payload)) await relayMail(row.payload);
       await db.sql`update jl.outbox set sent_at = now(), tries = tries + 1, error = ${allowed(row.payload) ? null : 'rehearsal: not sent'} where id = ${id}::bigint`;
     } catch (e) {
       await db.sql`update jl.outbox set tries = tries + 1, error = ${String(e.message || e).slice(0, 500)} where id = ${id}::bigint`;
+      await db.sql`update jl.outbox set claimed_at = null where id = ${id}::bigint`.catch(() => {});  // free for the next 5-minute retry
       throw e;
     }
   }
@@ -134,8 +144,15 @@ function relay(db) {
     },
     /** Timer: try again any email that failed in the last day (up to 5 tries). */
     async retry() {
-      const ids = (await db.sql`select id::text as id from jl.outbox where sent_at is null and tries < 5 and created_at > now() - interval '1 day' order by id limit 50`).map(r => r.id);
+      const pick = () => db.sql`select id::text as id from jl.outbox where sent_at is null and tries < 5 and created_at > now() - interval '1 day'
+        and (claimed_at is null or claimed_at < now() - interval '5 minutes') order by id limit 50`;
+      const ids = (await pick().catch(e => {
+        if (!/claimed_at/.test(String(e.message))) throw e;  // the column isn't there yet: as before
+        return db.sql`select id::text as id from jl.outbox where sent_at is null and tries < 5 and created_at > now() - interval '1 day' order by id limit 50`;
+      })).map(r => r.id);
       if (ids.length) await this.deliver(ids).catch(e => console.error('mail retry', e));
+      // GDPR: an email's copy (names, a welcome, a login code) isn't kept: 14 days, for "did it go?"
+      await db.sql`delete from jl.outbox where created_at < now() - interval '14 days'`.catch(e => console.error('outbox tidy', e));
       return ids.length;
     },
   };

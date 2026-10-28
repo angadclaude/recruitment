@@ -6,6 +6,9 @@ const path = require('path');
 const { Worker, MessageChannel } = require('worker_threads');
 
 const LOCK_KEY = 7342001;  // the "script lock": one writer at a time across every server instance
+// The calls that run SQL in the job's transaction (core.* use their own savepoint; http, mail.quota, secret don't touch it)
+const DB_OPS = /^(tab\.|rows\.|props\.|cache\.|lock$|unlock$|mail\.send$)/;
+const spoilt = why => Object.assign(new Error('Lots of people are sending at once. Trying again… (' + why + ')'), { retry: true });
 let HUB = null;
 const hub = () => HUB || (HUB = require('../hub/lib/core.js'));
 
@@ -57,7 +60,12 @@ class Runtime {
     const now = this.now;
     if (now) { this.phase(now, op); now.calls++; }
     let reply;
-    try { reply = { value: await this.op(op, args) }; } catch (e) { reply = { error: String((e && e.message) || e), retry: !!(e && e.retry) }; }
+    try { reply = { value: await this.op(op, args) }; } catch (e) {
+      reply = { error: String((e && e.message) || e), retry: !!(e && e.retry) };
+      // A database step that failed spoils the whole transaction (Postgres turns the final commit into a rollback), even when
+      // Code.gs catches the error and carries on (log(), a keepWarm step): the job must fail, not report "saved"
+      if (DB_OPS.test(op)) this.dbFailed = this.dbFailed || reply.error;
+    }
     if (now) this.phase(now, 'Code.gs');
     this.io.postMessage(reply);
     Atomics.store(this.flag, 0, 1);
@@ -97,7 +105,9 @@ class Runtime {
           await new Promise(r => setTimeout(r, 50));
         }
       }
-      case 'unlock': await this.conn.cycle(); return null;  // commit now (others see it, the lock goes) and carry on
+      case 'unlock':  // commit now (others see it, the lock goes) and carry on. Not after a failed step: that commit would be a rollback
+        if (this.dbFailed) throw spoilt(this.dbFailed);
+        await this.conn.cycle(); return null;
       case 'props.get': { const r = (await q('select val from jl.props where key = $1', [a[0]]))[0]; return r ? r.val : null; }
       case 'props.set': await q('insert into jl.props (key, val) values ($1, $2) on conflict (key) do update set val = excluded.val', [a[0], a[1]]); return null;
       case 'props.delete': await q('delete from jl.props where key = $1', [a[0]]); return null;
@@ -168,6 +178,7 @@ class Runtime {
       this.conn = await this.o.db.begin();
       this.phase(n, 'Code.gs');
       this.sent = [];
+      this.dbFailed = '';
       try {
         value = await new Promise((resolve, reject) => {
           const id = ++this.seq;
@@ -176,6 +187,7 @@ class Runtime {
           delete msg.later;  // a function can't go to the worker
           this.worker.postMessage(msg);
         });
+        if (this.dbFailed) throw spoilt(this.dbFailed);
         this.phase(n, 'committing');
         await this.conn.commit();
       } catch (e) {

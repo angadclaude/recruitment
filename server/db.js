@@ -27,9 +27,12 @@ create table if not exists jl.outbox (
   payload jsonb not null,
   sent_at timestamptz,
   tries integer not null default 0,
-  error text
+  error text,
+  claimed_at timestamptz
 );
 `;
+// Added after the tables went live (28 Oct): an email is claimed before it's sent, so two senders can't both send it
+const OUTBOX_CLAIM = 'alter table jl.outbox add column if not exists claimed_at timestamptz';
 
 /** Every job's transaction has limits, so one slow or stuck job can't freeze the others (they get "Trying again…" instead
  *  of a 60 s timeout): wait at most 8 s for a lock, 20 s for a query, and a transaction left idle (a server copy that
@@ -92,7 +95,12 @@ function postgresAdapter({ url, password, limits }) {
     // every new server copy queued that lock behind live saves, so everyone else queued behind it (19 Oct: requests
     // timing out at 60 s in waves). With a short lock limit too, so it can never hold others up.
     async migrate() {
-      if ((await sql`select to_regclass('jl.outbox') as t`)[0].t) return;
+      if ((await sql`select to_regclass('jl.outbox') as t`)[0].t) {
+        // Once: a column added since. Checked first (a plain read), then a short lock limit so it never holds up saves
+        if (!(await sql`select 1 from information_schema.columns where table_schema = 'jl' and table_name = 'outbox' and column_name = 'claimed_at'`).length)
+          await sql.begin(async t => { await t.unsafe("set local lock_timeout = '3s'"); await t.unsafe(OUTBOX_CLAIM); }).catch(e => console.error('outbox column', e.message));
+        return;
+      }
       await sql.begin(async t => { await t.unsafe("set local lock_timeout = '5s'"); await t.unsafe(SCHEMA); });
     },
     end: () => sql.end({ timeout: 5 }),

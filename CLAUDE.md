@@ -24,6 +24,7 @@ The recruitment app for **LINK Marketing** and **JUSS Marketing** (Angad runs bo
   - `api/rpc.js` is the app's API (same requests and answers as Google's `/exec`). `api/cron.js` is Vercel Cron every 5 minutes, replacing Google's timers in London time. It does nothing until `jl.props.VERCEL_LIVE` is set.
   - `scripts/import-from-google.js` copies every tab and setting from Google, then compares them field by field (`--apply`, `--verify`).
   - Local secrets in the repo root (gitignored): `.env.supabase`, `.env.relay`, `.env.cron`.
+  - **Safety nets (28 Oct stress test):** every once-a-day alert claims its key with `claim(key, val)` before it sends (the lock commits it on Vercel), and each keepWarm step runs on its own. A database step that fails inside a job fails the job (`dbFailed` in `runtime.js`: Postgres would silently roll the whole job back). Each email is claimed (`jl.outbox.claimed_at`) before it's sent, so the 5-minute retry can't send it twice. The cron's daily claim is one statement. `api/rpc.js` re-checks `VERCEL_LIVE` every 30 s.
   - **Test it the same way:** `$env:JL_BACKEND = "pg"` makes `app/dev/server.js` (and so e2e/speed/room) run on this back end with PGlite (in-memory Postgres). Both back ends must pass everything.
 
 ## Shipping a change
@@ -36,6 +37,7 @@ The recruitment app for **LINK Marketing** and **JUSS Marketing** (Angad runs bo
      - `dev/move-test.js`: address moves.
      - `dev/book.js`: booking a presentation after the call (both back ends, 49 checks).
      - `dev/hyrre.js`: Megan's bookings from Hyrre (both back ends, 41 checks).
+     - `dev/backend.js`: the Vercel back end's safety nets on PGlite (a daily alert claimed before it goes, a failed database step fails the job, an email claimed before it's sent, outbox kept 14 days).
    - **Needs:** Node 22+ and Playwright with Chromium (`npm i -g playwright && npx playwright install chromium`). `pdftotext` is optional.
    - **On Angad's PC (PowerShell):** Playwright is installed in `%LOCALAPPDATA%\jl-recruitment-tools`, so first run `$env:NODE_PATH = "$env:LOCALAPPDATA\jl-recruitment-tools\node_modules"`. Run the harnesses one at a time: with `speed.js` running alongside, an e2e step (Chase → Nudge all) once timed out. Alone, e2e passes 379/379 on UK time and on UTC. Git is at `%LOCALAPPDATA%\Programs\Git\cmd\git.exe` (not on PATH in older shells). This clone has `core.autocrlf=false`: keep files LF, or the build's version hash changes. `private/` (ignored locally) holds files that must never go in this public repo.
    - **Test browser clocks** follow the fake server clock (`setTime`), so tests don't depend on today's real date.
@@ -50,6 +52,8 @@ The recruitment app for **LINK Marketing** and **JUSS Marketing** (Angad runs bo
 - **Onboarding** (their details to copy into Databyte, the welcome email) is for admins only. **Databyte is done by hand** (Angad, 27 Oct): no Databyte buttons in the app, only the Copy boxes, and the welcome email can go any time (no lock).
 - **The recruitment team** (`THANKS_TEAM` + `RECRUIT_TEAM` in `Code.gs`) send thank-yous, Day 1 details and follow-ups as LINK or JUSS, signed with their own name, and the welcome emails. Everyone else follows the candidate's company. **Only Jess and Rubal since 26 Oct** (Angad: Fiza off): `RECRUIT_TEAM` is empty; e2e puts an address back in it to keep testing it.
 - **Outcome deadline** is Friday 18:00 (later outcomes are marked LATE).
+  - Someone in on a **Saturday or Sunday** is due the coming Friday (`outcomeDeadline`).
+  - **LATE goes by the first outcome logged** (`firstOutcomeAt`): a later change (a Day 1 no-show rebooked the next week, an admin's correction) never turns an on-time outcome LATE, so past weeks' late counts don't move. The call log still marks each response that came after the deadline.
 - **Day 1 tab and New Starts List order (always, Angad 25 Oct):** JUSS on top, LINK below; in each company Monday's starters then Tuesday's, by name, no-shows at the bottom (`d1Order`). That's the default; the tab can also sort *Name A–Z* and show one campaign (`d1View`), and the PDF follows what's on screen.
 - **Campaign = where a starter is placed, FR or HF, per person (27 Oct).** The default is their company's (JUSS = HF, LINK = FR). An admin switches it in one tap on the Day 1 row (`setCampaign`, `campaign` column, `campaignOf` on server and app).
   - Angad's 26 Oct rule "JUSS = HF always" didn't match his own printed list: 6 of the 12 JUSS starters who arrived went to FR (orange = FR, pink = HF on the team's highlighter).
@@ -70,7 +74,7 @@ The recruitment app for **LINK Marketing** and **JUSS Marketing** (Angad runs bo
   - So the names **don't** add up to the headline, by design. *First appointments attended* = counted minus non-qualifiers (everyone's, 1s included). Top performers = the bookers on 2+, each with their net. More 2+ bookers than fit: the lowest share the last line by name.
   - *Non-qualifiers* = Today's **Non-qual** (`notCounting`).
   - e2e checks all of this.
-- **Someone who leaves (Angad, 26 Oct):** `CONFIG.HANDOVER` credits their *new* check-ins to whoever took over, until a date: typed names (`matchBooker(typed, day)`), picks from an out-of-date list (`liveBooker`), and their name in the check-in list. After the date: no booker, and an admin sets it. Nobody switched off is ever credited. **Alerts** about their candidates go to whoever took over (`successorOf` in `notify`, no end date). **Now: Fiza → Angad until Sun 1 Nov 2026** (company = Angad's, LINK, so FR).
+- **Someone who leaves (Angad, 26 Oct):** `CONFIG.HANDOVER` credits their *new* check-ins to whoever took over, until a date: typed names (`matchBooker(typed, day)`), picks from an out-of-date list (`liveBooker`), and their name in the check-in list. After the date: no booker, and an admin sets it. Nobody switched off is ever credited. **Alerts** about their candidates go to whoever took over (`successorOf` in `notify`, no end date): the one-off ones and the timers' too (Nudge, the evening digest, Saturday's LATE, the Friday roundup), titled with whose they are, "… (Fiza's)" (`alertable`, `whose`). Megan Hyrre's go to Rubal and Jess the same way. **Now: Fiza → Angad until Sun 1 Nov 2026** (company = Angad's, LINK, so FR).
 - **Who booked an appointment never changes after the fact (Angad, 27 Oct).** Past weeks must read exactly as they happened. Only an admin's manual **Booker → Save** (a correction) moves one. PR #140 broke this: it moved Fiza's open candidates to Angad, so w/e 25 Oct showed Angad with appointments he never had. `undoHandoverOpen` put them all back once (PR #141), and e2e proves a leaver's week reads identically before and after they leave.
 - **Names: always the app's (Angad, 27 Oct: "that's what is based on the documents").**
   - Never take a spelling from a Canva page, a printed list or a screenshot, and don't suggest changing an app name to match one. His NS w/e 01/11/26 Canva had "PRICE MAHMOOD", "TARANIH RAGAGURU" and "Mel Abraham" by hand; the app's Prince Mahmood, Taranih Rajagopal and Mel Anouman are right.
@@ -86,6 +90,12 @@ The recruitment app for **LINK Marketing** and **JUSS Marketing** (Angad runs bo
   - **Book Appts:** day by day with ‹ ›, or the week. Each has PDFs: who was booked and who came. Chase has a week PDF of who hasn't responded.
 - **"Thinking it over"** needs a call-back time. **"No answer" / "Thinking it over"** older than 2 weeks shows as 🔴 Stale on Chase until a final answer is logged.
 - **GDPR:** full details for 12 weeks, then trimmed (notes and answers wiped, the call log's notes too). Everything is deleted after 6 months.
+  - The trim keeps `visa_expiry` and `rag`: a visa expired stays a non-qualifier and a walk out a walk out, so past weeks and pay never change.
+  - An admin's decision note lives on the candidate only (the Log says "with a note"). Emails' copies in `jl.outbox` are deleted after 14 days.
+  - **The convictions answer (q13) is never sent back to the evaluation page** (`myEval`): anyone with the mobile can open "Change my answers" on the day, so they answer it again.
+- **Search:** a presenter finds someone else's candidate by name only, never by mobile or email (`search`, `fullAccess`).
+- **Check-in:** one kept on the phone with no signal counts on the day it was made (`form.day`, up to 3 days back). The same email twice in a day on another mobile is a repeat (counted once). A pick from an old list under another name that isn't theirs any more is read as typed (a form left open since a handover ended).
+- **Names** keep accents and their capitals ("José García", "Ştefan"): `cleanName` / `firstOf`.
 - **Never:** paste passwords in chat; log into Cube; pull IQ Suite / Acwyre data without Angad's sign-off; recreate the old web-app mailer (welcome emails go through Gmail "send mail as" from Apps Script).
 
 ## NEXT TASK: one ecosystem, released in one go (Angad, 18 Oct 2026)
@@ -187,6 +197,8 @@ This replaces the "Juss & Link - NS Availability - 2026" Google Sheet (a W1 / Pi
     - **Satpal, Rubal, Jess and Angad (the admins, Angad 27 Oct)** get all the new starters, done vs missing: "🗓️ Availability: 12 of 15 done · Still to fill in: …" daily until everyone has Week 1 days, then "✅ Availability ready: 15 new starters · Week 1 in: Tue 13 · … · 🚗 4 drive · tap for the poster and the PDF" once a week. Delegates ticked **Availability** don't get it (he named the four);
     - **each coach** (non-admin, active) gets their own new starters, done vs missing: "🗓️ Your new starters: 1 of 2 done" with a line each ("Jasraj: Mon Tue Wed Thu Fri", "Adham: not filled in yet") daily while any are missing, then "✅ Your new starters' days" once (`AVAIL_COACH_READY_<week>`).
   - **Tuesday he wants ready:** the poster in the team WhatsApp, who's in each day, that alert, and the PDF.
+- **Didn't continue / not ticked Arrived any more** (`no_longer`): editors still see them, flagged (anything filled in is kept), but they're off the day counts, the poster, the PDFs and the bookers' New starts, like the alerts and the bell sheets.
+- **A booker corrected after Day 1** (`reassignBooker`): their availability coach follows (`coachOf`), unless a coach was picked by hand or 🏢 Office.
 - **Extras:**
   - per-day headcount with 🚗 drivers;
   - "N with no Week 1 days yet" on screen;
@@ -245,6 +257,8 @@ Once availability is filled in, the new starters go into the **NEW STARTS** sect
     - the section ends at a blank row, the next section's title (A only) or "(Please DO NOT TOUCH)";
     - it only fills A:B of rows whose A and B are empty, skips a name already there, and never inserts or deletes rows.
   - **Problems** (no tab yet, no section, no empty rows left, Google's Code.gs not updated) alert the admins once each (`BELL_PROBLEM_<we>`) and are retried every 5 minutes.
+  - **Switched FR ↔ HF after going on** (`BELL_SENT` keeps the campaign): they go onto the new sheet too, and the admins get "🔔 Bell sheets: moved campaign · NAME: clear them from the FR bell sheet" (the app never deletes rows).
+  - **A name typed a little differently by hand** is the same person (`bellKey`: first and last word, letters only, no accents or nickname in brackets), so "HILAIRE (EMMANUEL) EBILA" isn't added twice. `relayBell` is Google-only: this needed Angad's paste (28 Oct).
   - **The sheets' links:** an admin setting on availability (**🔔 Bell sheets** card, `setBellSheets` → `BELL_SHEETS` in props). **Never put their IDs in this repo:** the FR sheet is "anyone with the link can view" and the HF one "anyone with the link can edit" (27 Oct).
   - e2e "availability" tests it on both back ends (the fake bell books are in `gas.js` `__books`; `/dev/bell` runs the cron step).
 
