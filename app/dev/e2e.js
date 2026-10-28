@@ -1737,6 +1737,23 @@ async function fillEval(p) {
   await ev1.close();
   const incW2 = (await api(admin, 'payReport', { weekEnding: '2026-10-25' })).rows.find(r => r.booker_id === abd.id);
   ok(incW2.excluded.some(x => x.name === 'Tiny Tim' && x.why === 'Under 18') && incW2.missing === 1, 'under-18: never counts for the incentive and nobody is chased for their outcome');
+  // A booker moves company in Team (Angad, 28 Oct: Mamadou Bamba LINK → JUSS; Ellexie, booked by him that week, still said LINK
+  // on her page and her onboarding): this week's check-ins follow him; earlier weeks read as they happened
+  const abdSave = co => api(admin, 'saveUser', { user: { id: abd.id, name: 'Abdullahi Ahmed', email: 'abdullahi@example.com', company: co, roles: ['booker'], active: true } });
+  const coBrand = async id => { const c = await api(admin, 'getCandidate', { id: id }); return c.company + '/' + (c.brand || '-'); };
+  const abdPast = [await coBrand(adham.id), await coBrand(jag.id)];
+  await api(jessT, 'setBrand', { id: tim.id, co: 'JUSS' });  // his thank-you went as JUSS, his booker's company
+  const abdLink = await abdSave('LINK');
+  const abdMoved = [await coBrand(back.id), await coBrand(tim.id)], abdPastNow = [await coBrand(adham.id), await coBrand(jag.id)];
+  const abdJuss = await abdSave('JUSS');
+  ok(abdLink.moved === 2 && abdMoved.join() === 'LINK/-,LINK/-' && abdPastNow.join() === abdPast.join() && abdJuss.moved === 2 && await coBrand(back.id) === 'JUSS/-' &&
+    (await getJson('/dev/sheet?name=Log')).filter(r => r[2] === 'company' && r[3] === tim.id).map(r => r[4]).join(' | ') === 'JUSS → LINK (Abdullahi Ahmed is LINK now) | LINK → JUSS (Abdullahi Ahmed is JUSS now)',
+    'Abdullahi moved to LINK: his 2 check-ins this week go LINK (their messages and welcome email too), last week\'s stay JUSS; moved back, they follow again; a Log line each');
+  // …and once, for a booker moved before this was built: this week's catch up
+  await post('/dev/eval', { js: `(() => { const c = readRow('Candidates', rowOfId('Candidates', '${tim.id}')); c.company = 'LINK'; writeRow('Candidates', c);
+    PropertiesService.getScriptProperties().deleteProperty('COMPANY_FOLLOWS_BOOKER'); companyFollowsBooker(); companyFollowsBooker(); return 'ok'; })()` });
+  ok(await coBrand(tim.id) === 'JUSS/-' && await coBrand(back.id) === 'JUSS/-' && abdPast.join() === [await coBrand(adham.id), await coBrand(jag.id)].join(),
+    'once, for bookers moved before: Tim (still LINK under JUSS Abdullahi) catches up to JUSS; last week\'s untouched');
   await ap.goto(APP + 'index.html?c=' + tim.id); await ap.waitForSelector('.profile h1');
   const timTxt = await ap.$eval('#page', e => e.innerText);
   ok(/⛔ Non-qualifier: Under 18/.test(timTxt) && /No evaluation form, doesn't count for the incentive, no outcome needed/.test(timTxt) && /not needed/i.test(timTxt), 'candidate page: ⛔ Non-qualifier banner, outcome "not needed"');

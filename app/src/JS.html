@@ -2140,7 +2140,8 @@ function editUser(u) {
       .then(saved => {
         S.users = (S.users || []).filter(o => o.id !== saved.id).concat([saved]).sort((a, b) => a.name.localeCompare(b.name));
         if (saved.id === S.me.user.id) { S.me.user = saved; }
-        saveCache(); toast(saved.linked ? 'Saved ✓ ' + saved.linked + ' check-in' + (saved.linked > 1 ? 's' : '') + ' that typed their name' + ((saved.aliases || []).length ? ' or other names' : '') + ' now credited to them' : 'Saved ✓');
+        saveCache(); toast((saved.linked ? 'Saved ✓ ' + saved.linked + ' check-in' + (saved.linked > 1 ? 's' : '') + ' that typed their name' + ((saved.aliases || []).length ? ' or other names' : '') + ' now credited to them' : 'Saved ✓') +
+          (saved.moved ? ' · this week\'s ' + saved.moved + ' now ' + saved.company : ''));
         // Just added (or email changed) and they can log in: stay on their page, ready to show a login code if they're with you
         if (saved.email && saved.active && (!u || String(u.email || '').toLowerCase() !== saved.email.toLowerCase())) {
           S.params = { id: saved.id }; hist('replace', { v: 'user', p: S.params });
