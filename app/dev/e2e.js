@@ -3107,6 +3107,10 @@ async function fillEval(p) {
     const quiet = bw({ weekday: 5, target: 5, week: [{ name: 'Hasini', n: 1 }, { name: 'Ramis', n: 1 }], bars2w: [] }).msgs[1], busy = bw({ weekday: 5, target: 5, week: [{ name: 'Hasini', n: 3 }, { name: 'Ramis', n: 1 }], bars2w: [] }).msgs[1];
     ok(quiet === 'Big shout out to everyone booking this week!!' && busy === 'Big shout out to {Hasini} leading the way with {3} this week!!',
       'Week top 5\'s shout-out never names someone on 1: "' + quiet + '" / "' + busy + '"');
+    // Megan (Hyrre's AI caller) is "Office" on the posters (Angad, 28 Oct); everyone else by name
+    const pn = new Function(fnOf(/const HYRRE_BOOKER_ID = [^\n]*/) + '\n' + fnOf(/function posterName\(c, short\) \{[^\n]*\}/) + '; return posterName;')();
+    ok(pn({ booker_id: 'hyrremegan', booker_name: 'Megan Hyrre' }, n => n.split(' ')[0]) === 'Office' && pn({ booker_id: 'x', booker_name: 'Hasini Perera' }, n => n.split(' ')[0]) === 'Hasini',
+      'Megan (Hyrre) shows as "Office" on Top performers and Week top 5; everyone else by name');
     // The bell sheets: the same person typed a little differently is the same person
     const bk = await ev("[bellKey('HILAIRE (EMMANUEL) EBILA'), bellKey('Hilaire Ebila'), bellKey('Jasraj Bhuller-Singh'), bellKey('JOSÉ  GARCÍA')]");
     ok(bk.join() === 'HILAIRE EBILA,HILAIRE EBILA,JASRAJ SINGH,JOSE GARCIA', 'bell sheets match a name however it was typed: ' + bk.join(', '));

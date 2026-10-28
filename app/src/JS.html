@@ -1944,6 +1944,9 @@ function notCounting(c) { return c.limited ? noRating(c) || !!c.not_counting : c
 /** Poster numbers, on the same rules as the recruitment incentive: rated by the presenter (or a non-qualifier), Mon–Fri,
  *  and only people who count. "First appointments attended" and the Friday weekly total leave the non-qualifiers out:
  *  they have their own bubble (Angad, 26 Oct). */
+const HYRRE_BOOKER_ID = 'hyrremegan';  // = HYRRE_BOOKER_ID in Code.gs
+/** A booker's name on the posters: Megan (Hyrre's AI caller) is "Office" (Angad, 28 Oct). */
+function posterName(c, short) { return c.booker_id === HYRRE_BOOKER_ID ? 'Office' : short(c.booker_name); }
 function bulletinNumbers(items, day, prevItems) {
   const we = weekEndingOf(day), week = [6, 5, 4, 3, 2].map(n => addDays(we, -n));
   const att = items.filter(counted), today = att.filter(c => c.attended_date === day), inWeek = att.filter(c => week.indexOf(c.attended_date) >= 0);
@@ -1956,7 +1959,7 @@ function bulletinNumbers(items, day, prevItems) {
     const m = {};
     list.forEach(c => {
       if (c.pay_reason || !c.booker_name) return;
-      const k = c.booker_id || c.booker_name, r = (m[k] = m[k] || { key: k, name: short(c.booker_name), n: 0, bars: 0 });
+      const k = c.booker_id || c.booker_name, r = (m[k] = m[k] || { key: k, name: posterName(c, short), n: 0, bars: 0 });
       r.n++; if (isBar(c)) r.bars++;
     });
     return Object.keys(m).map(k => m[k]).sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
