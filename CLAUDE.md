@@ -54,6 +54,8 @@ The recruitment app for **LINK Marketing** and **JUSS Marketing** (Angad runs bo
 - **Campaign = where a starter is placed, FR or HF, per person (27 Oct).** The default is their company's (JUSS = HF, LINK = FR). An admin switches it in one tap on the Day 1 row (`setCampaign`, `campaign` column, `campaignOf` on server and app).
   - Angad's 26 Oct rule "JUSS = HF always" didn't match his own printed list: 6 of the 12 JUSS starters who arrived went to FR (orange = FR, pink = HF on the team's highlighter).
   - The Day 1 list, its PDF, availability, the poster and the results all follow the placement.
+  - **The placement is the company they join (Angad, 28 Oct):** HF = JUSS, FR = LINK (`campBrand`). `setCampaign` sets `brand` to it, so their welcome email, welcome page, Day 1 details and every message after come from that company. Ellexie Hodson (LINK booker, moved to JUSS) still showed Link Marketing before this; `brandFollowsPlacement` fixed everyone placed whose welcome email hadn't gone (once, `BRAND_FOLLOWS_PLACEMENT`). Their booker's `company` (pay, lists) doesn't change. Their page shows "🏢 Joining JUSS · HF" when it differs from the booker's (`joinLine`).
+  - **A booker corrected** (`reassignBooker`): the company they join follows the new booker's, unless they're placed (then the placement's). A company the recruitment team chose that wasn't the old booker's stays.
   - **Colours (Angad, 27 Oct):** HF = HelloFresh green, FR = NDCS purple. This applies to the marked-up New Starts List rows and the FR | HF switch. The paper used pink / orange highlighter; don't go back to those.
 - **The numbers mean one thing everywhere (Angad, 26 Oct: "I don't want to explain this again"):**
   - **Checked in** = everyone.

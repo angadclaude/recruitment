@@ -1254,13 +1254,15 @@ function fixEligibility(req, u) {
   });
 }
 
-/** Where a starter goes, HF or FR, set on Day 1 (Angad, 27 Oct: his list had JUSS starters placed in FR). '' = their company's. */
+/** Where a starter goes, HF or FR, set on Day 1 (Angad, 27 Oct: his list had JUSS starters placed in FR). '' = their company's.
+ *  It moves the company they're joining too (Angad, 28 Oct): their messages, welcome page and welcome email come from it. */
 function setCampaign(req, u) {
   if (!isAdmin(u)) throw new Error('Admin only');
   if (['HF', 'FR', ''].indexOf(req.campaign) < 0) throw new Error('HF or FR');
   const c = withLock(() => {
     const c = getC(req.id);
-    c.campaign = req.campaign; writeRow('Candidates', c);
+    c.campaign = req.campaign; c.brand = campBrand(c.campaign);  // '' = their booker's company again
+    writeRow('Candidates', c);
     readTable('Availability').filter(r => r.candidate_id === c.id).forEach(r => { r.campaign = campaignOf(c); writeRow('Availability', r); });
     return c;
   });
@@ -1269,6 +1271,8 @@ function setCampaign(req, u) {
 }
 /** HF or FR: the one picked on Day 1, else their company's (JUSS = HF, LINK = FR). */
 function campaignOf(c) { return c.campaign === 'HF' || c.campaign === 'FR' ? c.campaign : c.company === 'JUSS' ? 'HF' : 'FR'; }
+/** The company someone placed in HF or FR joins: HF = JUSS, FR = LINK ('' when not placed). */
+function campBrand(k) { return k === 'HF' ? 'JUSS' : k === 'FR' ? 'LINK' : ''; }
 /** A name typed wrong at check-in ("Mel Anouman" → "Mel Abraham" on 26 Oct's list): fixed everywhere it shows. */
 function fixName(req, u) {
   if (!isAdmin(u)) throw new Error('Admin only');
@@ -1290,8 +1294,12 @@ function reassignBooker(req, u) {
     const b = userById(req.booker_id);
     if (!b) throw new Error('Booker not found');
     if (c.booker_id === b.id) return shape(c, u);
-    const before = c.booker_name || c.booker_typed;
+    const before = c.booker_name || c.booker_typed, was = c.company;
     c.booker_id = b.id; c.booker_name = b.name; c.company = b.company;
+    // The company their messages and welcome email come from: their placement's, else the new booker's (a company the
+    // recruitment team chose that wasn't the old booker's stays)
+    if (campBrand(c.campaign)) c.brand = campBrand(c.campaign);
+    else if (c.brand === was) c.brand = '';
     writeRow('Candidates', c);
     log(u, 'reassign', c.id, before + ' → ' + b.name);
     return shape(c, u);
@@ -1505,6 +1513,24 @@ function undoHandoverOpen() {
       log(null, 'reassign', c.id, to.name + ' → ' + was.name + ' (put back: who booked an appointment never changes)');
     });
     p.setProperty('HANDOVER_OPEN_UNDONE', nowStr() + ' · ' + n);
+  });
+}
+/** Once (Angad, 28 Oct): until then the HF / FR switch on Day 1 didn't move the company someone's messages and welcome email
+ *  come from (Ellexie Hodson, booked by a LINK booker and moved to JUSS, still showed Link Marketing). Everyone placed whose
+ *  welcome email hasn't gone yet now follows their placement. */
+function brandFollowsPlacement() {
+  const p = PropertiesService.getScriptProperties();
+  if (p.getProperty('BRAND_FOLLOWS_PLACEMENT')) return;
+  withLock(() => {
+    if (p.getProperty('BRAND_FOLLOWS_PLACEMENT')) return;
+    let n = 0;
+    readTable('Candidates').forEach(c => {
+      const k = campBrand(c.campaign);
+      if (!k || c.onboard_email_at || brandCo(c) === k) return;
+      c.brand = k; writeRow('Candidates', c); n++;
+      log({ name: 'App' }, 'brand', c.id, k + ' (follows their ' + c.campaign + ' placement)');
+    });
+    p.setProperty('BRAND_FOLLOWS_PLACEMENT', nowStr() + ' · ' + n);
   });
 }
 /** Who gets the credit for a booker picked or found: themselves, or (switched off) whoever took over from them, else nobody. */
@@ -2102,6 +2128,7 @@ function keepWarm() {
   try { backfillSends(); } catch (e) { console.error(e); }  // once each, after this version goes live
   try { backfillOutcomes(); } catch (e) { console.error(e); }
   try { undoHandoverOpen(); } catch (e) { console.error(e); }  // once
+  try { brandFollowsPlacement(); } catch (e) { console.error(e); }  // once
   try { maybeAvailReminder(); } catch (e) { console.error(e); }
   try { maybeDay1Results(); } catch (e) { console.error(e); }
   maybeDailyDigest();

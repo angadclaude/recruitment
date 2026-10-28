@@ -1597,8 +1597,42 @@ async function fillEval(p) {
   await ap.waitForFunction(id => { const b = document.querySelector('.trow[data-cand="' + id + '"] [data-campsw] button.on'); return b && b.textContent === 'FR'; }, adham.id);
   ok(await campSaved(adham.id, 'FR') && /FR\s*2/.test(await ap.textContent('[data-d1camp="FR"]')) && await ap.$('.trow.campFR[data-cand="' + adham.id + '"]'),
     'one tap on FR moves Adham (JUSS) to FR: saved, his row goes FR purple, the FR chip counts him (FR 2)');
+  // …and the company he's joining moves with it (Angad, 28 Oct: Ellexie, booked by a LINK booker and moved to JUSS, still
+  // showed Link Marketing, so her welcome email and texts would have gone out as LINK)
+  const joinsNow = async id => { const c = await api(admin, 'getCandidate', { id: id }); return [c.brand, (await api(admin, 'onboardPreview', { id: id })).co, c.company].join(' '); };
+  const toastSays = re => ap.waitForFunction(r => new RegExp(r).test(document.getElementById('toast').textContent), re.source, { timeout: 5000 }).then(() => true, () => false);
+  const appSrc = fs.readFileSync(require('path').join(__dirname, '..', 'src', 'JS.html'), 'utf8'), fnSrc = re => appSrc.match(re)[0];
+  const joinLineOf = new Function(fnSrc(/function brandCo\(c\) \{[^\n]*\}/) + '\n' + fnSrc(/function brandOf\(c\) \{[^\n]*\}/) + '\n' + fnSrc(/function joinLine\(c\) \{[\s\S]*?\n\}/) + '\nreturn joinLine;')();
+  const adFR = await api(admin, 'getCandidate', { id: adham.id });
+  ok(await joinsNow(adham.id) === 'LINK LINK JUSS' && await toastSays(/Adham → FR · joins LINK Marketing/) && /Joining <span class="co LINK">LINK<\/span> · FR · messages and welcome email from LINK Marketing/.test(joinLineOf(adFR)),
+    'placed in FR, Adham joins LINK: his welcome email, welcome page and messages come from LINK, his page says "🏢 Joining LINK · FR", the toast says so; his booker\'s company (pay, lists) stays JUSS');
   await ap.click('.trow[data-cand="' + adham.id + '"] [data-campsw] button[data-camp="HF"]');
-  ok(await campSaved(adham.id, 'HF'), '…and HF moves him back');
+  ok(await campSaved(adham.id, 'HF') && await joinsNow(adham.id) === 'JUSS JUSS JUSS' && joinLineOf(await api(admin, 'getCandidate', { id: adham.id })) === '',
+    '…and HF moves him back: JUSS again, and no "Joining" line (same as his booker\'s)');
+  // A LINK starter moved to HF (Ellexie's case), and a booker corrected afterwards
+  await api(admin, 'setCampaign', { id: jasId, campaign: 'HF' });
+  const jasHF = await joinsNow(jasId);
+  await api(admin, 'setCampaign', { id: jasId, campaign: '' });
+  const jasBack = await joinsNow(jasId), jasWas = (await api(admin, 'getCandidate', { id: jasId })).booker_id;
+  await api(jessT, 'setBrand', { id: jasId, co: 'LINK' });  // the thank-you went as LINK, his booker's company
+  await api(admin, 'reassignBooker', { id: jasId, booker_id: abd.id });
+  const jasAbd = await joinsNow(jasId);
+  await api(admin, 'reassignBooker', { id: jasId, booker_id: jasWas }); await api(admin, 'setCampaign', { id: jasId, campaign: 'FR' });
+  await api(admin, 'reassignBooker', { id: jasId, booker_id: abd.id });
+  const jasPlaced = await joinsNow(jasId);
+  await api(admin, 'reassignBooker', { id: jasId, booker_id: jasWas }); await api(admin, 'setCampaign', { id: jasId, campaign: '' });
+  ok(jasHF === 'JUSS JUSS LINK' && jasBack === ' LINK LINK' && jasAbd === ' JUSS JUSS' && jasPlaced === 'LINK LINK JUSS' && await joinsNow(jasId) === ' LINK LINK',
+    'Jasraj (LINK) moved to HF joins JUSS; blank = his booker\'s company again; a booker corrected to a JUSS booker moves him to JUSS, unless he\'s placed (FR keeps him LINK)');
+  // Once, for everyone placed before this (Ellexie): the company follows the placement, unless their welcome email has gone
+  const rawC = (id, f) => post('/dev/eval', { js: `(() => { const c = readRow('Candidates', rowOfId('Candidates', '${id}')), was = { campaign: c.campaign, brand: c.brand, onboard_email_at: c.onboard_email_at };
+    Object.assign(c, ${JSON.stringify(f)}); writeRow('Candidates', c); return JSON.stringify(was); })()` }).then(r => JSON.parse(r.out));
+  const adRaw = await rawC(adham.id, { campaign: 'FR', brand: 'JUSS', onboard_email_at: '' }), jasRaw = await rawC(jasId, { campaign: 'HF', brand: 'LINK', onboard_email_at: '2026-10-19 12:00:00' });
+  await post('/dev/eval', { js: "PropertiesService.getScriptProperties().deleteProperty('BRAND_FOLLOWS_PLACEMENT'); brandFollowsPlacement(); brandFollowsPlacement(); 'ok'" });
+  const bfpLog = (await getJson('/dev/sheet?name=Log')).filter(r => r[2] === 'brand' && /\(follows their (FR|HF) placement\)/.test(r[4]));
+  const adFix = await api(admin, 'getCandidate', { id: adham.id }), jasKept = await api(admin, 'getCandidate', { id: jasId });
+  await rawC(adham.id, adRaw); await rawC(jasId, jasRaw);
+  ok(adFix.brand === 'LINK' && jasKept.brand === 'LINK' && bfpLog.length === 1 && bfpLog[0][3] === adham.id && bfpLog[0][4] === 'LINK (follows their FR placement)',
+    'once, for everyone already placed: Adham (placed in FR, welcome email not sent) now joins LINK; Jasraj (welcome email already sent) is left as sent; one Log line');
   await ap.click('[data-d1camp="FR"]'); await ap.waitForSelector('[data-d1camp="FR"].on');
   ok(await ap.$('.trow[data-cand="' + jasId + '"]') && !(await ap.$('.trow[data-cand="' + adham.id + '"]')) && /FR only · 1 expected/.test(await ap.innerText('#page')),
     'the FR chip: only the FR starters (Jasraj), "FR only · 1 expected"');
