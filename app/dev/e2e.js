@@ -1777,7 +1777,11 @@ async function fillEval(p) {
   await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button');
   await ap.click('.tabbar button[data-tab=all]'); await ap.waitForSelector('#flt'); await ap.click('#flt .chip[data-f=nq]');
   await ap.waitForSelector('.item:has-text("Tiny Tim")');
-  ok((await ap.$$('.item')).length === 1 && /⛔ Non-qualifier/.test(await ap.innerText('.item')), 'All → "Non-qualifiers" filter lists them with a ⛔ badge');
+  // = Today's Non-qual (28 Oct): not eligible, a repeat, removed by admin; the not-eligible ones with a ⛔ badge
+  const nqWeek = (await api(admin, 'listWeek', {})).items.filter(c => (c.in_room === true || c.in_room === 'TRUE' || c.non_qual) && c.pay_reason).map(c => c.full_name).sort();
+  const nqShown = (await ap.$$eval('.item', e => e.map(x => x.innerText))), timRow = nqShown.find(t => /Tiny Tim/.test(t)) || '';
+  ok(nqShown.length === nqWeek.length && nqWeek.every(n => nqShown.some(t => t.includes(n))) && /⛔ Non-qualifier/.test(timRow),
+    'All → "Non-qualifiers" lists everyone who came in but doesn\'t count (' + nqWeek.join(', ') + '), the not-eligible with a ⛔ badge');
   await ap.click('.tabbar button[data-tab=today]'); await ap.waitForSelector('#bullDaily'); await ap.click('#bullDaily');
   await ap.waitForSelector('#bimg[data-info]', { timeout: 15000 });
   const bi2 = JSON.parse(await ap.getAttribute('#bimg', 'data-info'));
