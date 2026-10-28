@@ -447,7 +447,8 @@ async function fillEval(p) {
   ok(tCand < 500, 'candidate page opens instantly from the phone\'s copy (' + tCand + 'ms)');
   await pp.goBack(); await pp.waitForSelector('.kpis');
   // Non-qualifiers in the day's summary, next to Checked in (Angad, 26 Oct): from what the presenter sees (no_rating) too
-  const dayAll = (await api(admin, 'listDay', {})).items, nqToday = dayAll.filter(c => c.non_qual).length;
+  // Non-qual = came in but doesn't count (not eligible, a repeat, removed by admin): the same for a presenter as for an admin (28 Oct)
+  const dayAll = (await api(admin, 'listDay', {})).items, nqToday = dayAll.filter(c => (c.in_room === true || c.in_room === 'TRUE' || c.non_qual) && c.pay_reason).length;
   await pp.waitForFunction(([n, q]) => { const b = document.querySelectorAll('.hero .kpi b'); return b.length === 5 && b[0].dataset.n === String(n) && b[1].dataset.n === String(q); },
     [dayAll.length, nqToday], { timeout: 20000 });  // its copy has caught up with the admin's change (Young Person no longer a non-qualifier)
   const heroK = await pp.$$eval('.hero .kpi', k => k.map(x => x.querySelector('span').textContent + '=' + x.querySelector('b').dataset.n));
