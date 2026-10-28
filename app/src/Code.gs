@@ -348,10 +348,10 @@ function relayBell(req) {
   for (let i = start + 1; i < v.length; i++) {
     // The end: a blank row, the next section's title (a name and nothing else) or the totals
     if (!v[i].slice(1).some(x => String(x).trim()) || /DO NOT TOUCH/.test(a(i))) break;
-    if (a(i)) have[a(i)] = true; else if (!bellNorm(v[i][1])) free.push(i + 1);
+    if (a(i)) have[bellKey(v[i][0])] = true; else if (!bellNorm(v[i][1])) free.push(i + 1);
   }
   return { title: title, tab: sh.getName(), rows: rows.map(r => {
-    const name = String(r[0] || '').trim(), key = bellNorm(name);
+    const name = String(r[0] || '').trim(), key = bellKey(name);
     if (!key) return 'skipped';
     if (have[key]) return 'already';
     if (!free.length) return 'full';
@@ -361,6 +361,12 @@ function relayBell(req) {
   }) };
 }
 function bellNorm(s) { return String(s || '').trim().replace(/\s+/g, ' ').toUpperCase(); }
+/** Who a name on the sheet is, however it was typed: first and last word, letters only, no accents or nickname in brackets
+ *  ("HILAIRE (EMMANUEL) EBILA" = "HILAIRE EBILA", "BHULLER-SINGH" = "BHULLER SINGH", "JOSÉ" = "JOSE"). */
+function bellKey(s) {
+  const w = bellNorm(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\([^)]*\)/g, ' ').replace(/[^A-Z ]+/g, ' ').trim().split(/\s+/).filter(String);
+  return w.length > 1 ? w[0] + ' ' + w[w.length - 1] : w.join(' ');
+}
 /** The team's tab names vary ("WE 01.11.26", "WE 5.07.26", " WE 23.11.2025"): the date they stand for, or ''. */
 function bellTabDate(name) {
   const m = /^\s*W\/?E\s*(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{4}|\d{2})\s*$/i.exec(String(name || ''));
@@ -522,6 +528,14 @@ function withLock(fn) {
   // flush() makes this write visible before the next person in the queue reads the sheet
   try { const r = fn(); SpreadsheetApp.flush(); return r; } finally { lock.releaseLock(); }
 }
+/** A once-only alert (a day's reminder: key = the date): true if this run gets to send it. The claim is saved before anything
+ *  goes out (on Vercel the lock commits it), so a failure later in the same 5-minute run can't undo it after the alert has
+ *  gone (and send it again 5 minutes later), and two runs at once can't both send it. */
+function claim(key, val) {
+  const p = PropertiesService.getScriptProperties();
+  if (p.getProperty(key) === val) return false;
+  return withLock(() => { if (p.getProperty(key) === val) return false; p.setProperty(key, val); return true; });
+}
 function busyError() { const e = new Error('Lots of people are sending at once. Trying again…'); e.retry = true; return e; }
 /** Audit line. Sheet.appendRow is atomic, so this is safe outside the lock (keeps the lock short). */
 function log(user, action, cid, detail) {
@@ -546,7 +560,9 @@ function weekMonday(ymd) { const w = weekday(ymd); return addDays(ymd, w === 0 ?
 function weekEnding(ymd) { return addDays(weekMonday(ymd), 6); } // Sunday
 function deadlineLabel() { return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][CONFIG.OUTCOME_DEADLINE_DAY % 7] + ' ' + CONFIG.OUTCOME_DEADLINE_TIME; }
 function outcomeDeadline(attendedYmd) {
-  return addDays(weekMonday(attendedYmd), CONFIG.OUTCOME_DEADLINE_DAY - 1) + ' ' + CONFIG.OUTCOME_DEADLINE_TIME;
+  // Came on a Saturday or Sunday: due the coming Friday (not the Friday before, which made them LATE before they arrived)
+  const d = weekday(attendedYmd) % 6 === 0 ? addDays(attendedYmd, 7) : attendedYmd;
+  return addDays(weekMonday(d), CONFIG.OUTCOME_DEADLINE_DAY - 1) + ' ' + CONFIG.OUTCOME_DEADLINE_TIME;
 }
 function daysBetween(a, b) {
   return Math.round((new Date(b + 'T00:00:00Z') - new Date(a + 'T00:00:00Z')) / 86400000);
@@ -570,7 +586,8 @@ function normMobile(s) {
   return /^07\d{9}$/.test(d) ? d : '';
 }
 function cleanName(s) {
-  return String(s || '').trim().replace(/\s+/g, ' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+  // Each word's first letter, accents too ("José García", "Ştefan", "Bartłomiej"; \b\w made them "GarcíA", "şTefan", "BartłOmiej")
+  return String(s || '').trim().replace(/\s+/g, ' ').toLowerCase().replace(/(^|[^\p{L}\p{M}\d_])(\p{L})/gu, (m, a, c) => a + c.toUpperCase());
 }
 function rtwLevel(rtw) {
   const r = RTW.filter(x => x[0] === rtw)[0];
@@ -819,9 +836,18 @@ function checkin(req) {
   if (['Yes', 'No'].indexOf(f.over18) < 0) throw new Error('Please answer whether you are 18 or over.');
   if (!f.rtw) throw new Error('Please choose your right to work status.');
   if (!truthy(f.privacy_ok)) throw new Error('Please tick the privacy notice to continue.');
-  const today = todayStr();
+  // Kept on the phone with no signal and sent later: the day they came, not the day it got through. The phone says how long it
+  // waited (made → sent, both by its own clock, so a phone set to the wrong date can't move a check-in); up to 3 days.
+  const waited = Number(f.sent) - Number(f.made);
+  const today = waited > 0 && waited <= 3 * 86400000 ? Utilities.formatDate(new Date(new Date().getTime() - waited), CONFIG.TZ, 'yyyy-MM-dd') : todayStr();
   // Picked from a list that's out of date (someone since switched off): whoever took over from them, else nobody
-  const pick = f.booker_id ? userById(f.booker_id) : null, gone = pick && !truthy(pick.active) ? pick : null;
+  let pick = f.booker_id ? userById(f.booker_id) : null;
+  // Picked by another name that isn't theirs any more (a form left open since a handover ended: "Fiza Iqbal" under Angad):
+  // read as typed instead, so it's credited as it would be today
+  const typedK = normName(f.booker_typed);
+  if (pick && truthy(pick.active) && typedK && typedK !== normName(pick.name) && !aliasesOf(pick).some(a => normName(a) === typedK) &&
+    !handovers(today).some(x => x.to.id === pick.id && x.names.some(n => normName(n) === typedK))) pick = null;
+  const gone = pick && !truthy(pick.active) ? pick : null;
   let booker = liveBooker(pick, today);
   // Typed rather than picked ("Daniel Thompson", "Skye Promotions", "Hasini"): credit the booker it clearly means
   const auto = !booker && f.booker_typed ? matchBooker(f.booker_typed, today) : null;
@@ -894,7 +920,9 @@ function todaysRowByMobile(mobile, today) {
 /** Look for the same person in the last 6 months (new app records + imported history). */
 function findRepeat(all, mobile, email, today) {
   const since = addDays(today, -CONFIG.REPEAT_DAYS);
-  const prev = all.filter(c => (c.mobile === mobile || (email && c.email === email)) && c.attended_date >= since && c.attended_date < today)
+  // …or earlier today on another mobile with the same email (a typo the first time): counted once
+  const prev = all.filter(c => (c.mobile === mobile || (email && c.email === email)) && c.attended_date >= since &&
+    (c.attended_date < today || (c.attended_date === today && c.mobile !== mobile)))
     .sort((a, b) => b.attended_date.localeCompare(a.attended_date))[0];
   if (prev) {
     const block = prev.outcome === 'Not suitable' || prev.admin_status === 'rejected';
@@ -925,6 +953,9 @@ function myEval(req) {
   const c = candidateByResume(req);
   if (!canEditEval(c)) throw new Error("Your answers can't be changed now. Speak to the person who booked you in.");
   const a = {}; EVAL_FIELDS.forEach(k => { a[k] = c[k]; });
+  // Anyone with their mobile can open this on the day (a different phone): the convictions answer is for senior admin only,
+  // so it never comes back. Changing their answers means answering it again.
+  a.q13_unspent = '';
   // Who ran the presentation, as they answered it
   a.q0_presenter = c.presented_by_id || (c.presented_by === 'Not sure' ? 'Not sure' : c.presented_by ? 'Someone else' : '');
   a.q0_presenter_other = !c.presented_by_id && c.presented_by && c.presented_by !== 'Not sure' && c.presented_by !== 'Someone else' ? c.presented_by : '';
@@ -1029,6 +1060,8 @@ function roomShape(c) {
   ROOM_FIELDS.forEach(k => { o[k] = c[k]; });
   // Under 18 / no right to work: the presenter doesn't need to rate them (Angad, 20 Oct). Not why, just that.
   if (nonQualifier(c)) o.no_rating = true;
+  // In Today's Non-qual like everyone else's (a repeat, removed by admin): that they don't count, not why
+  if ((truthy(c.in_room) || nonQualifier(c)) && payExclusion(c)) o.not_counting = true;
   return o;
 }
 function shape(c, u) {
@@ -1107,8 +1140,10 @@ function search(req, u) {
   const q = String(req.q || '').trim().toLowerCase();
   if (q.length < 2) return { items: [] };
   const m = normMobile(q);
+  // By mobile or email only for people you fully see: a presenter rating the room can't find (or confirm) someone else's
+  // candidate's number or email
   const rows = readTable('Candidates').filter(c => canSee(u, c) &&
-    (c.full_name.toLowerCase().indexOf(q) >= 0 || (m && c.mobile === m) || c.email.indexOf(q) >= 0));
+    (c.full_name.toLowerCase().indexOf(q) >= 0 || (fullAccess(u, c) && ((m && c.mobile === m) || c.email.indexOf(q) >= 0))));
   return { items: rows.slice(-50).reverse().map(c => shape(c, u)) };
 }
 
@@ -1128,7 +1163,8 @@ function saveNotes(req, u) {
     if (set('rag') && ['G', 'A', 'R', 'W', ''].indexOf(req.rag) >= 0) c.rag = req.rag;
     if (set('stars')) { const s = Number(req.stars); c.stars = s >= 1 && s <= 5 ? String(s) : ''; }
     // Rating someone = they were in the room (no extra tap needed). Untick only if explicitly set false with no rating.
-    c.in_room = (req.in_room || c.rag || c.stars) ? 'TRUE' : '';
+    // Not sent (the app sends only what changed): as it is now
+    c.in_room = ((req.in_room === undefined ? truthy(c.in_room) : req.in_room) || c.rag || c.stars) ? 'TRUE' : '';
     if (set('tags')) c.tags = (req.tags || []).join(', ').slice(0, 300);
     if (set('notes')) c.notes = String(req.notes || '').slice(0, 2000);
     // The two questions the presenter asks in the room (only touched when sent, so older app versions can't wipe them)
@@ -1168,13 +1204,16 @@ function saveOutcome(req, u) {
     }
     c._wasBooked = c.outcome === 'Academy booked' && c.admin_status !== 'pending';
     const newDate = req.outcome === 'Academy booked' ? req.academy_date : '';
-    if (newDate !== c.academy_date) { c.academy_confirmed_at = ''; c.day1_status = ''; c.day1_by = ''; c.day1_at = ''; }  // new date (e.g. rebooking a no-show) → confirm + mark again
+    if (newDate !== c.academy_date) { c.academy_confirmed_at = ''; c.day1_status = ''; c.day1_by = ''; c.day1_at = ''; c.day1_left_at = ''; c.day1_left_by = ''; }  // new date (e.g. rebooking a no-show) → confirm + mark again
     c.outcome = req.outcome;
     c.academy_date = newDate;
     if (newDate && !c.welcome_token) c.welcome_token = token().slice(0, 20);
     c.outcome_notes = String(req.outcome_notes || '').slice(0, 2000);
+    const firstAt = c.outcome && c.outcome_at ? firstOutcomeAt(c) : '';
     c.outcome_by = u.name; c.outcome_at = nowStr();
-    c.outcome_late = c.outcome_at > outcomeDeadline(c.attended_date) ? 'TRUE' : '';
+    // LATE goes by the first outcome logged: changing it later (a Day 1 no-show rebooked, an admin's correction) doesn't make
+    // an outcome that was in on time LATE, or last week's late count change
+    c.outcome_late = (firstAt || c.outcome_at) > outcomeDeadline(c.attended_date) ? 'TRUE' : '';
     // "Thinking it over": when they asked to be called back. Whoever logged it gets "🔁 Call them back now" at that time.
     if (req.outcome === 'Thinking it over' && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(req.callback_at || '')) {
       if (req.callback_at !== c.callback_at) c.callback_nudged = '';
@@ -1186,7 +1225,8 @@ function saveOutcome(req, u) {
       else if (c.admin_status !== 'approved') c.admin_status = 'pending';
     } else if (c.admin_status === 'pending') c.admin_status = '';
     const wasPending = c._wasPending, wasBooked = c._wasBooked;
-    addOutcomeLog(c, { at: c.outcome_at, by: u.name, o: c.outcome, d: c.academy_date, cb: c.callback_at, late: c.outcome_late ? 1 : 0, n: c.outcome_notes });
+    // The call log marks each response that came after the deadline (a rebook the next week says LATE there; the outcome doesn't)
+    addOutcomeLog(c, { at: c.outcome_at, by: u.name, o: c.outcome, d: c.academy_date, cb: c.callback_at, late: c.outcome_at > outcomeDeadline(c.attended_date) ? 1 : 0, n: c.outcome_notes });
     writeRow('Candidates', c);
     return { c: c, alert: c.admin_status === 'pending' && !wasPending, starter: c.outcome === 'Academy booked' && c.admin_status !== 'pending' && !wasBooked };
   });
@@ -1200,6 +1240,12 @@ function saveOutcome(req, u) {
   return shape(c, u);
 }
 
+/** When their first outcome was logged (the call log's first entry, else outcome_at). */
+function firstOutcomeAt(c) {
+  let l = []; try { l = JSON.parse(c.outcome_log || '[]'); } catch (x) { l = []; }
+  const at = (Array.isArray(l) ? l : []).map(e => e && e.at).filter(Boolean).sort()[0];
+  return at && at < c.outcome_at ? at : c.outcome_at;
+}
 /** Every response logged on the call (No answer, Thinking it over, Academy booked…), who and when: outcome / outcome_at only keep the latest. */
 function addOutcomeLog(c, e) {
   let l = []; try { l = JSON.parse(c.outcome_log || '[]'); } catch (x) { l = []; }
@@ -1219,7 +1265,7 @@ function adminDecision(req, u) {
       addOutcomeLog(c, { at: c.admin_at, by: u.name, o: 'Not suitable', n: 'Academy booking rejected' + (c.admin_note ? ': ' + c.admin_note : '') });
     }
     writeRow('Candidates', c);
-    log(u, 'admin_' + req.decision, c.id, c.admin_note);
+    log(u, 'admin_' + req.decision, c.id, c.admin_note ? 'with a note' : '');  // the note stays on them (trimmed at 12 weeks), not in the Log
     return c;
   });
   if (req.decision === 'approved' && onboardable(c)) newStarterAlert(c);  // approved = a new starter to onboard
@@ -1309,9 +1355,13 @@ function reassignBooker(req, u) {
     const b = userById(req.booker_id);
     if (!b) throw new Error('Booker not found');
     if (c.booker_id === b.id) return shape(c, u);
-    const before = c.booker_name || c.booker_typed;
+    const before = c.booker_name || c.booker_typed, oldId = c.booker_id, was = coachOf(userById(c.booker_id)), now = coachOf(b);
     c.booker_id = b.id; c.booker_name = b.name; followCompany(c, b.company);
     writeRow('Candidates', c);
+    // Already on availability: their coach is whoever booked them, so the new booker (not a coach picked by hand, or 🏢 Office)
+    readTable('Availability').filter(r => r.candidate_id === c.id && (!r.coach_id || r.coach_id === oldId || (was && r.coach_id === was.id))).forEach(r => {
+      r.coach_id = now ? now.id : ''; r.coach_name = now ? now.name : b.name; writeRow('Availability', r);
+    });
     log(u, 'reassign', c.id, before + ' → ' + b.name);
     return shape(c, u);
   });
@@ -1496,6 +1546,10 @@ function handovers(day) {
     return { was: was, to: to, names: [x.from].concat(x.also || [], was ? aliasesOf(was) : []) };
   }).filter(x => x.to && !(x.was && truthy(x.was.active)));
 }
+/** Someone whose alerts reach a person: switched on with an email, or switched off with someone taking theirs. */
+function alertable(b) { return truthy(b.active) ? !!b.email : successorsOf(b).length > 0; }
+/** An alert's title about someone switched off goes to whoever took over, so it says whose: "… (Fiza's)". */
+function whose(b, title) { return truthy(b.active) ? title : title + ' (' + b.name.split(' ')[0] + '\'s)'; }
 /** Who takes someone's alerts once they're switched off: whoever took over from them (CONFIG.HANDOVER, any date), else nobody. */
 function successorOf(u) { return successorsOf(u)[0] || null; }
 /** Everyone who takes someone's alerts: Megan Hyrre's go to CONFIG.HYRRE.ALERTS_TO (Rubal, Jess); anyone else's to who took over. */
@@ -1694,6 +1748,8 @@ const STAFF_ACTIONS = {
 const AV_BLANK = '-------';
 // Who fills it in: admins, presenters (Angad, 27 Oct: "whoever is the presenter… the ability to edit the availability") and anyone ticked Availability
 function canAvail(u) { return has(u, 'availability') || has(u, 'presenter'); }
+/** A starter's coach: whoever booked them; if they've left, whoever took over from them (Fiza → Angad). */
+function coachOf(b) { return b && !truthy(b.active) ? successorOf(b) || b : b || null; }
 function availFilled(r) { return !!(r.driver || /[IO]/.test(String(r.w1) + String(r.w2)) || r.notes || truthy(r.has_photo)); }
 /** A week's starters (their Day 1 that week): everyone ticked Arrived gets a row the first time it's needed, plus anyone added
  *  by hand. Someone no longer ticked Arrived drops off while nothing has been filled in for them. */
@@ -1704,10 +1760,10 @@ function availRows(we) {
   let rows = readTable('Availability').filter(r => r.week_ending === we);
   if (arrived.some(c => !rows.some(r => r.candidate_id === c.id))) {
     withLock(() => {
+      delete MEMO.Availability;  // read again now: another request may have added them since
       const have = readTable('Availability').filter(r => r.week_ending === we);
       arrived.filter(c => !have.some(r => r.candidate_id === c.id)).forEach(c => {
-        // Coach = whoever booked them; if they've left, whoever took over from them (Fiza → Angad)
-        const b = userById(c.booker_id), coach = b && !truthy(b.active) ? successorOf(b) || b : b;
+        const coach = coachOf(userById(c.booker_id));
         appendRow('Availability', { id: uid(), created_at: nowStr(), week_ending: we, candidate_id: c.id, day1_date: c.academy_date, full_name: c.full_name, mobile: c.mobile,
           company: c.company === 'JUSS' ? 'JUSS' : 'LINK', campaign: campaignOf(c), coach_id: coach ? coach.id : '', coach_name: coach ? coach.name : c.booker_name, driver: '', w1: AV_BLANK, w2: AV_BLANK, notes: '' });
       });
@@ -1845,16 +1901,14 @@ function maybeAvailReminder() {
   const now = nowStr(), today = now.slice(0, 10), hm = now.slice(11, 16);
   if (hm < (CONFIG.AVAIL_REMIND_TIME || '18:00') || hm > '20:59' || weekday(today) === 0) return;
   const p = PropertiesService.getScriptProperties();
-  if (p.getProperty('AVAIL_REMINDED') === today) return;
-  p.setProperty('AVAIL_REMINDED', today);
+  if (!claim('AVAIL_REMINDED', today)) return;  // claimed (and saved) before anything goes out
   const we = weekEnding(today), rows = availRows(we).filter(r => r.day1_date < today && !r.no_longer);
   if (!rows.length) return;
   const done = r => /[IO]/.test(r.w1), line = r => r.full_name.split(' ')[0] + ': ' + (done(r) ? availDaysText(r.w1) : 'not filled in yet');
   const admins = usersAll().filter(x => truthy(x.active) && isAdmin(x)), blank = rows.filter(r => !done(r));
   if (blank.length) notify(admins, '🗓️ Availability: ' + (rows.length - blank.length) + ' of ' + rows.length + ' done',
     'Still to fill in: ' + firstNames(blank.map(r => ({ full_name: r.full_name })), 8) + '. Tap to fill in their Week 1 and Week 2.', 'avail');
-  else if (p.getProperty('AVAIL_READY') !== we) {
-    p.setProperty('AVAIL_READY', we);
+  else if (claim('AVAIL_READY', we)) {
     const inOn = i => rows.filter(r => r.w1[i] === 'I'), days = AV_DAY.map((d, i) => d + ' ' + inOn(i).length).filter((x, i) => inOn(i).length);
     notify(admins, '✅ Availability ready: ' + plural(rows.length, 'new starter'), 'Week 1 in: ' + days.join(' · ') + ' · 🚗 ' + rows.filter(r => r.driver === 'Yes').length + ' drive' +
       '\nTap for the poster (WhatsApp) and the PDF.', 'avail');
@@ -1869,7 +1923,7 @@ function maybeAvailReminder() {
     if (left.length) notify([ch], '🗓️ Your new starters: ' + (mine.length - left.length) + ' of ' + mine.length + ' done', mine.map(line).join('\n'), 'avail');
     else if (ready.indexOf(id) < 0) { ready.push(id); notify([ch], '✅ Your new starters\' days', mine.map(line).join('\n'), 'avail'); }
   });
-  p.setProperty('AVAIL_COACH_READY_' + we, JSON.stringify(ready));
+  withLock(() => p.setProperty('AVAIL_COACH_READY_' + we, JSON.stringify(ready)));  // saved now: they've been told
 }
 
 // ───────────────────────── BELL SHEETS (Angad, 27 Oct) ─────────────────────────
@@ -1894,7 +1948,8 @@ function bellDue() {
   const now = nowStr(), stamp = now.slice(0, 10) + ' ' + now.slice(11, 16), at = CONFIG.AVAIL_REMIND_TIME || '18:00', we = weekEnding(now.slice(0, 10));
   if (stamp < addDays(we, -5) + ' ' + at) return null;  // the first of them is due at 18:00 on the Tuesday
   const sent = bellProp('BELL_SENT_' + we, {});
-  const due = availRows(we).filter(r => !r.no_longer && /[IO]/.test(r.w1) && !sent[r.id] && stamp >= addDays(r.day1_date, 1) + ' ' + at);
+  // Not on their campaign's sheet yet: new, or switched FR ↔ HF since they went on the other one
+  const due = availRows(we).filter(r => !r.no_longer && /[IO]/.test(r.w1) && sent[r.id] !== r.campaign && stamp >= addDays(r.day1_date, 1) + ' ' + at);
   const sheets = Object.keys(BELL).filter(k => ids[k]).map(k => ({ key: k, id: ids[k], section: BELL[k].section,
     rows: due.filter(r => r.campaign === k).map(bellRow).sort((a, b) => (b.office - a.office) || a.coach.localeCompare(b.coach) || a.name.localeCompare(b.name)) }))
     .filter(x => x.rows.length);
@@ -1905,13 +1960,17 @@ function bellDone(res) {
   const p = PropertiesService.getScriptProperties(), we = String((res && res.we) || '');
   if (!/^\d{4}-\d\d-\d\d$/.test(we)) throw new Error('Which week?');
   const sent = bellProp('BELL_SENT_' + we, {}), probs = bellProp('BELL_PROBLEM_' + we, {}), titles = bellProp('BELL_TITLES', {}), tab = bellTab(we);
-  const added = [], fresh = [];
+  const added = [], fresh = [], moved = [];
   let n = 0;
   (res.sheets || []).forEach(s => {
     const b = BELL[s.key], rows = s.rows || [], now = {};
     if (!b) return;
     if (s.title) titles[s.key] = s.title;
-    rows.forEach(r => { if (r.status === 'added' || r.status === 'already') sent[r.id] = s.key; });
+    rows.forEach(r => {
+      if (r.status !== 'added' && r.status !== 'already') return;
+      if (sent[r.id] && sent[r.id] !== s.key && BELL[sent[r.id]]) moved.push(r.name + ': clear them from the ' + BELL[sent[r.id]].name);
+      sent[r.id] = s.key;
+    });
     const mine = rows.filter(r => r.status === 'added'), full = rows.filter(r => r.status === 'full');
     if (mine.length) { n += mine.length; added.push(s.key + ' ' + mine.length + ': ' + mine.map(r => r.name + ' (' + r.coach + ')').join(', ')); }
     if (s.error === 'no tab') now.tab = 'The ' + b.name + ' has no "' + tab + '" tab yet: they go on as soon as it\'s there.';
@@ -1929,6 +1988,8 @@ function bellDone(res) {
   const admins = usersAll().filter(x => truthy(x.active) && isAdmin(x));
   if (n) notify(admins, '🔔 On the bell sheets: ' + plural(n, 'new starter'), added.join('\n') + '\n' + tab + ', under New Starts.', 'avail');
   if (fresh.length) notify(admins, '🔔 Bell sheets: not done yet', fresh.join('\n'), 'avail');
+  // Rows are never deleted by the app: someone moved FR ↔ HF is on the new sheet, and a person clears the old row
+  if (moved.length) notify(admins, '🔔 Bell sheets: moved campaign', moved.join('\n') + '\n(' + tab + ', under New Starts.)', 'avail');
   return { added: n, problems: fresh.length };
 }
 /** The bell sheets card on availability (admins): which sheets, how many of the week are on, anything in the way. */
@@ -2127,11 +2188,12 @@ function weeklyProgressEmails() {
 /** Sat 14:00 (existing trigger) — outcomes were due Friday 18:00: chase anything still missing. They show as LATE. */
 function saturdayDeadlineEmails() {
   const we = weekEnding(todayStr());
-  const rows = readTable('Candidates').filter(c => c.week_ending === we && truthy(c.in_room) && !c.outcome && !noCallNeeded(c));
-  usersAll().filter(b => truthy(b.active)).forEach(b => {
+  const now = nowStr();
+  const rows = readTable('Candidates').filter(c => c.week_ending === we && truthy(c.in_room) && !c.outcome && !noCallNeeded(c) && now > outcomeDeadline(c.attended_date));
+  usersAll().filter(b => truthy(b.active) || successorsOf(b).length).forEach(b => {
     const mine = rows.filter(c => c.booker_id === b.id);
     if (!mine.length) return;
-    notify([b], '🔴 ' + mine.length + ' outcome' + (mine.length > 1 ? 's' : '') + ' LATE (due ' + deadlineLabel() + ')',
+    notify([b], whose(b, '🔴 ' + mine.length + ' outcome' + (mine.length > 1 ? 's' : '') + ' LATE (due ' + deadlineLabel() + ')'),
       mine.map(c => c.full_name).join(', ') + '. Log ' + (mine.length > 1 ? 'them' : 'it') + ' now: they\'re waiting to hear from us.', '');
   });
 }
@@ -2160,11 +2222,11 @@ function keepWarm() {
   try { companyFollowsBooker(); } catch (e) { console.error(e); }  // once
   try { maybeAvailReminder(); } catch (e) { console.error(e); }
   try { maybeDay1Results(); } catch (e) { console.error(e); }
-  maybeDailyDigest();
-  maybeThanksReminder();
+  try { maybeDailyDigest(); } catch (e) { console.error(e); }  // each on its own: one failing never stops the rest
+  try { maybeThanksReminder(); } catch (e) { console.error(e); }
   try { maybeCallbackReminders(); } catch (e) { console.error(e); }
-  maybeAcademyBriefing();
-  maybeDay1Reminder();
+  try { maybeAcademyBriefing(); } catch (e) { console.error(e); }
+  try { maybeDay1Reminder(); } catch (e) { console.error(e); }
   try { maybeBookingReminders(); } catch (e) { console.error(e); }
   try { maybeMissedBookings(); } catch (e) { console.error(e); }
   try { maybeHyrreLate(); } catch (e) { console.error(e); }
@@ -2176,8 +2238,7 @@ function maybeThanksReminder() {
   const now = nowStr(), today = now.slice(0, 10), hm = now.slice(11, 16);
   if (hm < CONFIG.THANKS_TIME || hm > '20:59') return;
   const p = PropertiesService.getScriptProperties();
-  if (p.getProperty('THANKS_REMINDED') === today) return;
-  p.setProperty('THANKS_REMINDED', today);  // claim it first so an overlapping run can't send twice
+  if (!claim('THANKS_REMINDED', today)) return;  // claimed (and saved) before anything goes out
   const rows = readTable('Candidates').filter(c => c.attended_date === today && !c.thanks_sent_at && !walkedOut(c));  // no thank-you for a walk out
   const team = thanksTeam(), byUser = {};
   Object.keys(team).forEach(co => {
@@ -2210,8 +2271,7 @@ function maybeDailyDigest() {
   const now = nowStr(), today = now.slice(0, 10), wd = weekday(today), hm = now.slice(11, 16), fri = wd === 5;
   if (wd === 0 || wd === 6 || hm < (fri ? CONFIG.ROUNDUP_TIME : CONFIG.DIGEST_TIME) || hm > '20:59') return;
   const p = PropertiesService.getScriptProperties();
-  if (p.getProperty('DIGEST_SENT') === today) return;
-  p.setProperty('DIGEST_SENT', today);  // claim it first so an overlapping run can't send twice
+  if (!claim('DIGEST_SENT', today)) return;  // claimed (and saved) before anything goes out
   if (fri) weeklyRoundups(today); else dailyDigests(today);
 }
 // ───────────────────────── CHASE: nobody drops out of the pipeline ─────────────────────────
@@ -2264,14 +2324,16 @@ function chaseOutcomes(req, u) {
   const by = {};
   chaseRows(u).forEach(x => { if (x.c.booker_id && BOOKER_LEAKS.indexOf(x.k) >= 0 && inView(x.c)) { const b = (by[x.c.booker_id] = by[x.c.booker_id] || {}); (b[x.k] = b[x.k] || []).push(x.c); } });
   const cache = CacheService.getScriptCache(), out = { nudged: [], recently: [], noApp: [] };
-  usersAll().filter(b => truthy(b.active) && b.id !== u.id && by[b.id] && (!only || only.indexOf(b.id) >= 0)).forEach(b => {
-    if (!b.email) { out.noApp.push(b.name); return; }
+  // Switched off (Fiza, Megan Hyrre): their people still get chased, through whoever took theirs over (Angad 26 Oct)
+  usersAll().filter(b => b.id !== u.id && by[b.id] && (!only || only.indexOf(b.id) >= 0) && (truthy(b.active) || successorsOf(b).length)).forEach(b => {
+    if (!alertable(b)) { out.noApp.push(b.name); return; }
+    if (!truthy(b.active) && !successorsOf(b).some(x => x.id !== u.id)) return;  // theirs come to you: nothing to send yourself
     const key = 'chase_' + b.id + '_' + today;
     if (cache.get(key)) { out.recently.push(b.name); return; }
     const L = by[b.id], n = BOOKER_LEAKS.reduce((t, k) => t + (L[k] || []).length, 0);
     const late = (L.log || []).filter(c => now > outcomeDeadline(c.attended_date)).length;
     const lines = LEAK_LINES.filter(x => L[x[0]]).map(x => x[1] + ': ' + firstNames(L[x[0]], 6) + (x[0] === 'log' ? (late ? ' (' + late + ' LATE)' : ' (by ' + deadlineLabel() + ')') : ''));
-    notify([b], '⏰ ' + u.name.split(' ')[0] + ': ' + n + (n === 1 ? ' person' : ' people') + ' to chase', lines.join('\n') + '\nDon\'t let them drop out. Tap to do it now.', 'chase');
+    notify([b], whose(b, '⏰ ' + u.name.split(' ')[0] + ': ' + n + (n === 1 ? ' person' : ' people') + ' to chase'), lines.join('\n') + '\nDon\'t let them drop out. Tap to do it now.', 'chase');
     cache.put(key, '1', 1800);
     out.nudged.push(b.name);
   });
@@ -2431,8 +2493,7 @@ function maybeDay1Results() {
   const now = nowStr(), today = now.slice(0, 10), hm = now.slice(11, 16), day = addDays(today, -1);
   if (hm < (CONFIG.D1_RESULTS_TIME || '09:00') || hm > '20:59') return;
   const p = PropertiesService.getScriptProperties();
-  if (p.getProperty('D1_RESULTS') === day) return;
-  p.setProperty('D1_RESULTS', day);
+  if (!claim('D1_RESULTS', day)) return;  // claimed (and saved) before anything goes out
   if (day < (CONFIG.D1_RESULTS_FROM || '')) return;
   const x = day1Results(day);
   if (!x.booked) return;
@@ -2446,8 +2507,7 @@ function maybeAcademyBriefing() {
   const now = nowStr(), today = now.slice(0, 10), hm = now.slice(11, 16);
   if (hm < CONFIG.DIGEST_TIME || hm > '20:59') return;
   const p = PropertiesService.getScriptProperties();
-  if (p.getProperty('ACADEMY_BRIEF') === today) return;
-  p.setProperty('ACADEMY_BRIEF', today);  // claim it first so an overlapping run can't send twice
+  if (!claim('ACADEMY_BRIEF', today)) return;  // claimed (and saved) before anything goes out
   const tomorrow = addDays(today, 1);
   const rows = readTable('Candidates').filter(c => c.outcome === 'Academy booked' && c.academy_date === tomorrow && c.admin_status !== 'rejected' && c.admin_status !== 'pending' &&
     c.day1_status !== 'dropped');
@@ -2471,8 +2531,7 @@ function maybeDay1Reminder() {
   const now = nowStr(), today = now.slice(0, 10), hm = now.slice(11, 16);
   if (hm < CONFIG.DAY1_REMIND_TIME || hm > '16:59') return;
   const p = PropertiesService.getScriptProperties();
-  if (p.getProperty('DAY1_REMINDED') === today) return;
-  p.setProperty('DAY1_REMINDED', today);  // claim it first so an overlapping run can't send twice
+  if (!claim('DAY1_REMINDED', today)) return;  // claimed (and saved) before anything goes out
   const rows = readTable('Candidates').filter(c => c.outcome === 'Academy booked' && c.academy_date === today && c.admin_status !== 'rejected' && c.admin_status !== 'pending' &&
     !c.day1_status && String(c.day1_reminded_at).slice(0, 10) !== today);
   const team = thanksTeam(), byUser = {};
@@ -2624,8 +2683,7 @@ function maybeBookingReminders() {
   const now = nowStr(), today = now.slice(0, 10), hm = now.slice(11, 16);
   if (hm < CONFIG.BOOK_REMIND_TIME || hm > '21:59') return;
   const p = PropertiesService.getScriptProperties();
-  if (p.getProperty('BOOK_REMINDED') === today) return;
-  p.setProperty('BOOK_REMINDED', today);  // claim it first so an overlapping run can't send twice
+  if (!claim('BOOK_REMINDED', today)) return;  // claimed (and saved) before anything goes out
   const tomorrow = addDays(today, 1);
   // (not Hyrre's: Hyrre reminds them itself)
   const rows = readTable('Bookings').filter(b => b.status === 'booked' && b.slot_date === tomorrow && String(b.remind_at).slice(0, 10) !== today && !b.hyrre_id);
@@ -2642,8 +2700,7 @@ function maybeMissedBookings() {
   const now = nowStr(), today = now.slice(0, 10), hm = now.slice(11, 16);
   if (hm < CONFIG.BOOK_MISSED_TIME || hm > '16:59') return;
   const p = PropertiesService.getScriptProperties();
-  if (p.getProperty('BOOK_MISSED') === today) return;
-  p.setProperty('BOOK_MISSED', today);
+  if (!claim('BOOK_MISSED', today)) return;  // claimed (and saved) before anything goes out
   const rows = readTable('Bookings').filter(b => b.status === 'booked' && b.slot_date === today);
   const by = {};
   rows.forEach(b => { (by[b.booked_by_id] = by[b.booked_by_id] || []).push(b); });
@@ -2776,8 +2833,8 @@ function maybeHyrreLate() {
   const now = nowStr(), today = now.slice(0, 10), hm = now.slice(11, 16), wd = weekday(today);
   if (wd === 0 || wd === 6 || hm < CONFIG.HYRRE.LATE || hm > '16:59') return;
   const last = hyrreInfo(), p = PropertiesService.getScriptProperties();
-  if (!last || String(last.at).slice(0, 10) === today || p.getProperty('HYRRE_LATE') === today) return;  // not set up yet, or it ran
-  p.setProperty('HYRRE_LATE', today);  // claim it first so an overlapping run can't send twice
+  if (!last || String(last.at).slice(0, 10) === today) return;  // not set up yet, or it ran
+  if (!claim('HYRRE_LATE', today)) return;  // claimed (and saved) before anything goes out
   notify(usersAll().filter(canBook), '🤖 Hyrre\'s bookings didn\'t come in this morning',
     'The 08:30 pull from Hyrre hasn\'t run today (last one: ' + String(last.at).slice(0, 16) + '). It runs on Angad\'s computer: it needs to be on, ' +
     'with Chrome open and Hyrre logged in. Then ask Claude to "pull Hyrre now". Until then, today\'s list is in Hyrre.', 'book');
@@ -3073,9 +3130,9 @@ function plural(n, w) { return n + ' ' + w + (n === 1 ? '' : 's'); }
 /** Mon–Thu 18:00: every booker with appointments gets their day (who came in, evaluations) and who still needs closing. */
 function dailyDigests(today) {
   const rows = readTable('Candidates').filter(c => c.week_ending === weekEnding(today));
-  usersAll().filter(u => truthy(u.active) && has(u, 'booker')).forEach(u => {
+  usersAll().filter(u => has(u, 'booker') && (truthy(u.active) || successorsOf(u).length)).forEach(u => {
     const d = digestFor(u, rows, today);
-    if (d) notify([u], d.title, d.body, '');
+    if (d) notify([u], whose(u, d.title), d.body, '');
   });
 }
 function digestFor(u, rows, today) {
@@ -3116,10 +3173,10 @@ function weekStats(u, rows) {
 /** Friday 15:00: each booker's week roundup, then the team roundup to admins. */
 function weeklyRoundups(today) {
   const rows = readTable('Candidates').filter(c => c.week_ending === weekEnding(today));
-  const users = usersAll().filter(u => truthy(u.active));
+  const users = usersAll().filter(u => truthy(u.active) || successorsOf(u).length);
   const stats = users.filter(u => has(u, 'booker')).map(u => weekStats(u, rows)).filter(s => s.all.length);
-  stats.forEach(s => { const r = roundupFor(s); notify([s.user], r.title, r.body, 'chase'); });
-  const admins = users.filter(isAdmin);
+  stats.forEach(s => { const r = roundupFor(s); notify([s.user], whose(s.user, r.title), r.body, 'chase'); });
+  const admins = users.filter(x => truthy(x.active) && isAdmin(x));
   if (CONFIG.TEAM_ROUNDUP && admins.length && stats.length) { const t = teamRoundup(stats, rows); notify(admins, t.title, t.body + '\nTap to chase them in one go.', 'chase'); }
 }
 function roundupFor(s) {
@@ -3165,7 +3222,9 @@ function dailyMaintenance() {
 }
 /** After 12 weeks: keep name, contact, booker, result and what pay needs (to spot repeat applicants); wipe the rest,
  *  including evaluation answers (and the convictions answer), presenter notes and comments. */
-const TRIM_FIELDS = ['resume_token', 'booker_typed', 'visa_expiry', 'rag', 'stars', 'tags', 'notes',
+// Not visa_expiry or rag: a non-qualifier (visa expired) and a walk out (W) stay what they were, so past weeks' figures and pay
+// never change when the details go (they're deleted with everything else at 6 months)
+const TRIM_FIELDS = ['resume_token', 'booker_typed', 'stars', 'tags', 'notes',
   'q1_excitement', 'q2_stood_out', 'q3_reason', 'q4_situation', 'q4_looking_for', 'q5_start_date', 'q6_days', 'q7_commute',
   'q8_resilience', 'q9_results_paid', 'q9_results_detail', 'q10_door', 'q11_coach', 'q12_bdp_stage', 'q12_bdp_why',
   'q13_unspent', 'q14_questions', 'outcome_notes', 'admin_note', 'welcome_token', 'p_why_sales', 'p_why_sales_note', 'p_interesting', 'booking_note'];
