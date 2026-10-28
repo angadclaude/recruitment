@@ -2635,6 +2635,17 @@ async function fillEval(p) {
   ok(!nextWk.nudged.length && !nextWk.recently.length, 'a nudge for a later week only covers that week (nothing booked for Fiza then: nobody nudged)');
   await api(admin, 'saveOutcome', { id: ali.id, outcome: 'Declined', outcome_notes: 'not for him' });
   ok(!(await api(admin, 'chaseList', {})).items.some(c => c.id === ali.id), 'log a final answer (Declined) → off Chase');
+  // …and the outcome shows on the Today list next to their name (Angad, 28 Oct: "rather than us opening his profile and seeing at the
+  // bottom that he is declined… it should say next to his name"); someone else's candidate (a presenter's view) shows no outcome
+  const todayPills = async (page, day) => {
+    await page.goto(APP + 'index.html'); await page.waitForSelector('.tabbar button[data-tab=today]'); await page.click('.tabbar button[data-tab=today]');
+    await page.evaluate(d => { S.day = d; render(); }, day); await page.waitForSelector('.item[data-id="' + ali.id + '"]');
+    return page.$$eval('.item[data-id]', e => Object.fromEntries(e.map(x => [x.dataset.id, x.querySelector('.pills').innerText.replace(/\s+/g, ' ')])));
+  };
+  const tdA = await todayPills(ap, aliC.attended_date), tdP = await todayPills(pp, aliC.attended_date);
+  ok(/❌ Declined/.test(tdA[ali.id]) && (kidC.attended_date !== aliC.attended_date || /🔁 Call back/.test(tdA[kid.id])) && !/Declined|Call back/.test(tdP[ali.id] || ''),
+    'Today shows the outcome next to their name (Ali: "' + tdA[ali.id] + '"' + (tdA[kid.id] ? '; Young: "' + tdA[kid.id] + '"' : '') + '); a presenter doesn\'t see other people\'s outcomes');
+  await shot(ap, '45b-today-outcomes');
 
   // ── Walk out (Angad, 20 Oct): the presenter's fourth option. Non-qualifiers in the stats, rated or not ──
   console.log('walk out');
