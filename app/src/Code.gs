@@ -142,7 +142,7 @@ const SHEETS = {
     'pay_excluded', 'pay_excluded_reason', 'thanks_sent_at', 'offer_sent_at',
     'welcome_token', 'academy_confirmed_at',
     'p_why_sales', 'p_why_sales_note', 'p_interesting', 'eval_edited_at', 'thanks_by', 'no_whatsapp', 'day1_status', 'day1_by', 'day1_at', 'day1_reminded_at', 'day1_reminded_by', 'recruit_source', 'databyte_at', 'databyte_by', 'onboard_email_at', 'onboard_email_by',
-    'brand',  // LINK / JUSS: the company their messages and welcome email come from (chosen by the recruitment team), when it isn't their booker's
+    'brand',  // LINK / JUSS: the company they join (their messages, welcome page, welcome email), when it isn't their booker's: their placement's, or their booking's
     'presented_by_id', 'presented_by',  // who ran the presentation, from their evaluation (a presenter on the team, a typed name, or "Not sure")
     'offer_by', 'offer_via', 'offer_co', 'thanks_via', 'thanks_co',  // the BA Academy Day 1 details / thank-you: who sent it, how (whatsapp / sms / email), as which company
     'outcome_log',  // every call outcome logged, oldest first: [{at, by, o: outcome, d: Day 1 date, cb: call back at, late: 1, n: notes}]
@@ -1320,11 +1320,11 @@ function campaignOf(c) { return c.campaign === 'HF' || c.campaign === 'FR' ? c.c
 /** The company someone placed in HF or FR joins: HF = JUSS, FR = LINK ('' when not placed). */
 function campBrand(k) { return k === 'HF' ? 'JUSS' : k === 'FR' ? 'LINK' : ''; }
 /** Their booker's company is now co (a booker corrected, or their booker moved company in Team). The company they join follows
- *  it, unless they're placed in HF / FR (then the placement's). A company the recruitment team chose that wasn't the old one stays. */
+ *  it, unless they're placed in HF / FR (then the placement's). A booking's company that wasn't the old one stays. */
 function followCompany(c, co) {
   const was = c.company; c.company = co;
   if (campBrand(c.campaign)) c.brand = campBrand(c.campaign);
-  else if (c.brand === was) c.brand = '';
+  else if (c.brand === was || !c.booking_id) c.brand = '';
 }
 /** A booker moved company in Team (Angad, 28 Oct: Mamadou Bamba LINK → JUSS, and Ellexie, booked by him that week, still said
  *  LINK): their candidates from this week on follow them. Earlier weeks read as they happened. Returns how many moved. */
@@ -1386,24 +1386,23 @@ function recruitTeam() {
     .map(x => ({ id: x.id, name: x.name, email: String(x.email).toLowerCase() }));
 }
 function onRecruitTeam(u) { return !!u && recruitTeam().some(t => t.id === u.id); }
-/** The company their messages, welcome page and welcome email come from: the one the recruitment team chose, else their booker's.
- *  (Pay, lists and reminders always follow the booker's company.) pick: a choice made just now, not saved yet. */
+/** The company they join (their messages, welcome page and welcome email): their placement's (HF = JUSS, FR = LINK), else their
+ *  booking's, else their booker's. (Pay, lists and reminders always follow the booker's company.) pick: this one message only. */
 function brandCo(c, pick) {
   const b = pick === 'LINK' || pick === 'JUSS' ? pick : c.brand;
   return b === 'LINK' || b === 'JUSS' ? b : (c.company === 'JUSS' ? 'JUSS' : 'LINK');
 }
 /** "Jess Grace, Rubal Oshan or Fiza Iqbal" */
 function orList(a) { return a.length > 1 ? a.slice(0, -1).join(', ') + ' or ' + a[a.length - 1] : (a[0] || ''); }
-/** Jess / Rubal / Fiza: send this person's messages as LINK or JUSS. Saved, so everything after follows it. */
+/** Phones still on the app from before 29 Oct send this when the team taps LINK / JUSS. It changes nothing any more: that tap is
+ *  for that one message (Angad, 29 Oct: Jess sent Aatif's thank-you as LINK and his page said "Joining LINK", though Nathan,
+ *  his booker, is JUSS). The company someone joins changes only with their placement (FR | HF on Day 1) or their booker. */
 function setBrand(req, u) {
   if (!onRecruitTeam(u)) throw new Error('Only the recruitment team choose the company.');
   if (req.co !== 'LINK' && req.co !== 'JUSS') throw new Error('Choose LINK or JUSS.');
-  return withLock(() => {
-    const c = getC(req.id);
-    if (!fullAccess(u, c)) throw new Error('No access');
-    if (c.brand !== req.co) { c.brand = req.co; writeRow('Candidates', c); log(u, 'brand', c.id, req.co); }
-    return shape(c, u);
-  });
+  const c = getC(req.id);
+  if (!fullAccess(u, c)) throw new Error('No access');
+  return shape(c, u);
 }
 
 /** A WhatsApp / text / email message was opened. kind: thanks · offer · noanswer. via: whatsapp (default) · sms · email.
@@ -1415,15 +1414,16 @@ function markSent(req, u) {
     const c = getC(req.id);
     if (!fullAccess(u, c)) throw new Error('No access');
     if (walkedOut(c) && !isAdmin(u)) throw new Error(WALKED_OUT);
-    // The company they chose as they sent it (thank-you or congratulations): everything after follows it
-    if ((req.co === 'LINK' || req.co === 'JUSS') && onRecruitTeam(u)) c.brand = req.co;
+    // The company the recruitment team sent it as: kept on the send (thanks_co / offer_co), never on them. The company they
+    // join stays their placement's / booking's / booker's, so one tap on the other company can't move everything after (Aatif)
+    const as = brandCo(c, brandPick(req, u));
     if (req.kind === 'thanks') {
       // The recruitment team (Jess, Rubal, Fiza) can each send any thank-you, LINK or JUSS (signed with their own name)
       if (!onRecruitTeam(u)) throw new Error('Thank-you messages are sent by ' + (orList(recruitTeam().map(t => t.name)) || 'the recruitment team') + '.');
-      c.thanks_sent_at = nowStr(); c.thanks_by = u.name; c.thanks_via = via; c.thanks_co = brandCo(c);
+      c.thanks_sent_at = nowStr(); c.thanks_by = u.name; c.thanks_via = via; c.thanks_co = as;
     }
     // Who sent the BA Academy Day 1 details, when, how and as which company (the latest send)
-    if (req.kind === 'offer') { c.offer_sent_at = nowStr(); c.offer_by = u.name; c.offer_via = via; c.offer_co = brandCo(c); }
+    if (req.kind === 'offer') { c.offer_sent_at = nowStr(); c.offer_by = u.name; c.offer_via = via; c.offer_co = as; }
     if (req.kind === 'day1') { c.day1_reminded_at = nowStr(); c.day1_reminded_by = u.name; }
     if (via !== 'whatsapp') c.no_whatsapp = 'TRUE';
     writeRow('Candidates', c);
@@ -1597,6 +1597,26 @@ function brandFollowsPlacement() {
       log({ name: 'App' }, 'brand', c.id, k + ' (follows their ' + c.campaign + ' placement)');
     });
     p.setProperty('BRAND_FOLLOWS_PLACEMENT', nowStr() + ' · ' + n);
+  });
+}
+/** Once (Angad, 29 Oct): until then one tap on LINK / JUSS by the recruitment team saved the company someone joins, for every
+ *  message after (Jess sent Aatif's thank-you as LINK; Nathan, his booker, is JUSS, so his page said "Joining LINK"). Everyone
+ *  still to come whose company came from a tap goes back to their booker's: not placed, not from a booking, welcome email not
+ *  sent, and no Day 1 yet or Day 1 still to come. Past Day 1s read as they happened. */
+function brandTapUndone() {
+  const p = PropertiesService.getScriptProperties();
+  if (p.getProperty('BRAND_TAP_UNDONE')) return;
+  withLock(() => {
+    if (p.getProperty('BRAND_TAP_UNDONE')) return;
+    const today = todayStr();
+    let n = 0;
+    readTable('Candidates').forEach(c => {
+      if (!c.brand || !c.company || c.brand === c.company || campBrand(c.campaign) || c.booking_id || c.onboard_email_at) return;
+      if (c.academy_date && String(c.academy_date) < today) return;
+      const was = c.brand; c.brand = ''; writeRow('Candidates', c); n++;
+      log({ name: 'App' }, 'brand', c.id, was + ' → ' + c.company + ' (their booker\'s: a tap on ' + was + ' was for that message only)');
+    });
+    p.setProperty('BRAND_TAP_UNDONE', nowStr() + ' · ' + n);
   });
 }
 /** Once (Angad, 28 Oct): bookers moved company in Team before their candidates followed them (Mamadou Bamba, LINK → JUSS).
@@ -2220,6 +2240,7 @@ function keepWarm() {
   try { undoHandoverOpen(); } catch (e) { console.error(e); }  // once
   try { brandFollowsPlacement(); } catch (e) { console.error(e); }  // once
   try { companyFollowsBooker(); } catch (e) { console.error(e); }  // once
+  try { brandTapUndone(); } catch (e) { console.error(e); }  // once
   try { maybeAvailReminder(); } catch (e) { console.error(e); }
   try { maybeDay1Results(); } catch (e) { console.error(e); }
   try { maybeDailyDigest(); } catch (e) { console.error(e); }  // each on its own: one failing never stops the rest
@@ -3067,7 +3088,6 @@ function onboardSend(req, u) {
   return withLock(() => {
     const x = getC(req.id);
     x.onboard_email_at = nowStr(); x.onboard_email_by = u.name;
-    if (pick) x.brand = pick;
     writeRow('Candidates', x);
     log(u, 'welcome_email', x.id, m.to + ' from ' + s.email);
     return shape(x, u);

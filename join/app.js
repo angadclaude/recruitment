@@ -1,4 +1,4 @@
-window.APP_VERSION = 'dd83cadc';
+window.APP_VERSION = '5a4b3c0e';
 
 (function () {
 'use strict';
@@ -727,7 +727,7 @@ function canThank() {
 }
 /** The appointments in "your" list: Jess LINK, Rubal JUSS; Fiza (both companies) all of them. */
 function mineToThank(c) { return myThanks().length ? signsThanks(c) : canThank(); }
-/** The company their messages, welcome page and welcome email come from: chosen by the recruitment team, else their booker's. */
+/** The company they join (their messages, welcome page and welcome email): their placement's, else their booking's, else their booker's. */
 function brandCo(c) { return c.brand === 'JUSS' || c.brand === 'LINK' ? c.brand : (c.company === 'JUSS' ? 'JUSS' : 'LINK'); }
 /** The recruitment team choose LINK or JUSS before sending (needs the new Google code, which knows who's on the team). */
 function canPickBrand() { return !!recruitTeam() && canThank(); }
@@ -747,23 +747,26 @@ function brandUrl(c, kind, via, co) {
 /** How the team's buttons send to this person: WhatsApp, or text once they're known not to be on it. "📱 Text" / "✉️ Email" switch it. */
 function chanOf(c) { return (S.chan || {})[c.id] || (c.no_whatsapp ? 'sms' : 'whatsapp'); }
 const CHAN_LABEL = { whatsapp: '💬 WhatsApp', sms: '📱 Text', email: '✉️ Email' };
-/** Jess / Rubal / Fiza work for both companies: two buttons in the companies' colours, LINK and JUSS. One tap opens that company's message. */
+/** Jess / Rubal / Fiza work for both companies: two buttons. The company they join comes first, in its colours; the other one is
+ *  plain, and a tap on it sends just that one message as the other company (Angad, 29 Oct: Jess's LINK tap on Aatif's thank-you
+ *  made him "Joining LINK" for everything after, though Nathan, his booker, is JUSS). */
 const BRAND_KINDS = ['thanks', 'offer', 'noanswer', 'thinking'];
+function coPair(c) { const k = brandCo(c); return [k, k === 'JUSS' ? 'LINK' : 'JUSS']; }
+const coAlt = (c, co) => co === brandCo(c) ? '' : ' alt';
+const coTitle = (c, co) => co === brandCo(c) ? '' : ' title="Just this message as ' + co + '. ' + h(c.first_name || '') + ' still joins ' + brandCo(c) + '."';
 function brandSend(c, kind) {
   const via = chanOf(c), what = { thanks: 'Thank-you' + (c.non_qual ? ' (non-qualifier)' : ''), offer: 'Day 1 details', noanswer: '"We tried calling you"', thinking: '"Speak soon" + call-back time' }[kind];
   const lead = via === 'sms' ? '📱 ' : via === 'email' ? '✉️ ' : { thanks: '💬 ', offer: '🎉 ', noanswer: '📞 ', thinking: '🔁 ' }[kind];
   const other = ['whatsapp', 'sms', 'email'].filter(v => v !== via && (v !== 'email' || c.email));
-  return '<div class="cosend">' + ['LINK', 'JUSS'].map(co => '<a class="cobig ' + co + '" target="_blank" rel="noopener" data-kind="' + kind + '" data-via="' + via + '" data-co="' + co + '" href="' + h(brandUrl(c, kind, via, co)) + '">' +
-      '<small>' + lead + what + (via === 'sms' ? ' by text' : via === 'email' ? ' by email' : '') + '</small><b>' + co + '</b></a>').join('') + '</div>' +
+  return '<div class="cosend">' + coPair(c).map(co => '<a class="cobig ' + co + coAlt(c, co) + '"' + coTitle(c, co) + ' target="_blank" rel="noopener" data-kind="' + kind + '" data-via="' + via + '" data-co="' + co + '" href="' + h(brandUrl(c, kind, via, co)) + '">' +
+      '<small>' + (coAlt(c, co) ? 'Just this one as' : lead + what + (via === 'sms' ? ' by text' : via === 'email' ? ' by email' : '')) + '</small><b>' + co + '</b></a>').join('') + '</div>' +
     '<div class="altsend"><span>' + (via === 'whatsapp' ? 'Not on WhatsApp?' : via === 'sms' ? '📵 Not on WhatsApp' : 'Or') + '</span>' +
       other.map(v => '<button type="button" data-chan="' + v + '">' + CHAN_LABEL[v] + '</button>').join('') + '</div>' + (via === 'whatsapp' ? deskPasteNote() : '');
 }
-/** Switch the company: instant on screen, saved in the background (like every other save). */
-function pickBrand(c, co) {
-  if (brandCo(c) === co) return c;
-  const local = Object.assign({}, c, { brand: co });
-  queueSave('setBrand', { id: c.id, co: co }, local, (co === 'JUSS' ? '🧡💙 Sending as JUSS Marketing' : '🧡 Sending as LINK Marketing'));
-  return local;
+/** A tap on the other company's button: that one message only, nothing saved. They still join their own company (changed only by
+ *  their FR | HF placement on Day 1, or their booker). */
+function oneOff(c, co) {
+  if (c && co && brandCo(c) !== co) toast('Sent as ' + co + ' this once · ' + (c.first_name || String(c.full_name || '').split(' ')[0]) + ' still joins ' + brandCo(c));
 }
 /** The name at the bottom: whichever of Jess / Rubal is sending it (everyone else only sees who will). */
 function thanksSigner(c) { return canThank() ? S.me.user.name : thanksName(thanksCo(c)); }
@@ -1549,7 +1552,7 @@ function quickRow(c, kind) {
   if (kind === 'noanswer' && canPickBrand()) {
     const via = c.no_whatsapp ? 'sms' : 'whatsapp';
     return '<div class="quick" data-for="' + h(c.id) + '"><a href="tel:' + h(c.mobile) + '">' + icon('phone', 16) + 'Call again</a><span class="q-lbl">📞 Missed you' + (via === 'sms' ? '<br>by text' : '') + '</span>' +
-      ['LINK', 'JUSS'].map(co => '<a class="q-co ' + co + '" data-send="noanswer" data-co="' + co + '" data-via="' + via + '" href="' + h(brandUrl(c, 'noanswer', via, co)) + '" target="_blank" rel="noopener">' + co + '</a>').join('') + '</div>';
+      coPair(c).map(co => '<a class="q-co ' + co + coAlt(c, co) + '"' + coTitle(c, co) + ' data-send="noanswer" data-co="' + co + '" data-via="' + via + '" href="' + h(brandUrl(c, 'noanswer', via, co)) + '" target="_blank" rel="noopener">' + co + '</a>').join('') + '</div>';
   }
   if (kind === 'noanswer') return '<div class="quick" data-for="' + h(c.id) + '"><a href="tel:' + h(c.mobile) + '">' + icon('phone', 16) + 'Call again</a>' +
     '<a class="q-wa" data-na="1" href="' + h(msgUrl(c, msgNoAnswer(c))) + '" target="_blank" rel="noopener">' + icon('chat', 16) + chanName(c) + '</a><button type="button" class="q-go" data-out="1">Update</button></div>';
@@ -1559,7 +1562,7 @@ function quickRow(c, kind) {
     '<a class="q-wa" href="' + h(msgUrl(c, msgRebook(c))) + '" target="_blank" rel="noopener">' + icon('chat', 16) + chanName(c) + '</a><button type="button" class="q-go" data-out="1">Rebook</button></div>';
   if (kind === 'offer' && canPickBrand()) {
     const via = c.no_whatsapp ? 'sms' : 'whatsapp';
-    return '<div class="quick" data-for="' + h(c.id) + '"><span class="q-lbl">🎉 Day 1' + (via === 'sms' ? '<br>by text' : '') + '</span>' + ['LINK', 'JUSS'].map(co => '<a class="q-co ' + co + '" data-send="offer" data-co="' + co + '" data-via="' + via + '" href="' + h(brandUrl(c, 'offer', via, co)) + '" target="_blank" rel="noopener">' + co + '</a>').join('') + '</div>';
+    return '<div class="quick" data-for="' + h(c.id) + '"><span class="q-lbl">🎉 Day 1' + (via === 'sms' ? '<br>by text' : '') + '</span>' + coPair(c).map(co => '<a class="q-co ' + co + coAlt(c, co) + '"' + coTitle(c, co) + ' data-send="offer" data-co="' + co + '" data-via="' + via + '" href="' + h(brandUrl(c, 'offer', via, co)) + '" target="_blank" rel="noopener">' + co + '</a>').join('') + '</div>';
   }
   if (kind === 'offer') return '<div class="quick" data-for="' + h(c.id) + '"><a class="q-go" data-send="offer" data-via="' + (c.no_whatsapp ? 'sms' : 'whatsapp') + '" href="' + h(msgUrl(c, msgAcademy(c))) + '" target="_blank" rel="noopener">🎉 Send Day 1 details ' + (c.no_whatsapp ? 'by text' : 'on WhatsApp') + '</a></div>';
   // Chase, carried over: close them out (each opens the outcome sheet with that answer picked), or a call-back to keep chasing
@@ -1608,7 +1611,7 @@ function bindItems(root) {
       a.addEventListener('click', () => {
         const co = a.dataset.co || '', kind = a.dataset.send || 'offer';  // the recruitment team's LINK / JUSS buttons
         let c = findCand(id);
-        if (c && co && brandCo(c) !== co) c = pickBrand(c, co);
+        oneOff(c, co);
         if (c) noteSent(id, kind, a.dataset.via || 'whatsapp', co);
         call('markSent', Object.assign({ id: id, kind: kind, via: a.dataset.via }, co ? { co: co } : {})).then(() => sentDone(id, kind), () => sentDone(id, kind));
       });
@@ -1902,7 +1905,7 @@ function viewPay(quiet) {
 /** The presenter we credit for this person: their evaluation answer (unless "Not sure"), else the presenter who rated them. */
 function presenterOf(c) { return c.presented_by && c.presented_by !== 'Not sure' ? c.presented_by : c.presenter_name || ''; }
 /** "🏢 Joining JUSS · HF" under "booked by", when the company they're joining isn't their booker's (placed in the other
- *  campaign on Day 1, or chosen by the recruitment team): their messages, welcome page and welcome email come from it. */
+ *  campaign on Day 1, or their booking's): their messages, welcome page and welcome email come from it. */
 function joinLine(c) {
   const co = brandCo(c);
   if (co === (c.company === 'JUSS' ? 'JUSS' : 'LINK')) return '';
@@ -1982,7 +1985,7 @@ function callLogHtml(c) {
 /** Straight away on this phone, on every copy of them (lists, Chase, Day 1): who sent it, when, how, as which company. The Google code saves the same. */
 function noteSent(id, kind, via, co) {
   const c0 = findCand(id); if (!c0) return null;
-  const at = londonNow(), by = S.me.user.name, as = co || brandCo(c0), f = co ? { brand: co } : {};
+  const at = londonNow(), by = S.me.user.name, as = co || brandCo(c0), f = {};
   if (kind === 'offer') Object.assign(f, { offer_sent_at: at, offer_by: by, offer_via: via, offer_co: as });
   if (kind === 'thanks') Object.assign(f, { thanks_sent_at: at, thanks_by: by, thanks_via: via, thanks_co: as });
   if (via !== 'whatsapp') f.no_whatsapp = 'TRUE';
@@ -4683,7 +4686,7 @@ function thanksSheet() {
     // The recruitment team: LINK and JUSS buttons, one tap each
     if (canPickBrand()) {
       const via = chanOf(c);
-      return '<span class="tsend"><span class="copair">' + ['LINK', 'JUSS'].map(co => '<a class="cosm ' + co + '" data-thanks="' + h(c.id) + '" data-co="' + co + '" data-via="' + via + '" href="' + h(brandUrl(c, 'thanks', via, co)) + '" target="_blank" rel="noopener">' + (via === 'sms' ? '📱 ' : '') + co + '</a>').join('') + '</span>' +
+      return '<span class="tsend"><span class="copair">' + coPair(c).map(co => '<a class="cosm ' + co + coAlt(c, co) + '"' + coTitle(c, co) + ' data-thanks="' + h(c.id) + '" data-co="' + co + '" data-via="' + via + '" href="' + h(brandUrl(c, 'thanks', via, co)) + '" target="_blank" rel="noopener">' + (via === 'sms' ? '📱 ' : '') + co + '</a>').join('') + '</span>' +
         '<button type="button" class="tx" data-chan="' + (via === 'sms' ? 'whatsapp' : 'sms') + '" data-for="' + h(c.id) + '">' + (via === 'sms' ? '💬 WhatsApp instead' : '📱 Text instead') + '</button></span>';
     }
     const msg = msgThanks(c), sms = !!c.no_whatsapp;
@@ -4698,7 +4701,7 @@ function thanksSheet() {
         ? 'Your ' + myThanks().join(' + ') + ' appointments first, whoever booked them' + (otherCo && other.length ? ', then ' + otherCo + ' (' + h(thanksName(otherCo).split(' ')[0]) + '\'s): you can send those too' : '')
         : 'Every appointment today, LINK and JUSS, whoever booked them') +
         '. Each one opens WhatsApp with the message ready, signed by you. Tap send, come back, next one.' +
-        (canPickBrand() ? ' Tap <b>LINK</b> or <b>JUSS</b> on each one for that company\'s message.' : '')
+        (canPickBrand() ? ' The coloured button is the company they\'re joining; the plain one sends just that message as the other.' : '')
       : 'Sent by ' + who('LINK') + ' and ' + who('JUSS') + ' for every appointment. They get a reminder at 12:00.') + '</p>' +
     '<div class="list">' + items.map(c => (sender && own.length && other.length && c === other[0] ? '<div class="datehead">' + otherCo + ' · ' + h(thanksName(otherCo).split(' ')[0]) + ' usually sends these</div>' : '') + '<div class="trow" data-tr="' + h(c.id) + '">' + avatar(c) + '<div class="main"><div class="name">' + h(c.full_name) + '</div><div class="sub">' + coTag(c) + ' ' +
       (c.booker_name ? 'booked by ' + h(c.booker_name) : 'booker not confirmed') + '</div>' + (c.non_qual ? '<div class="sub nqsub">⛔ Non-qualifier message</div>' : '') + '</div>' +
@@ -4721,7 +4724,7 @@ function thanksSheet() {
     const via = a.dataset.via || 'whatsapp', row = a.closest('.trow');
     const done = co => {
       let c = findCand(c0.id) || c0;
-      if (co && brandCo(c) !== co) c = pickBrand(c, co);
+      oneOff(c, co);
       c = noteSent(c.id, 'thanks', via, co) || c;
       call('markSent', Object.assign({ id: c.id, kind: 'thanks', via: via }, co ? { co: co } : {})).then(() => sentDone(c.id, 'thanks'), e2 => { sentDone(c.id, 'thanks'); toast(e2.message); });
       setTimeout(() => {
@@ -4972,7 +4975,7 @@ function renderCandidate(c, quiet) {
       const via = a.dataset.via || 'whatsapp', kind = a.dataset.kind;
       const sent = co => {
         let lc = findCand(c.id) || c;
-        if (co && brandCo(lc) !== co) lc = pickBrand(lc, co);  // saved: their welcome page, welcome email and every message after follow it
+        oneOff(lc, co);  // the other company's button: this message only
         call('markSent', Object.assign({ id: c.id, kind: kind, via: via }, co ? { co: co } : {})).then(() => sentDone(c.id, kind), () => sentDone(c.id, kind));  // in the Log: who sent it, when
         if (kind === 'thanks' || kind === 'offer' || (via !== 'whatsapp' && !lc.no_whatsapp)) {
           lc = noteSent(c.id, kind, via, co) || lc;  // "✓ Sent by you · 16:03" shows when they come back from WhatsApp
