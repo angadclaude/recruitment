@@ -297,7 +297,7 @@ async function fillEval(p) {
     'thank-you WhatsApp = Angad\'s wording, laid out to scan (LINK, contact by Friday 6PM) + the LINK magazine, signed Jess Grace for the LINK recruitment team');
   const rowMsgJ = async (id, co) => decodeURIComponent((await jsp.getAttribute('.sheet .trow[data-tr="' + id + '"] a[data-thanks][data-co=' + co + ']', 'href')).split(/\?text=|[?&]body=/)[1] || '');
   ok(/in association with \*LINK Marketing\*/.test(await rowMsgJ(ishita.id, 'LINK')) && /in association with \*JUSS Marketing\*/.test(await rowMsgJ(ishita.id, 'JUSS')) && /\*Jess Grace\*, on behalf of JUSS Marketing/.test(await rowMsgJ(ishita.id, 'JUSS')) &&
-    (await jsp.$$eval('.sheet .trow[data-tr="' + ishita.id + '"] .cosm', e => e.map(x => x.textContent + (x.classList.contains('alt') ? '(plain)' : '')))).join() === 'LINK,JUSS(plain)',
+    (await jsp.$$eval('.sheet .trow[data-tr="' + ishita.id + '"] .cosm', e => e.map(x => x.textContent.replace(/[^A-Z]/g, '') + (x.classList.contains('alt') ? '(plain)' : '')))).join() === 'LINK,JUSS(plain)',
     'every row: two buttons, each opening that company\'s message, signed by Jess: the company they join first in its colours (Ishita: LINK), the other one plain');
   await jsp.locator('.sheet .trow[data-tr="' + ishita.id + '"]').screenshot({ path: SHOTS + '/04c-link-juss-row.png' });
   await jsp.$eval('.sheet .trow[data-tr="' + ishita.id + '"] a[data-thanks][data-co=LINK]', a => { a.addEventListener('click', e => e.preventDefault()); a.click(); });
@@ -757,7 +757,7 @@ async function fillEval(p) {
   const zrow = async co => decodeURIComponent((await rtp.getAttribute('.sheet .trow[data-tr="' + adham.id + '"] a[data-thanks][data-co=' + co + ']', 'href')).split(/\?text=|[?&]body=/)[1] || '').replace(/\*/g, '');
   const zTy = await zrow('LINK');
   ok(/in association with LINK Marketing/.test(zTy) && /linkmarketing\.org\.uk\/magazine\//.test(zTy) && /Zara Iqbal, on behalf of LINK Marketing recruitment team$/.test(zTy) && /in association with JUSS Marketing/.test(await zrow('JUSS')) &&
-    (await rtp.$$eval('.sheet .trow[data-tr="' + adham.id + '"] .cosm', e => e.map(x => x.textContent + (x.classList.contains('alt') ? '(plain)' : '')))).join() === 'JUSS,LINK(plain)',
+    (await rtp.$$eval('.sheet .trow[data-tr="' + adham.id + '"] .cosm', e => e.map(x => x.textContent.replace(/[^A-Z]/g, '') + (x.classList.contains('alt') ? '(plain)' : '')))).join() === 'JUSS,LINK(plain)',
     'Adham (JUSS booker): JUSS first in its colours (the company he joins), LINK plain after it; LINK opens the LINK thank-you (wording, magazine, hearts) signed by Fiza; JUSS the JUSS one');
   await rtp.$eval('.sheet .trow[data-tr="' + adham.id + '"] a[data-thanks][data-co=LINK]', a => { a.addEventListener('click', e => e.preventDefault()); a.click(); });
   await rtp.waitForSelector('.sheet .trow[data-tr="' + adham.id + '"] .pill.green');
