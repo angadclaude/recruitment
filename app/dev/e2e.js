@@ -529,7 +529,7 @@ async function fillEval(p) {
   ok(/💡 Plays semi-pro football/.test(snap) && /Wants to earn on results, saving for a house/.test(snap), 'booker sees the room answers: 💡 ice-breaker + why sales');
   ok(/🎤 Presentation by Nathan Smith/.test(snap) && !/rated by/.test(snap), 'their page says who ran the presentation: "🎤 Presentation by Nathan Smith" (he rated the room too)');
   const hdr = (await getJson('/dev/sheet?name=Candidates'))[0];
-  ok(hdr.slice(-22).join() === 'recruit_source,databyte_at,databyte_by,onboard_email_at,onboard_email_by,brand,presented_by_id,presented_by,offer_by,offer_via,offer_co,thanks_via,thanks_co,outcome_log,callback_at,callback_by_id,callback_nudged,booking_id,booking_note,campaign,day1_left_at,day1_left_by' && new Set(hdr).size === hdr.length,
+  ok(hdr.slice(-24).join() === 'recruit_source,databyte_at,databyte_by,onboard_email_at,onboard_email_by,brand,presented_by_id,presented_by,offer_by,offer_via,offer_co,thanks_via,thanks_co,outcome_log,callback_at,callback_by_id,callback_nudged,booking_id,booking_note,campaign,day1_left_at,day1_left_by,fieldiq_at,fieldiq_by' && new Set(hdr).size === hdr.length,
     'live Sheet with the presenter headers written twice: the empty copies cleared, the new columns added in the right place (no data moved)');
   ok(!/unspent criminal convictions/i.test(snap), 'conviction answer hidden from bookers');
   ok(/A door gets shut in your face\. What's your first thought\?/.test(snap) && /Tell us about a time you kept going when things got tough\. What did you do\?/.test(snap) &&
@@ -1213,6 +1213,18 @@ async function fillEval(p) {
   ok(!brief.some(p => p.body.include_aliases.external_id.includes(mo.id)), 'nobody with no starters tomorrow gets one (Mo\'s Ishita is still pending)');
   await post('/dev/run', { fn: 'keepWarm' });
   ok((await getJson('/dev/pushes')).length === beforeBrief + brief.length, 'the briefing goes once');
+  // FieldIQ not activated yet (Angad, 29 Oct: Arifah couldn't log in to upload her documents): named the evening before, so it's chased tonight
+  ok(/\n📲 FieldIQ not activated: Jasraj\. Ask them to tap the link in FieldIQ's invite\.$/.test(bFiza.body.contents.en) && /\n📲 FieldIQ not activated: .*Jasraj/.test(bTeam.body.contents.en),
+    'and anyone not ticked ✅ FieldIQ: Fiza "📲 FieldIQ not activated: Jasraj. Ask them to tap the link in FieldIQ\'s invite.", the admins the same names');
+  await api(admin, 'markFieldIQ', { id: jasId, on: true });
+  const fiqB4 = (await getJson('/dev/pushes')).length;
+  await post('/dev/eval', { js: "PropertiesService.getScriptProperties().deleteProperty('ACADEMY_BRIEF'); keepWarm(); 'ok'" });
+  const brief2 = (await getJson('/dev/pushes')).slice(fiqB4), bFiza2 = brief2.find(p => p.body.include_aliases.external_id.includes(fiza.id)), bTeam2 = brief2.find(p => p.body.include_aliases.external_id.includes(angadId));
+  ok(bFiza2 && !/FieldIQ/.test(bFiza2.body.contents.en) && bTeam2 && !/FieldIQ not activated: .*Jasraj/.test(bTeam2.body.contents.en),
+    'ticked ✅ FieldIQ → not named any more (Fiza: "' + (bFiza2 ? bFiza2.body.contents.en.replace(/\n/g, ' | ') : 'none') + '")');
+  await api(admin, 'markFieldIQ', { id: jasId, on: false });
+  let fiqNo = null; try { await api(nathan, 'markFieldIQ', { id: jasId, on: true }); } catch (e) { fiqNo = e.message; }
+  ok(/Admin only/.test(fiqNo) && !(await api(admin, 'getCandidate', { id: jasId })).fieldiq_at, 'only admins tick FieldIQ (untick clears it)');
   await ap.goto(APP + 'index.html?c=academy');
   await ap.waitForSelector('.trow[data-cand="' + jasId + '"]');
   const d1Txt = await ap.innerText('#page');
@@ -1243,6 +1255,27 @@ async function fillEval(p) {
     'the Day 1 tab goes week by week like All: on Sunday it opens on the week ahead ("' + d1Nav.replace(/\n/g, ' ') + '", ‹ ›)');
   ok(/📅 Tuesday/.test(await ap.textContent('[data-d1="next_day"][data-id="' + jasId + '"]')) && await ap.$('.trow[data-cand="' + jasId + '"] a.btn[data-rem1]'),
     'before the day too: each Monday starter has "📅 Tuesday" under 💬 Remind (some are booked for Tuesday instead)');
+  // ✅ FieldIQ on the Day 1 row (Angad, 29 Oct): status + one button, like Confirmed; the nudge sends them how to activate it
+  const jRow = () => ap.innerText('.trow[data-cand="' + jasId + '"]');
+  const monHint = () => ap.evaluate(() => { const d = [...document.querySelectorAll('.datehead')].find(x => /19 October/i.test(x.textContent)); return d && d.nextElementSibling ? d.nextElementSibling.textContent : ''; });
+  const fiqTxt = decodeURIComponent((await ap.getAttribute('.trow[data-cand="' + jasId + '"] a[data-fiqmsg]', 'href')).split(/\?text=|[?&]body=/)[1] || '');
+  fs.writeFileSync(`${SHOTS}/msg-fieldiq.txt`, fiqTxt);
+  ok(/📲 FieldIQ not activated/.test(await jRow()) && await ap.$('.trow[data-cand="' + jasId + '"] [data-fiq][data-on="1"]') && /📲 \d+ FieldIQ to activate/.test(await monHint()) &&
+    /^Hi Jasraj 👋 Before your Day 1 on \*Monday 19th October\*, please activate \*FieldIQ\*/.test(fiqTxt) && /Junk \/ Spam/.test(fiqTxt) && fiqTxt.includes('https://www.tfo.group/fieldiqdownload') &&
+    /Your account isn't activated yet/.test(fiqTxt) && /– Angad, LINK Marketing$/.test(fiqTxt),
+    'Jasraj\'s row: "📲 FieldIQ not activated", "✅ FieldIQ activated" to tick, "📲 FieldIQ nudge" (find FieldIQ\'s invite, check Junk, tap its link, then log in), the day says how many to activate');
+  const nFiq = +(await monHint()).match(/📲 (\d+) FieldIQ to activate/)[1];
+  await ap.click('.trow[data-cand="' + jasId + '"] [data-fiq][data-on="1"]');
+  await ap.waitForSelector('.trow[data-cand="' + jasId + '"] .fiqon');
+  let jF = null; for (let i = 0; i < 25 && !(jF && jF.fieldiq_at); i++) { jF = await api(admin, 'getCandidate', { id: jasId }); if (!jF.fieldiq_at) await new Promise(r => setTimeout(r, 200)); }
+  ok(jF.fieldiq_by === 'Angad Oshan' && /✅ FieldIQ/.test(await jRow()) && !/not activated/.test(await jRow()) && !(await ap.$('.trow[data-cand="' + jasId + '"] a[data-fiqmsg]')) &&
+    (nFiq === 1 ? !/FieldIQ to activate/.test(await monHint()) : new RegExp('📲 ' + (nFiq - 1) + ' FieldIQ to activate').test(await monHint())) && await ap.textContent('#abTitle') === 'Day 1',
+    'one tap → "✅ FieldIQ", saved (by Angad), no nudge, one fewer to activate, still on the Day 1 tab');
+  await ap.locator('.trow[data-cand="' + jasId + '"]').screenshot({ path: SHOTS + '/39-fieldiq-row.png' });
+  await ap.click('.trow[data-cand="' + jasId + '"] .fiqon');
+  await ap.waitForSelector('.trow[data-cand="' + jasId + '"] [data-fiq][data-on="1"]');
+  for (let i = 0; i < 25 && jF.fieldiq_at; i++) { jF = await api(admin, 'getCandidate', { id: jasId }); if (jF.fieldiq_at) await new Promise(r => setTimeout(r, 200)); }
+  ok(!jF.fieldiq_at && /📲 FieldIQ not activated/.test(await jRow()), 'tap the green ✅ FieldIQ to undo it');
   const jasD1Row = await ap.innerText('.trow[data-cand="' + jasId + '"]');
   ok(/Confirmed/.test(jasD1Row) && !/Day 1 text not sent/.test(jasD1Row), 'someone who has confirmed never shows "Day 1 text not sent" (they had the details, however they were sent)');
   const remind = decodeURIComponent((await ap.$eval('.trow[data-cand="' + jasId + '"] a.btn', a => a.href)).split('?text=')[1]);

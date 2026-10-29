@@ -151,6 +151,7 @@ const SHEETS = {
     'campaign',  // HF / FR: where they're placed, set on Day 1. Blank = their company's (JUSS = HF, LINK = FR). Angad's 26 Oct
                  // list: 6 JUSS starters went to FR, so the company alone can't say (27 Oct)
     'day1_left_at', 'day1_left_by',  // arrived on Day 1 but didn't come back after it (still a Day 1 start)
+    'fieldiq_at', 'fieldiq_by',  // FieldIQ activated (they tapped the link in FieldIQ's own invite): ticked by an admin on Day 1
   ],
   // Presentations booked after a call. status: booked · came (checked in) · no_show (rebooked after missing it) · cancelled.
   // Each message sent (confirmation, reminder, "sorry we missed you"): when, by whom, how.
@@ -1758,7 +1759,7 @@ const STAFF_ACTIONS = {
   adminDecision: adminDecision, setPayExcluded: setPayExcluded, fixEligibility: fixEligibility, reassignBooker: reassignBooker,
   markSent: markSent, payReport: payReport, listUsers: listUsers, saveUser: saveUser, deleteUser: deleteUser,
   alertsCheck: alertsCheck, testAlert: testAlert, sendSetupEmails: sendSetupEmails, adminCode: adminCode,
-  chaseOutcomes: chaseOutcomes, chaseList: chaseList, academyList: academyList, markDay1: markDay1, markConfirmed: markConfirmed,
+  chaseOutcomes: chaseOutcomes, chaseList: chaseList, academyList: academyList, markDay1: markDay1, markConfirmed: markConfirmed, markFieldIQ: markFieldIQ,
   onboardStep: onboardStep, onboardPreview: onboardPreview, onboardSend: onboardSend, setBrand: setBrand,
   saveBooking: saveBooking, bookingAction: bookingAction, bookingList: bookingList,
   setCampaign: setCampaign, fixName: fixName, day1Photo: day1Photo,
@@ -2495,6 +2496,22 @@ function markConfirmed(req, u) {
     return shape(c, u);
   });
 }
+/** FieldIQ activated (Angad, 29 Oct: starters like Arifah Akthar couldn't log in to upload their documents, "Your account isn't
+ *  activated yet", because they hadn't tapped the link in FieldIQ's own invitation). An admin ticks it on the Day 1 row once
+ *  they have; on: false clears it. The evening before their Day 1, anyone not ticked is named in the 18:00 alert. */
+function markFieldIQ(req, u) {
+  if (!isAdmin(u)) throw new Error('Admin only');
+  return withLock(() => {
+    const c = getC(req.id);
+    if (c.outcome !== 'Academy booked' || !c.academy_date) throw new Error('They aren\'t booked onto the Academy.');
+    const on = req.on !== false && req.on !== 'false';
+    if (on && !c.fieldiq_at) { c.fieldiq_at = nowStr(); c.fieldiq_by = u.name; }
+    if (!on) { c.fieldiq_at = ''; c.fieldiq_by = ''; }
+    writeRow('Candidates', c);
+    log(u, on ? 'fieldiq' : 'fieldiq_cleared', c.id, '');
+    return shape(c, u);
+  });
+}
 /** Day 1 results (Angad, 27 Oct: what the team marks up on the printed list and brings him on Tuesday morning): how many
  *  started of everyone booked, FR / HF, who didn't continue after the day, starts by booker ("Office" for admins and the
  *  office team), and why the rest didn't start. Counted the same way as the Day 1 tab's results card (d1Results there). */
@@ -2539,16 +2556,19 @@ function maybeAcademyBriefing() {
     c.day1_status !== 'dropped');
   if (!rows.length) return;
   const tag = c => c.full_name.split(' ')[0] + (c.academy_confirmed_at ? ' ✅' : ' ⏳');
+  // FieldIQ not activated yet (Angad, 29 Oct): chased tonight, not discovered in the room
+  const fiq = (l, max) => { const n = l.filter(c => !c.fieldiq_at); return n.length ? '\n📲 FieldIQ not activated: ' + firstNames(n, max) + '.' : ''; };
   const by = {};
   rows.forEach(c => { if (c.booker_id) (by[c.booker_id] = by[c.booker_id] || []).push(c); });
   Object.keys(by).forEach(id => {
-    const b = userById(id), list = by[id], not = list.filter(c => !c.academy_confirmed_at);
+    const b = userById(id), list = by[id], not = list.filter(c => !c.academy_confirmed_at), f = fiq(list);
     if (b) notify([b], '🎓 Tomorrow\'s BA Academy: ' + plural(list.length, 'starter') + ' of yours', list.map(tag).join(', ') +
-      (not.length ? '\n⏳ Not confirmed: ' + firstNames(not) + '. Send a reminder now.' : '\nAll confirmed 🔥'), 'academy');
+      (not.length ? '\n⏳ Not confirmed: ' + firstNames(not) + '. Send a reminder now.' : '\nAll confirmed 🔥') +
+      (f ? f + ' Ask them to tap the link in FieldIQ\'s invite.' : ''), 'academy');
   });
   const not = rows.filter(c => !c.academy_confirmed_at);
   notify(usersAll().filter(x => isAdmin(x) && truthy(x.active)), '🎓 Tomorrow: ' + plural(rows.length, 'starter') + ' expected · ' + (rows.length - not.length) + ' confirmed',
-    not.length ? '⏳ Not confirmed: ' + firstNames(not, 8) : 'Everyone has confirmed 🔥', 'academy');
+    (not.length ? '⏳ Not confirmed: ' + firstNames(not, 8) : 'Everyone has confirmed 🔥') + fiq(rows, 8), 'academy');
 }
 
 /** DAY1_REMIND_TIME on an Academy day: Jess (LINK) / Rubal (JUSS) get "N starters to remind today". Tapping it opens the Day 1 tab
