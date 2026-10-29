@@ -926,7 +926,7 @@ async function fillEval(p) {
   // Their own starters: the New starts tab (Day 1 week by week, no back arrow)
   await fcp.click('#socancel');
   await fcp.click('.tabbar button[data-tab=academy]'); await fcp.waitForSelector('#d1prev');
-  ok((await fcp.textContent('#abTitle')) === 'New starts' && (await fcp.$eval('#abBack', b => b.hidden)) && !/Adham/.test(await fcp.innerText('#page')),
+  ok((await fcp.textContent('#abTitle')) === 'New starts' && (await fcp.$eval('#abBack', b => b.hidden)) && !/Adham/.test(await fcp.innerText('#page')) && !(await fcp.$('#goAvail')),
     'New starts: their own starters, week by week (title "New starts", no back arrow, nobody else\'s)');
   await fc.close();
   const reLog = () => getJson('/dev/sheet?name=Log').then(rows => rows.filter(r => r[2] === 'reassign' && r[3] === ali.id).length);

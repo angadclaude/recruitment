@@ -1,4 +1,4 @@
-window.APP_VERSION = 'c420823b';
+window.APP_VERSION = 'dd83cadc';
 
 (function () {
 'use strict';
@@ -1766,12 +1766,17 @@ function doRow(x) {
   const c = x.c, na = c.outcome === 'No answer', via = c.no_whatsapp ? 'sms' : 'whatsapp';
   const pill = x.k === 'log' ? '<span class="pill red">📞 Log the call' + (c.deadline && londonNow() > c.deadline ? ' · LATE' : '') + '</span>'
     : x.k === 'stale' ? '<span class="pill red">🔴 Over 2 weeks: close it</span>'
-    : na ? '<span class="pill amber">📵 No answer: call again</span>' : '<span class="pill amber">🔁 Call back' + (c.callback_at ? ' ' + h(fmtTs(c.callback_at)) : '') + '</span>';
+    : na ? '<span class="pill amber">📵 No answer: call again</span>' : '<span class="pill amber">🔁 Call back' + (c.callback_at ? ' ' + h(whenShort(c.callback_at)) : '') + '</span>';
   return '<div class="drow" data-for="' + h(c.id) + '">' + avatar(c) + '<button type="button" class="dmain" data-open="' + h(c.id) + '"><b>' + h(c.full_name) + '</b><span>' + pill +
     (c.stars ? '<i class="stars-sm">' + '★'.repeat(Number(c.stars)) + '</i>' : '') + '</span></button>' +
     '<a class="dic" href="tel:' + h(c.mobile) + '" aria-label="Call">' + icon('phone', 18) + '</a>' +
     (na ? '<a class="dic" data-na="1" data-send="noanswer" data-via="' + via + '" href="' + h(msgUrl(c, msgNoAnswer(c))) + '" target="_blank" rel="noopener" aria-label="We tried calling you">' + icon('chat', 18) + '</a>' : '') +
     '<button type="button" class="dgo" data-out="1">' + (x.k === 'log' ? 'Outcome' : 'Update') + '</button></div>';
+}
+/** "today 14:00", "tomorrow 14:00", "Mon 14:00": short enough for a row. */
+function whenShort(ts) {
+  const d = String(ts).slice(0, 10), t = String(ts).slice(11, 16), today = S.me.today;
+  return (d === today ? 'today' : d === addDays(today, 1) ? 'tomorrow' : d > today && d <= addDays(today, 6) ? DAYS[D(d).getUTCDay()] : fmt(d)) + ' ' + t;
 }
 /** Mine → Day 1: your starters with a Day 1 still to come (today included), by day. */
 function myDay1() {
@@ -3109,7 +3114,7 @@ function drawAcademy(r, quiet) {
     (behind.length ? '<div class="card needs d1behind"><b>↩️ Still to sort from an earlier week · ' + behind.length + '</b><p class="small muted" style="margin:4px 0 2px">A no-show to rebook, or nobody ticked Arrived / No-show. Tap a name to go to that week.</p>' +
       behind.map(c => '<button class="nm" data-wk="' + weekEndingOf(c.academy_date) + '">' + h(c.first_name) + ' · ' + (c.day1_status === 'no_show' ? 'no-show' : 'not ticked') + '</button>').join('') + '</div>' : '') +
     (pend.length || toOnb.length || behind.length ? '<div style="height:14px"></div>' : '') +
-    '<button class="btn ghost block" id="goAvail" style="margin:0 0 12px">🗓️ Availability · Week 1 &amp; Week 2</button>' +
+    (admin ? '<button class="btn ghost block" id="goAvail" style="margin:0 0 12px">🗓️ Availability · Week 1 &amp; Week 2</button>' : '') +  // bookers: their NS Availability tab
     weekNav1 + weekTools + filt +
     (!wk ? skeleton(3) : dates.length ? dates.map(block).join('')
       : empty('🎓', we === thisWe ? 'Nobody booked to start this week.' : we > thisWe ? 'Nobody booked to start that week yet.' : 'Nobody started that week.')) +
@@ -3117,7 +3122,7 @@ function drawAcademy(r, quiet) {
     'Pulled out? Tap 🚫 Dropped out (twice), any time: they leave the reminders and the expected count (↩️ Undo puts them back). On Day 1, tap Arrived or No-show for everyone: that\'s your show-up rate. Booked for Tuesday instead of Monday? Tap 📅 Tuesday (twice), before the day or on it: they move to Tuesday\'s list (📅 Monday moves them back). The PDF shows the same ticks. ‹ › go week by week.</p>', quiet, d1Sub());
   const go = w => { S.d1Pick = { on: today, auto: false, we: w }; drawAcademy(r, true); window.scrollTo(0, 0); };
   page.querySelector('#d1prev').onclick = () => go(addDays(we, -7));
-  page.querySelector('#goAvail').onclick = () => nav('avail', { we: we }, true);
+  const gav = page.querySelector('#goAvail'); if (gav) gav.onclick = () => nav('avail', { we: we }, true);
   page.querySelector('#d1next').onclick = () => go(addDays(we, 7));
   page.querySelectorAll('.nm[data-wk]').forEach(b => { b.onclick = () => go(b.dataset.wk); });
   page.querySelectorAll('.trow[data-cand] .main').forEach(el => { el.onclick = () => nav('cand', { id: el.parentNode.dataset.cand }, true); });
