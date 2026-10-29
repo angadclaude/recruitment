@@ -1302,7 +1302,7 @@ async function fillEval(p) {
     'preview: Rubal\'s JUSS email in the congratulations-page look ("You\'re in, Adham 🎉", JUSS logo, Day 1 / Day 2 cards, FieldIQ, JUSS Playbook, Week 1 plan + CONFIRM, Hello Fresh, JUSS number, signed Rubal: it\'s from her address)');
   ok(/<b>Activate FieldIQ first:<\/b> find the invitation <b>from FieldIQ<\/b> \(email or text, check Junk \/ Spam\) and tap its link\. <b>Only then<\/b> download the app, log in with that same email/.test(prevHtml) &&
     /⚠️ <b>FieldIQ says “Your account isn't activated yet”\?<\/b> You haven't tapped that invitation link yet\. Can't find the invitation\? Reply to this email and we'll send it again\./.test(prevHtml) &&
-    /📲 Download FieldIQ \(after its invite\)/.test(prevHtml) && !/Download FieldIQ<\/b> and complete/.test(prevHtml),
+    />Download FieldIQ \(after its invite\)</.test(prevHtml) && !/Download FieldIQ<\/b> and complete/.test(prevHtml),
     'FieldIQ step 1: "activate from its invite first", only then download and log in; and the error starters hit ("Your account isn\'t activated yet") with what it means and the fix (Rubal 23 Oct, Angad 29 Oct)');
   ok(/reply <b>GOT IT<\/b> to this email so we know it reached you/.test(prevHtml), 'the email asks them to reply GOT IT (the strongest "not spam" signal, and Rubal knows it arrived)');
   // The whole email as the candidate sees it (images from this dev server instead of the live site)
