@@ -785,7 +785,8 @@ async function fillEval(p) {
     (await rtp.$$eval('#wacard .cobig[data-kind=offer]', e => e.map(x => x.querySelector('b').textContent + (x.classList.contains('alt') ? '(plain)' : '')))).join() === 'JUSS,LINK(plain)' &&
     /Just this one as/.test(await rtp.innerText('#wacard .cobig.alt')),
     'candidate page: "🎉 Day 1 details": JUSS first (the company he joins), "Just this one as LINK" plain; LINK = LINK wording, welcome page, pre-coaching, Maps pin; JUSS = the JUSS versions; signed by Fiza');
-  ok(/^sms:/.test(await rtp.getAttribute('#wacard .cobig[data-kind=offer][data-co=LINK]', 'href')) && /by text/.test(await rtp.innerText('#wacard .cobig[data-kind=offer][data-co=LINK]')),
+  ok(/^sms:/.test(await rtp.getAttribute('#wacard .cobig[data-kind=offer][data-co=LINK]', 'href')) && /^sms:/.test(await rtp.getAttribute('#wacard .cobig[data-kind=offer][data-co=JUSS]', 'href')) &&
+    /by text/.test(await rtp.innerText('#wacard .cobig[data-kind=offer][data-co=JUSS]')),
     'Adham isn\'t on WhatsApp: both buttons text him');
   await rtp.click('#wacard .altsend button[data-chan=whatsapp]'); await rtp.waitForSelector('#wacard .cobig[data-kind=offer][data-via=whatsapp]');
   ok(/^https:\/\/wa\.me\//.test(await rtp.getAttribute('#wacard .cobig[data-kind=offer][data-co=JUSS]', 'href')), '"💬 WhatsApp" under them → the LINK / JUSS buttons switch to WhatsApp');
