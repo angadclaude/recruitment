@@ -1392,7 +1392,7 @@ async function fillEval(p) {
   ok(/^sms:\+447700900300/.test(huHref) && /^Hi Adham 👋 It's Angad from JUSS Marketing\./.test(hu) && /emailed your starter pack to adham@example\.com/.test(hu) && /JUSS Playbook/.test(hu) &&
     /It's from rubal@jussmarketing\.co\.uk\. Can't see it\? Check Spam or Promotions and tap Not spam/.test(hu) && /reply GOT IT/.test(hu) &&
     /FieldIQ \(before Day 1\): first tap the link in FieldIQ's invitation email or text \(check Junk\), then download the app and log in with that email: https:\/\/www\.tfo\.group\/fieldiqdownload/.test(hu) &&
-    /⚠️ FieldIQ says \*"Your account isn't activated yet"\*\? You haven't tapped that invitation link yet\. Can't find it\? Reply here and we'll send it again\./.test(hu),
+    /⚠️ FieldIQ says \*?"Your account isn't activated yet"\*?\? You haven't tapped that invitation link yet\. Can't find it\? Reply here and we'll send it again\./.test(hu),
     'once sent: a one-tap heads-up (by text: Adham isn\'t on WhatsApp) "just emailed your starter pack… from rubal@… check Spam / Promotions, tap Not spam… reply GOT IT"');
   ok(!/not set up yet/i.test(await ap.innerText('#onb')), 'after a send the card no longer says "not set up yet"');
   await ap.locator('#onb').screenshot({ path: SHOTS + '/36-onboarded.png' });
