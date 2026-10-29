@@ -914,7 +914,7 @@ async function fillEval(p) {
   const fNow = fizaPipe.filter(c => chaseWk(c) <= cw), fThis = fNow.filter(c => chaseWk(c) === cw), fCarry = fNow.filter(c => chaseWk(c) < cw);
   ok(fizaPipe.length && fizaPipe.every(c => c.booker_id === fiza.id && BL.includes(c.leak)), 'a booker\'s Chase list is their own people only');
   await fcp.waitForFunction(n => new RegExp('📞 Do now · ' + n + '\\b', 'i').test(document.getElementById('page').innerText), fNow.length, { timeout: 15000 });
-  const fTabs = await fcp.$$eval('.tabbar button', b => b.map(x => x.innerText.trim().replace(/\s+/g, ' ')));
+  const fTabs = await fcp.$$eval('.tabbar button span', b => b.map(x => x.textContent.trim()));
   ok(await fcp.$('.tabbar button.on[data-tab=mine]') && JSON.stringify(await fcp.$$eval('.tabbar button', b => b.map(x => x.dataset.tab))) === '["mine","academy","avail","pay"]' &&
     fTabs.join(' · ') === 'Mine · New starts · NS Availability · Appts Attended' && await fcp.textContent('.tabbar button[data-tab=mine] .tbadge') === String(fNow.length),
     'Fiza taps it → Mine, "📞 Do now · ' + fNow.length + '" (this week ' + fThis.length + ' + carried over ' + fCarry.length + '); tabs: ' + fTabs.join(' · '));
