@@ -517,20 +517,12 @@ async function fillEval(p) {
   await shot(bp, '08-booker-my-candidates', true);
   const mineTxt = await bp.innerText('body');
   ok(!/Adham|Ishita/.test(mineTxt), 'booker only sees their own candidates');
-  // A background refresh can redraw the list mid-swipe, so swipe again if it didn't stick.
-  for (let i = 0; i < 3 && !(await bp.$('.swipe.open')); i++) {
-    await bp.evaluate(() => {
-      const sw = document.querySelector('.swipe'); const t = (type, x) => sw.dispatchEvent(new TouchEvent(type, { bubbles: true, touches: type === 'touchend' ? [] : [new Touch({ identifier: 1, target: sw, clientX: x, clientY: 200 })] }));
-      t('touchstart', 300); t('touchmove', 250); t('touchmove', 150); t('touchmove', 100); t('touchend', 100);
-    });
-    await bp.waitForSelector('.swipe.open', { timeout: 3000 }).catch(() => {});
-  }
-  await bp.waitForSelector('.swipe.open', { timeout: 1000 });
-  ok(/^tel:/.test(await bp.getAttribute('.swipe.open .act.call', 'href')) && /wa\.me/.test(await bp.getAttribute('.swipe.open .act.wa', 'href')), 'booker swipes their own candidate → Call / WhatsApp buttons');
-  await shot(bp, '04b-swipe');
-  await bp.click('.swipe.open .item'); await bp.waitForFunction(() => !document.querySelector('.swipe.open'));  // tap closes the swipe
+  // Simpler for bookers (Angad, 29 Oct): Do now, Day 1, this week's outcomes; a 📞 right on each Do now row (no swipe needed)
+  await bp.waitForSelector('.drow .dic[href^="tel:"]');
+  ok(/^tel:/.test(await bp.getAttribute('.drow .dic[href^="tel:"]', 'href')) && /📞 Do now · \d+/i.test(await bp.innerText('#page')) && /This week's outcomes/i.test(await bp.innerText('#page')),
+    'a booker\'s Mine: "📞 Do now" with a 📞 on each row, then this week\'s outcomes');
   ok(/3 more to hit 5/.test(mineTxt) && /0 don't count/.test(mineTxt), 'net attended 2/5 (Young Person counts once their 18+ answer was fixed)');
-  await bp.click('.item:has-text("Jasraj Bhuller")');
+  await bp.click('[data-open]:has-text("Jasraj Bhuller")');
   await bp.waitForSelector('#saveout');
   const snap = await bp.innerText('body');
   ok(/Southall/.test(snap) && /Commission selling phones/.test(snap), 'one-page snapshot: presenter notes + evaluation together');
@@ -557,8 +549,10 @@ async function fillEval(p) {
   await shot(bp, '09-booker-outcome', true);
   await bp.goBack(); await bp.waitForSelector('text=🎉 Send congratulations');
   ok(true, 'list shows "🎉 Send congratulations" until it\'s sent');
-  ok(/^https:\/\/wa\.me\//.test(await bp.getAttribute('.quick [data-send=offer]', 'href')), 'the card has a one-tap "🎉 Send Day 1 details on WhatsApp" button');
-  await bp.click('.quick[data-for="' + kid.id + '"] [data-out]');
+  await bp.waitForSelector('.drow [data-send=offer]');
+  ok(/^https:\/\/wa\.me\//.test(await bp.getAttribute('.drow [data-send=offer]', 'href')) && /🎓 Day 1 · Mon 19 Oct/i.test(await bp.innerText('#page')) && /📲 Day 1 details not sent/.test(await bp.innerText('#page')),
+    'Mine → 🎓 Day 1 · Mon 19 Oct: "📲 Day 1 details not sent" with a one-tap "🎉 Send" on WhatsApp');
+  await bp.click('.drow[data-for="' + kid.id + '"] [data-out]');
   await bp.waitForSelector('.sheet #sosave');
   await shot(bp, '09b-booker-outcome-sheet');
   await bp.click('.sheet .chips[data-name=outcome] .chip:has-text("No answer")');
@@ -567,12 +561,12 @@ async function fillEval(p) {
   await bp.waitForFunction(() => !document.querySelector('.sheet-back') && !JSON.parse(localStorage.getItem('lr_outbox') || '[]').length);
   const kidNow = await api(admin, 'getCandidate', { id: kid.id });
   ok(kidNow.outcome === 'No answer' && kidNow.outcome_notes === 'Rang twice, voicemail' && kidNow.outcome_by === 'Fiza Iqbal', 'booker logs a call outcome straight from the list card (sheet), no need to open the page');
-  await bp.waitForSelector('.quick[data-for="' + kid.id + '"] [data-na]');
-  const na = decodeURIComponent((await bp.getAttribute('.quick[data-for="' + kid.id + '"] [data-na]', 'href')).split('?text=')[1]);
+  await bp.waitForSelector('.drow[data-for="' + kid.id + '"] [data-na]');
+  const na = decodeURIComponent((await bp.getAttribute('.drow[data-for="' + kid.id + '"] [data-na]', 'href')).split('?text=')[1]);
   fs.writeFileSync(`${SHOTS}/msg-no-answer.txt`, na);
-  ok(/📵 No answer · 1/i.test(await bp.innerText('body')) && /^Hey Young! 👋/.test(na) && /in association with \*LINK Marketing\*/.test(na) && /We tried calling you/.test(na) && /\*call or text me back on this number\*/.test(na) && /\*Fiza Iqbal\*, on behalf of LINK Marketing recruitment team 🧡$/.test(na),
-    'no answer → "📵 No answer" on the list with a ready WhatsApp: "we tried calling you, call or text back", signed Fiza Iqbal for the LINK recruitment team');
-  await bp.click('.item:has-text("Jasraj Bhuller")'); await bp.waitForSelector('a.wa[data-kind=offer]');
+  ok(/📵 No answer: call again/i.test(await bp.innerText('body')) && /^Hey Young! 👋/.test(na) && /in association with \*LINK Marketing\*/.test(na) && /We tried calling you/.test(na) && /\*call or text me back on this number\*/.test(na) && /\*Fiza Iqbal\*, on behalf of LINK Marketing recruitment team 🧡$/.test(na),
+    'no answer → "📵 No answer: call again" in Do now with a ready WhatsApp: "we tried calling you, call or text back", signed Fiza Iqbal for the LINK recruitment team');
+  await bp.click('[data-open]:has-text("Jasraj Bhuller")'); await bp.waitForSelector('a.wa[data-kind=offer]');
   const msg = decodeURIComponent((await bp.getAttribute('a.wa[data-kind=offer]', 'href')).split('?text=')[1]);
   fs.writeFileSync(`${SHOTS}/msg-link.txt`, msg);
   const wurl = (msg.match(/https:\/\/\S+welcome-link\.html\?t=\w+/) || [])[0];
@@ -612,7 +606,7 @@ async function fillEval(p) {
   await shot(wp, '11-welcome-confirmed');
   ok((await pushesTo(fiza.id)).some(p => /confirmed Day 1/.test(p.body.headings.en)), 'PUSH → booker: "Jasraj confirmed Day 1!"');
   await bp.reload(); await bp.waitForSelector('.tabbar button');
-  await bp.click('.item:has-text("Jasraj Bhuller")');
+  await bp.click('[data-open]:has-text("Jasraj Bhuller")');
   await bp.waitForSelector('text=confirmed Day 1 on their welcome page');
   ok(true, 'booker snapshot shows ✅ confirmed');
 
@@ -910,23 +904,30 @@ async function fillEval(p) {
   const fizaTok = await loginApi('fiza@example.com');
   let notAdmin = null; try { await api(fizaTok, 'chaseOutcomes', {}); } catch (e) { notAdmin = e.message; }
   ok(/Admin only/.test(notAdmin), 'bookers can\'t nudge each other (admins only)');
-  // The booker taps the nudge → their own Chase tab, grouped by what to do, buttons right there
+  // The booker taps the nudge → Mine, "Do now": their own people to chase, this week and carried over, buttons right there
+  // (Angad, 29 Oct: no Chase tab for bookers, it only repeated it)
   const fc = await browser.newContext(PHONE);
   const fcp = await fc.newPage();
   await loginUi(fcp, 'fiza@example.com', APP + 'index.html?c=chase');
-  await fcp.waitForSelector('.section-h');
+  await fcp.waitForSelector('.drow');
   const fizaPipe = (await api(fizaTok, 'chaseList', {})).items;
   const fNow = fizaPipe.filter(c => chaseWk(c) <= cw), fThis = fNow.filter(c => chaseWk(c) === cw), fCarry = fNow.filter(c => chaseWk(c) < cw);
   ok(fizaPipe.length && fizaPipe.every(c => c.booker_id === fiza.id && BL.includes(c.leak)), 'a booker\'s Chase list is their own people only');
-  ok(await fcp.$('.tabbar button.on[data-tab=chase]') && JSON.stringify(await fcp.$$eval('.tabbar button', b => b.map(x => x.dataset.tab))) === '["mine","chase","avail","pay"]' &&
-    new RegExp('^' + fThis.length + ' to chase this week').test(await fcp.innerText('.card .display')) && await fcp.textContent('.tabbar button[data-tab=chase] .tbadge') === badgeOf(fNow.length, fCarry.length),
-    'Fiza taps it → her Chase tab: "' + fThis.length + ' to chase this week" (tabs: Mine · Chase · New starts · Appts Attended)');
-  ok(/📞 Log the call · \d+/i.test(await fcp.innerText('#page')) && await fcp.$('.ccard .quick [data-out]'), 'grouped by what to do, with Call / WhatsApp / Log outcome on each');
+  await fcp.waitForFunction(n => new RegExp('📞 Do now · ' + n).test(document.getElementById('page').innerText), fNow.length, { timeout: 15000 });
+  const fTabs = await fcp.$$eval('.tabbar button', b => b.map(x => x.innerText.trim().replace(/\s+/g, ' ')));
+  ok(await fcp.$('.tabbar button.on[data-tab=mine]') && JSON.stringify(await fcp.$$eval('.tabbar button', b => b.map(x => x.dataset.tab))) === '["mine","academy","avail","pay"]' &&
+    fTabs.join(' · ') === 'Mine · New starts · NS Availability · Appts Attended' && await fcp.textContent('.tabbar button[data-tab=mine] .tbadge') === String(fNow.length),
+    'Fiza taps it → Mine, "📞 Do now · ' + fNow.length + '" (this week ' + fThis.length + ' + carried over ' + fCarry.length + '); tabs: ' + fTabs.join(' · '));
+  ok(await fcp.$('.drow [data-out]') && await fcp.$('.drow .dic[href^="tel:"]'), 'each with 📞 and Outcome / Update right on the row');
   ok(!(await fcp.$('#chasePdf')), 'no Chase PDF for a booker (admins only, like the All tab\'s)');
   await shot(fcp, '26-chase-booker', true);
-  await fcp.click('.ccard .quick [data-out]'); await fcp.waitForSelector('.sheet #sosave');
-  ok(/Log the call · /i.test(await fcp.innerText('.sheet')), 'Log outcome opens straight from the Chase tab (even for last week\'s appointments)');
+  await fcp.click('.drow [data-out]'); await fcp.waitForSelector('.sheet #sosave');
+  ok(/Log the call · /i.test(await fcp.innerText('.sheet')), 'Outcome opens straight from Do now (even for last week\'s appointments)');
+  // Their own starters: the New starts tab (Day 1 week by week, no back arrow)
   await fcp.click('#socancel');
+  await fcp.click('.tabbar button[data-tab=academy]'); await fcp.waitForSelector('#d1prev');
+  ok((await fcp.textContent('#abTitle')) === 'New starts' && (await fcp.$eval('#abBack', b => b.hidden)) && !/Adham/.test(await fcp.innerText('#page')),
+    'New starts: their own starters, week by week (title "New starts", no back arrow, nobody else\'s)');
   await fc.close();
   const reLog = () => getJson('/dev/sheet?name=Log').then(rows => rows.filter(r => r[2] === 'reassign' && r[3] === ali.id).length);
   const reBefore = await reLog();
@@ -1725,7 +1726,7 @@ async function fillEval(p) {
   ok(!prog.some(p => p.body.include_aliases.external_id.includes(jessId)), 'no incentive progress alert for an admin');
   const jb = await browser.newContext(PHONE); const jbp = await jb.newPage();
   await loginUi(jbp, 'jess@linkmarketing.org.uk');
-  await openMine(jbp); await jbp.waitForSelector('.item:has-text("Grace Okafor")');
+  await openMine(jbp); await jbp.waitForSelector('[data-open]:has-text("Grace Okafor")');
   ok(!(await jbp.$('.hero .ring')) && /booked/i.test(await jbp.$eval('.hero', e => e.innerText)) && !/more to hit|target/i.test(await jbp.$eval('.hero', e => e.innerText)),
     'admin\'s "Mine": her numbers, no incentive ring or target');
   const tb6 = await jbp.$$eval('.tabbar button', b => b.map(x => { const r = x.getBoundingClientRect(), s = x.querySelector('span'); return { t: x.dataset.tab, fits: s.scrollWidth <= r.width + 1 && r.right <= innerWidth }; }));
@@ -1733,7 +1734,7 @@ async function fillEval(p) {
   await jbp.click('#abMe'); await jbp.click('#mTeam'); await jbp.waitForSelector('#slideqr');
   ok(await jbp.textContent('#abTitle') === 'Team', '…and Team is under their initials (7 tabs don\'t fit a phone)');
   await shot(jbp, '31-team-from-menu');
-  await openMine(jbp); await jbp.click('.item:has-text("Grace Okafor")'); await jbp.waitForSelector('.profile h1');
+  await openMine(jbp); await jbp.click('[data-open]:has-text("Grace Okafor")'); await jbp.waitForSelector('.profile h1');
   ok(/Booked by Jess Grace \(admin\), so no incentive/.test(await jbp.$eval('#page', e => e.innerText)) && !(await jbp.$('#excl')), 'candidate page: "Booked by Jess Grace (admin), so no incentive"');
   await jb.close();
   // Admins who book (like Jess) get nudged for their own people too
@@ -2186,7 +2187,7 @@ async function fillEval(p) {
     await bp.click('.tabbar button[data-tab=avail]'); await bp.waitForSelector('.avrow');
     const allNow = (await api(admin, 'availWeek', { weekEnding: WE })).rows.filter(r => !r.no_longer);
     const nsNames = await bp.$$eval('.avrow .name', e => e.map(x => x.textContent));
-    ok(bTabs.includes('New starts') && (await bp.textContent('#abTitle')) === 'New starts' && (await bp.$eval('#abBack', b => b.hidden)) &&
+    ok(bTabs.includes('NS Availability') && (await bp.textContent('#abTitle')) === 'NS Availability' && (await bp.$eval('#abBack', b => b.hidden)) &&
       nsNames.length === allNow.length && allNow.every(r => nsNames.includes(r.full_name)) && nsNames.includes('Adham Soliman') &&
       !(await bp.$('button.avrow')) && !(await bp.$('#avadd')) && (await ap.$$('.tabbar button[data-tab=avail]')).length === 0 &&
       !(await bp.$('#avposter')) && !(await bp.$('#avpdf')) && !!(await bp.$('#avpdfw1')) && !!(await bp.$('#avpdfw2')) && !(await bp.$('.avdays')) && !(await bp.$('#avwk')) && !(await bp.$('a[href^="tel:"]')) &&
@@ -2205,7 +2206,7 @@ async function fillEval(p) {
     await pp.click('.tabbar button[data-tab=avail]'); await pp.waitForSelector('.avrow');
     const pSave = await api(nathan, 'saveAvail', { id: s1.id, w1: s1b.w1, w2: (await api(admin, 'availWeek', { weekEnding: WE })).rows.find(r => r.id === s1.id).w2, driver: 'Yes', notes: 'Windsor | Law graduate' });
     ok(!!(await pp.$('button.avrow')) && !!(await pp.$('#avposter')) && !!(await pp.$('#avpdf')) && !!(await pp.$('#avadd')) && !(await pp.$('[data-ava]')) && !!(await pp.$('.avA.on.ro')) &&
-      (await pp.textContent('#abTitle')) === 'New starts' && pSave && pSave.updated_by === 'Nathan Smith',
+      (await pp.textContent('#abTitle')) === 'NS Availability' && pSave && pSave.updated_by === 'Nathan Smith',
       'a presenter (Nathan) has New starts with the full page and fills it in (saved by Nathan Smith); the A shows for them, but only admins set it');
     await api(admin, 'gradeStarter', { id: s1.id, grade: '' });
     const jasW = await bp.$eval('.avrow:has-text("' + s1.full_name + '")', e => [...e.querySelectorAll('.avwk2')].map(w => w.querySelector('b').textContent + ' ' + [...w.querySelectorAll('.avc.in')].map(x => x.textContent).join(' ')).join(' | '));
