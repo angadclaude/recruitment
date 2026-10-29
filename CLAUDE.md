@@ -82,6 +82,14 @@ The recruitment app for **LINK Marketing** and **JUSS Marketing** (Angad runs bo
 - **Names: always the app's (Angad, 27 Oct: "that's what is based on the documents").**
   - Never take a spelling from a Canva page, a printed list or a screenshot, and don't suggest changing an app name to match one. His NS w/e 01/11/26 Canva had "PRICE MAHMOOD", "TARANIH RAGAGURU" and "Mel Abraham" by hand; the app's Prince Mahmood, Taranih Rajagopal and Mel Anouman are right.
   - Posters, lists and PDFs print the app's full name.
+- **A booker's app (Angad, 29 Oct: "a much simpler view"; he approved the mock-up):** four tabs, **Mine · New starts · NS Availability · Appts Attended**. No Chase tab for bookers (admins keep it); `?c=chase` opens Mine for them.
+  - **Mine** (`viewMine`), top to bottom:
+    - a short score card ("5/5 · Target smashed · 8 checked in · 3 don't count", no reasons);
+    - **📞 Do now** (`doNow`: Chase's log the call / call back / stale for them, this week and carried over; compact rows `doRow` with 📞 and Outcome / Update; the red number on Mine);
+    - **🎓 Day 1 · <day>** for each Day 1 still to come (`myDay1`, `d1Row`: 📲 details not sent → 🎉 Send, ⏳ not confirmed → 💬 Remind, ✅ confirmed);
+    - **📋 This week's outcomes**, one line each (`outPill`), with non-qualifiers folded into one grey line ("Don't count (3): Zehra, Omar, Parishka · student visa", `foldWhy`).
+  - Do now and Day 1 read the Chase / Day 1 lists plus the week's own list (`myCands`), so a just-logged outcome moves at once.
+  - **New starts** = their own starters, the Day 1 view week by week (`viewAcademy`, `d1Title` / `d1Sub`). **NS Availability** = everyone's availability (`viewAvail`).
 - **Other things Angad has settled (don't re-ask):**
   - **Day 1 reminders** name one company, the candidate's (`brandOf`), never "LINK Marketing and JUSS Marketing".
   - **Day 1** has a **Dropped out** option (two taps, Undo), left out of counts and onboarding.
@@ -157,7 +165,7 @@ Jess, Rubal and Angad (`CONFIG.BOOK_TEAM`) book Teamtailor applicants into a Mon
 ## Done: new starters' availability, Week 1 and Week 2 (27 Oct 2026)
 This replaces the "Juss & Link - NS Availability - 2026" Google Sheet (a W1 / Pics / W2 tab per week since Jan 2025) and the Canva poster. Angad: "the app becomes the all-in-one go-to". **The app is the one place now**; the Sheet stays as the archive of old weeks, and nobody re-creates tabs.
 - **Where:** Day 1 tab → **🗓️ Availability · Week 1 & Week 2**, and the account menu → **🗓️ New starters' availability** for everyone (`viewAvail`).
-  - **Every booker has a New starts tab (Angad, 27 Oct):** Hasini, coaching her new starters in the BA Academy, couldn't find them (bookers have no Day 1 tab, and the menu item was buried). Non-admin bookers get **New starts** in the bottom bar (`tabs()`, `asTab` in `viewAvail`: titled "New starts", no back arrow): everyone's starters, read-only, not just their own (Angad: "instead of getting just their own, they can see the entire availability for everyone"). A "your own on Mine" card was built and dropped for this. Admins keep it inside Day 1. With the tab there, the account menu doesn't repeat it.
+  - **Every booker has a New starts tab (Angad, 27 Oct):** Hasini, coaching her new starters in the BA Academy, couldn't find them (bookers have no Day 1 tab, and the menu item was buried). Non-admin bookers get it in the bottom bar as **NS Availability** since 29 Oct (was "New starts"; `tabs()`, `asTab` in `viewAvail`, no back arrow): everyone's starters, read-only, not just their own (Angad: "instead of getting just their own, they can see the entire availability for everyone"). A "your own on Mine" card was built and dropped for this. Admins keep it inside Day 1. With the tab there, the account menu doesn't repeat it.
 - **Data:** `Availability` + `StarterPhotos` tabs (`availRows`, `availWeek`, `saveAvail`, `addStarter`, `removeStarter`, `saveStarterPhoto`, `availPhotos`).
   - **Rows:** everyone ticked **Arrived** on Day 1 gets a row by themselves (cohort = their Day 1 week), plus anyone added by hand ("someone who started without the app").
   - **Fields:** name and mobile are copied in. Coach = whoever booked them (if that person has left, whoever took over). Driver, Week 1 and Week 2 as `w1` / `w2` (7 letters Mon–Sun: I in / O out / - not said), notes, photo (480 × 572 JPEG, head and shoulders, under 140k characters; the first ones, to 27 Oct, were 360 px squares). Coach can also be **🏢 Office** (`coach_id` `office`).

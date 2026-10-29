@@ -165,7 +165,7 @@ Hyrre's AI caller, **Megan**, screens Slough's CVs and pencils people into the 1
 To pull now, ask Claude *"pull Hyrre now"* (it runs the same task). `node scripts/hyrre-sync.js last` shows what the last pull brought.
 
 ## 🔔 Chase tab: nobody drops out of the pipeline
-A tab in the bottom bar for admins and bookers. The red number on it shows how many people are at risk right now. Someone is on it if, in the last 2 weeks (`CHASE_DAYS` in `Code.gs`):
+A tab in the bottom bar for admins. **Bookers** have the same list as **📞 Do now** at the top of **Mine** (since 29 Oct), with the red number on Mine. The red number shows how many people are at risk right now. Someone is on it if, in the last 2 weeks (`CHASE_DAYS` in `Code.gs`):
 
 | On the list as | Means | Off the list when |
 |---|---|---|
@@ -187,10 +187,10 @@ A tab in the bottom bar for admins and bookers. The red number on it shows how m
 
 An admin who also books has 7 tabs' worth, which won't fit a phone: their **Team** moves under their initials (top right).
 
-The Friday 15:00 round-ups open the Chase tab: each booker's opens theirs, the team one opens everyone's.
+The Friday 15:00 round-ups open Chase: a booker's opens their **Mine** (Do now), the team one opens everyone's Chase tab.
 
 ## 🎓 Day 1 tab (admins): who's starting, reminders, the printed list
-A tab in the bottom bar for admins (bookers: **Chase / Mine → 🎓 My Day 1 starters**, their own only). Everyone booked onto the BA Academy, by date.
+A tab in the bottom bar for admins (bookers: their **New starts** tab, their own only). Everyone booked onto the BA Academy, by date.
 
 **Monday morning (Jess / Rubal):**
 1. **10:00:** Jess gets *"🎓 Day 1 today: 4 starters to remind"* (her LINK starters), Rubal gets the JUSS ones. Tap it.
@@ -298,7 +298,7 @@ No more highlighters on the printed list:
 ## New starters' availability: Week 1 and Week 2 (replaces the NS Availability sheet)
 **Day 1 → 🗓️ Availability · Week 1 & Week 2** (or the menu → **🗓️ New starters' availability**).
 
-**Bookers and leaders:** tap **New starts** in the bottom bar: every new starter in the office, their coach, and the days they're in for Week 1 and Week 2 (view only). **📄 Week 1 PDF** / **📄 Week 2 PDF** have everyone's details: number, driver, days and notes. Turn on alerts to hear at 18:00 when your own starters' days are in.
+**Bookers and leaders:** tap **NS Availability** in the bottom bar: every new starter in the office, their coach, and the days they're in for Week 1 and Week 2 (view only). **📄 Week 1 PDF** / **📄 Week 2 PDF** have everyone's details: number, driver, days and notes. Turn on alerts to hear at 18:00 when your own starters' days are in.
 
 - **The week:**
   - **Monday (Jess / Rubal):** on the Day 1 list, tick **Arrived**, then tap **📷 Photo** on the same row. That's their availability photo; it shows as their picture.
@@ -308,7 +308,7 @@ No more highlighters on the printed list:
 - **Who's on it:** everyone ticked **Arrived** on Day 1 appears by themselves, grouped HelloFresh then Fundraising (their FR / HF from Day 1). Their coach is whoever booked them.
   - Someone started without coming through the app? **＋ Add someone**.
   - ‹ › goes back through every week, and nothing is ever deleted.
-- **The one-to-one** (Angad, Satpal, the presenters, or anyone ticked **Availability** in Team; presenters use their **New starts** tab):
+- **The one-to-one** (Angad, Satpal, the presenters, or anyone ticked **Availability** in Team; presenters use their **NS Availability** tab):
   1. Tap the starter.
   2. **📷 Take photo**.
   3. Driver yes / no.
