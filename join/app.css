@@ -183,6 +183,7 @@ details.carry .list { margin-top: 8px; }
 .qsub .q { font-size: 15px; }
 /* "Mark as confirmed": a button (white, outlined), never mistaken for a status pill */
 .pills .btn.sm.markyes { padding: 3px 11px; font-size: 12.5px; line-height: 1.35; border-radius: 999px; }
+.pills button.pill.fiqon { border: 0; font-family: inherit; cursor: pointer; }  /* ✅ FieldIQ: tap to undo */
 .sub.wrap, .item .sub.wrap, .trow .sub.wrap { white-space: normal; overflow-wrap: anywhere; }
 .d1btns { display: flex; flex-direction: column; gap: 6px; flex: none; }
 /* Day 1: who's arrived stands out (light green, like the New Starts List PDF); "Move to Tue?" asks before moving a Day 1 */
