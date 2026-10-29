@@ -238,12 +238,12 @@ When a booker books someone onto the Academy (or an admin approves a 🔴 bookin
    - The card and preview say who it's from. If the app can't send as that address yet, Send stays off: it never falls back to another address.
 
 ### LINK or JUSS: one tap (Jess, Rubal)
-The recruitment team work for both companies, so for **Jess and Rubal** (`THANKS_TEAM` in Code.gs; **since 26 Oct only them**: Fiza was taken off, `RECRUIT_TEAM` is empty and adds anyone else by email) every thank-you and Day 1 details button comes as a pair, **LINK** and **JUSS**, in the companies' colours:
+The recruitment team work for both companies, so for **Jess and Rubal** (`THANKS_TEAM` in Code.gs; **since 26 Oct only them**: Fiza was taken off, `RECRUIT_TEAM` is empty and adds anyone else by email) every thank-you and Day 1 details button comes as a pair: the company they're **joining first, in its colours**, and the other one **plain** after it ("Just this one as LINK"):
 - **Candidate page:** 💬 Thank-you **LINK | JUSS** and 🎉 Day 1 details **LINK | JUSS**. Under them, "📱 Text" / "✉️ Email" switch both buttons to that way of sending.
 - **Thank everyone 💬:** **LINK | JUSS** on every row (anyone added to `RECRUIT_TEAM` gets every appointment, LINK and JUSS). Tap, send, come back, next one. "📱 Text instead" switches that row.
 - **Lists and Chase:** 🎉 Day 1 **LINK | JUSS**.
 
-One tap opens WhatsApp (or their texts / email) with **that company's** message: wording, magazine, hearts, welcome page, pre-coaching (LINK), Google Maps pin, signed with the sender's own name. The company they tap is saved on the candidate, so everything after it follows (the welcome page they open, the welcome email, the Day 1 reminder), even when someone else sends it. Anyone else (Angad, Satpal, bookers) keeps one Send button, which follows the last choice, else the booker's company. **Pay, lists and reminders always follow the booker's company.**
+One tap opens WhatsApp (or their texts / email) with **that company's** message: wording, magazine, hearts, welcome page, pre-coaching (LINK), Google Maps pin, signed with the sender's own name. **A tap on the plain one is for that message only** (since 29 Oct: Aatif, booked by Nathan (JUSS), showed "Joining LINK" after one LINK tap on his thank-you). The company someone joins is their **placement** (FR | HF on Day 1: HF = JUSS, FR = LINK), else their booking's, else their **booker's**, and only those change it. Anyone else (Angad, Satpal, bookers) keeps one Send button, as the company they join. **Pay, lists and reminders always follow the booker's company.**
 
 To add someone to the recruitment team: add their email to `RECRUIT_TEAM` in Code.gs, and add them as a "Send mail as" address (below) so they can send welcome emails.
 
