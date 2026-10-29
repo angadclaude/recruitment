@@ -138,6 +138,12 @@ const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked 
   const sc = await api(angad, 'getCandidate', { id: ci.id });
   ok(sc.booker_id === jessId && sc.booker_name === 'Jess Grace' && sc.brand === 'JUSS' && sc.booking_id === sam.id && sc.booking_note === 'Driving in, has done sales before',
     'the booking wins: booked by Jess, his messages from JUSS, the notes from the call on his record');
+  // Before 29 Oct a LINK tap on his thank-you was saved as the company he joins (Payam Safie): once, back to his booking's
+  await post('/dev/eval', { js: `(() => { const c = readRow('Candidates', rowOfId('Candidates', '${ci.id}')); c.brand = 'LINK'; writeRow('Candidates', c);
+    PropertiesService.getScriptProperties().deleteProperty('BRAND_TAP_UNDONE_2'); brandTapUndone(); brandTapUndone(); return 'ok'; })()` });
+  const tapLog = (await getJson('/dev/sheet?name=Log')).filter(r => r[2] === 'brand' && r[3] === ci.id);
+  ok((await api(angad, 'getCandidate', { id: ci.id })).brand === 'JUSS' && tapLog.length === 1 && tapLog[0][4] === "LINK → JUSS (their booking's: a tap on LINK was for that message only)",
+    'once: a LINK tap saved on a Book Appts applicant before 29 Oct goes back to his booking\'s company (JUSS), one Log line');
   ok(to(await pushesSince(n0), jessId).some(p => p.body.headings.en === '🙌 Sam just checked in'), 'Jess gets "🙌 Sam just checked in"');
   const sb = (await api(jess, 'bookingList', {})).items.find(b => b.id === sam.id);
   ok(sb.status === 'came' && sb.candidate_id === ci.id && /^2026-10-27 09:40/.test(sb.came_at), 'his booking: came, at 09:40, linked to his check-in');

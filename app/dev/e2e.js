@@ -1662,7 +1662,7 @@ async function fillEval(p) {
   const tapDay = (await post('/dev/eval', { js: 'todayStr()' })).out;
   const tapF = { campaign: '', onboard_email_at: '', booking_id: '' };
   const adW = await rawSet(adham.id, Object.assign({ brand: 'LINK', academy_date: tapDay }, tapF)), jasW = await rawSet(jasId, Object.assign({ brand: 'JUSS', academy_date: '2026-01-05' }, tapF));
-  await post('/dev/eval', { js: "PropertiesService.getScriptProperties().deleteProperty('BRAND_TAP_UNDONE'); brandTapUndone(); brandTapUndone(); 'ok'" });
+  await post('/dev/eval', { js: "PropertiesService.getScriptProperties().deleteProperty('BRAND_TAP_UNDONE_2'); brandTapUndone(); brandTapUndone(); 'ok'" });
   const btLog = (await getJson('/dev/sheet?name=Log')).filter(r => r[2] === 'brand' && /a tap on (LINK|JUSS) was for that message only/.test(r[4]));
   const adTap = await api(admin, 'getCandidate', { id: adham.id }), jasTap = await api(admin, 'getCandidate', { id: jasId });
   await rawSet(adham.id, adW); await rawSet(jasId, jasW);
