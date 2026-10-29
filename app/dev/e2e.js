@@ -1213,18 +1213,6 @@ async function fillEval(p) {
   ok(!brief.some(p => p.body.include_aliases.external_id.includes(mo.id)), 'nobody with no starters tomorrow gets one (Mo\'s Ishita is still pending)');
   await post('/dev/run', { fn: 'keepWarm' });
   ok((await getJson('/dev/pushes')).length === beforeBrief + brief.length, 'the briefing goes once');
-  // FieldIQ not activated yet (Angad, 29 Oct: Arifah couldn't log in to upload her documents): named the evening before, so it's chased tonight
-  ok(/\n📲 FieldIQ not confirmed: Jasraj\. Check they've tapped the link in FieldIQ's invite\.$/.test(bFiza.body.contents.en) && /\n📲 FieldIQ not confirmed: .*Jasraj/.test(bTeam.body.contents.en),
-    'and anyone not ticked ✅ FieldIQ: Fiza "📲 FieldIQ not confirmed: Jasraj. Check they\'ve tapped the link in FieldIQ\'s invite.", the admins the same names');
-  await api(admin, 'markFieldIQ', { id: jasId, on: true });
-  const fiqB4 = (await getJson('/dev/pushes')).length;
-  await post('/dev/eval', { js: "PropertiesService.getScriptProperties().deleteProperty('ACADEMY_BRIEF'); keepWarm(); 'ok'" });
-  const brief2 = (await getJson('/dev/pushes')).slice(fiqB4), bFiza2 = brief2.find(p => p.body.include_aliases.external_id.includes(fiza.id)), bTeam2 = brief2.find(p => p.body.include_aliases.external_id.includes(angadId));
-  ok(bFiza2 && !/FieldIQ/.test(bFiza2.body.contents.en) && bTeam2 && !/FieldIQ not confirmed: .*Jasraj/.test(bTeam2.body.contents.en),
-    'ticked ✅ FieldIQ → not named any more (Fiza: "' + (bFiza2 ? bFiza2.body.contents.en.replace(/\n/g, ' | ') : 'none') + '")');
-  await api(admin, 'markFieldIQ', { id: jasId, on: false });
-  let fiqNo = null; try { await api(nathan, 'markFieldIQ', { id: jasId, on: true }); } catch (e) { fiqNo = e.message; }
-  ok(/Admin only/.test(fiqNo) && !(await api(admin, 'getCandidate', { id: jasId })).fieldiq_at, 'only admins tick FieldIQ (untick clears it)');
   await ap.goto(APP + 'index.html?c=academy');
   await ap.waitForSelector('.trow[data-cand="' + jasId + '"]');
   const d1Txt = await ap.innerText('#page');
@@ -1255,27 +1243,6 @@ async function fillEval(p) {
     'the Day 1 tab goes week by week like All: on Sunday it opens on the week ahead ("' + d1Nav.replace(/\n/g, ' ') + '", ‹ ›)');
   ok(/📅 Tuesday/.test(await ap.textContent('[data-d1="next_day"][data-id="' + jasId + '"]')) && await ap.$('.trow[data-cand="' + jasId + '"] a.btn[data-rem1]'),
     'before the day too: each Monday starter has "📅 Tuesday" under 💬 Remind (some are booked for Tuesday instead)');
-  // ✅ FieldIQ on the Day 1 row (Angad, 29 Oct): status + one button, like Confirmed; the nudge sends them how to activate it
-  const jRow = () => ap.innerText('.trow[data-cand="' + jasId + '"]');
-  const monHint = () => ap.evaluate(() => { const d = [...document.querySelectorAll('.datehead')].find(x => /19 October/i.test(x.textContent)); return d && d.nextElementSibling ? d.nextElementSibling.textContent : ''; });
-  const fiqTxt = decodeURIComponent((await ap.getAttribute('.trow[data-cand="' + jasId + '"] a[data-fiqmsg]', 'href')).split(/\?text=|[?&]body=/)[1] || '');
-  fs.writeFileSync(`${SHOTS}/msg-fieldiq.txt`, fiqTxt);
-  ok(/📲 FieldIQ not confirmed yet/.test(await jRow()) && /✅ Mark as activated/.test(await ap.textContent('.trow[data-cand="' + jasId + '"] [data-fiq][data-on="1"]')) && /📲 \d+ FieldIQ not confirmed/.test(await monHint()) &&
-    /^Hi Jasraj 👋 Before your Day 1 on \*Monday 19th October\*, please activate \*FieldIQ\*/.test(fiqTxt) && /Junk \/ Spam/.test(fiqTxt) && fiqTxt.includes('https://www.tfo.group/fieldiqdownload') &&
-    /Your account isn't activated yet/.test(fiqTxt) && /– Angad, LINK Marketing$/.test(fiqTxt),
-    'Jasraj\'s row: "📲 FieldIQ not confirmed yet" (the app can\'t see FieldIQ), "✅ Mark as activated" to tick, "📲 FieldIQ nudge" (find FieldIQ\'s invite, check Junk, tap its link, then log in), the day says how many aren\'t confirmed');
-  const nFiq = +(await monHint()).match(/📲 (\d+) FieldIQ not confirmed/)[1];
-  await ap.click('.trow[data-cand="' + jasId + '"] [data-fiq][data-on="1"]');
-  await ap.waitForSelector('.trow[data-cand="' + jasId + '"] .fiqon');
-  let jF = null; for (let i = 0; i < 25 && !(jF && jF.fieldiq_at); i++) { jF = await api(admin, 'getCandidate', { id: jasId }); if (!jF.fieldiq_at) await new Promise(r => setTimeout(r, 200)); }
-  ok(jF.fieldiq_by === 'Angad Oshan' && /✅ FieldIQ/.test(await jRow()) && !/FieldIQ not confirmed/.test(await jRow()) && !(await ap.$('.trow[data-cand="' + jasId + '"] a[data-fiqmsg]')) &&
-    (nFiq === 1 ? !/FieldIQ not confirmed/.test(await monHint()) : new RegExp('📲 ' + (nFiq - 1) + ' FieldIQ not confirmed').test(await monHint())) && await ap.textContent('#abTitle') === 'Day 1',
-    'one tap → "✅ FieldIQ", saved (by Angad), no nudge, one fewer not confirmed, still on the Day 1 tab');
-  await ap.locator('.trow[data-cand="' + jasId + '"]').screenshot({ path: SHOTS + '/39-fieldiq-row.png' });
-  await ap.click('.trow[data-cand="' + jasId + '"] .fiqon');
-  await ap.waitForSelector('.trow[data-cand="' + jasId + '"] [data-fiq][data-on="1"]');
-  for (let i = 0; i < 25 && jF.fieldiq_at; i++) { jF = await api(admin, 'getCandidate', { id: jasId }); if (jF.fieldiq_at) await new Promise(r => setTimeout(r, 200)); }
-  ok(!jF.fieldiq_at && /📲 FieldIQ not confirmed yet/.test(await jRow()), 'tap the green ✅ FieldIQ to undo it');
   const jasD1Row = await ap.innerText('.trow[data-cand="' + jasId + '"]');
   ok(/Confirmed/.test(jasD1Row) && !/Day 1 text not sent/.test(jasD1Row), 'someone who has confirmed never shows "Day 1 text not sent" (they had the details, however they were sent)');
   const remind = decodeURIComponent((await ap.$eval('.trow[data-cand="' + jasId + '"] a.btn', a => a.href)).split('?text=')[1]);
@@ -1333,9 +1300,10 @@ async function fillEval(p) {
     /1:30pm – 6:00pm/.test(prevHtml) && /1:00pm – 6:00pm/.test(prevHtml) && /img\/logo-juss\.png/.test(prevHtml) && /See my Week 1 plan \+ CONFIRM/.test(prevHtml) && /<b>Rubal Oshan<\/b>/.test(prevHtml) &&
     /Read your <b>JUSS Playbook<\/b>/.test(prevHtml) && /href="https:\/\/juss-playbook\.vercel\.app\/"[^>]*>📘 (<span[^>]*>)*Open my JUSS Playbook/.test(prevHtml),
     'preview: Rubal\'s JUSS email in the congratulations-page look ("You\'re in, Adham 🎉", JUSS logo, Day 1 / Day 2 cards, FieldIQ, JUSS Playbook, Week 1 plan + CONFIRM, Hello Fresh, JUSS number, signed Rubal: it\'s from her address)');
-  ok(/<b>Activate FieldIQ first:<\/b> find the invitation from FieldIQ \(email or text, check Junk\) and tap its link\. Then download the app, log in with that same email/.test(prevHtml) &&
-    !/Download FieldIQ<\/b> and complete/.test(prevHtml),
-    'FieldIQ step 1 is "activate from its invite first", then download and log in (Rubal, 23 Oct: candidates hit "Your account isn\'t activated yet")');
+  ok(/<b>Activate FieldIQ first:<\/b> find the invitation <b>from FieldIQ<\/b> \(email or text, check Junk \/ Spam\) and tap its link\. <b>Only then<\/b> download the app, log in with that same email/.test(prevHtml) &&
+    /⚠️ <b>FieldIQ says “Your account isn't activated yet”\?<\/b> You haven't tapped that invitation link yet\. Can't find the invitation\? Reply to this email and we'll send it again\./.test(prevHtml) &&
+    /📲 Download FieldIQ \(after its invite\)/.test(prevHtml) && !/Download FieldIQ<\/b> and complete/.test(prevHtml),
+    'FieldIQ step 1: "activate from its invite first", only then download and log in; and the error starters hit ("Your account isn\'t activated yet") with what it means and the fix (Rubal 23 Oct, Angad 29 Oct)');
   ok(/reply <b>GOT IT<\/b> to this email so we know it reached you/.test(prevHtml), 'the email asks them to reply GOT IT (the strongest "not spam" signal, and Rubal knows it arrived)');
   // The whole email as the candidate sees it (images from this dev server instead of the live site)
   fs.writeFileSync(`${SHOTS}/welcome-email-juss.html`, prevHtml);
@@ -1416,13 +1384,15 @@ async function fillEval(p) {
   ok(wm && wm.via === 'gmail' && wm.subject === 'JUSS Marketing - Your Brand Ambassador Journey Begins!' && wm.from === 'rubal@jussmarketing.co.uk' && wm.name === 'Rubal Oshan | JUSS Marketing' &&
     !wm.bcc && !wm.replyTo && /FieldIQ/.test(wm.body) && /juss-playbook\.vercel\.app/.test(wm.body) && /reply GOT IT/.test(wm.body) &&
     /YOUR WEEK 1\nDay 1 · Monday 19th October: Induction Day, 1:30pm – 6:00pm/.test(wm.body) &&
-    /1\. Activate FieldIQ first: find the invitation from FieldIQ \(email or text, check Junk\) and tap its link\. Then download the app \(https:\/\/www\.tfo\.group\/fieldiqdownload\)/.test(wm.body),
+    /1\. Activate FieldIQ first: find the invitation from FieldIQ \(email or text, check Junk \/ Spam\) and tap its link\. Only then download the app \(https:\/\/www\.tfo\.group\/fieldiqdownload\)/.test(wm.body) &&
+    /FieldIQ says "Your account isn't activated yet"\? You haven't tapped that invitation link yet\. Can't find the invitation\? Reply to this email and we'll send it again\./.test(wm.body),
     'sent from rubal@jussmarketing.co.uk as "Rubal Oshan | JUSS Marketing" (replies go to Rubal; no BCC copy back, Angad 22 Oct), even though Angad pressed Send');
   ok((await api(admin, 'getCandidate', { id: adham.id })).onboard_email_by === 'Angad Oshan', 'saved: welcome email sent (who, when)');
   const huHref = await ap.getAttribute('#obwa', 'href'), hu = decodeURIComponent(huHref.split(/\?text=|[?&]body=/)[1] || '');
   ok(/^sms:\+447700900300/.test(huHref) && /^Hi Adham 👋 It's Angad from JUSS Marketing\./.test(hu) && /emailed your starter pack to adham@example\.com/.test(hu) && /JUSS Playbook/.test(hu) &&
     /It's from rubal@jussmarketing\.co\.uk\. Can't see it\? Check Spam or Promotions and tap Not spam/.test(hu) && /reply GOT IT/.test(hu) &&
-    /FieldIQ \(before Day 1\): first tap the link in FieldIQ's invitation email or text \(check Junk\), then download the app and log in with that email: https:\/\/www\.tfo\.group\/fieldiqdownload/.test(hu),
+    /FieldIQ \(before Day 1\): first tap the link in FieldIQ's invitation email or text \(check Junk\), then download the app and log in with that email: https:\/\/www\.tfo\.group\/fieldiqdownload/.test(hu) &&
+    /⚠️ FieldIQ says \*"Your account isn't activated yet"\*\? You haven't tapped that invitation link yet\. Can't find it\? Reply here and we'll send it again\./.test(hu),
     'once sent: a one-tap heads-up (by text: Adham isn\'t on WhatsApp) "just emailed your starter pack… from rubal@… check Spam / Promotions, tap Not spam… reply GOT IT"');
   ok(!/not set up yet/i.test(await ap.innerText('#onb')), 'after a send the card no longer says "not set up yet"');
   await ap.locator('#onb').screenshot({ path: SHOTS + '/36-onboarded.png' });

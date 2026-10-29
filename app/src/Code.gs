@@ -151,7 +151,7 @@ const SHEETS = {
     'campaign',  // HF / FR: where they're placed, set on Day 1. Blank = their company's (JUSS = HF, LINK = FR). Angad's 26 Oct
                  // list: 6 JUSS starters went to FR, so the company alone can't say (27 Oct)
     'day1_left_at', 'day1_left_by',  // arrived on Day 1 but didn't come back after it (still a Day 1 start)
-    'fieldiq_at', 'fieldiq_by',  // FieldIQ activated (they tapped the link in FieldIQ's own invite): ticked by an admin on Day 1
+    'fieldiq_at', 'fieldiq_by',  // unused: a FieldIQ tick on Day 1, built and taken out on 29 Oct (Angad: "no more ticks"); kept so the columns stay put
   ],
   // Presentations booked after a call. status: booked · came (checked in) · no_show (rebooked after missing it) · cancelled.
   // Each message sent (confirmation, reminder, "sorry we missed you"): when, by whom, how.
@@ -1759,7 +1759,7 @@ const STAFF_ACTIONS = {
   adminDecision: adminDecision, setPayExcluded: setPayExcluded, fixEligibility: fixEligibility, reassignBooker: reassignBooker,
   markSent: markSent, payReport: payReport, listUsers: listUsers, saveUser: saveUser, deleteUser: deleteUser,
   alertsCheck: alertsCheck, testAlert: testAlert, sendSetupEmails: sendSetupEmails, adminCode: adminCode,
-  chaseOutcomes: chaseOutcomes, chaseList: chaseList, academyList: academyList, markDay1: markDay1, markConfirmed: markConfirmed, markFieldIQ: markFieldIQ,
+  chaseOutcomes: chaseOutcomes, chaseList: chaseList, academyList: academyList, markDay1: markDay1, markConfirmed: markConfirmed,
   onboardStep: onboardStep, onboardPreview: onboardPreview, onboardSend: onboardSend, setBrand: setBrand,
   saveBooking: saveBooking, bookingAction: bookingAction, bookingList: bookingList,
   setCampaign: setCampaign, fixName: fixName, day1Photo: day1Photo,
@@ -2496,22 +2496,6 @@ function markConfirmed(req, u) {
     return shape(c, u);
   });
 }
-/** FieldIQ activated (Angad, 29 Oct: starters like Arifah Akthar couldn't log in to upload their documents, "Your account isn't
- *  activated yet", because they hadn't tapped the link in FieldIQ's own invitation). An admin ticks it on the Day 1 row once
- *  they have; on: false clears it. The evening before their Day 1, anyone not ticked is named in the 18:00 alert. */
-function markFieldIQ(req, u) {
-  if (!isAdmin(u)) throw new Error('Admin only');
-  return withLock(() => {
-    const c = getC(req.id);
-    if (c.outcome !== 'Academy booked' || !c.academy_date) throw new Error('They aren\'t booked onto the Academy.');
-    const on = req.on !== false && req.on !== 'false';
-    if (on && !c.fieldiq_at) { c.fieldiq_at = nowStr(); c.fieldiq_by = u.name; }
-    if (!on) { c.fieldiq_at = ''; c.fieldiq_by = ''; }
-    writeRow('Candidates', c);
-    log(u, on ? 'fieldiq' : 'fieldiq_cleared', c.id, '');
-    return shape(c, u);
-  });
-}
 /** Day 1 results (Angad, 27 Oct: what the team marks up on the printed list and brings him on Tuesday morning): how many
  *  started of everyone booked, FR / HF, who didn't continue after the day, starts by booker ("Office" for admins and the
  *  office team), and why the rest didn't start. Counted the same way as the Day 1 tab's results card (d1Results there). */
@@ -2556,20 +2540,16 @@ function maybeAcademyBriefing() {
     c.day1_status !== 'dropped');
   if (!rows.length) return;
   const tag = c => c.full_name.split(' ')[0] + (c.academy_confirmed_at ? ' ✅' : ' ⏳');
-  // FieldIQ not confirmed yet (Angad, 29 Oct): chased tonight, not discovered in the room. "Not confirmed", not "not activated":
-  // the app can't see FieldIQ, only whether the team has ticked them
-  const fiq = (l, max) => { const n = l.filter(c => !c.fieldiq_at); return n.length ? '\n📲 FieldIQ not confirmed: ' + firstNames(n, max) + '.' : ''; };
   const by = {};
   rows.forEach(c => { if (c.booker_id) (by[c.booker_id] = by[c.booker_id] || []).push(c); });
   Object.keys(by).forEach(id => {
-    const b = userById(id), list = by[id], not = list.filter(c => !c.academy_confirmed_at), f = fiq(list);
+    const b = userById(id), list = by[id], not = list.filter(c => !c.academy_confirmed_at);
     if (b) notify([b], '🎓 Tomorrow\'s BA Academy: ' + plural(list.length, 'starter') + ' of yours', list.map(tag).join(', ') +
-      (not.length ? '\n⏳ Not confirmed: ' + firstNames(not) + '. Send a reminder now.' : '\nAll confirmed 🔥') +
-      (f ? f + ' Check they\'ve tapped the link in FieldIQ\'s invite.' : ''), 'academy');
+      (not.length ? '\n⏳ Not confirmed: ' + firstNames(not) + '. Send a reminder now.' : '\nAll confirmed 🔥'), 'academy');
   });
   const not = rows.filter(c => !c.academy_confirmed_at);
   notify(usersAll().filter(x => isAdmin(x) && truthy(x.active)), '🎓 Tomorrow: ' + plural(rows.length, 'starter') + ' expected · ' + (rows.length - not.length) + ' confirmed',
-    (not.length ? '⏳ Not confirmed: ' + firstNames(not, 8) : 'Everyone has confirmed 🔥') + fiq(rows, 8), 'academy');
+    not.length ? '⏳ Not confirmed: ' + firstNames(not, 8) : 'Everyone has confirmed 🔥', 'academy');
 }
 
 /** DAY1_REMIND_TIME on an Academy day: Jess (LINK) / Rubal (JUSS) get "N starters to remind today". Tapping it opens the Day 1 tab
@@ -3050,11 +3030,13 @@ function onboardEmail(c, u, pick) {
     // Before Day 1
     head('⚡', 'Before Day 1', 'Two minutes now saves you an hour on Day 1') +
     card('<table role="presentation" width="100%" cellpadding="0" cellspacing="0">' +
-      // FieldIQ won't log anyone in until they've tapped the link in its own invite (Rubal, 23 Oct: "Your account isn't activated yet")
-      step(1, '<b>Activate FieldIQ first:</b> find the invitation from FieldIQ (email or text, check Junk) and tap its link. Then download the app, log in with that same email and complete your vetting form before your first day.') +
+      // FieldIQ won't log anyone in until they've tapped the link in its own invite (Rubal, 23 Oct: "Your account isn't activated yet").
+      // Angad, 29 Oct (Arifah hit it again): the order in bold, and that exact message with its fix, so they sort it themselves
+      step(1, '<b>Activate FieldIQ first:</b> find the invitation <b>from FieldIQ</b> (email or text, check Junk / Spam) and tap its link. <b>Only then</b> download the app, log in with that same email and complete your vetting form before your first day.' +
+        '<br><br>⚠️ <b>FieldIQ says “Your account isn\'t activated yet”?</b> You haven\'t tapped that invitation link yet. Can\'t find the invitation? Reply to this email and we\'ll send it again.') +
       (o.preCoaching ? step(2, 'Complete the short online <b>Pre-Coaching Module</b>: around <b>15–20 minutes</b> of short videos and quick questions. It’s important it’s done before ' + DAYS_LONG[weekday(d1)] + ', so you’re fully prepared for coaching.') : '') +
       step(o.preCoaching ? 3 : 2, 'Read your <b>' + esc(o.playbook[0]) + '</b>, so you walk in on Day 1 already knowing how we work.') +
-      '</table>' + bigBtn('📲 Download FieldIQ', ONBOARD.FIELDIQ_URL) + (o.preCoaching ? bigBtn('📝 Open the Pre-Coaching Module', o.preCoaching[1]) : '') +
+      '</table>' + bigBtn('📲 Download FieldIQ (after its invite)', ONBOARD.FIELDIQ_URL) + (o.preCoaching ? bigBtn('📝 Open the Pre-Coaching Module', o.preCoaching[1]) : '') +
       bigBtn('📘 Open my ' + esc(o.playbook[0]), pbUrl)) +
     // Bring
     head('🎒', 'Bring with you') +
@@ -3079,7 +3061,8 @@ function onboardEmail(c, u, pick) {
     (wUrl ? 'Your Week 1 plan + CONFIRM: ' + wUrl + '\n\n' : '') +
     'YOUR WEEK 1\n' + W.map((r, i) => dayName(i) + ': ' + r[1] + ', ' + r[2] + '. ' + r[3]).join('\n') + '\n' +
     'Address: ' + CONFIG.OFFICE_ADDRESS + ' · ' + o.maps + '\n' +
-    '\nBEFORE DAY 1\n1. Activate FieldIQ first: find the invitation from FieldIQ (email or text, check Junk) and tap its link. Then download the app (' + ONBOARD.FIELDIQ_URL + '), log in with that same email and complete your vetting form before your first day.\n' +
+    '\nBEFORE DAY 1\n1. Activate FieldIQ first: find the invitation from FieldIQ (email or text, check Junk / Spam) and tap its link. Only then download the app (' + ONBOARD.FIELDIQ_URL + '), log in with that same email and complete your vetting form before your first day.\n' +
+    '   FieldIQ says "Your account isn\'t activated yet"? You haven\'t tapped that invitation link yet. Can\'t find the invitation? Reply to this email and we\'ll send it again.\n' +
     (o.preCoaching ? '2. Complete the Pre-Coaching Module (15-20 minutes): ' + o.preCoaching[1] + '\n' : '') +
     (o.preCoaching ? '3' : '2') + '. Read your ' + o.playbook[0] + ': ' + pbUrl + '\n' +
     '\nBRING: notepad and pen, photo ID, your right-to-work share code\n' +
