@@ -1601,22 +1601,27 @@ function brandFollowsPlacement() {
 }
 /** Once (Angad, 29 Oct): until then one tap on LINK / JUSS by the recruitment team saved the company someone joins, for every
  *  message after (Jess sent Aatif's thank-you as LINK; Nathan, his booker, is JUSS, so his page said "Joining LINK"). Everyone
- *  still to come whose company came from a tap goes back to their booker's: not placed, not from a booking, welcome email not
- *  sent, and no Day 1 yet or Day 1 still to come. Past Day 1s read as they happened. */
+ *  still to come whose company came from a tap goes back to the right one: their booking's if they came from Book Appts (Payam
+ *  Safie, Rubal's JUSS booking, still said LINK after the first pass), else their booker's. Not if placed, the welcome email has
+ *  gone, or their Day 1 is past: past Day 1s read as they happened. (v2: the first pass, 29 Oct 15:25, skipped bookings.) */
 function brandTapUndone() {
   const p = PropertiesService.getScriptProperties();
-  if (p.getProperty('BRAND_TAP_UNDONE')) return;
+  if (p.getProperty('BRAND_TAP_UNDONE_2')) return;
   withLock(() => {
-    if (p.getProperty('BRAND_TAP_UNDONE')) return;
-    const today = todayStr();
+    if (p.getProperty('BRAND_TAP_UNDONE_2')) return;
+    const today = todayStr(), bookings = {};
+    readTable('Bookings').forEach(b => { bookings[b.id] = b; });
     let n = 0;
     readTable('Candidates').forEach(c => {
-      if (!c.brand || !c.company || c.brand === c.company || campBrand(c.campaign) || c.booking_id || c.onboard_email_at) return;
+      if (!c.brand || !c.company || campBrand(c.campaign) || c.onboard_email_at) return;
       if (c.academy_date && String(c.academy_date) < today) return;
-      const was = c.brand; c.brand = ''; writeRow('Candidates', c); n++;
-      log({ name: 'App' }, 'brand', c.id, was + ' → ' + c.company + ' (their booker\'s: a tap on ' + was + ' was for that message only)');
+      const bk = c.booking_id ? bookings[c.booking_id] : null, booked = !!bk && (bk.company === 'LINK' || bk.company === 'JUSS');
+      const want = booked ? bk.company : c.company;
+      if (c.brand === want) return;
+      const was = c.brand; c.brand = want === c.company && !booked ? '' : want; writeRow('Candidates', c); n++;
+      log({ name: 'App' }, 'brand', c.id, was + ' → ' + want + ' (their ' + (booked ? 'booking' : 'booker') + '\'s: a tap on ' + was + ' was for that message only)');
     });
-    p.setProperty('BRAND_TAP_UNDONE', nowStr() + ' · ' + n);
+    p.setProperty('BRAND_TAP_UNDONE_2', nowStr() + ' · ' + n);
   });
 }
 /** Once (Angad, 28 Oct): bookers moved company in Team before their candidates followed them (Mamadou Bamba, LINK → JUSS).
