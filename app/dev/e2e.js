@@ -1214,13 +1214,13 @@ async function fillEval(p) {
   await post('/dev/run', { fn: 'keepWarm' });
   ok((await getJson('/dev/pushes')).length === beforeBrief + brief.length, 'the briefing goes once');
   // FieldIQ not activated yet (Angad, 29 Oct: Arifah couldn't log in to upload her documents): named the evening before, so it's chased tonight
-  ok(/\n📲 FieldIQ not activated: Jasraj\. Ask them to tap the link in FieldIQ's invite\.$/.test(bFiza.body.contents.en) && /\n📲 FieldIQ not activated: .*Jasraj/.test(bTeam.body.contents.en),
-    'and anyone not ticked ✅ FieldIQ: Fiza "📲 FieldIQ not activated: Jasraj. Ask them to tap the link in FieldIQ\'s invite.", the admins the same names');
+  ok(/\n📲 FieldIQ not confirmed: Jasraj\. Check they've tapped the link in FieldIQ's invite\.$/.test(bFiza.body.contents.en) && /\n📲 FieldIQ not confirmed: .*Jasraj/.test(bTeam.body.contents.en),
+    'and anyone not ticked ✅ FieldIQ: Fiza "📲 FieldIQ not confirmed: Jasraj. Check they\'ve tapped the link in FieldIQ\'s invite.", the admins the same names');
   await api(admin, 'markFieldIQ', { id: jasId, on: true });
   const fiqB4 = (await getJson('/dev/pushes')).length;
   await post('/dev/eval', { js: "PropertiesService.getScriptProperties().deleteProperty('ACADEMY_BRIEF'); keepWarm(); 'ok'" });
   const brief2 = (await getJson('/dev/pushes')).slice(fiqB4), bFiza2 = brief2.find(p => p.body.include_aliases.external_id.includes(fiza.id)), bTeam2 = brief2.find(p => p.body.include_aliases.external_id.includes(angadId));
-  ok(bFiza2 && !/FieldIQ/.test(bFiza2.body.contents.en) && bTeam2 && !/FieldIQ not activated: .*Jasraj/.test(bTeam2.body.contents.en),
+  ok(bFiza2 && !/FieldIQ/.test(bFiza2.body.contents.en) && bTeam2 && !/FieldIQ not confirmed: .*Jasraj/.test(bTeam2.body.contents.en),
     'ticked ✅ FieldIQ → not named any more (Fiza: "' + (bFiza2 ? bFiza2.body.contents.en.replace(/\n/g, ' | ') : 'none') + '")');
   await api(admin, 'markFieldIQ', { id: jasId, on: false });
   let fiqNo = null; try { await api(nathan, 'markFieldIQ', { id: jasId, on: true }); } catch (e) { fiqNo = e.message; }
@@ -1260,22 +1260,22 @@ async function fillEval(p) {
   const monHint = () => ap.evaluate(() => { const d = [...document.querySelectorAll('.datehead')].find(x => /19 October/i.test(x.textContent)); return d && d.nextElementSibling ? d.nextElementSibling.textContent : ''; });
   const fiqTxt = decodeURIComponent((await ap.getAttribute('.trow[data-cand="' + jasId + '"] a[data-fiqmsg]', 'href')).split(/\?text=|[?&]body=/)[1] || '');
   fs.writeFileSync(`${SHOTS}/msg-fieldiq.txt`, fiqTxt);
-  ok(/📲 FieldIQ not activated/.test(await jRow()) && await ap.$('.trow[data-cand="' + jasId + '"] [data-fiq][data-on="1"]') && /📲 \d+ FieldIQ to activate/.test(await monHint()) &&
+  ok(/📲 FieldIQ not confirmed yet/.test(await jRow()) && /✅ Mark as activated/.test(await ap.textContent('.trow[data-cand="' + jasId + '"] [data-fiq][data-on="1"]')) && /📲 \d+ FieldIQ not confirmed/.test(await monHint()) &&
     /^Hi Jasraj 👋 Before your Day 1 on \*Monday 19th October\*, please activate \*FieldIQ\*/.test(fiqTxt) && /Junk \/ Spam/.test(fiqTxt) && fiqTxt.includes('https://www.tfo.group/fieldiqdownload') &&
     /Your account isn't activated yet/.test(fiqTxt) && /– Angad, LINK Marketing$/.test(fiqTxt),
-    'Jasraj\'s row: "📲 FieldIQ not activated", "✅ FieldIQ activated" to tick, "📲 FieldIQ nudge" (find FieldIQ\'s invite, check Junk, tap its link, then log in), the day says how many to activate');
-  const nFiq = +(await monHint()).match(/📲 (\d+) FieldIQ to activate/)[1];
+    'Jasraj\'s row: "📲 FieldIQ not confirmed yet" (the app can\'t see FieldIQ), "✅ Mark as activated" to tick, "📲 FieldIQ nudge" (find FieldIQ\'s invite, check Junk, tap its link, then log in), the day says how many aren\'t confirmed');
+  const nFiq = +(await monHint()).match(/📲 (\d+) FieldIQ not confirmed/)[1];
   await ap.click('.trow[data-cand="' + jasId + '"] [data-fiq][data-on="1"]');
   await ap.waitForSelector('.trow[data-cand="' + jasId + '"] .fiqon');
   let jF = null; for (let i = 0; i < 25 && !(jF && jF.fieldiq_at); i++) { jF = await api(admin, 'getCandidate', { id: jasId }); if (!jF.fieldiq_at) await new Promise(r => setTimeout(r, 200)); }
-  ok(jF.fieldiq_by === 'Angad Oshan' && /✅ FieldIQ/.test(await jRow()) && !/not activated/.test(await jRow()) && !(await ap.$('.trow[data-cand="' + jasId + '"] a[data-fiqmsg]')) &&
-    (nFiq === 1 ? !/FieldIQ to activate/.test(await monHint()) : new RegExp('📲 ' + (nFiq - 1) + ' FieldIQ to activate').test(await monHint())) && await ap.textContent('#abTitle') === 'Day 1',
-    'one tap → "✅ FieldIQ", saved (by Angad), no nudge, one fewer to activate, still on the Day 1 tab');
+  ok(jF.fieldiq_by === 'Angad Oshan' && /✅ FieldIQ/.test(await jRow()) && !/FieldIQ not confirmed/.test(await jRow()) && !(await ap.$('.trow[data-cand="' + jasId + '"] a[data-fiqmsg]')) &&
+    (nFiq === 1 ? !/FieldIQ not confirmed/.test(await monHint()) : new RegExp('📲 ' + (nFiq - 1) + ' FieldIQ not confirmed').test(await monHint())) && await ap.textContent('#abTitle') === 'Day 1',
+    'one tap → "✅ FieldIQ", saved (by Angad), no nudge, one fewer not confirmed, still on the Day 1 tab');
   await ap.locator('.trow[data-cand="' + jasId + '"]').screenshot({ path: SHOTS + '/39-fieldiq-row.png' });
   await ap.click('.trow[data-cand="' + jasId + '"] .fiqon');
   await ap.waitForSelector('.trow[data-cand="' + jasId + '"] [data-fiq][data-on="1"]');
   for (let i = 0; i < 25 && jF.fieldiq_at; i++) { jF = await api(admin, 'getCandidate', { id: jasId }); if (jF.fieldiq_at) await new Promise(r => setTimeout(r, 200)); }
-  ok(!jF.fieldiq_at && /📲 FieldIQ not activated/.test(await jRow()), 'tap the green ✅ FieldIQ to undo it');
+  ok(!jF.fieldiq_at && /📲 FieldIQ not confirmed yet/.test(await jRow()), 'tap the green ✅ FieldIQ to undo it');
   const jasD1Row = await ap.innerText('.trow[data-cand="' + jasId + '"]');
   ok(/Confirmed/.test(jasD1Row) && !/Day 1 text not sent/.test(jasD1Row), 'someone who has confirmed never shows "Day 1 text not sent" (they had the details, however they were sent)');
   const remind = decodeURIComponent((await ap.$eval('.trow[data-cand="' + jasId + '"] a.btn', a => a.href)).split('?text=')[1]);

@@ -3045,12 +3045,13 @@ function drawAcademy(r, quiet) {
       '<div class="sub">' + (c.booker_name ? 'booked by ' + h(c.booker_name) : 'no booker') + (closedBy(c) ? ' · closed by ' + h(closedBy(c)) : '') + '</div>' +
       '<div class="pills"><span class="pill">' + cp + '</span><span class="pill red">🚫 Dropped out</span>' + (c.day1_by ? '<span class="pill">' + h(String(c.day1_by).split(' ')[0]) + ' · ' + h(fmtTs(c.day1_at)) + '</span>' : '') + '</div></div>' +
       '<div class="d1btns"><button class="btn ghost sm" data-d1="dropped" data-id="' + h(c.id) + '">↩️ Undo</button></div></div>';
-    // FieldIQ activated? (Angad, 29 Oct) Ticked by an admin once they've tapped the link in FieldIQ's invite; the 18:00 alert the
-    // evening before names anyone not ticked. Same shape as Confirmed: the status, and one button to move it.
+    // FieldIQ activated? (Angad, 29 Oct) The app can't see FieldIQ, so it says only what the team has confirmed: "not confirmed
+    // yet" until an admin ticks it (Angad, 29 Oct: "how accurate is this?"). Same shape as Confirmed: the status, and one button
+    // that reads as an action ("Mark as activated"), never as a second status. The 18:00 alert the evening before names the rest.
     // Shown until their Day 1, and on the day for anyone who arrived (they can do it in the office); ticked ones stay green after
     const fiqDue = !left && (c.fieldiq_at ? !started || c.day1_status === 'arrived' : !started || (c.day1_status === 'arrived' && c.academy_date === today));
     const fiqPill = !fiqDue ? '' : c.fieldiq_at ? (admin ? '<button type="button" class="pill green fiqon" data-fiq="' + h(c.id) + '" data-on="0" title="Tap to undo">✅ FieldIQ</button>' : '<span class="pill green">✅ FieldIQ</span>')
-      : '<span class="pill amber">📲 FieldIQ not activated</span>' + (admin ? '<button type="button" class="btn ghost sm markyes" data-fiq="' + h(c.id) + '" data-on="1">✅ FieldIQ activated</button>' : '');
+      : '<span class="pill amber">📲 FieldIQ not confirmed yet</span>' + (admin ? '<button type="button" class="btn ghost sm markyes" data-fiq="' + h(c.id) + '" data-on="1">✅ Mark as activated</button>' : '');
     const fiqMsg = fiqDue && !started && !c.fieldiq_at && (admin || c.booker_id === S.me.user.id)
       ? '<a class="btn ' + (c.no_whatsapp ? 'sms' : 'wa') + ' sm" data-fiqmsg="' + h(c.id) + '" target="_blank" rel="noopener" href="' + h(msgUrl(c, msgFieldIQ(c))) + '">📲 FieldIQ nudge</a>' : '';
     // Two statuses only (⏳ / ✅) and one button to move them, so the button can't be read as a third status (Angad, 23 Oct)
@@ -3092,7 +3093,7 @@ function drawAcademy(r, quiet) {
     const arr = l.filter(c => c.day1_status === 'arrived').length, ns = l.filter(c => c.day1_status === 'no_show').length;
     const toRemind = l.filter(c => !c.day1_status), rem = toRemind.filter(remindedToday).length, noFiq = x >= today ? l.filter(c => !c.fieldiq_at).length : 0;
     const counts = (S.d1Camp ? S.d1Camp + ' only · ' : '') + l.length + ' expected · ' + conf + ' confirmed' + (l.length - conf ? ' · ' + (l.length - conf) + ' not' : '') + (drop ? ' · ' + drop + ' dropped out' : '') +
-      (noFiq ? ' · 📲 ' + noFiq + ' FieldIQ to activate' : '') +
+      (noFiq ? ' · 📲 ' + noFiq + ' FieldIQ not confirmed' : '') +
       (x <= today ? ' · ' + arr + ' arrived' + (ns ? ' · ' + ns + ' no-show' : '') + (x < today && toRemind.length ? ' · ' + toRemind.length + ' not ticked' : '') : '');
     const tools = admin && x >= today && toRemind.length ? '<div class="bullbtns d1tools"><button class="btn ' + (rem < toRemind.length ? 'wa' : 'ghost') + '" data-remall="' + x + '">📲 Send reminders · ' + rem + '/' + toRemind.length + '</button></div>' : '';
     // The day's results once it's happened (all of that day's starters, whatever the campaign filter): what Angad used to get on paper
@@ -3195,7 +3196,7 @@ function drawAcademy(r, quiet) {
       const c = pool.filter(x => x.id === b.dataset.fiq)[0]; if (!c) return;
       const on = b.dataset.on === '1', was = [c.fieldiq_at, c.fieldiq_by];
       c.fieldiq_at = on ? londonNow() : ''; c.fieldiq_by = on ? S.me.user.name : ''; drawAcademy(r, true);
-      toast(on ? '✅ ' + c.first_name + ': FieldIQ activated' : '↩️ ' + c.first_name + ': FieldIQ not activated');
+      toast(on ? '✅ ' + c.first_name + ': FieldIQ activated' : '↩️ ' + c.first_name + ': FieldIQ not confirmed yet');
       call('markFieldIQ', { id: c.id, on: on }).then(nc => { Object.assign(c, nc); upsert(nc); })
         .catch(x => { c.fieldiq_at = was[0]; c.fieldiq_by = was[1]; drawAcademy(r, true); toast(x.message); });
     };

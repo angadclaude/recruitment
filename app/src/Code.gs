@@ -2556,15 +2556,16 @@ function maybeAcademyBriefing() {
     c.day1_status !== 'dropped');
   if (!rows.length) return;
   const tag = c => c.full_name.split(' ')[0] + (c.academy_confirmed_at ? ' ✅' : ' ⏳');
-  // FieldIQ not activated yet (Angad, 29 Oct): chased tonight, not discovered in the room
-  const fiq = (l, max) => { const n = l.filter(c => !c.fieldiq_at); return n.length ? '\n📲 FieldIQ not activated: ' + firstNames(n, max) + '.' : ''; };
+  // FieldIQ not confirmed yet (Angad, 29 Oct): chased tonight, not discovered in the room. "Not confirmed", not "not activated":
+  // the app can't see FieldIQ, only whether the team has ticked them
+  const fiq = (l, max) => { const n = l.filter(c => !c.fieldiq_at); return n.length ? '\n📲 FieldIQ not confirmed: ' + firstNames(n, max) + '.' : ''; };
   const by = {};
   rows.forEach(c => { if (c.booker_id) (by[c.booker_id] = by[c.booker_id] || []).push(c); });
   Object.keys(by).forEach(id => {
     const b = userById(id), list = by[id], not = list.filter(c => !c.academy_confirmed_at), f = fiq(list);
     if (b) notify([b], '🎓 Tomorrow\'s BA Academy: ' + plural(list.length, 'starter') + ' of yours', list.map(tag).join(', ') +
       (not.length ? '\n⏳ Not confirmed: ' + firstNames(not) + '. Send a reminder now.' : '\nAll confirmed 🔥') +
-      (f ? f + ' Ask them to tap the link in FieldIQ\'s invite.' : ''), 'academy');
+      (f ? f + ' Check they\'ve tapped the link in FieldIQ\'s invite.' : ''), 'academy');
   });
   const not = rows.filter(c => !c.academy_confirmed_at);
   notify(usersAll().filter(x => isAdmin(x) && truthy(x.active)), '🎓 Tomorrow: ' + plural(rows.length, 'starter') + ' expected · ' + (rows.length - not.length) + ' confirmed',
