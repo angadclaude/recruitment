@@ -3045,20 +3045,12 @@ function drawAcademy(r, quiet) {
       '<div class="sub">' + (c.booker_name ? 'booked by ' + h(c.booker_name) : 'no booker') + (closedBy(c) ? ' · closed by ' + h(closedBy(c)) : '') + '</div>' +
       '<div class="pills"><span class="pill">' + cp + '</span><span class="pill red">🚫 Dropped out</span>' + (c.day1_by ? '<span class="pill">' + h(String(c.day1_by).split(' ')[0]) + ' · ' + h(fmtTs(c.day1_at)) + '</span>' : '') + '</div></div>' +
       '<div class="d1btns"><button class="btn ghost sm" data-d1="dropped" data-id="' + h(c.id) + '">↩️ Undo</button></div></div>';
-    // FieldIQ activated? (Angad, 29 Oct) Ticked by an admin once they've tapped the link in FieldIQ's invite; the 18:00 alert the
-    // evening before names anyone not ticked. Same shape as Confirmed: the status, and one button to move it.
-    // Shown until their Day 1, and on the day for anyone who arrived (they can do it in the office); ticked ones stay green after
-    const fiqDue = !left && (c.fieldiq_at ? !started || c.day1_status === 'arrived' : !started || (c.day1_status === 'arrived' && c.academy_date === today));
-    const fiqPill = !fiqDue ? '' : c.fieldiq_at ? (admin ? '<button type="button" class="pill green fiqon" data-fiq="' + h(c.id) + '" data-on="0" title="Tap to undo">✅ FieldIQ</button>' : '<span class="pill green">✅ FieldIQ</span>')
-      : '<span class="pill amber">📲 FieldIQ not activated</span>' + (admin ? '<button type="button" class="btn ghost sm markyes" data-fiq="' + h(c.id) + '" data-on="1">✅ FieldIQ activated</button>' : '');
-    const fiqMsg = fiqDue && !started && !c.fieldiq_at && (admin || c.booker_id === S.me.user.id)
-      ? '<a class="btn ' + (c.no_whatsapp ? 'sms' : 'wa') + ' sm" data-fiqmsg="' + h(c.id) + '" target="_blank" rel="noopener" href="' + h(msgUrl(c, msgFieldIQ(c))) + '">📲 FieldIQ nudge</a>' : '';
     // Two statuses only (⏳ / ✅) and one button to move them, so the button can't be read as a third status (Angad, 23 Oct)
     const pills = camp + (c.academy_confirmed_at ? '<span class="pill green">✅ Confirmed</span>' : '<span class="pill amber">⏳ Not confirmed yet</span>' +
         (c.day1_status ? '' : '<button type="button" class="btn ghost sm markyes" data-yes="' + h(c.id) + '">✅ Mark as confirmed</button>')) +
       // Not for someone who has confirmed: they had the details, however they were sent (20 Oct: Jasraj confirmed, still "not sent")
       (c.offer_sent_at || c.academy_confirmed_at || started ? '' : '<span class="pill red">Day 1 text not sent</span>') +
-      (remindedToday(c) && !c.day1_status ? '<span class="pill blue">📲 Reminded ' + h(String(c.day1_reminded_at).slice(11, 16)) + '</span>' : '') + fiqPill +
+      (remindedToday(c) && !c.day1_status ? '<span class="pill blue">📲 Reminded ' + h(String(c.day1_reminded_at).slice(11, 16)) + '</span>' : '') +
       (left ? '<span class="pill red">🚪 Didn\'t continue</span>' : c.day1_status === 'arrived' ? '<span class="pill green">🎓 Arrived</span>' : c.day1_status === 'no_show' ? '<span class="pill red">❌ No-show</span>' : '') +
       (!admin || started ? '' : c.onboard_email_at ? '<span class="pill green">🚀 Onboarded</span>' : '<span class="pill amber">🚀 Welcome email to send</span>');
     // Moved here from Chase (19 Oct): the Day 1 details still to send come first (the reminder only makes sense after them),
@@ -3080,7 +3072,7 @@ function drawAcademy(r, quiet) {
     const act = started
       ? '<div class="d1btns"><button class="btn sm ' + (c.day1_status === 'arrived' ? 'green' : 'ghost') + '" data-d1="arrived" data-id="' + h(c.id) + '">Arrived</button>' +
         '<button class="btn sm ' + (c.day1_status === 'no_show' ? 'red' : 'ghost') + '" data-d1="no_show" data-id="' + h(c.id) + '">No-show</button>' + camBtn + mvBtn + dropBtn + leftBtn + '</div>'
-      : '<div class="d1btns">' + (offer ? '' : '<a class="btn ' + (c.no_whatsapp ? 'sms' : 'wa') + ' sm" data-rem1="' + h(c.id) + '" data-via="' + (c.no_whatsapp ? 'sms' : 'whatsapp') + '" target="_blank" rel="noopener" href="' + h(msgUrl(c, msgDay1Reminder(c))) + '">💬 Remind</a>') + fiqMsg + mvBtn + dropBtn + '</div>';
+      : '<div class="d1btns">' + (offer ? '' : '<a class="btn ' + (c.no_whatsapp ? 'sms' : 'wa') + ' sm" data-rem1="' + h(c.id) + '" data-via="' + (c.no_whatsapp ? 'sms' : 'whatsapp') + '" target="_blank" rel="noopener" href="' + h(msgUrl(c, msgDay1Reminder(c))) + '">💬 Remind</a>') + mvBtn + dropBtn + '</div>';
     return '<div class="trow' + (q ? ' d1q' : '') + (left ? ' left' : c.day1_status === 'arrived' ? ' arrived' : '') + ' camp' + cp + '" data-cand="' + h(c.id) + '"' + dq + '>' + pic + '<div class="main"><div class="name">' + h(c.full_name) + ' <span class="co ' + h(c.company) + '">' + h(c.company) + '</span></div>' +
       '<div class="sub">' + (c.booker_name ? 'booked by ' + h(c.booker_name) : 'no booker') + (closedBy(c) ? ' · closed by ' + h(closedBy(c)) : '') + '</div>' +
       (c.offer_sent_at ? '<div class="sub d1by">🎉 Day 1 details ' + offerBy(c) + '</div>' : '') + '<div class="pills">' + pills + '</div></div>' + act + q + '</div>';
@@ -3090,9 +3082,8 @@ function drawAcademy(r, quiet) {
     if (!all.length) return '';  // nobody on that campaign that day
     const conf = l.filter(c => c.academy_confirmed_at).length;
     const arr = l.filter(c => c.day1_status === 'arrived').length, ns = l.filter(c => c.day1_status === 'no_show').length;
-    const toRemind = l.filter(c => !c.day1_status), rem = toRemind.filter(remindedToday).length, noFiq = x >= today ? l.filter(c => !c.fieldiq_at).length : 0;
+    const toRemind = l.filter(c => !c.day1_status), rem = toRemind.filter(remindedToday).length;
     const counts = (S.d1Camp ? S.d1Camp + ' only · ' : '') + l.length + ' expected · ' + conf + ' confirmed' + (l.length - conf ? ' · ' + (l.length - conf) + ' not' : '') + (drop ? ' · ' + drop + ' dropped out' : '') +
-      (noFiq ? ' · 📲 ' + noFiq + ' FieldIQ to activate' : '') +
       (x <= today ? ' · ' + arr + ' arrived' + (ns ? ' · ' + ns + ' no-show' : '') + (x < today && toRemind.length ? ' · ' + toRemind.length + ' not ticked' : '') : '');
     const tools = admin && x >= today && toRemind.length ? '<div class="bullbtns d1tools"><button class="btn ' + (rem < toRemind.length ? 'wa' : 'ghost') + '" data-remall="' + x + '">📲 Send reminders · ' + rem + '/' + toRemind.length + '</button></div>' : '';
     // The day's results once it's happened (all of that day's starters, whatever the campaign filter): what Angad used to get on paper
@@ -3186,18 +3177,6 @@ function drawAcademy(r, quiet) {
       e.stopPropagation();
       const c = pool.filter(x => x.id === b.dataset.yes)[0]; if (!c) return;
       saidYes(c, b).then(() => drawAcademy(r, true));
-    };
-  });
-  // ✅ FieldIQ activated (tap the green one to undo): on screen at once, saved in the background
-  page.querySelectorAll('[data-fiq]').forEach(b => {
-    b.onclick = e => {
-      e.stopPropagation();
-      const c = pool.filter(x => x.id === b.dataset.fiq)[0]; if (!c) return;
-      const on = b.dataset.on === '1', was = [c.fieldiq_at, c.fieldiq_by];
-      c.fieldiq_at = on ? londonNow() : ''; c.fieldiq_by = on ? S.me.user.name : ''; drawAcademy(r, true);
-      toast(on ? '✅ ' + c.first_name + ': FieldIQ activated' : '↩️ ' + c.first_name + ': FieldIQ not activated');
-      call('markFieldIQ', { id: c.id, on: on }).then(nc => { Object.assign(c, nc); upsert(nc); })
-        .catch(x => { c.fieldiq_at = was[0]; c.fieldiq_by = was[1]; drawAcademy(r, true); toast(x.message); });
     };
   });
   page.querySelectorAll('[data-d1]').forEach(b => {
@@ -3663,23 +3642,15 @@ function showupCard(s) {
 /** The server's rule: booked by a booker → Personal; booked by the office (Jess, Rubal) or nobody → Office. */
 function recruitSource(c) { return c.recruit_source || 'Office Recruitment'; }
 const FIELDIQ_URL = 'https://www.tfo.group/fieldiqdownload';  // same as ONBOARD.FIELDIQ_URL in Code.gs
-/** FieldIQ won't let anyone in until they've tapped the link in its own invite (Angad, 29 Oct: Arifah couldn't upload her
- *  documents, "Your account isn't activated yet"). "📲 FieldIQ nudge" on the Day 1 row, for anyone not ticked ✅ FieldIQ yet. */
-function msgFieldIQ(c) {
-  return 'Hi ' + c.first_name + ' 👋 Before your Day 1' + (c.academy_date ? ' on *' + fmtOrd(c.academy_date) + '*' : '') + ', please activate *FieldIQ*: it\'s where you upload your documents 📲\n\n' +
-    '1️⃣ Find the invitation from *FieldIQ* in your email (check *Junk / Spam*) or your texts, and tap its link\n' +
-    '2️⃣ Then download the app and log in with that same email: ' + FIELDIQ_URL + '\n\n' +
-    'If it says *"Your account isn\'t activated yet"*, you haven\'t tapped the invitation link yet 👆\n' +
-    'Can\'t find it? Reply here and we\'ll send it again ✅\n\n' +
-    '– ' + S.me.user.name.split(' ')[0] + ', ' + brandOf(c);
-}
 /** After the email: a WhatsApp nudge so they find it (spam / Promotions) and reply GOT IT. The FieldIQ link is in it too: the one
  *  thing they must do before Day 1 never depends on the email getting through (Angad, 20 Oct: "it lands in the spam"). */
 function msgWelcomeHeadsUp(c, fr) {
   const co = brandCo(c);
   return 'Hi ' + c.first_name + ' 👋 It\'s ' + S.me.user.name.split(' ')[0] + ' from ' + brandOf(c) + '.\n\n' +
     'I\'ve just emailed your starter pack to ' + c.email + ' 📧\n' +
-    '📲 FieldIQ (before Day 1): first tap the link in FieldIQ\'s invitation email or text (check Junk), then download the app and log in with that email: ' + FIELDIQ_URL + '\n' + (co === 'LINK' ? '📝 Your Pre-Coaching Module\n' : '') +
+    '📲 FieldIQ (before Day 1): first tap the link in FieldIQ\'s invitation email or text (check Junk), then download the app and log in with that email: ' + FIELDIQ_URL + '\n' +
+    // The one FieldIQ error starters hit (Angad, 29 Oct: Arifah): what it means and the fix, so they sort it themselves
+    '⚠️ FieldIQ says *"Your account isn\'t activated yet"*? You haven\'t tapped that invitation link yet. Can\'t find it? Reply here and we\'ll send it again.\n' + (co === 'LINK' ? '📝 Your Pre-Coaching Module\n' : '') +
     '📘 Your ' + (co === 'JUSS' ? 'JUSS' : 'Link Org') + ' Playbook\n🗓️ Your Week 1 plan\n\n' +
     'It\'s from ' + (fr ? fr.email : 'us') + '. Can\'t see it? Check *Spam* or *Promotions* and tap *Not spam*, so nothing else goes missing.\n\n' +
     'Please reply *GOT IT* once you have it ✅';
