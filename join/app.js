@@ -1,4 +1,4 @@
-window.APP_VERSION = 'aa7d75f6';
+window.APP_VERSION = '7f498da7';
 
 (function () {
 'use strict';
@@ -3277,9 +3277,11 @@ function bookCo(b) { return b.company === 'LINK' ? 'LINK' : 'JUSS'; }
 /** Booked in Hyrre (Megan, or by hand there): approved there, Hyrre sends their confirmation; ours is only the reminder (30 Oct). */
 function bookHy(b) { return !!b.hyrre_id; }
 /** Hyrre's who didn't come get Hyrre's rebook link once they're marked absent there: by the pull after the presentation (30 Oct). */
+/** Megan's no-shows get our "sorry we missed you" and a rebook here too (Angad, 30 Oct); what happens in Hyrre. */
 function bookHyAbsent() {
   const at = bookCfg().hyrreMarks;
-  return at ? '🤖 The ' + h(at) + ' pull marks them absent in Hyrre, and Hyrre sends the rebook link.' : 'Mark them absent in Hyrre (Shift + click their appointment): Hyrre sends the rebook link.';
+  return at ? '🤖 The ' + h(at) + ' pull marks them absent in Hyrre. Rebook them here first and Hyrre won\'t send its own rebook link.'
+    : '🤖 Mark them absent in Hyrre too (Shift + click their appointment).';
 }
 /** Reminded the evening before or on the day (so the morning list doesn't send them a second one). */
 function bookReminded(b) { return !!b.remind_at && String(b.remind_at).slice(0, 10) >= addDays(b.slot_date, -1); }
@@ -3306,9 +3308,9 @@ function bookPage(b) {
 /** "Kind regards, *Jess Grace*, In association with *JUSS Marketing Ltd*": whoever sends it (it's their WhatsApp they reply to).
  *  Hyrre's: whoever booked them, "Megan" for hers (Angad, 30 Oct: "she's the one booking"). */
 function bookSigner(b) {
-  if (!bookHy(b)) return S.me.user.name;
   const n = String(b.booked_by || ''), megan = bookCfg().hyrreBy || 'Megan Hyrre';
-  return n === megan ? megan.split(' ')[0] : n || S.me.user.name;
+  if (n === megan) return megan.split(' ')[0];  // Megan's, from Hyrre or rebooked here: the same Megan they've heard from
+  return bookHy(b) && n ? n : S.me.user.name;
 }
 function bookSign(b) { return 'Kind regards,\n*' + bookSigner(b) + '*\nIn association with *' + bookCo(b) + ' Marketing Ltd*'; }
 /** "Signed by you" / "Signed Megan", for the send screens. */
@@ -3492,8 +3494,8 @@ function bookPills(b, yes) {
 }
 function bookRow(b) {
   const missed = bookMissed(b);
-  const act = missed && b.status === 'booked' ? (bookHy(b) ? '<p class="hint bkhyact">' + bookHyAbsent() + '</p>'
-    : '<div class="bkbtns">' + bookSend(b, 'missed', 'Sorry we missed you') + '<button class="btn ghost sm" data-bkre="' + h(b.id) + '">📅 Rebook</button></div>') : '';
+  const act = missed && b.status === 'booked' ? '<div class="bkbtns">' + bookSend(b, 'missed', 'Sorry we missed you') + '<button class="btn ghost sm" data-bkre="' + h(b.id) + '">📅 Rebook</button></div>' +
+    (bookHy(b) ? '<p class="hint bkhyact">' + bookHyAbsent() + '</p>' : '') : '';
   return '<div class="trow bkrow' + (b.status === 'came' ? ' arrived' : '') + '"><span class="av co-' + bookCo(b) + '">' + h(initials(bookName(b))) + '</span>' +
     '<div class="main" data-bk="' + h(b.id) + '"><div class="name">' + h(bookName(b)) + ' <span class="co ' + bookCo(b) + '">' + bookCo(b) + '</span></div>' +
     '<div class="sub">booked by ' + h(bookBy(b)) + ' · ' + h(b.source) + (bookHy(b) ? ' · 🤖 Hyrre' : '') + '</div><div class="pills">' + bookPills(b, true) + '</div>' + act + '</div></div>';
@@ -3544,7 +3546,7 @@ function bookSheetOpen(label, html) {
 function bookForm(pre, mode) {
   const cfg = bookCfg(), today = S.me.today, now = londonNow().slice(11, 16), days = [];
   for (let d = today; days.length < 5; d = addDays(d, 1)) { const w = D(d).getUTCDay(); if (w > 0 && w < 6 && (d > today || now < cfg.time)) days.push(d); }
-  const sel = mode === 'edit' ? pre.slot_date : '', later = !!sel && days.indexOf(sel) < 0;
+  const sel = mode === 'edit' ? pre.slot_date : '', later = !!sel && days.indexOf(sel) < 0, hyRe = mode === 'rebook' && bookHy(pre);
   const dayChip = d => '<button type="button" class="chip' + (d === sel ? ' on' : '') + '" data-day="' + d + '">' + DAYS[D(d).getUTCDay()] + ' ' + D(d).getUTCDate() + ' ' + MONTHS[D(d).getUTCMonth()] + '</button>';
   const back = bookSheetOpen('Book a presentation',
     '<div class="sheet-h"><div><div class="label muted">' + (mode === 'edit' ? 'Change the day · ' + h(bookName(pre)) : mode === 'rebook' ? 'Rebook · they didn\'t come' : 'After the call') + '</div><div class="display">📅 Book a presentation</div></div></div>' +
@@ -3554,9 +3556,11 @@ function bookForm(pre, mode) {
     '<label class="q">Which day? <span class="muted">All at ' + h(fmt12(cfg.time)) + '</span></label><div class="chips" id="bkdays">' + days.map(dayChip).join('') +
       '<button type="button" class="chip' + (later ? ' on' : '') + '" id="bklater">Later date…</button></div>' +
     '<input type="date" id="bkdate" min="' + today + '" value="' + h(later ? sel : '') + '"' + (later ? '' : ' hidden') + ' style="margin-top:8px">' +
-    '<label class="q">Where did they apply?</label>' + chips('bksrc', cfg.sources, pre.source || cfg.sources[0]) +
+    (hyRe ? '' : '<label class="q">Where did they apply?</label>' + chips('bksrc', cfg.sources, pre.source || cfg.sources[0])) +
     '<label class="q" for="bknotes">Notes for the presenter <span class="muted">(optional)</span></label><textarea id="bknotes" class="short" maxlength="300" placeholder="e.g. driving in, has done sales before">' + h(pre.notes || '') + '</textarea>' +
-    '<div class="help" style="margin-top:8px">Booked for <b>' + h(cfg.co) + ' Marketing</b>, signed by you (' + h(S.me.user.name) + ').</div>' +
+    '<div class="help" style="margin-top:8px">' + (hyRe ? '🤖 Still ' + h(pre.booked_by === cfg.hyrreBy ? 'Megan' : String(pre.booked_by).split(' ')[0]) + '\'s (from Hyrre · ' + h(pre.source) + '), booked for <b>' + h(cfg.co) + ' Marketing</b>, signed ' +
+      h(bookSigner(Object.assign({}, pre, { hyrre_id: '' }))) + '. Ours from now on: confirm, remind and change it here.'
+      : 'Booked for <b>' + h(cfg.co) + ' Marketing</b>, signed by you (' + h(S.me.user.name) + ').') + '</div>' +
     '<div id="bkerr"></div><button class="btn block" id="bksave" style="margin-top:12px">' + (mode === 'edit' ? 'Save the new day →' : 'Next: send the confirmation →') + '</button>' +
     '<button class="btn ghost block" id="bkdone" style="margin-top:8px">Cancel</button>');
   const box = back.querySelector('.sheet'), di = box.querySelector('#bkdate');
@@ -3570,7 +3574,7 @@ function bookForm(pre, mode) {
   box.querySelector('#bksave').onclick = () => {
     const err = box.querySelector('#bkerr'), val = id => box.querySelector(id).value;
     const f = { id: mode === 'edit' ? pre.id : '', rebook_of: mode === 'rebook' ? pre.id : '', first_name: val('#bkfn'), last_name: val('#bksn'), mobile: val('#bkmob'),
-      slot_date: day, source: chipVal(box, 'bksrc'), notes: val('#bknotes') };
+      slot_date: day, source: hyRe ? pre.source : chipVal(box, 'bksrc'), notes: val('#bknotes') };
     if (!f.first_name.trim()) return showErr(err, 'Add their first name.');
     if (!ukMobile(f.mobile)) return showErr(err, 'Add a valid UK mobile (07…).');
     if (!f.slot_date) return showErr(err, 'Pick the day of their presentation.');
@@ -3607,7 +3611,7 @@ function bookRemindSheet(date) {
   // Hyrre's too (Angad, 30 Oct), signed by whoever booked them: Megan for hers
   const items = bookings().filter(b => b.slot_date === date && b.status === 'booked').sort((a, b) => bookName(a).localeCompare(bookName(b)));
   if (!items.length) return toast('Nobody to remind for ' + fmtLong(date));
-  const n = bookDaysTo(date), reminded = bookReminded, hy = items.some(bookHy);
+  const n = bookDaysTo(date), reminded = bookReminded, hy = items.some(b => bookHy(b) || bookSigner(b) !== S.me.user.name);  // Megan's rebooked here too
   const sent = b => '<span class="pill green">✓ Sent ' + h(String(b.remind_at).slice(11, 16)) + (b.remind_by && b.remind_by !== S.me.user.name ? ' · ' + h(String(b.remind_by).split(' ')[0]) : '') + '</span>';
   const prog = () => items.filter(reminded).length + ' of ' + items.length + ' sent';
   const back = bookSheetOpen('Presentation reminders',
@@ -3639,14 +3643,14 @@ function bookSheet(id) {
       sentLine('confirm') + sentLine('remind') + sentLine('missed') +
       (b.confirmed_at ? '<div>✅ ' + (b.confirmed_by === 'CONFIRM' ? 'Tapped CONFIRM · ' + h(fmtTs(b.confirmed_at)) : 'Replied YES · ' + h(fmtTs(b.confirmed_at)) + (b.confirmed_by ? ' · ' + h(String(b.confirmed_by).split(' ')[0]) : '')) + '</div>' : '') +
       (hy ? '<div>🤖 From Hyrre, approved there' + (b.hyrre_at ? ' · seen ' + h(fmtTs(b.hyrre_at)) : '') + '. Hyrre sends their confirmation and texts; our 📲 reminder is ' + h(bookSignedBy(b)) + '. ' +
-        'To change the day or cancel, do it in Hyrre: the next pull brings it here.' + (missed && b.status === 'booked' ? ' Didn\'t come? ' + bookHyAbsent() : '') + '</div>' : '') + '</div>' +
+        (missed && b.status === 'booked' ? ' Didn\'t come? Send "sorry we missed you" and rebook them here. ' + bookHyAbsent() : 'To change the day or cancel, do it in Hyrre: the next pull brings it here.') + '</div>' : '') + '</div>' +
     (hyOpen ? '<button class="btn wa block" id="bkr">📲 Send a reminder · ' + h(bookSignedBy(b)) + '</button>' +
       (b.confirmed_at ? '' : '<button class="btn ghost block" id="bky" style="margin-top:8px">✅ Mark as confirmed (they said yes)</button>') : '') +
     (open ? '<button class="btn wa block" id="bkc">💬 ' + (b.confirm_at ? 'Send the confirmation again' : 'Send the confirmation') + ' · WhatsApp or 📱 Text</button>' +
       '<button class="btn ghost block" id="bkr" style="margin-top:8px">📲 Send a reminder</button>' +
       (b.confirmed_at ? '' : '<button class="btn ghost block" id="bky" style="margin-top:8px">✅ Mark as confirmed (they said yes)</button>') +
       '<button class="btn ghost block" id="bke" style="margin-top:8px">📅 Change the day</button>' : '') +
-    (missed && b.status === 'booked' && !hy ? '<button class="btn wa block" id="bkm">💬 Sorry we missed you</button><button class="btn ghost block" id="bkre" style="margin-top:8px">📅 Rebook</button>' : '') +
+    (missed && b.status === 'booked' ? '<button class="btn wa block" id="bkm">💬 Sorry we missed you' + (hy ? ' · ' + h(bookSignedBy(b)) : '') + '</button><button class="btn ghost block" id="bkre" style="margin-top:8px">📅 Rebook</button>' : '') +
     (b.status === 'came' && b.candidate_id ? '<button class="btn block" id="bko">🎓 Open their check-in</button>' : '') +
     (b.status === 'booked' && !hy ? '<button class="linkbtn block center" id="bkx" style="margin-top:12px">Cancel this booking</button>' : '') +
     '<button class="btn ghost block" id="bkdone" style="margin-top:10px">Done</button>');
