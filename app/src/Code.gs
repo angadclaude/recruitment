@@ -1350,6 +1350,27 @@ function fixName(req, u) {
   log(u, 'name_fixed', res.c.id, res.was + ' → ' + name);
   return shape(res.c, u);
 }
+/** Their mobile or email changed (Angad, 30 Oct: "in case an applicant has changed or wants to be contacted on a different email or
+ *  number"). Admins (Jess, Rubal), on their page, same rules as check-in. Every message after goes to the new one, and their
+ *  availability row's copy of the mobile follows. A new mobile may be on WhatsApp, so "not on WhatsApp" is cleared. The Log says
+ *  what changed, never the old or new details (GDPR: those live on the candidate only and are trimmed with them). */
+function fixContact(req, u) {
+  if (!isAdmin(u)) throw new Error('Admin only');
+  const mobile = normMobile(req.mobile), email = String(req.email || '').trim().toLowerCase();
+  if (!mobile) throw new Error('Enter a valid UK mobile (07…).');
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error('That email doesn\'t look right.');
+  const res = withLock(() => {
+    const c = getC(req.id), what = [];
+    if (c.mobile !== mobile) { what.push('mobile'); c.mobile = mobile; c.no_whatsapp = ''; }
+    if (String(c.email || '').toLowerCase() !== email) { what.push('email'); c.email = email; }
+    if (!what.length) return { c: c, what: what };
+    writeRow('Candidates', c);
+    if (what.indexOf('mobile') >= 0) readTable('Availability').filter(r => r.candidate_id === c.id).forEach(r => { r.mobile = mobile; writeRow('Availability', r); });
+    return { c: c, what: what };
+  });
+  if (res.what.length) log(u, 'contact_fixed', res.c.id, res.what.join(' + ') + ' changed');
+  return Object.assign(shape(res.c, u), { changed: res.what });
+}
 function reassignBooker(req, u) {
   if (!isAdmin(u)) throw new Error('Admin only');
   return withLock(() => {
@@ -1763,7 +1784,7 @@ const STAFF_ACTIONS = {
   chaseOutcomes: chaseOutcomes, chaseList: chaseList, academyList: academyList, markDay1: markDay1, markConfirmed: markConfirmed,
   onboardStep: onboardStep, onboardPreview: onboardPreview, onboardSend: onboardSend, setBrand: setBrand,
   saveBooking: saveBooking, bookingAction: bookingAction, bookingList: bookingList,
-  setCampaign: setCampaign, fixName: fixName, day1Photo: day1Photo,
+  setCampaign: setCampaign, fixName: fixName, fixContact: fixContact, day1Photo: day1Photo,
   availWeek: availWeek, saveAvail: saveAvail, addStarter: addStarter, removeStarter: removeStarter, restoreStarter: restoreStarter, gradeStarter: gradeStarter, saveStarterPhoto: saveStarterPhoto, availPhotos: availPhotos,
   setBellSheets: setBellSheets,
 };
