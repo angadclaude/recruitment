@@ -2726,6 +2726,7 @@ async function fillEval(p) {
   ok((await getJson('/dev/pushes')).filter(cbHead).length === 1, 'the reminder goes once');
   // "Call back" (Angad, 30 Oct: they were busy, so the team couldn't log an answer): a day and time, the reminder, the busy message
   const bea = await ci({ full_name: 'Bea Busy', mobile: '07700900612', email: 'bea@example.com', booker_id: abd.id });
+  await api(nathan, 'saveNotes', { id: bea.id, rag: 'G', stars: 3, tags: [], notes: 'test' });  // in the room: only they are chased
   await ap.goto(APP + 'index.html?c=' + bea.id); await ap.waitForSelector('#saveout');
   const outChips = await ap.$$eval('#out .chips[data-name=outcome] .chip', b => b.map(x => x.textContent.trim()));
   await ap.click('#out .chips[data-name=outcome] .chip:has-text("Call back")');
