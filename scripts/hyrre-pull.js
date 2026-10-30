@@ -32,15 +32,14 @@
   const out = await res.json().catch(() => ({ ok: false, error: 'J&L answered ' + res.status }));
   if (!out.ok) return { ok: false, error: out.error || 'J&L refused it' };
   // Attended / no-show from our check-ins (Angad, 30 Oct), the way Hyrre's own appointment box does it: only appointments this
-  // read showed as still unmarked, and only those two marks. A no-show is asked to rebook (Hyrre sends its message), unless
-  // the team has rebooked them in J&L already (rebook: false), so they don't get Hyrre's link for a day they've just agreed.
+  // read showed as still unmarked, and only those two marks. A no-show is asked to rebook (Hyrre sends its message).
   const unmarked = {}; items.forEach(x => { if (!x.attendance || x.attendance === 'none') unmarked[x.id] = true; });
   const marked = { attended: 0, no_show: 0, skipped: 0, failed: 0 };
   for (const m of (out.data && out.data.marks) || []) {
     if (!/^\d+$/.test(String(m.id)) || !unmarked[m.id] || (m.status !== 'attended' && m.status !== 'no_show')) { marked.skipped++; continue; }
     const p = await fetch('/api/applications/' + m.id + '/first-appointment/', { method: 'PATCH', credentials: 'include',
       headers: { 'X-Pipeline-Id': PIPELINE, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ attendance_status: m.status, ask_rebook: m.status === 'no_show' && m.rebook !== false }) });
+      body: JSON.stringify({ attendance_status: m.status, ask_rebook: m.status === 'no_show' }) });
     if (p.ok) marked[m.status]++; else marked.failed++;
   }
   const data = Object.assign({}, out.data); delete data.marks;

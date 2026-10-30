@@ -277,12 +277,12 @@ const FIRST = [
   await setTime('2026-10-29T10:40:00+00:00');
   n0 = (await getJson('/dev/pushes')).length; await post('/dev/run', { fn: 'keepWarm' });
   const ma = to(await pushesSince(n0), rubalId).find(p => /^Aisha didn't check in/.test(p.body.contents.en));
-  ok(ma && /Tap to send "sorry we missed you" and rebook them\. The 11:15 pull marks them absent in Hyrre, and Hyrre sends its rebook link to anyone not rebooked by then\.$/.test(ma.body.contents.en) && !/Shift \+ click/.test(ma.body.contents.en),
-    'Thu 10:40, marking on: "Aisha didn\'t check in… Tap to send \"sorry we missed you\" and rebook them. The 11:15 pull marks them absent in Hyrre… anyone not rebooked by then."');
+  ok(ma && /Tap to send "sorry we missed you" and rebook them\. The 11:15 pull marks them absent in Hyrre, and Hyrre sends its rebook link as usual\.$/.test(ma.body.contents.en) && !/Shift \+ click/.test(ma.body.contents.en),
+    'Thu 10:40, marking on: "Aisha didn\'t check in… Tap to send \"sorry we missed you\" and rebook them. The 11:15 pull marks them absent in Hyrre, and Hyrre sends its rebook link as usual."');
   await rp.reload(); await rp.waitForSelector('.tabbar button');
   await rp.click('.tabbar button[data-tab=book]'); await rp.waitForSelector('.bkrow');
   const after = await rp.$eval('.bkrow:has-text("Aisha Khan")', el => el.innerText);
-  ok(/Didn't come/.test(after) && /The 11:15 pull marks them absent in Hyrre\. Rebook them here first and Hyrre won't send its own rebook link\./.test(after) &&
+  ok(/Didn't come/.test(after) && /The 11:15 pull marks them absent in Hyrre, and Hyrre sends its rebook link as usual\./.test(after) &&
     await rp.$('.bkrow:has-text("Aisha Khan") a[data-kind=missed]') && await rp.$('.bkrow:has-text("Aisha Khan") [data-bkre]'),
     'after 10:30: Aisha "didn\'t come" with 💬 Sorry we missed you and 📅 Rebook (Angad, 30 Oct: Rubal "can\'t do anything for Megan\'s"), and what Hyrre does');
   await shot(rp, 'h3-didnt-come', true);
@@ -311,11 +311,11 @@ const FIRST = [
     'ours to change from now on (a day moved and back)');
   await setTime('2026-10-29T11:16:00+00:00');
   const m5 = await api('', 'hyrreImport', { ticket: await ticket(), pipeline: '403', window: WINDOW, items: second });
-  ok(JSON.stringify(m5.marks.find(m => m.id === 'h1')) === JSON.stringify({ id: 'h1', status: 'no_show', rebook: false }) &&
+  ok(JSON.stringify(m5.marks.find(m => m.id === 'h1')) === JSON.stringify({ id: 'h1', status: 'no_show' }) &&
     JSON.stringify(m5.marks.find(m => m.id === 'h5')) === JSON.stringify({ id: 'h5', status: 'no_show' }),
-    '11:15 pull: Aisha marked no-show in Hyrre without its rebook link (rebooked here); Eva, not rebooked, gets Hyrre\'s link');
+    '11:15 pull: Aisha (rebooked here) is still marked no-show in Hyrre, like Eva: Hyrre does what it does (Angad, 30 Oct)');
   const pull = fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'hyrre-pull.js'), 'utf8');
-  ok(/ask_rebook: m\.status === 'no_show' && m\.rebook !== false/.test(pull), 'the pull script asks Hyrre to rebook only when we haven\'t (rebook: false)');
+  ok(/ask_rebook: m\.status === 'no_show' \}/.test(pull), 'the pull marks Hyrre the way its own appointment box does (a no-show asked to rebook), nothing more');
   n0 = (await getJson('/dev/pushes')).length;
   const p6 = await api('', 'hyrreImport', { ticket: await ticket(), pipeline: '403', window: WINDOW,
     items: second.map(x => x.id === 'h1' ? Object.assign({}, x, { attendance: 'no_show' }) : x).concat([item('h1', 'AISHA KHAN', '+447700900201', '2026-11-02')]) });

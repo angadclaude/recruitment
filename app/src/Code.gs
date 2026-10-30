@@ -2706,7 +2706,7 @@ function saveBooking(req, u) {
     if (open) throw new Error('Already booked for ' + longDate(open.slot_date) + ' (by ' + open.booked_by.split(' ')[0] + '). Open their booking to change the day.');
     const old = f.rebook_of ? getBooking(f.rebook_of) : null;
     // Megan's no-show rebooked here (Angad, 30 Oct: Rubal "can't do anything for Megan's appointments"): still Megan's, from
-    // where they applied, and ours from now on (the pull tells Hyrre not to send its own rebook link: hyrreMarks)
+    // where they applied, and ours from now on. Hyrre isn't told: "let it do what it does", J&L is the extra layer
     const hy = !!(old && old.hyrre_id);
     if (hy && old.status === 'booked' && !bookingOver(old)) throw new Error(HYRRE_OWNS);
     if (old && old.status === 'booked') { old.status = 'no_show'; old.updated_at = nowStr(); writeRow('Bookings', old); }
@@ -2773,12 +2773,12 @@ function maybeMissedBookings() {
   rows.forEach(b => { (by[b.booked_by_id] = by[b.booked_by_id] || []).push(b); });
   Object.keys(by).forEach(id => {
     const list = by[id], hy = list.filter(b => b.hyrre_id), auto = hyrreMarking(today);
-    // Hyrre's too (Angad, 30 Oct): our WhatsApp (signed Megan for hers) and rebook here. They're marked absent in Hyrre by the next
-    // pull (hyrreMarks), which sends Hyrre's own rebook link only to anyone not rebooked here by then; or by hand before that went live
+    // Hyrre's too (Angad, 30 Oct): our WhatsApp (signed Megan for hers) and rebook here, on top of what Hyrre does. They're marked
+    // absent in Hyrre by the next pull (hyrreMarks) and Hyrre sends its rebook link as usual; or by hand before that went live
     const names = hy.length === list.length ? 'them' : firstNames(hy.map(b => ({ full_name: b.first_name })), 6);
     notify([userById(id)], '😕 ' + list.length + ' didn\'t come today', firstNames(list.map(b => ({ full_name: b.first_name })), 6) +
       ' didn\'t check in for the ' + CONFIG.BOOK_TIME + ' presentation. Tap to send "sorry we missed you" and rebook them.' +
-      (hy.length ? (auto ? ' The ' + CONFIG.HYRRE.MARK_PULL + ' pull marks ' + names + ' absent in Hyrre, and Hyrre sends its rebook link to anyone not rebooked by then.'
+      (hy.length ? (auto ? ' The ' + CONFIG.HYRRE.MARK_PULL + ' pull marks ' + names + ' absent in Hyrre, and Hyrre sends its rebook link as usual.'
         : ' Mark ' + names + ' absent in Hyrre too (Shift + click their appointment).') : ''), 'bookmiss');
   });
 }
@@ -2931,18 +2931,14 @@ function hyrreMarks(items) {
   const open = {};
   items.forEach(x => { if (x.approval === 'approved' && (!x.attendance || x.attendance === 'none')) open[String(x.id).slice(0, 40) + '|' + x.date] = true; });
   delete MEMO.Bookings;
-  const rows = readTable('Bookings'), ours = {};
-  rows.forEach(r => { if (r.rebook_of && r.status !== 'cancelled') ours[r.rebook_of] = true; });  // rebooked here: no rebook link from Hyrre
-  const due = rows.filter(b => b.hyrre_id && ['came', 'booked', 'no_show'].indexOf(b.status) >= 0 && b.slot_date >= from &&
+  // A no-show rebooked here (no_show) is still marked: Hyrre does what it does (Angad, 30 Oct), J&L only adds to it
+  const due = readTable('Bookings').filter(b => b.hyrre_id && ['came', 'booked', 'no_show'].indexOf(b.status) >= 0 && b.slot_date >= from &&
     (b.slot_date < today || (b.slot_date === today && over)) && open[b.hyrre_id + '|' + b.slot_date]);
   if (!due.length) return [];
   const key = s => String(s || '').toLowerCase().replace(/[^a-z\s]/g, '').replace(/\s+/g, ' ').trim();
   const days = {}; due.forEach(b => { days[b.slot_date] = true; });
   const ins = readTable('Candidates').filter(c => days[c.attended_date]);
-  return due.map(b => {
-    const there = b.status === 'came' || ins.some(c => c.attended_date === b.slot_date && (c.mobile === b.mobile || key(c.full_name) === key(bookingName(b))));
-    return there ? { id: b.hyrre_id, status: 'attended' } : ours[b.id] ? { id: b.hyrre_id, status: 'no_show', rebook: false } : { id: b.hyrre_id, status: 'no_show' };
-  });
+  return due.map(b => ({ id: b.hyrre_id, status: b.status === 'came' || ins.some(c => c.attended_date === b.slot_date && (c.mobile === b.mobile || key(c.full_name) === key(bookingName(b)))) ? 'attended' : 'no_show' }));
 }
 /** A pull before the presentation (the 08:15 one): today's Hyrre bookings nobody has reminded since the evening before →
  *  "📲 N of Megan's to remind for today", once a morning (approved after the evening pull, or not sent last night). */
