@@ -1,5 +1,6 @@
-// Megan's bookings from Hyrre (Angad, 27 Oct): the 08:30 pull hands J&L Slough's approved appointments with a one-time ticket;
-// they show on Book Appts as booked by Megan Hyrre (or by Rubal / Jess when Hyrre's note says so), Hyrre sends their messages,
+// Megan's bookings from Hyrre (Angad, 27 Oct): the 08:15 / 17:15 pull hands J&L Slough's approved appointments with a one-time ticket;
+// they show on Book Appts as booked by Megan Hyrre (or by Rubal / Jess when Hyrre's note says so), Hyrre sends their confirmation,
+// our reminder goes to them too, signed Megan (30 Oct: 18:00 the evening before, or the morning alert after the 08:15 pull),
 // check-in finds them, Megan's alerts go to Rubal and Jess, and a weekday with no pull by 09:15 tells the booking team.
 // Usage: node app/build.js && node app/dev/hyrre.js <screenshot-dir>   (JL_BACKEND=pg: on the Supabase back end)
 'use strict';
@@ -96,8 +97,8 @@ const FIRST = [
   const by = id => list.find(b => b.hyrre_id === id && b.status !== 'cancelled');
   const aisha = by('h1');
   ok(aisha && aisha.first_name === 'Aisha' && aisha.last_name === 'Khan' && aisha.mobile === '07700900201' && aisha.booked_by === 'Megan Hyrre' && aisha.company === 'JUSS' &&
-    aisha.slot_date === '2026-10-27' && aisha.slot_time === '10:00' && aisha.source === 'Hirematic' && aisha.status === 'booked' && !aisha.confirm_token,
-    'Aisha: booked by Megan Hyrre, Tue 27 10:00, name tidied, +44 mobile → 07, from Hirematic, JUSS, no CONFIRM page (Hyrre messages her)');
+    aisha.slot_date === '2026-10-27' && aisha.slot_time === '10:00' && aisha.source === 'Hirematic' && aisha.status === 'booked' && /^[0-9a-f]{24}$/.test(aisha.confirm_token),
+    'Aisha: booked by Megan Hyrre, Tue 27 10:00, name tidied, +44 mobile → 07, from Hirematic, JUSS, a CONFIRM page for our reminder');
   ok(by('h2').booked_by === 'Rubal Oshan' && by('h2').booked_by_id === rubalId && by('h4').booked_by === 'Jess Grace',
     '"Booked by Rubal" / "Booked by Jess" in Hyrre\'s note → Rubal / Jess, not Megan');
   ok(by('h5').mobile === '+49151234567' && !by('h3') && !by('h6'), 'a non-UK number is kept as given; Cara (pencilled in) and Finn (archived) aren\'t bookings');
@@ -109,8 +110,9 @@ const FIRST = [
     'Book Appts knows the last pull (7 approved, when) for the booking team only');
   ok(/comes from Hyrre/.test(await refused(rubal, 'saveBooking', { booking: Object.assign({}, aisha, { slot_date: '2026-10-28' }) })) &&
     /comes from Hyrre/.test(await refused(rubal, 'bookingAction', { id: aisha.id, act: 'cancel' })) &&
-    /comes from Hyrre/.test(await refused(rubal, 'bookingAction', { id: aisha.id, act: 'sent', kind: 'confirm', via: 'whatsapp' })),
-    'Hyrre\'s bookings are changed in Hyrre: J&L won\'t move, cancel or message them');
+    /comes from Hyrre/.test(await refused(rubal, 'bookingAction', { id: aisha.id, act: 'sent', kind: 'confirm', via: 'whatsapp' })) &&
+    /comes from Hyrre/.test(await refused(rubal, 'bookingAction', { id: aisha.id, act: 'sent', kind: 'missed', via: 'whatsapp' })),
+    'Hyrre\'s bookings are changed in Hyrre: J&L won\'t move or cancel them, or send our confirmation or "sorry we missed you"');
   ok(/^Already booked for Tuesday 27th October \(by Rubal\)/.test(await refused(jess, 'saveBooking', { booking: { first_name: 'Ben', mobile: '07700900202', slot_date: '2026-10-29' } })),
     'booking Ben again from Book Appts: "Already booked for Tuesday 27th October (by Rubal)…"');
 
@@ -126,10 +128,39 @@ const FIRST = [
   const p3 = await api('', 'hyrreImport', { ticket: await ticket(), pipeline: '403', window: WINDOW, items: second });
   ok(p3.added === 0 && p3.updated === 0 && p3.cancelled === 0 && p3.approved === 6, 'the same again: nothing changes (no doubles)');
 
-  console.log('18:00: Hyrre reminds its own');
+  console.log('18:00: our reminder for Hyrre\'s too, signed Megan (Angad, 30 Oct)');
   n0 = (await getJson('/dev/pushes')).length;
   await setTime('2026-10-26T18:05:00+00:00'); await post('/dev/run', { fn: 'keepWarm' });
-  ok(!(await pushesSince(n0)).some(p => /to remind for tomorrow/.test(p.body.headings.en)), 'no "N to remind for tomorrow": Hyrre sends their reminders');
+  const rp18 = await pushesSince(n0);
+  const megRem = (l, id, when) => to(l, id).find(p => new RegExp('^📲 \\d+ of Megan\'s to remind for ' + when + '$').test(p.body.headings.en));
+  const mr18 = megRem(rp18, rubalId, 'tomorrow');
+  ok(mr18 && mr18.body.headings.en === '📲 2 of Megan\'s to remind for tomorrow' && mr18.body.contents.en === 'Tuesday\'s 10:00 presentation: Hana ⏳, Ian ⏳. Tap to send the reminders, signed Megan.' &&
+    /\?c=bookrem$/.test(mr18.body.web_url) && megRem(rp18, jessId, 'tomorrow'), 'Megan\'s two for Tuesday (Hana, Ian) → Rubal and Jess: "📲 2 of Megan\'s to remind for tomorrow… signed Megan"');
+  ok(to(rp18, rubalId).some(p => p.body.headings.en === '📲 1 to remind for tomorrow' && /: Ben ⏳\. Tap to send the reminders, signed by you\.$/.test(p.body.contents.en)) &&
+    to(rp18, jessId).some(p => p.body.headings.en === '📲 1 to remind for tomorrow' && /: Gus ⏳\./.test(p.body.contents.en)), 'the ones Rubal and Jess booked in Hyrre: theirs, signed by them');
+  const ian = (await api(rubal, 'bookingList', {})).items.find(b => b.hyrre_id === 'h9');
+  const ianR = await api(rubal, 'bookingAction', { id: ian.id, act: 'sent', kind: 'remind', via: 'whatsapp' });
+  ok(/^2026-10-26 18:05/.test(ianR.remind_at) && ianR.remind_by === 'Rubal Oshan' && ianR.remind_via === 'whatsapp', 'Rubal sends Ian\'s reminder: saved (who, when, WhatsApp)');
+
+  console.log('08:15: the morning pull, then today\'s reminders');
+  n0 = (await getJson('/dev/pushes')).length;
+  await setTime('2026-10-27T08:16:00+00:00');
+  await api('', 'hyrreImport', { ticket: await ticket(), pipeline: '403', window: WINDOW, items: second });
+  const rp8 = await pushesSince(n0), mr8 = megRem(rp8, rubalId, 'today');
+  ok(mr8 && mr8.body.headings.en === '📲 1 of Megan\'s to remind for today' && mr8.body.contents.en === 'Tuesday\'s 10:00 presentation: Hana ⏳. Tap to send the reminders, signed Megan.' && megRem(rp8, jessId, 'today'),
+    'after the 08:15 pull → Rubal and Jess: "📲 1 of Megan\'s to remind for today" (Hana; Ian had his last night)');
+  ok(to(rp8, rubalId).some(p => p.body.headings.en === '📲 1 to remind for today' && /: Ben ⏳/.test(p.body.contents.en)), 'and Rubal\'s own (Ben), not reminded last night');
+  n0 = (await getJson('/dev/pushes')).length;
+  await setTime('2026-10-27T08:40:00+00:00');
+  await api('', 'hyrreImport', { ticket: await ticket(), pipeline: '403', window: WINDOW, items: second });
+  ok(!(await pushesSince(n0)).some(p => /to remind/.test(p.body.headings.en)), 'another pull that morning: no second alert');
+  const hana = (await api(rubal, 'bookingList', {})).items.find(b => b.hyrre_id === 'h8');
+  const info = await api('', 'bookingInfo', { t: hana.confirm_token });
+  n0 = (await getJson('/dev/pushes')).length;
+  await api('', 'confirmBooking', { t: hana.confirm_token });
+  const cf = await pushesSince(n0);
+  ok(info.booker === 'Megan' && info.first_name === 'Hana' && to(cf, rubalId).some(p => p.body.headings.en === '✅ Hana confirmed Tuesday\'s presentation') &&
+    to(cf, jessId).some(p => p.body.headings.en === '✅ Hana confirmed Tuesday\'s presentation'), 'Hana taps CONFIRM in our reminder (her page says booked by Megan) → Rubal and Jess hear');
 
   console.log('on the day');
   await setTime('2026-10-27T09:40:00+00:00');
@@ -200,14 +231,26 @@ const FIRST = [
   ok(kp === '[["2","Booked"],["1","Confirmed"],["1","Not confirmed"],["1","Not sent"]]', 'today\'s numbers count Aisha as confirmed (approved in Hyrre), and only Leah as not sent: ' + kp);
   await rp.click('[data-bkrem="2026-10-29"]'); await rp.waitForSelector('.bksheet [data-bks]');
   const remList = await rp.innerText('.bksheet');
-  ok(/0 of 1 sent/.test(remList) && /Leah Brown/.test(remList) && !/Aisha/.test(remList), 'today\'s reminders list only Leah (Hyrre reminds Aisha)');
+  ok(/0 of 2 sent/.test(remList) && /Leah Brown/.test(remList) && /Aisha Khan/.test(remList) && /Megan's: Megan/.test(remList) &&
+    /🤖 signed Megan/.test(await rp.innerText('.bksheet .trow:has-text("Aisha Khan")')), 'today\'s reminders: Aisha (Megan\'s, "🤖 signed Megan") and Leah, "0 of 2 sent"');
+  const waText = async who => decodeURIComponent((await rp.getAttribute('.bksheet .trow:has-text("' + who + '") a.btn[data-kind=remind]', 'href')).split('?text=')[1]);
+  const aMsg = await waText('Aisha Khan'), lMsg = await waText('Leah Brown');
+  ok(/^Hey Aisha! 👋\n\n\*Today’s the day!\* 🙌/.test(aMsg) && /👇 Still coming\? Tap \*CONFIRM\* ✅\nhttp[^\n]*booked\.html\?t=[0-9a-f]{24}&n=Aisha&d=2026-10-29\n/.test(aMsg) &&
+    /Kind regards,\n\*Megan\*\nIn association with \*JUSS Marketing Ltd\*$/.test(aMsg), 'Aisha\'s reminder: "Today\'s the day!", her CONFIRM link, signed *Megan*');
+  ok(/Kind regards,\n\*Rubal Oshan\*\nIn association with \*JUSS Marketing Ltd\*$/.test(lMsg), 'Leah\'s (booked in the app) is still signed by whoever sends it (Rubal)');
+  await rp.click('.bksheet .trow:has-text("Aisha Khan") a.btn[data-kind=remind]');
+  await rp.waitForFunction(() => /1 of 2 sent/.test(document.getElementById('bkprog').textContent));
+  await rp.waitForTimeout(800);
+  const aSent = (await api(rubal, 'bookingList', {})).items.find(b => b.hyrre_id === 'h1' && b.slot_date === '2026-10-29');
+  ok(/^2026-10-29 08:4/.test(aSent.remind_at) && aSent.remind_by === 'Rubal Oshan', 'tapping Send ticks her off ("1 of 2 sent") and saves it');
   await rp.click('#bkdone');
+  ok(/Reminded/.test(await rp.innerText('.bkrow:has-text("Aisha Khan")')), 'her row: 📲 Reminded');
   await shot(rp, 'h1-book-appts', true);
   await rp.click('.bkrow:has-text("Aisha Khan") [data-bk]'); await rp.waitForSelector('.bksheet');
   const sh = await rp.innerText('.bksheet');
-  ok(/🤖 From Hyrre, approved there/.test(sh) && /Hyrre sends their confirmation and reminders/.test(sh) && /Booked by Megan Hyrre/.test(sh) &&
-    !(await rp.$('.bksheet #bkc')) && !(await rp.$('.bksheet #bke')) && !(await rp.$('.bksheet #bkx')) && !(await rp.$('.bksheet #bky')),
-    'her booking: "🤖 From Hyrre, approved there… Hyrre sends their confirmation and reminders"; no send, change or cancel buttons');
+  ok(/🤖 From Hyrre, approved there/.test(sh) && /Hyrre sends their confirmation and texts; our 📲 reminder is signed Megan/.test(sh) && /Booked by Megan Hyrre/.test(sh) &&
+    await rp.$('.bksheet #bkr') && await rp.$('.bksheet #bky') && !(await rp.$('.bksheet #bkc')) && !(await rp.$('.bksheet #bke')) && !(await rp.$('.bksheet #bkx')),
+    'her booking: "📲 Send a reminder · signed Megan" and "Mark as confirmed"; no confirmation, change or cancel (Hyrre\'s)');
   await shot(rp, 'h2-booking-sheet');
   await rp.click('#bkdone');
   await setTime('2026-10-29T10:40:00+00:00'); await rp.reload(); await rp.waitForSelector('.tabbar button');
