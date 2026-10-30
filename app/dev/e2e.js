@@ -2598,6 +2598,22 @@ async function fillEval(p) {
   await zp.fill('#em', 'zara@example.com'); await zp.click('#haveCode'); await zp.fill('#code', zcode); await zp.click('#go');
   await zp.waitForSelector('.tabbar button'); await zc.close();
   ok(true, 'she logs in on the spot with that code, without waiting for any email');
+  // Adding someone who's already on the team (Angad, 30 Oct: Jess added Shiloh Fisher with a typo in her email, and "Add a person"
+  // on his phone only said "already on the team. Tap their name"): who's on file, what would change, one tap to update them
+  await ap.click('#abBack'); await ap.click('#add'); await ap.waitForSelector('#un');
+  const marty = await api(admin, 'saveUser', { user: { name: 'Marty Little', email: 'marty.typo@example.com', company: 'JUSS', roles: ['booker', 'availability'], active: true } });  // added on another phone: this one's team list doesn't have him
+  await ap.fill('#un', 'Marty Little'); await ap.fill('#ue', 'marty@example.com');
+  await ap.click('#uf .chips[data-name=company] .chip:has-text("JUSS")');
+  await ap.click('#usave'); await ap.waitForSelector('#uonfile #uupd');
+  const onf = await ap.innerText('#uonfile');
+  ok(/Marty Little is already on the team/.test(onf) && /On file: JUSS · Booker, Availability · marty\.typo@example\.com/.test(onf) && /email marty\.typo@example\.com → marty@example\.com/.test(onf) &&
+    /− Availability/.test(onf) && /✏️ Update Marty/.test(onf),
+    'adding Marty when another admin has already added him: "Marty Little is already on the team · On file: JUSS · Booker, Availability · marty.typo@… · Update with what you typed: email → marty@… · − Availability · ✏️ Update Marty"');
+  await ap.locator('#uonfile').screenshot({ path: SHOTS + '/40-already-on-team.png' });
+  await ap.click('#uupd'); await ap.waitForSelector('text=Marty is set up');
+  const martys = (await api(admin, 'listUsers', {})).users.filter(x => x.name === 'Marty Little');
+  ok(martys.length === 1 && martys[0].id === marty.id && martys[0].email === 'marty@example.com' && martys[0].roles.join() === 'booker' && !!(await ap.$('#ucode')),
+    'one tap → still one Marty (same record, so his check-ins and pay stay his), email fixed, setup email sent, his page open ready for a login code');
   await ap.click('#abBack');
   const mb4 = (await getJson('/dev/mail')).length;
   await api(admin, 'saveUser', { user: Object.assign({}, monish, { email: 'monish.somalai@example.com' }) });
