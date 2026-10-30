@@ -172,8 +172,8 @@ A tab in the bottom bar for admins. **Bookers** have the same list as **📞 Do 
 | On the list as | Means | Off the list when |
 |---|---|---|
 | 📞 Log the call | rated in the room, no outcome yet (LATE after Fri 18:00) | an outcome is logged |
-| 🔁 Call back | outcome is *No answer* or *Thinking it over* | updated to Booked / Declined / Not suitable |
-| 🔴 Stale: close it out | *No answer* / *Thinking it over* and **over 2 weeks old**: these never just drop off (a call-back time still to come keeps them a 🔁 Call back) | updated to Booked / Declined / Not suitable |
+| 🔁 Call back | outcome is *No answer*, *Thinking it over* or *Call back* | updated to Booked / Declined / Not suitable |
+| 🔴 Stale: close it out | *No answer* / *Thinking it over* / *Call back* and **over 2 weeks old**: these never just drop off (a call-back time still to come keeps them a 🔁 Call back) | updated to Booked / Declined / Not suitable |
 | 📲 Send Day 1 text | booked onto the Academy, Day 1 WhatsApp not sent | it's sent (or they confirm) |
 | ⏳ Day 1 not confirmed | text sent, they haven't tapped CONFIRM | they confirm |
 | ❌ No-show: rebook | marked no-show on the Day 1 list | rebooked with a new date |
@@ -261,8 +261,9 @@ Every send is recorded: **who** tapped it, **when**, **as LINK or JUSS**, and **
 - Sends from before this went live are filled in once from the Log (who and how). Their company shows as the one on file.
 - It records the **tap** that opens WhatsApp with the message ready. WhatsApp doesn't tell the app whether they then hit send.
 
-### Thinking it over / No answer: follow-ups
+### Thinking it over / Call back / No answer: follow-ups
 - **Thinking it over:** pick **when they asked to be called back** (In 1 hour · Today 6pm · Tomorrow 12pm · Tomorrow 6pm · another day and time). It can't be saved without one. At that time, whoever logged it gets **"🔁 Call Pooja back now"** on their phone (once). Their pill shows **🔁 Call back Fri 16 Oct 18:00** (red once it's overdue), and their page has **🔁 Send "speak soon" + call-back time**: *"Take your time to think it over. As agreed, I'll call you back on Friday 16th October at 6:00 PM… call or text me on this number."*
+- **Call back:** they were busy and asked to be called another time. Pick **when** (same choices as Thinking it over, or another day and time): you get a 🔔 reminder then, they stay on Chase until you log a real answer, and **🔁 Send "speak soon"** sends "Sorry I caught you at a busy time… I'll call you back <day, time>", signed by you.
 - **No answer:** **📞 Send "we tried calling you"**: *"…call or text me back on this number"*. On their page and on the list card.
 - Both are signed by **whoever sends them** (it's their number the candidate calls back), in the candidate's company (LINK / JUSS). Jess and Rubal get **LINK | JUSS** buttons for both, like the thank-you and Day 1 details.
 

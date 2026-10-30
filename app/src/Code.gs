@@ -93,7 +93,11 @@ const ADMINS = [
   { name: 'Rubal Oshan', email: 'rubal@jussmarketing.co.uk', company: 'JUSS' },
 ];
 
-const OUTCOMES = ['Academy booked', 'Thinking it over', 'No answer', 'Declined', 'Not suitable'];
+const OUTCOMES = ['Academy booked', 'Thinking it over', 'Call back', 'No answer', 'Declined', 'Not suitable'];
+/** The answers that come with a call-back time and its reminder: "Thinking it over" (they've heard it, want to think), and "Call back"
+ *  (Angad, 30 Oct: they were busy, so the team couldn't log an answer; they picked a day and time to be called back). */
+const CALLBACK_OUTCOMES = ['Thinking it over', 'Call back'];
+function wantsCallback(o) { return CALLBACK_OUTCOMES.indexOf(o) >= 0; }
 
 /** New starter onboarding (admins): Databyte, then the "Your Brand Ambassador Journey Begins!" email (Rubal's wording, LINK / JUSS). */
 const ONBOARD = {
@@ -1217,10 +1221,10 @@ function saveOutcome(req, u) {
     // an outcome that was in on time LATE, or last week's late count change
     c.outcome_late = (firstAt || c.outcome_at) > outcomeDeadline(c.attended_date) ? 'TRUE' : '';
     // "Thinking it over": when they asked to be called back. Whoever logged it gets "🔁 Call them back now" at that time.
-    if (req.outcome === 'Thinking it over' && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(req.callback_at || '')) {
+    if (wantsCallback(req.outcome) && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(req.callback_at || '')) {
       if (req.callback_at !== c.callback_at) c.callback_nudged = '';
       c.callback_at = req.callback_at; c.callback_by_id = u.id;
-    } else if (req.outcome !== 'Thinking it over') { c.callback_at = ''; c.callback_by_id = ''; c.callback_nudged = ''; }
+    } else if (!wantsCallback(req.outcome)) { c.callback_at = ''; c.callback_by_id = ''; c.callback_nudged = ''; }
     // RED from presenter (or a repeat block) → admin has the final say on an Academy booking.
     if (req.outcome === 'Academy booked' && (c.rag === 'R' || truthy(c.repeat_block))) {
       if (isAdmin(u)) { c.admin_status = 'approved'; c.admin_by = u.name; c.admin_at = nowStr(); }
@@ -2306,13 +2310,13 @@ function maybeThanksReminder() {
  *  not for times more than 12 hours gone, e.g. after the app was down). Runs from keepWarm, every 5 minutes. */
 function maybeCallbackReminders() {
   const now = nowStr(), from = Utilities.formatDate(new Date(Date.now() - 12 * 3600000), CONFIG.TZ, 'yyyy-MM-dd HH:mm');
-  const due = c => c.outcome === 'Thinking it over' && c.callback_at && c.callback_at <= now && c.callback_at >= from && c.callback_nudged !== c.callback_at;
+  const due = c => wantsCallback(c.outcome) && c.callback_at && c.callback_at <= now && c.callback_at >= from && c.callback_nudged !== c.callback_at;
   const ids = readTable('Candidates').filter(due).map(c => c.id);
   if (!ids.length) return;
   const send = withLock(() => ids.map(id => getC(id)).filter(due).map(c => { c.callback_nudged = c.callback_at; writeRow('Candidates', c); return c; }));
   send.forEach(c => {
     const u = userById(c.callback_by_id) || userById(c.booker_id);
-    notify([u], '🔁 Call ' + c.full_name.split(' ')[0] + ' back now', 'They asked for a call back at ' + c.callback_at.slice(11, 16) + ' (Thinking it over). Tap to call.', c.id);  // notify logs it
+    notify([u], '🔁 Call ' + c.full_name.split(' ')[0] + ' back now', 'They asked for a call back at ' + c.callback_at.slice(11, 16) + ' (' + c.outcome + '). Tap to call.', c.id);  // notify logs it
   });
 }
 /** Runs from keepWarm (every 5 min), so no extra trigger to install: one message a day, Mon–Thu at DIGEST_TIME, Friday at ROUNDUP_TIME. */
@@ -2334,7 +2338,7 @@ function leakOf(c, today) {
   if (!truthy(c.in_room) || noCallNeeded(c)) return '';
   // No answer / Thinking it over never just drop off: after 2 weeks they're "stale" until someone logs a final answer
   // (Declined, Not suitable, Academy booked). A call-back time they asked for that's still to come keeps them as a call back.
-  if (c.outcome === 'No answer' || c.outcome === 'Thinking it over') return c.attended_date < from && !(c.callback_at > nowStr()) ? 'stale' : 'callback';
+  if (c.outcome === 'No answer' || wantsCallback(c.outcome)) return c.attended_date < from && !(c.callback_at > nowStr()) ? 'stale' : 'callback';
   if (c.attended_date < from) return '';
   return c.outcome ? '' : 'log';
 }
