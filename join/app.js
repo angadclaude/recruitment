@@ -1,4 +1,4 @@
-window.APP_VERSION = '7f498da7';
+window.APP_VERSION = '8275725e';
 
 (function () {
 'use strict';
@@ -3280,7 +3280,7 @@ function bookHy(b) { return !!b.hyrre_id; }
 /** Megan's no-shows get our "sorry we missed you" and a rebook here too (Angad, 30 Oct); what happens in Hyrre. */
 function bookHyAbsent() {
   const at = bookCfg().hyrreMarks;
-  return at ? '🤖 The ' + h(at) + ' pull marks them absent in Hyrre. Rebook them here first and Hyrre won\'t send its own rebook link.'
+  return at ? '🤖 The ' + h(at) + ' pull marks them absent in Hyrre, and Hyrre sends its rebook link as usual.'
     : '🤖 Mark them absent in Hyrre too (Shift + click their appointment).';
 }
 /** Reminded the evening before or on the day (so the morning list doesn't send them a second one). */
