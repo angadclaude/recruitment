@@ -1546,13 +1546,26 @@ async function fillEval(p) {
   const monRows = (await ap.$$eval('.trow[data-cand]', els => els.map(e => ({ id: e.dataset.cand, green: e.classList.contains('arrived') })))).filter(x => monIds.includes(x.id));
   ok(monRows.find(x => x.id === jasId).green && !monRows.find(x => x.id === adham.id).green && monRows[0].id === adham.id && monRows[monRows.length - 1].id === jasId,
     'arrived rows turn light green (Jasraj); JUSS on top, LINK below (Angad, 25 Oct: "always"): Adham (JUSS, no-show) above Jasraj (LINK)');
+  const grpHeads = await ap.$$eval('.d1grp', l => l.map(e => e.innerText.replace(/\s+/g, ' ').trim()));
+  ok(grpHeads.length >= 2 && grpHeads.every(x => /^(JUSS|LINK) .+ · \d+$/.test(x)), 'each booker\'s starters under a heading with how many (Angad, 30 Oct): ' + grpHeads.join(' / '));
   // The rule itself, straight from the app's source (the page keeps its functions to itself)
-  const d1Order = new Function(fs.readFileSync(require('path').join(__dirname, '..', 'src', 'JS.html'), 'utf8').match(/function d1Order\(list\) \{[\s\S]*?\n\}/)[0] + '\nreturn d1Order;')();
+  const d1Src = fs.readFileSync(require('path').join(__dirname, '..', 'src', 'JS.html'), 'utf8');
+  const d1Order = new Function(d1Src.match(/function d1Order\(list\) \{[\s\S]*?\n\}/)[0] + '\n' + d1Src.match(/function d1Grp\(c\) \{[^\n]*\}/)[0] + '\nreturn d1Order;')();
   const ord = d1Order([
     { full_name: 'Lena Link', company: 'LINK', academy_date: '2026-10-19' }, { full_name: 'Zed Juss', company: 'JUSS', academy_date: '2026-10-20' },
     { full_name: 'Amy Juss', company: 'JUSS', academy_date: '2026-10-19', day1_status: 'no_show' }, { full_name: 'Bob Juss', company: 'JUSS', academy_date: '2026-10-19' },
     { full_name: 'Al Link', company: 'LINK', academy_date: '2026-10-20' }]).map(c => c.full_name).join(', ');
   ok(ord === 'Bob Juss, Zed Juss, Amy Juss, Lena Link, Al Link', 'the order, always: JUSS then LINK; in each, Monday then Tuesday, by name, no-shows at the bottom (' + ord + ')');
+  // Each booker's together (Angad, 30 Oct: Nathan's were "three on top and one at the bottom"): the Office first, then whoever
+  // booked the most, no booker last; in each booker's, Monday then Tuesday, by name, their no-shows last
+  const C = (full_name, booker_name, extra) => Object.assign({ full_name, booker_name, company: 'JUSS', academy_date: '2026-11-02' }, extra || {});
+  const byB = d1Order([C('Aatif Ahmed', 'Nathan Mcgrath'), C('DéJa Payne', 'Hasini Yadavelly'), C('Arifah Akthar', 'Nathan Mcgrath', { day1_status: 'no_show' }),
+    C('Hibba Bukhari', 'Hasini Yadavelly'), C('Joell Nare', 'Nathan Mcgrath'), C('Muhsin Farah', 'Rubal Oshan', { office: true }), C('Zed Nobody', ''),
+    C('Jaouad Sadiki', 'Megan Hyrre', { office: true }), C('Yaesha Patel', 'Nathan Mcgrath', { academy_date: '2026-11-03' }), C('Erjon Hiseni', 'Zayaan Adil'),
+    C('Kamran Ahmadzai', 'Hasini Yadavelly'), C('Amal Ismail', 'Hanad Omar', { company: 'LINK' }), C('Abubakar Mohamed', 'Fiza Iqbal', { company: 'LINK', office: true })])
+    .map(c => c.full_name.split(' ')[0]).join(', ');
+  ok(byB === 'Jaouad, Muhsin, Aatif, Joell, Yaesha, Arifah, DéJa, Hibba, Kamran, Erjon, Zed, Abubakar, Amal',
+    'each booker\'s together: JUSS Office (Megan\'s, Rubal\'s), Nathan 4 (Monday, Tuesday, his no-show last), Hasini 3, Zayaan 1, no booker; then LINK Office, Hanad (' + byB + ')');
   const pdl2 = await pdfDl(ap, '[data-pdf="2026-10-19"]');
   const pdf2 = `${SHOTS}/30-day1-ticked.pdf`; await pdl2.saveAs(pdf2);
   const raw2 = fs.readFileSync(pdf2, 'latin1');
@@ -1694,7 +1707,7 @@ async function fillEval(p) {
   // The rules, with starters that tell the orders apart
   const jsSrc = fs.readFileSync(require('path').join(__dirname, '..', 'src', 'JS.html'), 'utf8');
   const grab = re => jsSrc.match(re)[0];
-  const viewWith = new Function('S', grab(/function campaignOf\(c\) \{[^\n]*\}/) + '\n' + grab(/function d1Order\(list\) \{[\s\S]*?\n\}/) + '\n' + grab(/function d1View\(list\) \{[\s\S]*?\n\}/) + '\nreturn d1View;');
+  const viewWith = new Function('S', grab(/function campaignOf\(c\) \{[^\n]*\}/) + '\n' + grab(/function d1Order\(list\) \{[\s\S]*?\n\}/) + '\n' + grab(/function d1Grp\(c\) \{[^\n]*\}/) + '\n' + grab(/function d1View\(list\) \{[\s\S]*?\n\}/) + '\nreturn d1View;');
   const four = [{ full_name: 'Zed Juss', company: 'JUSS', academy_date: '2026-10-19' }, { full_name: 'Amy Link', company: 'LINK', academy_date: '2026-10-19' },
     { full_name: 'Bob Juss', company: 'JUSS', academy_date: '2026-10-19', campaign: 'FR' /* placed in FR on Day 1 */ }, { full_name: 'Cal Link', company: 'LINK', academy_date: '2026-10-19', day1_status: 'no_show' }];
   const nm = l => l.map(c => c.full_name).join(', ');
