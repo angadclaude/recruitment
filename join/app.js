@@ -1,4 +1,4 @@
-window.APP_VERSION = '8be7eda9';
+window.APP_VERSION = '5c56c73d';
 
 (function () {
 'use strict';
@@ -4970,6 +4970,11 @@ function renderCandidate(c, quiet) {
         : '<div class="row"><input type="text" id="exr" placeholder="Reason, e.g. share code failed" style="flex:1"><button class="btn ghost sm" id="excl">Remove from incentive</button></div>') +
       '<hr><details class="fixel" id="fixnm"><summary><b>Fix their name</b></summary><label class="q">Full name</label><input type="text" id="fnname" value="' + h(c.full_name) + '">' +
         '<button class="btn ghost sm" id="fnsave" style="margin-top:10px">Save name</button></details>' +
+      // They've changed number or email, or want contacting on another (Angad, 30 Oct): every message after goes to the new one
+      '<details class="fixel" id="fixct"><summary><b>Change their mobile or email</b></summary>' +
+        '<label class="q">Mobile</label><input type="tel" id="ctmob" inputmode="tel" value="' + h(c.mobile || '') + '">' +
+        '<label class="q">Email</label><input type="email" id="ctem" value="' + h(c.email || '') + '">' +
+        '<button class="btn ghost sm" id="ctsave" style="margin-top:10px">Save contact details</button></details>' +
       '<details class="fixel"' + (c.non_qual ? ' open' : '') + '><summary><b>' + (c.non_qual ? 'Ticked the wrong answer at check-in?' : 'Fix their check-in answers') + '</b></summary>' +
         '<label class="q">18 or over</label><select id="fx18">' + ['Yes', 'No'].map(v => '<option' + (c.over18 === v ? ' selected' : '') + '>' + v + '</option>').join('') + '</select>' +
         '<label class="q">Right to work</label><select id="fxrtw">' + (S.me.rtw || []).map(r => '<option' + (c.rtw === r.label ? ' selected' : '') + '>' + h(r.label) + '</option>').join('') + '</select>' +
@@ -5047,6 +5052,16 @@ function renderCandidate(c, quiet) {
     };
     const fn = document.getElementById('fnsave');
     if (fn) fn.onclick = () => call('fixName', { id: c.id, full_name: document.getElementById('fnname').value }).then(nc => saved(nc, 'Name saved ✓ ' + nc.full_name)).catch(x => toast(x.message));
+    const ct = document.getElementById('ctsave');
+    if (ct) ct.onclick = () => {
+      busy(ct, true, 'Saving…');
+      call('fixContact', { id: c.id, mobile: document.getElementById('ctmob').value, email: document.getElementById('ctem').value }).then(nc => {
+        const ch = nc.changed || [];
+        // The welcome email went to the old address: send it again; and Databyte is typed by hand, so it needs the change too
+        const more = ch.indexOf('email') >= 0 && nc.onboard_email_at ? ' · welcome email went to the old one: tap 📧 Send it again' : '';
+        saved(nc, ch.length ? '✓ New ' + ch.join(' and ') + ' saved: every message goes there now' + more + (nc.onboard_email_at || nc.outcome === 'Academy booked' ? ' · update Databyte too' : '') : 'Nothing changed');
+      }).catch(x => { busy(ct, false); toast(x.message); });
+    };
     const fx = document.getElementById('fxsave');
     if (fx) fx.onclick = () => call('fixEligibility', { id: c.id, over18: document.getElementById('fx18').value, rtw: document.getElementById('fxrtw').value, visa_expiry: document.getElementById('fxexp').value })
       .then(nc => saved(nc, nc.non_qual ? 'Saved: still a non-qualifier' : 'Saved ✓ They can do the evaluation now')).catch(x => toast(x.message));

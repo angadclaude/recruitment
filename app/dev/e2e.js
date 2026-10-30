@@ -2512,6 +2512,21 @@ async function fillEval(p) {
     await api(admin, 'fixName', { id: jasId, full_name: 'Jasraj Bhuller' });
     ok(/First and last name/.test(short || '') && fixed === 'Jasraj Bhuller-Singh' && (!avFixed || avFixed.full_name === 'Jasraj Bhuller-Singh'),
       'Fix their name (admins, on their page): "Jasraj Bhuller-Singh" on their record and on availability');
+    // A new mobile or email (Angad, 30 Oct: "in case an applicant has changed or wants to be contacted on a different email or number")
+    const jWas = await api(admin, 'getCandidate', { id: jasId });
+    await ap.goto(APP + 'index.html?c=' + jasId); await ap.waitForSelector('#fixct');
+    await ap.click('#fixct summary'); await ap.fill('#ctmob', '+44 7700 900 777'); await ap.fill('#ctem', 'Jasraj.New@Example.com');
+    await ap.click('#ctsave');
+    await ap.waitForFunction(() => /New mobile and email saved: every message goes there now/.test(document.getElementById('toast').textContent), null, { timeout: 8000 });
+    const jNew = await api(admin, 'getCandidate', { id: jasId }), avNew = (await api(admin, 'availWeek', { weekEnding: '2026-10-25' })).rows.find(r => r.candidate_id === jasId);
+    const ctLog = (await getJson('/dev/sheet?name=Log')).filter(r => r[2] === 'contact_fixed' && r[3] === jasId);
+    let badMob = null; try { await api(admin, 'fixContact', { id: jasId, mobile: '12345', email: 'x@example.com' }); } catch (e) { badMob = e.message; }
+    let notAdm = null; try { await api(nathan, 'fixContact', { id: jasId, mobile: '07700900111', email: 'x@example.com' }); } catch (e) { notAdm = e.message; }
+    ok(jNew.mobile === '07700900777' && jNew.email === 'jasraj.new@example.com' && !jNew.no_whatsapp && (!avNew || avNew.mobile === '07700900777') &&
+      ctLog.length === 1 && ctLog[0][4] === 'mobile + email changed' && !/0770|example/.test(ctLog[0].join(' ')) && /valid UK mobile/.test(badMob || '') && /Admin only/.test(notAdm || ''),
+      'Change their mobile or email (admins, on their page): "+44 7700 900 777" saved as 07700900777 (availability too), email in lower case, "not on WhatsApp" cleared; the Log says what changed, never the numbers; a bad number refused; bookers can\'t');
+    await api(admin, 'fixContact', { id: jasId, mobile: jWas.mobile, email: jWas.email });
+    if (jWas.no_whatsapp) await post('/dev/eval', { js: `(() => { const c = readRow('Candidates', rowOfId('Candidates', '${jasId}')); c.no_whatsapp = 'TRUE'; writeRow('Candidates', c); return 1; })()` });
   }
   await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button'); await openTeam(ap);
   await ap.click('.item[data-u="' + mo.id + '"]'); await ap.waitForSelector('#ual');

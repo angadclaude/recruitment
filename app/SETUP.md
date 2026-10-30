@@ -249,6 +249,9 @@ One tap opens WhatsApp (or their texts / email) with **that company's** message:
 
 To add someone to the recruitment team: add their email to `RECRUIT_TEAM` in Code.gs, and add them as a "Send mail as" address (below) so they can send welcome emails.
 
+### A new mobile or email
+Someone has changed number, or wants contacting on another email: open them → **Change their mobile or email** (admins) → type the new one → **Save contact details**. Every message after goes there. If the welcome email already went, tap **📧 Send it again**, and update Databyte by hand.
+
 ### Who sent it, and when
 Every send is recorded: **who** tapped it, **when**, **as LINK or JUSS**, and **how** (WhatsApp / text / email).
 - **Day 1 tab:** each starter shows "🎉 Day 1 details sent by Fiza Iqbal · Thu 15 Oct 16:03 · LINK · WhatsApp". Not sent yet = the red "Day 1 text not sent" pill.
