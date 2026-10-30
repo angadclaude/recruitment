@@ -1,4 +1,4 @@
-window.APP_VERSION = '5c56c73d';
+window.APP_VERSION = 'eb592266';
 
 (function () {
 'use strict';
@@ -1516,14 +1516,17 @@ function flagCounts(c) {
   const r = c.flags.filter(f => f.level === 'red').length, a = c.flags.filter(f => f.level === 'amber').length;
   return (r ? '<span class="pill red">' + r + ' red</span>' : '') + (a ? '<span class="pill amber">' + a + ' amber</span>' : '');
 }
+/** The answers that come with a call-back time and a reminder (same as Code.gs): "Thinking it over", and "Call back" (busy). */
+const CB_OUTCOMES = ['Thinking it over', 'Call back'];
+const wantsCb = o => CB_OUTCOMES.indexOf(o) >= 0;
 function statusPill(c) {
   if (c.limited) return c.in_room ? '<span class="pill green">✅ In the room</span>' : '';
   if (c.admin_status === 'pending') return '<span class="pill red">Awaiting admin</span>';
   if (c.outcome === 'Academy booked' && c.welcome_url && !c.offer_sent_at && !c.academy_confirmed_at && c.admin_status !== 'pending' && c.admin_status !== 'rejected' && S.me && (isAdmin() || c.booker_id === S.me.user.id))
     return '<span class="pill orange">🎉 Send congratulations</span>';
   if (c.outcome === 'Academy booked') return '<span class="pill green">' + (c.academy_confirmed_at ? '✅ Day 1 confirmed' : 'Academy ' + fmt(c.academy_date)) + (c.outcome_late ? ' · late' : '') + '</span>';
-  if (c.outcome === 'Thinking it over' && c.callback_at) return '<span class="pill ' + (c.callback_at < londonNow() ? 'red' : 'blue') + '">🔁 Call back ' + h(fmtTs(c.callback_at)) + '</span>';
-  const look = { Declined: ['red', '❌ '], 'Not suitable': ['red', '🚫 '], 'No answer': ['amber', '📵 '], 'Thinking it over': ['blue', '🤔 '] }[c.outcome] || ['blue', ''];
+  if (wantsCb(c.outcome) && c.callback_at) return '<span class="pill ' + (c.callback_at < londonNow() ? 'red' : 'blue') + '">' + (c.outcome === 'Call back' ? '📞 Busy, call back ' : '🔁 Call back ') + h(fmtTs(c.callback_at)) + '</span>';
+  const look = { Declined: ['red', '❌ '], 'Not suitable': ['red', '🚫 '], 'No answer': ['amber', '📵 '], 'Thinking it over': ['blue', '🤔 '], 'Call back': ['blue', '📞 '] }[c.outcome] || ['blue', ''];
   if (c.outcome) return '<span class="pill ' + look[0] + '">' + look[1] + h(c.outcome) + (c.outcome_late ? ' · late' : '') + '</span>';
   if (c.non_qual) return '';  // nqPill says it: no evaluation, no call needed
   if (c.rag === 'W') return '<span class="pill">🚶 Walked out</span>';  // left the presentation: no evaluation, no call needed
@@ -1567,7 +1570,7 @@ function quickRow(c, kind) {
   if (kind === 'offer') return '<div class="quick" data-for="' + h(c.id) + '"><a class="q-go" data-send="offer" data-via="' + (c.no_whatsapp ? 'sms' : 'whatsapp') + '" href="' + h(msgUrl(c, msgAcademy(c))) + '" target="_blank" rel="noopener">🎉 Send Day 1 details ' + (c.no_whatsapp ? 'by text' : 'on WhatsApp') + '</a></div>';
   // Chase, carried over: close them out (each opens the outcome sheet with that answer picked), or a call-back to keep chasing
   if (kind === 'close') return '<div class="quick qclose" data-for="' + h(c.id) + '"><button type="button" class="q-go" data-out="Academy booked">✅ Booked</button>' +
-    '<button type="button" data-out="Declined">Declined</button><button type="button" data-out="Not suitable">Not suitable</button><button type="button" data-out="Thinking it over">🔁 Call back</button></div>';
+    '<button type="button" data-out="Declined">Declined</button><button type="button" data-out="Not suitable">Not suitable</button><button type="button" data-out="Call back">📞 Call back</button></div>';
   return '';
 }
 function item(c, showStatus, kind) {
@@ -1810,7 +1813,7 @@ function d1Row(c) {
 /** This week's outcomes, one line each: booked first, then the ones still open, then the rest. */
 function outRank(c) {
   if (c.outcome === 'Academy booked') return 0;
-  if (c.outcome === 'Thinking it over' || c.outcome === 'No answer') return 1;
+  if (wantsCb(c.outcome) || c.outcome === 'No answer') return 1;
   if (!c.outcome && c.rag !== 'W' && counted(c)) return 2;
   if (!counted(c)) return 3;
   return 4;
@@ -1966,7 +1969,7 @@ function callLog(c) {
   if (!Array.isArray(l)) l = [];
   const min = t => String(t || '').slice(0, 16);  // a save still on its way to Google isn't in the log yet
   if (c.outcome && c.outcome_at && !l.some(e => min(e.at) === min(c.outcome_at))) {
-    l = l.concat([{ at: min(c.outcome_at), by: c.outcome_by, o: c.outcome, d: c.academy_date, cb: c.outcome === 'Thinking it over' ? c.callback_at : '', late: c.outcome_late ? 1 : 0, n: c.outcome_notes }]);
+    l = l.concat([{ at: min(c.outcome_at), by: c.outcome_by, o: c.outcome, d: c.academy_date, cb: wantsCb(c.outcome) ? c.callback_at : '', late: c.outcome_late ? 1 : 0, n: c.outcome_notes }]);
   }
   return l.reverse();
 }
@@ -2752,7 +2755,7 @@ function leakOf(c, today, days) {
   const from = addDays(today, -((days || 14) - 1));
   if (c.outcome === 'Academy booked') return '';
   if (!(c.in_room === true || c.in_room === 'TRUE') || c.non_qual || c.rag === 'W') return '';
-  if (c.outcome === 'No answer' || c.outcome === 'Thinking it over') return c.attended_date < from && !(c.callback_at > londonNow()) ? 'stale' : 'callback';
+  if (c.outcome === 'No answer' || wantsCb(c.outcome)) return c.attended_date < from && !(c.callback_at > londonNow()) ? 'stale' : 'callback';
   if (c.attended_date < from) return '';
   return c.outcome ? '' : 'log';
 }
@@ -3886,7 +3889,7 @@ function outcomeKind(c) {
   if (c.rag === 'W') return 'walk';
   if (c.admin_status === 'rejected') return 'no';
   if (c.outcome === 'Academy booked') return 'booked';
-  if (c.outcome === 'Thinking it over' || c.outcome === 'No answer') return 'follow';
+  if (wantsCb(c.outcome) || c.outcome === 'No answer') return 'follow';
   if (c.outcome) return 'no';
   return 'none';
 }
@@ -3896,7 +3899,7 @@ function outcomeText(c) {
   if (c.rag === 'W') return 'Walk out: do not book' + (c.outcome ? ' (' + c.outcome + ')' : '');
   if (c.admin_status === 'rejected') return 'Academy booking rejected by admin';
   if (c.outcome === 'Academy booked') return 'Academy booked: ' + fmt(c.academy_date) + (c.admin_status === 'pending' ? ', awaiting admin' : c.academy_confirmed_at ? ', confirmed' : '') + late;
-  if (c.outcome === 'Thinking it over' && c.callback_at) return 'Thinking it over: call back ' + fmtTs(c.callback_at) + late;
+  if (wantsCb(c.outcome) && c.callback_at) return (c.outcome === 'Call back' ? 'Busy: call back ' : 'Thinking it over: call back ') + fmtTs(c.callback_at) + late;
   if (c.outcome) return c.outcome + late;
   return c.eval_at ? 'No outcome yet' : 'No outcome yet (no evaluation)';
 }
@@ -3983,7 +3986,7 @@ function weekPdf(we, list) {
   y = H - 94;
   // Summary: six boxes, then the rest on one line
   const boxes = [[items.length, 'Checked in'], [evals(items), 'Evaluated'], [count(items, 'booked'), 'Academy booked', 'green'],
-    [count(items, 'follow'), 'Thinking it over\nor no answer'], [count(items, 'no'), 'Declined or\nnot suitable'], [count(items, 'none'), 'No outcome yet', count(items, 'none') ? 'amber' : '']];
+    [count(items, 'follow'), 'Call back, thinking\nor no answer'], [count(items, 'no'), 'Declined or\nnot suitable'], [count(items, 'none'), 'No outcome yet', count(items, 'none') ? 'amber' : '']];
   const bw = (TW - 5 * 6) / 6;
   boxes.forEach((b, i) => {
     const x = M + i * (bw + 6);
@@ -4586,8 +4589,14 @@ function msgNoAnswer(c) {
     'Speak soon! 🙌\n\n' +
     '*' + S.me.user.name + '*, on behalf of ' + co + ' Marketing recruitment team ' + heartOf(c);
 }
-/** "Thinking it over": thanks for the chat + the call-back time they asked for. Signed by the sender: it's their number they call back. */
+/** "Thinking it over": thanks for the chat + the call-back time they asked for. Signed by the sender: it's their number they call back.
+ *  "Call back" (they were busy): sorry to catch them at a bad time + the time they picked. */
 function msgThinking(c) {
+  if (c.outcome === 'Call back') return 'Hey ' + c.first_name + '! 👋' + heartOf(c) + '\n\n' +
+    'Sorry I caught you at a busy time. As agreed, I\'ll call you back ' + cbWhen(c.callback_at) + ' about the opportunity with *' + brandOf(c) + '* 📞\n\n' +
+    'Free sooner, or easier another time? Just *call or text me on this number*.\n\n' +
+    'Speak soon!\n\n' +
+    '*' + S.me.user.name + '*, on behalf of ' + brandCo(c) + ' Marketing recruitment team ' + heartOf(c);
   return 'Hey ' + c.first_name + '! 👋' + heartOf(c) + '\n\n' +
     'Great speaking with you about the opportunity with *' + brandOf(c) + '* 🙌\n\n' +
     'Take your time to think it over. As agreed, I\'ll call you back ' + cbWhen(c.callback_at) + ' 📞\n\n' +
@@ -4639,7 +4648,7 @@ function cbPicks() {
   return out.concat([[t + ' 12:00', 'Tomorrow 12pm'], [t + ' 18:00', 'Tomorrow 6pm'], ['pick', 'Another day / time…']]);
 }
 function cbPicker(c) {
-  const picks = cbPicks(), cur = c.outcome === 'Thinking it over' ? c.callback_at || '' : '';
+  const picks = cbPicks(), cur = wantsCb(c.outcome) ? c.callback_at || '' : '';
   const sel = !cur ? '' : picks.some(p => p[0] === cur) ? cur : 'pick', tmr = addDays(londonNow().slice(0, 10), 1);
   return '<label class="q">When did they ask us to call back?</label>' + chips('cb', picks, sel) +
     '<div class="cbpick"' + (sel === 'pick' ? '' : ' hidden') + '><input type="date" class="cbd" value="' + h(cur ? cur.slice(0, 10) : tmr) + '"><input type="time" class="cbt" value="' + h(cur ? cur.slice(11, 16) : '18:00') + '"></div>' +
@@ -4652,13 +4661,13 @@ function cbVal(root) {
 }
 function submitOutcome(c, payload, errEl) {
   if (!payload.outcome) { showErr(errEl, 'Choose an outcome.'); return false; }
-  if (payload.outcome === 'Thinking it over' && !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(payload.callback_at || '')) { showErr(errEl, 'When did they ask us to call back? Pick a time.'); return false; }
+  if (wantsCb(payload.outcome) && !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(payload.callback_at || '')) { showErr(errEl, 'When did they ask us to call back? Pick a time.'); return false; }
   if (payload.outcome === 'Academy booked' && !/^\d{4}-\d{2}-\d{2}$/.test(payload.academy_date)) { showErr(errEl, 'Pick the BA Academy Day 1 date.'); return false; }
   const acad = payload.outcome === 'Academy booked' ? payload.academy_date : '';
   const now = londonNow();
   const local = Object.assign({}, c, {
     outcome: payload.outcome, academy_date: acad, outcome_notes: payload.outcome_notes, outcome_by: S.me.user.name, outcome_at: now,
-    callback_at: payload.outcome === 'Thinking it over' ? payload.callback_at : '',
+    callback_at: wantsCb(payload.outcome) ? payload.callback_at : '',
     outcome_late: now > c.deadline ? 'TRUE' : '', academy_confirmed_at: acad === c.academy_date ? c.academy_confirmed_at : '',
     day1_status: acad === c.academy_date ? c.day1_status : '',
     admin_status: acad && (c.rag === 'R' || c.rag === 'W' || c.repeat_block) && !isAdmin() && c.admin_status !== 'approved' ? 'pending' : (acad ? c.admin_status : (c.admin_status === 'pending' ? '' : c.admin_status)),
@@ -4686,7 +4695,7 @@ function outcomeSheet(id, preset) {
     '<div class="sheet-h">' + avatar(c) + '<div style="min-width:0"><div class="label muted">Log the call · ' + h(c.full_name) + '</div><div class="display">How did it go?</div></div></div>' +
     '<div id="sh">' + chips('outcome', S.me.outcomes, sel, true) +
     '<div id="sacad"' + (sel === 'Academy booked' ? '' : ' hidden') + '><label class="q">BA Academy Day 1 date</label><input type="date" id="sadate" value="' + h(c.academy_date || nextMonday(S.me.today)) + '"></div>' +
-    '<div id="scbk"' + (sel === 'Thinking it over' ? '' : ' hidden') + '>' + cbPicker(c) + '</div>' +
+    '<div id="scbk"' + (wantsCb(sel) ? '' : ' hidden') + '>' + cbPicker(c) + '</div>' +
     '<label class="q">Notes from the call</label><textarea id="sonotes" class="short" placeholder="Anything the team should know">' + h(c.outcome_notes) + '</textarea>' +
     '<div id="soerr"></div><button class="btn block" id="sosave" style="margin-top:14px">Save outcome</button>' +
     '<button class="btn ghost block" id="socancel" style="margin-top:8px">Cancel</button>' +
@@ -4695,7 +4704,7 @@ function outcomeSheet(id, preset) {
   document.body.style.overflow = 'hidden';
   const sh = back.querySelector('#sh');
   bindChips(sh, (n, v) => {
-    if (n === 'outcome') { back.querySelector('#sacad').hidden = v !== 'Academy booked'; back.querySelector('#scbk').hidden = v !== 'Thinking it over'; }
+    if (n === 'outcome') { back.querySelector('#sacad').hidden = v !== 'Academy booked'; back.querySelector('#scbk').hidden = !wantsCb(v); }
     if (n === 'cb') sh.querySelector('.cbpick').hidden = v !== 'pick';
   });
   back.onclick = e => { if (e.target === back) closeSheet(); };
@@ -4929,7 +4938,7 @@ function renderCandidate(c, quiet) {
     out += '<label class="q" style="margin-top:0">' + (c.outcome ? 'Update outcome' : 'How did the call go?') + '</label>' +
       chips('outcome', walk ? S.me.outcomes.filter(o => o !== 'Academy booked') : S.me.outcomes, c.outcome, true) +
       '<div id="acad"' + (c.outcome === 'Academy booked' ? '' : ' hidden') + '><label class="q">BA Academy Day 1 date</label><input type="date" id="adate" value="' + h(academyDefault) + '"></div>' +
-      '<div id="cbk"' + (c.outcome === 'Thinking it over' ? '' : ' hidden') + '>' + cbPicker(c) + '</div>' +
+      '<div id="cbk"' + (wantsCb(c.outcome) ? '' : ' hidden') + '>' + cbPicker(c) + '</div>' +
       '<label class="q">Notes from the call</label><textarea id="onotes" placeholder="Anything the team should know">' + h(c.outcome_notes) + '</textarea>' +
       '<div id="oerr"></div><div class="dock"><button class="btn block" id="saveout">Save outcome</button></div>' +
       '<p class="small muted center">Logging after the deadline is allowed but shows as late.</p>';
@@ -4949,7 +4958,7 @@ function renderCandidate(c, quiet) {
     (c.offer_sent_at ? '<p class="small muted center sentby" data-sent="offer">✓ ' + cap1(offerBy(c)) + '</p>' : '') +
     (c.welcome_url ? '<a class="btn ghost sm" target="_blank" rel="noopener" href="' + h(welcomeLink(c)) + '">👀 Preview their welcome page</a>' : ''));
   if (canOutcome && c.outcome === 'No answer') wa.push(sendButtons(c, 'noanswer', '📞 Send "we tried calling you" message', msgNoAnswer(c)));
-  if (canOutcome && c.outcome === 'Thinking it over') wa.push(sendButtons(c, 'thinking', '🔁 Send "speak soon" + call-back time', msgThinking(c)));
+  if (canOutcome && wantsCb(c.outcome)) wa.push(sendButtons(c, 'thinking', '🔁 Send "speak soon" + call-back time', msgThinking(c)));
   const noWa = c.no_whatsapp && !walk ? '<div class="flag amber">📵 Not on WhatsApp: message them by text (or email)</div>' : '';
   const waCard = walk && !wa.length ? '' : '<div class="card wa-grid" id="wacard">' + noWa + thanksFlag + wa.join('') + (wa.length ? '<p class="small muted center" style="margin:0">' + (canPickBrand() ? 'Tap <b>LINK</b> or <b>JUSS</b>: opens ' : 'Opens ') + ({ sms: 'your Messages app', email: 'your email' }[canPickBrand() ? chanOf(c) : c.no_whatsapp ? 'sms' : ''] || 'WhatsApp') +
     (canPickBrand() ? ' with that company\'s message ready, signed by you.' : ' with the message ready, then just tap send.') + '</p>' : '') + '</div>';
@@ -5016,7 +5025,7 @@ function renderCandidate(c, quiet) {
   if (canOutcome) {
     const outEl = document.getElementById('out');
     bindChips(outEl, (n, v) => {
-      if (n === 'outcome') { document.getElementById('acad').hidden = v !== 'Academy booked'; document.getElementById('cbk').hidden = v !== 'Thinking it over'; }
+      if (n === 'outcome') { document.getElementById('acad').hidden = v !== 'Academy booked'; document.getElementById('cbk').hidden = !wantsCb(v); }
       if (n === 'cb') outEl.querySelector('.cbpick').hidden = v !== 'pick';
     });
     document.getElementById('saveout').onclick = () => {

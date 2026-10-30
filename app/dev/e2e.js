@@ -2724,6 +2724,30 @@ async function fillEval(p) {
     'at 18:00 → whoever logged it: "🔁 Call Tia back now · They asked for a call back at 18:00"');
   await post('/dev/run', { fn: 'keepWarm' });
   ok((await getJson('/dev/pushes')).filter(cbHead).length === 1, 'the reminder goes once');
+  // "Call back" (Angad, 30 Oct: they were busy, so the team couldn't log an answer): a day and time, the reminder, the busy message
+  const bea = await ci({ full_name: 'Bea Busy', mobile: '07700900612', email: 'bea@example.com', booker_id: abd.id });
+  await ap.goto(APP + 'index.html?c=' + bea.id); await ap.waitForSelector('#saveout');
+  const outChips = await ap.$$eval('#out .chips[data-name=outcome] .chip', b => b.map(x => x.textContent.trim()));
+  await ap.click('#out .chips[data-name=outcome] .chip:has-text("Call back")');
+  ok(outChips.indexOf('Call back') === outChips.indexOf('Thinking it over') + 1 && !(await ap.$eval('#cbk', e => e.hidden)),
+    'outcomes: ' + outChips.join(' · ') + '; "Call back" opens the same "When did they ask us to call back?" picker');
+  await ap.click('#saveout'); await ap.waitForSelector('#oerr:not(:empty)');
+  ok(/When did they ask us to call back/.test(await ap.innerText('#oerr')), 'can\'t save "Call back" without a day and time');
+  await ap.click('#cbk .chip[data-v=pick]'); await ap.fill('#cbk .cbd', '2026-10-20'); await ap.fill('#cbk .cbt', '18:30');
+  await ap.click('#saveout');
+  const beaNow = await pollFor(async () => { const x = await api(admin, 'getCandidate', { id: bea.id }); return x.callback_at === '2026-10-20 18:30' && x; });
+  await ap.waitForSelector('#wacard a[data-kind=thinking]');
+  const beaMsg = decodeURIComponent((await ap.getAttribute('#wacard a[data-kind=thinking]', 'href')).split(/\?text=|[?&]body=/)[1] || '');
+  fs.writeFileSync(`${SHOTS}/msg-call-back.txt`, beaMsg);
+  ok(beaNow && beaNow.outcome === 'Call back' && beaNow.callback_by_id === meId && /📞 Busy, call back Tue 20 Oct 18:30/.test(await ap.innerText('.profile')) &&
+    /^Hey Bea! 👋/.test(beaMsg) && /Sorry I caught you at a busy time\. As agreed, I'll call you back \*today at 6:30 PM\* about the opportunity with \*/.test(beaMsg) && /call or text me on this number/.test(beaMsg),
+    'saved "Call back · Tue 20 Oct 18:30" (reminder to whoever logged it); pill "📞 Busy, call back Tue 20 Oct 18:30"; one tap sends "Sorry I caught you at a busy time… I\'ll call you back today at 6:30 PM"');
+  const beaHead = p => p.body.headings.en === '🔁 Call Bea back now';
+  await setTime('2026-10-20T18:31:00+01:00'); await post('/dev/run', { fn: 'keepWarm' });
+  const beaPush = (await getJson('/dev/pushes')).filter(beaHead);
+  const beaChase = (await api(admin, 'chaseList', {})).items.find(x => x.id === bea.id);
+  ok(beaPush.length === 1 && /asked for a call back at 18:30 \(Call back\)/.test(beaPush[0].body.contents.en) && beaChase && beaChase.leak === 'callback',
+    'at 18:30 → "🔁 Call Bea back now · They asked for a call back at 18:30 (Call back)"; and she\'s on Chase as a call-back');
   // The recruitment team: LINK / JUSS for both follow-up messages, signed by them
   const rt2 = await browser.newContext(PHONE), rt2p = await rt2.newPage();
   await loginUi(rt2p, 'recruitment@jussmarketing.co.uk', APP + 'index.html?c=' + tia.id); await rt2p.waitForSelector('#wacard .cobig[data-kind=thinking][data-co=LINK]');
@@ -2793,7 +2817,7 @@ async function fillEval(p) {
   const aliClose = '.ccard:has(.item[data-id="' + ali.id + '"]) .qclose';
   await ap.waitForSelector(aliClose);
   await shot(ap, '45-chase-carried-over', true);
-  ok(JSON.stringify(await ap.$$eval(aliClose + ' button', b => b.map(x => x.dataset.out))) === '["Academy booked","Declined","Not suitable","Thinking it over"]',
+  ok(JSON.stringify(await ap.$$eval(aliClose + ' button', b => b.map(x => x.dataset.out))) === '["Academy booked","Declined","Not suitable","Call back"]',
     'each carried-over person: ✅ Booked · Declined · Not suitable · 🔁 Call back');
   await ap.click(aliClose + ' [data-out="Declined"]'); await ap.waitForSelector('.sheet #sosave');
   ok(await ap.textContent('.sheet .chips[data-name=outcome] .chip.on') === 'Declined', 'tapping Declined opens the outcome sheet with Declined picked (Save confirms it)');
