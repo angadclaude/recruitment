@@ -111,8 +111,9 @@ const FIRST = [
   ok(/comes from Hyrre/.test(await refused(rubal, 'saveBooking', { booking: Object.assign({}, aisha, { slot_date: '2026-10-28' }) })) &&
     /comes from Hyrre/.test(await refused(rubal, 'bookingAction', { id: aisha.id, act: 'cancel' })) &&
     /comes from Hyrre/.test(await refused(rubal, 'bookingAction', { id: aisha.id, act: 'sent', kind: 'confirm', via: 'whatsapp' })) &&
-    /comes from Hyrre/.test(await refused(rubal, 'bookingAction', { id: aisha.id, act: 'sent', kind: 'missed', via: 'whatsapp' })),
-    'Hyrre\'s bookings are changed in Hyrre: J&L won\'t move or cancel them, or send our confirmation or "sorry we missed you"');
+    /isn't over yet/.test(await refused(rubal, 'bookingAction', { id: aisha.id, act: 'sent', kind: 'missed', via: 'whatsapp' })) &&
+    /comes from Hyrre/.test(await refused(rubal, 'saveBooking', { booking: { rebook_of: aisha.id, first_name: 'Aisha', mobile: aisha.mobile, slot_date: '2026-10-30' } })),
+    'Hyrre\'s bookings are changed in Hyrre: J&L won\'t move or cancel them or send our confirmation; "sorry we missed you" and rebook only once they\'ve missed it');
   ok(/^Already booked for Tuesday 27th October \(by Rubal\)/.test(await refused(jess, 'saveBooking', { booking: { first_name: 'Ben', mobile: '07700900202', slot_date: '2026-10-29' } })),
     'booking Ben again from Book Appts: "Already booked for Tuesday 27th October (by Rubal)…"');
 
@@ -187,10 +188,10 @@ const FIRST = [
   n0 = (await getJson('/dev/pushes')).length;
   await setTime('2026-10-27T10:35:00+00:00'); await post('/dev/run', { fn: 'keepWarm' });
   const mp = await pushesSince(n0), mr = to(mp, rubalId), mj = to(mp, jessId);
-  ok(mr.some(p => /^Ian didn't check in/.test(p.body.contents.en) && /Mark them absent in Hyrre \(Shift \+ click their appointment\) and Hyrre sends the rebook link/.test(p.body.contents.en)) &&
-    mj.some(p => /^Ian didn't check in/.test(p.body.contents.en)), 'Megan\'s no-show (Ian) → Rubal and Jess: "Mark them absent in Hyrre… Hyrre sends the rebook link"');
-  ok(mr.some(p => /^Ben didn't check in/.test(p.body.contents.en) && /Mark them absent in Hyrre/.test(p.body.contents.en) && !/sorry we missed you/.test(p.body.contents.en)) &&
-    mj.some(p => /^Gus didn't check in/.test(p.body.contents.en)), 'Rubal hears about Ben, Jess about Gus, with Hyrre\'s way to rebook (not our WhatsApp)');
+  ok(mr.some(p => /^Ian didn't check in for the 10:00 presentation\. Tap to send "sorry we missed you" and rebook them\. Mark them absent in Hyrre too \(Shift \+ click their appointment\)\.$/.test(p.body.contents.en)) &&
+    mj.some(p => /^Ian didn't check in/.test(p.body.contents.en)), 'Megan\'s no-show (Ian) → Rubal and Jess: "Tap to send \"sorry we missed you\" and rebook them. Mark them absent in Hyrre too…"');
+  ok(mr.some(p => /^Ben didn't check in/.test(p.body.contents.en) && /sorry we missed you/.test(p.body.contents.en) && /absent in Hyrre too/.test(p.body.contents.en)) &&
+    mj.some(p => /^Gus didn't check in/.test(p.body.contents.en)), 'Rubal hears about Ben, Jess about Gus: our WhatsApp and rebook, and Hyrre marked absent too');
   const su = (await api(satpal, 'payReport', { weekEnding: '2026-11-01' })).showup;
   const megRow = su.rows.find(r => r.name === 'Megan Hyrre');
   ok(megRow && megRow.booked === 2 && megRow.came === 1, 'show-up: Megan Hyrre 1 of 2 came (Hana yes, Ian no)');
@@ -276,14 +277,71 @@ const FIRST = [
   await setTime('2026-10-29T10:40:00+00:00');
   n0 = (await getJson('/dev/pushes')).length; await post('/dev/run', { fn: 'keepWarm' });
   const ma = to(await pushesSince(n0), rubalId).find(p => /^Aisha didn't check in/.test(p.body.contents.en));
-  ok(ma && /The 11:15 pull marks them absent in Hyrre, and Hyrre sends the rebook link\.$/.test(ma.body.contents.en) && !/Shift \+ click/.test(ma.body.contents.en),
-    'Thu 10:40, marking on: "Aisha didn\'t check in… The 11:15 pull marks them absent in Hyrre, and Hyrre sends the rebook link."');
+  ok(ma && /Tap to send "sorry we missed you" and rebook them\. The 11:15 pull marks them absent in Hyrre, and Hyrre sends its rebook link as usual\.$/.test(ma.body.contents.en) && !/Shift \+ click/.test(ma.body.contents.en),
+    'Thu 10:40, marking on: "Aisha didn\'t check in… Tap to send \"sorry we missed you\" and rebook them. The 11:15 pull marks them absent in Hyrre, and Hyrre sends its rebook link as usual."');
   await rp.reload(); await rp.waitForSelector('.tabbar button');
   await rp.click('.tabbar button[data-tab=book]'); await rp.waitForSelector('.bkrow');
   const after = await rp.$eval('.bkrow:has-text("Aisha Khan")', el => el.innerText);
-  ok(/Didn't come/.test(after) && /The 11:15 pull marks them absent in Hyrre/.test(after) && !(await rp.$('.bkrow:has-text("Aisha Khan") [data-bks]')),
-    'after 10:30: Aisha "didn\'t come" with "🤖 The 11:15 pull marks them absent in Hyrre…" instead of our WhatsApp');
+  ok(/Didn't come/.test(after) && /The 11:15 pull marks them absent in Hyrre, and Hyrre sends its rebook link as usual\./.test(after) &&
+    await rp.$('.bkrow:has-text("Aisha Khan") a[data-kind=missed]') && await rp.$('.bkrow:has-text("Aisha Khan") [data-bkre]'),
+    'after 10:30: Aisha "didn\'t come" with 💬 Sorry we missed you and 📅 Rebook (Angad, 30 Oct: Rubal "can\'t do anything for Megan\'s"), and what Hyrre does');
   await shot(rp, 'h3-didnt-come', true);
+
+  console.log('Megan\'s no-show: our "sorry we missed you" and rebook (Angad, 30 Oct)');
+  const missMsg = decodeURIComponent((await rp.getAttribute('.bkrow:has-text("Aisha Khan") a.btn[data-kind=missed]', 'href')).split('?text=')[1]);
+  ok(/^Hey Aisha! 👋\n\nWe missed you at your \*Appointment Presentation\* today 😕/.test(missMsg) && /Which day suits you\? Just reply here/.test(missMsg) &&
+    /Kind regards,\n\*Megan\*\nIn association with \*JUSS Marketing Ltd\*$/.test(missMsg), 'Aisha\'s "sorry we missed you": rebook by replying, signed *Megan*');
+  await rp.click('.bkrow:has-text("Aisha Khan") a.btn[data-kind=missed]'); await rp.waitForTimeout(800);
+  let aNow = (await api(rubal, 'bookingList', {})).items.find(b => b.id === aSent.id);
+  ok(/^2026-10-29 10:4/.test(aNow.missed_at) && aNow.missed_by === 'Rubal Oshan', 'Rubal taps it: saved (✓ Messaged)');
+  await rp.click('.bkrow:has-text("Aisha Khan") [data-bkre]'); await rp.waitForSelector('#bksave');
+  const form = await rp.innerText('.bksheet');
+  ok(/Rebook · they didn't come/i.test(form) && /🤖 Still Megan's \(from Hyrre · Hirematic\), booked for JUSS Marketing, signed Megan\. Ours from now on/.test(form) && !(await rp.$('.bksheet .chips[data-name=bksrc]')),
+    'Rebook: "🤖 Still Megan\'s (from Hyrre · Hirematic)… signed Megan. Ours from now on", no "where did they apply"');
+  await shot(rp, 'h4-rebook-megan');
+  await rp.click('.bksheet [data-day="2026-10-30"]'); await rp.click('#bksave'); await rp.waitForSelector('.bksheet a[data-kind=confirm]');
+  const confMsg = decodeURIComponent((await rp.getAttribute('.bksheet a.btn.wa[data-kind=confirm]', 'href')).split('?text=')[1]);
+  ok(/booked in/.test(confMsg) && /30th October/.test(confMsg) && /Kind regards,\n\*Megan\*\n/.test(confMsg), 'then the confirmation for Fri 30th, signed *Megan* (the same Megan she\'s heard from)');
+  let all = (await api(rubal, 'bookingList', {})).items;
+  const re = all.find(b => b.rebook_of === aSent.id);
+  ok(re && re.booked_by === 'Megan Hyrre' && re.booked_by_id === meganId && re.source === 'Hirematic' && !re.hyrre_id && re.slot_date === '2026-10-30' && re.status === 'booked' &&
+    all.find(b => b.id === aSent.id).status === 'no_show', 'the rebook: still Megan\'s, from Hirematic, ours (no Hyrre id); Thursday\'s stays a no-show (📅 Rebooked)');
+  ok(!(await refused(rubal, 'saveBooking', { booking: { id: re.id, first_name: 'Aisha', last_name: 'Khan', mobile: re.mobile, slot_date: '2026-11-02', source: 'Hirematic' } })) &&
+    !(await refused(rubal, 'saveBooking', { booking: { id: re.id, first_name: 'Aisha', last_name: 'Khan', mobile: re.mobile, slot_date: '2026-10-30', source: 'Hirematic' } })),
+    'ours to change from now on (a day moved and back)');
+  await setTime('2026-10-29T11:16:00+00:00');
+  const m5 = await api('', 'hyrreImport', { ticket: await ticket(), pipeline: '403', window: WINDOW, items: second });
+  ok(JSON.stringify(m5.marks.find(m => m.id === 'h1')) === JSON.stringify({ id: 'h1', status: 'no_show' }) &&
+    JSON.stringify(m5.marks.find(m => m.id === 'h5')) === JSON.stringify({ id: 'h5', status: 'no_show' }),
+    '11:15 pull: Aisha (rebooked here) is still marked no-show in Hyrre, like Eva: Hyrre does what it does (Angad, 30 Oct)');
+  const pull = fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'hyrre-pull.js'), 'utf8');
+  ok(/ask_rebook: m\.status === 'no_show' \}/.test(pull), 'the pull marks Hyrre the way its own appointment box does (a no-show asked to rebook), nothing more');
+  n0 = (await getJson('/dev/pushes')).length;
+  const p6 = await api('', 'hyrreImport', { ticket: await ticket(), pipeline: '403', window: WINDOW,
+    items: second.map(x => x.id === 'h1' ? Object.assign({}, x, { attendance: 'no_show' }) : x).concat([item('h1', 'AISHA KHAN', '+447700900201', '2026-11-02')]) });
+  all = (await api(rubal, 'bookingList', {})).items;
+  const aOpen = all.filter(b => b.mobile === '07700900201' && b.status === 'booked');
+  const mv = to(await pushesSince(n0), rubalId).find(p => /^📅 Aisha rebooked in Hyrre too/.test(p.body.headings.en));
+  ok(aOpen.length === 1 && aOpen[0].id === re.id && aOpen[0].hyrre_id === 'h1' && aOpen[0].slot_date === '2026-11-02' && p6.added === 0,
+    'she also used Hyrre\'s link (Mon 2 Nov, approved): one booking, not two, on Hyrre\'s day, Hyrre\'s again');
+  ok(mv && mv.body.headings.en === '📅 Aisha rebooked in Hyrre too: now Monday' && /^Rebooked here for Friday 30th October, then for Monday 2nd November in Hyrre\. It's one booking now/.test(mv.body.contents.en),
+    'Rubal and Jess hear: "📅 Aisha rebooked in Hyrre too: now Monday…"');
+  const ianB = all.find(b => b.hyrre_id === 'h9');
+  const ianRe = await api(rubal, 'saveBooking', { booking: { rebook_of: ianB.id, first_name: 'Ian', last_name: 'Jones', mobile: ianB.mobile, slot_date: '2026-10-30' } });
+  await setTime('2026-10-30T09:40:00+00:00');
+  await api('', 'checkin', { form: { full_name: 'Ian Jones', mobile: '07700900209', email: 'ian@example.com', over18: 'Yes', rtw: 'British or Irish citizen', privacy_ok: true, source: 'Indeed' } });
+  const fri = second.map(x => x.id === 'h1' ? Object.assign({}, x, { attendance: 'no_show' }) : x.id === 'h9' ? Object.assign({}, x, { date: '2026-10-30' }) : x)
+    .concat([item('h1', 'AISHA KHAN', '+447700900201', '2026-11-02')]);
+  await setTime('2026-10-30T10:40:00+00:00');
+  const p8 = await api('', 'hyrreImport', { ticket: await ticket(), pipeline: '403', window: WINDOW, items: fri.map(x => x.id === 'h9' ? Object.assign({}, x, { date: '2026-11-04' }) : x) });
+  ok(p8.added === 0 && p8.skipped === 1 && !(await api(rubal, 'bookingList', {})).items.some(b => b.mobile === '07700900209' && b.slot_date === '2026-11-04'),
+    'Ian, rebooked here for Fri and came: a later day approved for him in Hyrre isn\'t added (he\'s been)');
+  const p7 = await api('', 'hyrreImport', { ticket: await ticket(), pipeline: '403', window: WINDOW, items: fri });
+  all = (await api(rubal, 'bookingList', {})).items;
+  const ianNow = all.filter(b => b.mobile === '07700900209' && b.status !== 'cancelled');
+  ok(p7.added === 0 && ianNow.length === 2 && all.find(b => b.id === ianRe.id).hyrre_id === 'h9' && all.find(b => b.id === ianRe.id).status === 'came' &&
+    JSON.stringify(p7.marks.find(m => m.id === 'h9')) === JSON.stringify({ id: 'h9', status: 'attended' }) && all.find(b => b.id === re.id).status === 'booked',
+    'approved in Hyrre for Friday, the day he came: still one booking, and Hyrre marks him attended');
   await browser.close();
 
   console.log('\nALL ' + passed + ' HYRRE CHECKS PASSED (' + (process.env.JL_BACKEND === 'pg' ? 'Supabase' : 'Google') + ' back end)');
