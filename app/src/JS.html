@@ -2225,17 +2225,19 @@ function editUser(u) {
         '<p class="small">On their phone: open the app → <b>' + (r.door === 'admin' ? 'Admin login' : 'BA login') + '</b> → type <b>' + h(r.email) + '</b> → tap <b>Already have a code?</b> → type this code → Log in.</p></div>';
     }).catch(ex => { busy(uc, false); showErr(document.getElementById('uerr'), /Unknown action/.test(ex.message) ? 'Paste the new Google code (Code.gs) first.' : ex.message); });
   };
-  const doSave = (btn, allowSimilar) => {
+  const typed = () => ({ id: u ? u.id : '', name: document.getElementById('un').value, email: document.getElementById('ue').value, company: chipVal(uf, 'company'), roles: chipVals(uf, 'roles'), active: document.getElementById('ua').checked,
+    aliases: document.getElementById('ual').value.split('\n').map(a => a.trim()).filter(String) });
+  const doSave = (btn, allowSimilar, over) => {
     busy(btn, true);
-    call('saveUser', { allowSimilar: !!allowSimilar, user: { id: u ? u.id : '', name: document.getElementById('un').value, email: document.getElementById('ue').value, company: chipVal(uf, 'company'), roles: chipVals(uf, 'roles'), active: document.getElementById('ua').checked,
-      aliases: document.getElementById('ual').value.split('\n').map(a => a.trim()).filter(String) } })
+    const was = over ? (S.users || []).filter(o => o.id === over.id)[0] : u;
+    call('saveUser', { allowSimilar: !!allowSimilar, user: over || typed() })
       .then(saved => {
         S.users = (S.users || []).filter(o => o.id !== saved.id).concat([saved]).sort((a, b) => a.name.localeCompare(b.name));
         if (saved.id === S.me.user.id) { S.me.user = saved; }
         saveCache(); toast((saved.linked ? 'Saved ✓ ' + saved.linked + ' check-in' + (saved.linked > 1 ? 's' : '') + ' that typed their name' + ((saved.aliases || []).length ? ' or other names' : '') + ' now credited to them' : 'Saved ✓') +
           (saved.moved ? ' · this week\'s ' + saved.moved + ' now ' + saved.company : ''));
         // Just added (or email changed) and they can log in: stay on their page, ready to show a login code if they're with you
-        if (saved.email && saved.active && (!u || String(u.email || '').toLowerCase() !== saved.email.toLowerCase())) {
+        if (saved.email && saved.active && (!was || String(was.email || '').toLowerCase() !== saved.email.toLowerCase())) {
           S.params = { id: saved.id }; hist('replace', { v: 'user', p: S.params });
           editUser(saved);
           const box = document.getElementById('ucodebox');
@@ -2245,11 +2247,21 @@ function editUser(u) {
         back();
       }).catch(x2 => {
         busy(btn, false);
-        const sim = similarOf(x2.message), err = document.getElementById('uerr');
-        if (!sim) return showErr(err, x2.message);
-        err.innerHTML = '<div class="flag amber">' + similarText(sim) + ' Same person? Tap them in the Team list to edit them instead.' +
-          '<button class="btn ghost sm block" id="usim" style="margin-top:8px">Different person: add anyway</button></div>';
-        document.getElementById('usim').onclick = ev => doSave(ev.currentTarget, true);
+        const sim = similarOf(x2.message), err = document.getElementById('uerr'), t = typed();
+        (u ? Promise.resolve(null) : findOnFile(x2.message, t.name)).then(o => {
+        if (!sim && !o) return showErr(err, x2.message);
+        // Already on the team: who's on file, what saving would change, and one tap to update them (no hunting in the Team list)
+        const ch = o ? fileChanges(o, t) : [], first = o ? h(o.name.split(' ')[0]) : '';
+        err.innerHTML = '<div class="flag amber" id="uonfile">' + (sim ? similarText(sim) : '<b>' + h(o.name) + '</b> is already on the team.') +
+          (o ? '<div class="small" style="margin-top:6px">On file: ' + h(o.company) + ' · ' + h((o.roles || []).map(r => ROLE_LABEL[r]).join(', ')) + ' · ' + (o.email ? h(o.email) : '<b>no email</b> (can\'t log in)') + (o.active ? '' : ' · access off') + '</div>' +
+            (ch.length ? '<div class="small" style="margin-top:4px">Update with what you typed: ' + ch.join(' · ') + '</div><button class="btn block" id="uupd" style="margin-top:8px">✏️ Update ' + first + '</button>'
+              : '<button class="btn block" id="uopen" style="margin-top:8px">Open ' + first + '</button>') : '') +
+          (sim ? '<button class="btn ghost sm block" id="usim" style="margin-top:8px">Different person: add anyway</button>' : '') + '</div>';
+        const upd = document.getElementById('uupd'), opn = document.getElementById('uopen'), any = document.getElementById('usim');
+        if (upd) upd.onclick = ev => doSave(ev.currentTarget, true, fileMerge(o, t));
+        if (opn) opn.onclick = () => nav('user', { id: o.id });
+        if (any) any.onclick = ev => doSave(ev.currentTarget, true);
+        });
       });
   };
   document.getElementById('usave').onclick = e => doSave(e.currentTarget);
@@ -4377,6 +4389,41 @@ function viewCandidate(id) {
 /** Same as the Google code's: lower case, letters and single spaces only ("  Hasini!" → "hasini"). */
 /** "SIMILAR|id|name|company" from saveUser: someone nearly the same is already on the team. */
 function similarOf(msg) { const m = /^SIMILAR\|([^|]*)\|([^|]*)\|([^|]*)(?:\|([^|]*))?$/.exec(String(msg || '')); return m ? { id: m[1], name: m[2], company: m[3], via: m[4] || '' } : null; }
+/** Adding someone who's already on the team (Angad, 30 Oct: Shiloh Fisher was added with a typo in her email, Martin Little by name
+ *  only, and "Add a person" just said "already on the team"): the one on file, or null. Same name, or the near one saveUser found. */
+function onFile(msg, name) {
+  const sim = similarOf(msg);
+  if (sim) return (S.users || []).filter(o => o.id === sim.id)[0] || null;
+  return /is already on the team/.test(String(msg || '')) ? (S.users || []).filter(o => normName(o.name) === normName(name))[0] || null : null;
+}
+/** The same, after fetching the team list again if this phone's copy doesn't have them yet (someone else added them: Jess added
+ *  Shiloh on her phone, Angad tried on his). */
+function findOnFile(msg, name) {
+  const o = onFile(msg, name);
+  if (o || !/is already on the team/.test(String(msg || ''))) return Promise.resolve(o);
+  return call('listUsers').then(r => { S.users = r.users; saveCache(); return onFile(msg, name); }).catch(() => null);
+}
+/** What saving the typed details over the one on file would change, in words ("email shh… → shy…", "+ Availability"). */
+const ROLE_LABEL = { booker: 'Booker', presenter: 'Presenter', admin: 'Admin', availability: 'Availability' };
+function fileChanges(o, t) {
+  const out = [], em = String(t.email || '').trim().toLowerCase(), was = String(o.email || '').toLowerCase();
+  if (em && em !== was) out.push('email ' + (was ? h(was) + ' → ' : '') + '<b>' + h(em) + '</b>');
+  if (t.company && t.company !== o.company) out.push(h(o.company) + ' → <b>' + h(t.company) + '</b>');
+  const r0 = o.roles || [], r1 = t.roles || [];
+  r1.filter(r => r0.indexOf(r) < 0).forEach(r => out.push('+ ' + ROLE_LABEL[r]));
+  r0.filter(r => r1.indexOf(r) < 0).forEach(r => out.push('− ' + ROLE_LABEL[r]));
+  if (t.active && !o.active) out.push('access back on');
+  (t.aliases || []).filter(a => !(o.aliases || []).some(b => normName(b) === normName(a))).forEach(a => out.push('other name "' + h(a) + '"'));
+  return out;
+}
+/** The one on file with the typed details: their email if one was typed (else the one on file), the company, access and other
+ *  names typed, and the name on file (a near spelling becomes one of their other names, so its check-ins are credited too). */
+function fileMerge(o, t) {
+  const al = (o.aliases || []).slice();
+  (t.aliases || []).concat(normName(t.name) !== normName(o.name) ? [t.name.trim()] : []).forEach(a => { if (a && !al.some(b => normName(b) === normName(a))) al.push(a); });
+  return { id: o.id, name: o.name, email: String(t.email || '').trim() || o.email || '', company: t.company || o.company, roles: (t.roles || []).length ? t.roles : o.roles,
+    active: t.active || o.active, aliases: al };
+}
 function similarText(sim) { return sim.via ? '"' + h(sim.via) + '" is one of <b>' + h(sim.name) + '</b>\'s other names (' + h(sim.company) + ').' : '<b>' + h(sim.name) + '</b> (' + h(sim.company) + ') is already on the team.'; }
 function normName(s) { return String(s || '').toLowerCase().replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim(); }
 function saved(nc, msg) { upsert(nc); toast(msg); if (S.view === 'cand' && S.params.id === nc.id) renderCandidate(nc, true); }
@@ -5027,14 +5074,16 @@ function renderCandidate(c, quiet) {
           });
         }).catch(x => {
           busy(btn, false);
-          const sim = similarOf(x.message), box = document.getElementById('nbksim');
+          findOnFile(x.message, name).then(o => {
+          const sim = similarOf(x.message) || (o ? { id: o.id, name: o.name, company: o.company, via: '' } : null), box = document.getElementById('nbksim');
           if (!sim) return toast(x.message);
           // Nearly the same name as someone already on the team: almost always the same person
           box.innerHTML = '<div class="flag amber" style="margin-top:10px">' + similarText(sim) + ' Same person?' +
             '<button class="btn block" id="nbkuse" style="margin-top:8px">✅ Yes: credit ' + h(sim.name) + '</button>' +
-            '<button class="btn ghost sm block" id="nbkany" style="margin-top:6px">Different person: add ' + h(name) + '</button></div>';
+            (similarOf(x.message) ? '<button class="btn ghost sm block" id="nbkany" style="margin-top:6px">Different person: add ' + h(name) + '</button>' : '') + '</div>';
+          const any = document.getElementById('nbkany'); if (any) any.onclick = ev => addNew(ev.currentTarget, true);
           document.getElementById('nbkuse').onclick = ev => { busy(ev.currentTarget, true, 'Saving…'); call('reassignBooker', { id: c.id, booker_id: sim.id }).then(nc => saved(nc, 'Booker updated ✓ ' + sim.name)).catch(y => toast(y.message)); };
-          document.getElementById('nbkany').onclick = ev => addNew(ev.currentTarget, true);
+          });
         });
     };
     document.getElementById('nbksave').onclick = e => addNew(e.currentTarget);

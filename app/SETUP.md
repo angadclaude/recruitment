@@ -76,6 +76,7 @@ Until Part C is done, alerts go by email instead. Nothing breaks.
 
 1. Open **https://jl-recruitment.vercel.app/** → tap **🛡️ Admin login** (Angad, Jess, Satpal, Rubal) → your email → the 6-digit code.
 2. **👥 Team → + Add person** for every booker and presenter: name, email, **LINK or JUSS**, access. Bookers and presenters are BAs: they use **🙌 BA login**. Only bookers earn the **recruitment incentive** (net 5): admins can be picked as someone's booker, but they're never on the incentive board and get no incentive alerts.
+   - **Already on the team?** (added by someone else, or by name only) The form shows who's on file and what would change, e.g. a corrected email, with **✏️ Update**: one tap, same person, nothing lost.
 3. Send everyone the link with this message:
 
 > 📲 Our new recruitment app is live. Open https://jl-recruitment.vercel.app/ → tap **🙌 BA login** → your email → the 6-digit code we email you.
