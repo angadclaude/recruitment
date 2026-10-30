@@ -2965,12 +2965,20 @@ function viewAcademy(quiet) {
 function d1Title() { return isAdmin() ? 'Day 1' : 'New starts'; }
 function d1Sub() { return !isAdmin() && S.tab !== 'academy'; }
 function remindedToday(c) { return String(c.day1_reminded_at || '').slice(0, 10) === ((S.academy && S.academy.today) || S.me.today); }
-/** One order for a Day 1 list on screen and in the week's New Starts List: JUSS on top, LINK below (Angad, 25 Oct: "always"),
- *  then in each company Monday's starters then Tuesday's, by name, the no-shows at the bottom (19 Oct), dropped out below them. */
+/** One order for a Day 1 list on screen and in the week's New Starts List: JUSS on top, LINK below (Angad, 25 Oct: "always"); in
+ *  each company everyone one booker booked together (Angad, 30 Oct: Nathan's were "three on top and one at the bottom"), the Office
+ *  first, then whoever booked the most, as on the poster and the bell sheets, no booker last; in each booker's, Monday's then
+ *  Tuesday's, by name, their no-shows last (19 Oct) and dropped out below them. */
 function d1Order(list) {
   const co = c => c.company === 'JUSS' ? 0 : 1, out = c => c.day1_status === 'dropped' ? 2 : c.day1_status === 'no_show' ? 1 : 0;
-  return list.slice().sort((a, b) => co(a) - co(b) || out(a) - out(b) || a.academy_date.localeCompare(b.academy_date) || a.full_name.localeCompare(b.full_name));
+  const rank = c => !c.booker_name ? 2 : c.office ? 0 : 1, key = c => co(c) + '|' + d1Grp(c), n = {};
+  list.forEach(c => { n[key(c)] = (n[key(c)] || 0) + 1; });
+  return list.slice().sort((a, b) => co(a) - co(b) || rank(a) - rank(b) || n[key(b)] - n[key(a)] || d1Grp(a).localeCompare(d1Grp(b)) ||
+    String(a.booker_name || '').localeCompare(String(b.booker_name || '')) ||  // the Office's by who booked them (Megan's together, Rubal's together)
+    out(a) - out(b) || a.academy_date.localeCompare(b.academy_date) || a.full_name.localeCompare(b.full_name));
 }
+/** Whose group a starter is in on the Day 1 list: the Office (admins and the office team), their booker, or no booker. */
+function d1Grp(c) { return !c.booker_name ? 'No booker' : c.office ? 'Office' : String(c.booker_name); }
 /** FR or HF: where a starter is placed, picked on Day 1 (Angad's 26 Oct list put JUSS starters in FR), else their company's: JUSS = HF, LINK = FR. */
 function campaignOf(c) { return c.campaign === 'HF' || c.campaign === 'FR' ? c.campaign : c.company === 'JUSS' ? 'HF' : 'FR'; }
 /** A Day 1's results, as the team used to mark up the printed list for Angad on Tuesday morning (27 Oct): started of everyone
@@ -2989,7 +2997,7 @@ function d1ResultsLines(x) {
   return [x.started + ' of ' + x.booked + ' started', 'FR ' + x.fr + ' · HF ' + x.hf + (x.left ? ' · ' + x.left + ' didn\'t continue' : ''),
     x.byBooker.map(b => b[0] + ' ' + b[1]).join(' · '), not.length ? 'Didn\'t start: ' + not.join(', ') : ''];
 }
-/** The Day 1 list as chosen on the tab (Angad, 26 Oct): only FR or HF (or both), JUSS then LINK (d1Order, the default) or names
+/** The Day 1 list as chosen on the tab (Angad, 26 Oct): only FR or HF (or both), By booker (JUSS then LINK, d1Order, the default) or names
  *  A–Z (no-shows, then dropped out, still at the bottom). The New Starts List follows it. */
 function d1View(list) {
   const l = S.d1Camp ? list.filter(c => campaignOf(c) === S.d1Camp) : list;
@@ -3002,6 +3010,7 @@ function d1Search(root) {
   const q = String(S.d1Q || '').trim().toLowerCase();
   let digits = q.replace(/\D/g, ''); if (digits.indexOf('44') === 0) digits = '0' + digits.slice(2);
   root.querySelectorAll('.trow[data-q]').forEach(r => { r.hidden = !!q && r.dataset.q.indexOf(q) < 0 && !(digits.length >= 3 && r.dataset.q.replace(/\D/g, '').indexOf(digits) >= 0); });
+  root.querySelectorAll('.d1grp').forEach(g => { g.hidden = !!q; });  // the booker headings go while searching
 }
 /** Some starters are booked for Tuesday instead of the usual Monday (Angad, 19 Oct): a Monday starter can move to
  *  Tuesday, a Tuesday one back to Monday (the undo), before the day or on it, while that day is still to come. */
@@ -3106,7 +3115,12 @@ function drawAcademy(r, quiet) {
     // The day's results once it's happened (all of that day's starters, whatever the campaign filter): what Angad used to get on paper
     const res = admin && x <= today ? d1ResultsLines(d1Results(items.filter(c => c.academy_date === x))) : null;
     const resCard = res ? '<div class="card d1res" data-res="' + x + '"><b>🎓 ' + h(res[0]) + '</b><div>' + h(res[1]) + '</div><div class="small">' + h(res[2]) + '</div>' + (res[3] ? '<div class="small muted">' + h(res[3]) + '</div>' : '') + '</div>' : '';
-    return '<div class="datehead">' + h(label(x)) + '</div><p class="hint" style="margin:-4px 4px 8px">' + h(counts) + '</p>' + resCard + tools + '<div class="list alist">' + all.map(row).join('') + '</div>';
+    // Each booker's starters under their name (Angad, 30 Oct: "visually easier"), in the default order
+    const grpN = {}, gk = c => c.company + '|' + d1Grp(c); all.forEach(c => { grpN[gk(c)] = (grpN[gk(c)] || 0) + 1; });
+    const heads = S.d1Sort !== 'az' && Object.keys(grpN).length > 1;  // a booker's own New starts: just theirs, no heading
+    const rows = all.map((c, i) => (heads && (!i || gk(all[i - 1]) !== gk(c)) ? '<div class="d1grp" data-grp="' + h(gk(c)) + '"><span class="co ' + h(c.company) + '">' + h(c.company) + '</span> ' +
+      (d1Grp(c) === 'Office' ? '🏢 ' : '') + h(d1Grp(c)) + ' · ' + grpN[gk(c)] + '</div>' : '') + row(c)).join('');
+    return '<div class="datehead">' + h(label(x)) + '</div><p class="hint" style="margin:-4px 4px 8px">' + h(counts) + '</p>' + resCard + tools + '<div class="list alist">' + rows + '</div>';
   };
   const toOnb = admin ? r.items.filter(c => c.academy_date >= today && !c.onboard_email_at && c.day1_status !== 'dropped') : [];
   const pend = admin ? r.pending || [] : [];  // Academy bookings waiting on an admin (moved here from Chase)
@@ -3123,7 +3137,7 @@ function drawAcademy(r, quiet) {
   const live = items.filter(c => c.day1_status !== 'dropped'), nCamp = k => live.filter(c => campaignOf(c) === k).length;
   const fchip = (attr, v, on, label) => '<button type="button" class="chip' + (on ? ' on' : '') + '" ' + attr + '="' + v + '">' + label + '</button>';
   const filt = items.length ? '<div class="search d1search"><input type="search" id="d1q" placeholder="Search name or mobile" value="' + h(S.d1Q || '') + '"></div>' +
-    '<div class="chips d1chips"><span class="d1lbl">Sort</span>' + fchip('data-d1sort', '', S.d1Sort !== 'az', 'JUSS · LINK') + fchip('data-d1sort', 'az', S.d1Sort === 'az', 'Name A–Z') + '</div>' +
+    '<div class="chips d1chips"><span class="d1lbl">Sort</span>' + fchip('data-d1sort', '', S.d1Sort !== 'az', 'By booker') + fchip('data-d1sort', 'az', S.d1Sort === 'az', 'Name A–Z') + '</div>' +
     '<div class="chips d1chips"><span class="d1lbl">Campaign</span>' + fchip('data-d1camp', '', !S.d1Camp, 'All <b>' + live.length + '</b>') + fchip('data-d1camp', 'FR', S.d1Camp === 'FR', 'FR <b>' + nCamp('FR') + '</b>') + fchip('data-d1camp', 'HF', S.d1Camp === 'HF', 'HF <b>' + nCamp('HF') + '</b>') + '</div>' : '';
   const page = paint(d1Title(),
     (pend.length ? '<div class="card needs"><b>⚖️ Waiting on your decision · ' + pend.length + '</b><p class="small muted" style="margin:4px 0 2px">Booked onto the Academy, but marked RED or not suitable before. Tap a name to approve or decline.</p>' +
@@ -3787,7 +3801,7 @@ function day1Pdf(mon, list, opts) {
   const cols = [['#', 16], ['Name', 96], ['Co', 28], ['Camp', 28], ['Mobile', 58], ['Starts', 48], ['Booked by', 66], ['Closed by', 66], ['Confirmed', 50], ['Arrived', 40], ['Notes', 27]];
   /** "Abdullahi A.": Booked by and Closed by side by side on A4 */
   const who = n => { const w = String(n || '').trim().split(/\s+/); return w[0] ? w[0] + (w[1] ? ' ' + w[1][0] + '.' : '') : '-'; };
-  // Same order and ticks as the Day 1 tab (Angad, 19 Oct): Monday's then Tuesday's, arrived rows light green, no-shows at the bottom
+  // Same order and ticks as the Day 1 tab (d1Order): each booker's together, arrived rows light green, their no-shows last
   const rows = list, live = rows.filter(c => c.day1_status !== 'dropped'), drop = rows.length - live.length;  // dropped out: listed, not expected
   const conf = live.filter(c => c.academy_confirmed_at).length, nJuss = live.filter(c => c.company === 'JUSS').length;
   const arr = rows.filter(c => c.day1_status === 'arrived').length, ns = rows.filter(c => c.day1_status === 'no_show').length, ticked = arr + ns > 0;
@@ -3820,6 +3834,7 @@ function day1Pdf(mon, list, opts) {
       else if (c.day1_status === 'dropped') o.push('0.94 0.94 0.94 rg ' + M + ' ' + b.toFixed(2) + ' 523 ' + RH + ' re f');  // light grey: dropped out
       const prev = rows[p * PER + i - 1];  // JUSS on top, LINK below: a dark line where LINK starts
       if (opts.line !== false && i && prev.company === 'JUSS' && c.company !== 'JUSS') o.push('0.2 0.2 0.25 RG 1.5 w ' + M + ' ' + t.toFixed(2) + ' m ' + (M + 523) + ' ' + t.toFixed(2) + ' l S');
+      else if (opts.line !== false && i && d1Grp(prev) !== d1Grp(c)) o.push('0.45 0.45 0.5 RG 0.9 w ' + M + ' ' + t.toFixed(2) + ' m ' + (M + 523) + ' ' + t.toFixed(2) + ' l S');  // the next booker's
       txt(at(0), y, String(p * PER + i + 1), 9, false, true);
       txt(at(1), y, fit(c.full_name, cols[1][1] - 8, 10), 10, true);
       txt(at(2), y, c.company || '', 9);
