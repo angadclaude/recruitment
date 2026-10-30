@@ -53,7 +53,9 @@ const CONFIG = {
   // Hyrre's note says they booked them by hand. Hyrre sends their confirmation and its reminders; since 30 Oct the team also sends our
   // reminder (signed Megan, 18:00 the evening before or after the 08:15 pull). Megan's alerts go to ALERTS_TO. No pull by LATE on a
   // weekday: the booking team hears about it.
-  HYRRE: { PIPELINE: '403', BOOKER: 'Megan Hyrre', ALERTS_TO: ['rubal@jussmarketing.co.uk', 'jess@linkmarketing.org.uk'], LATE: '09:15' },
+  // MARK_FROM: from this day the pulls also mark Hyrre's attended / no-show from our check-ins (Script Property HYRRE_MARK_FROM wins);
+  // MARK_PULL: the first pull after the presentation (the scheduled task runs at 08:15, 11:15 and 17:15).
+  HYRRE: { PIPELINE: '403', BOOKER: 'Megan Hyrre', ALERTS_TO: ['rubal@jussmarketing.co.uk', 'jess@linkmarketing.org.uk'], LATE: '09:15', MARK_FROM: '2026-11-02', MARK_PULL: '11:15' },
   D1_RESULTS_TIME: '09:00',       // the morning after a Day 1: the results to admins (Angad's Tuesday list, 27 Oct)
   D1_RESULTS_FROM: '2026-11-02',  // the first Day 1 with FR / HF set in the app (26 Oct's were only on paper): no alert with a wrong split
   OFFICE_BOOKERS: ['Fiza Iqbal'],  // with the admins, "Office" in the results' starts by booker (bookings made from the office)
@@ -1111,7 +1113,8 @@ function me(req, u) {
     welcomeFrom: isAdmin(u) ? welcomeFromInfo(u) : null,
     bookTeam: bookTeam(),
     book: { time: CONFIG.BOOK_TIME, co: CONFIG.BOOK_CO, missed: CONFIG.BOOK_MISSED_TIME, sources: BOOK_SOURCES,
-      hyrre: canBook(u) ? hyrreInfo() : null, hyrreBy: CONFIG.HYRRE.BOOKER },  // the last pull from Hyrre (Book Appts)
+      hyrre: canBook(u) ? hyrreInfo() : null, hyrreBy: CONFIG.HYRRE.BOOKER,  // the last pull from Hyrre (Book Appts)
+      hyrreMarks: hyrreMarking(todayStr()) ? CONFIG.HYRRE.MARK_PULL : '' },  // its no-shows are marked in Hyrre by the pull at this time
   };
 }
 
@@ -2762,13 +2765,15 @@ function maybeMissedBookings() {
   const by = {};
   rows.forEach(b => { (by[b.booked_by_id] = by[b.booked_by_id] || []).push(b); });
   Object.keys(by).forEach(id => {
-    const list = by[id], hy = list.filter(b => b.hyrre_id), app = list.filter(b => !b.hyrre_id);
-    // Hyrre's people get their rebook from Hyrre once they're marked absent there (Shift + click their appointment)
+    const list = by[id], hy = list.filter(b => b.hyrre_id), app = list.filter(b => !b.hyrre_id), auto = hyrreMarking(today);
+    // Hyrre's people get their rebook from Hyrre once they're marked absent there: by the next pull (hyrreMarks), or by hand
+    // before that went live (Shift + click their appointment)
     notify([userById(id)], '😕 ' + list.length + ' didn\'t come today', firstNames(list.map(b => ({ full_name: b.first_name })), 6) +
       ' didn\'t check in for the ' + CONFIG.BOOK_TIME + ' presentation. ' +
       (app.length ? 'Tap to send "sorry we missed you" and rebook them.' + (hy.length ? ' ' : '') : '') +
-      (hy.length ? (app.length ? firstNames(hy.map(b => ({ full_name: b.first_name })), 6) + ' came from Hyrre: mark them absent there' : 'Mark them absent in Hyrre') +
-        ' (Shift + click their appointment) and Hyrre sends the rebook link.' : ''), 'bookmiss');
+      (hy.length ? (app.length ? firstNames(hy.map(b => ({ full_name: b.first_name })), 6) + ' came from Hyrre: ' : '') +
+        (auto ? (app.length ? 'the ' : 'The ') + CONFIG.HYRRE.MARK_PULL + ' pull marks them absent in Hyrre, and Hyrre sends the rebook link.'
+          : (app.length ? 'mark them absent there' : 'Mark them absent in Hyrre') + ' (Shift + click their appointment) and Hyrre sends the rebook link.') : ''), 'bookmiss');
   });
 }
 /** Show-up for the week (admins, Appts Attended): booked vs came, by who booked them and where they applied.
@@ -2800,6 +2805,7 @@ function trimOldBookings(before) {
 // which reads Slough's appointments (look-only) and sends them here. Approved ones become bookings; one Hyrre no longer has approved
 // for a day still to come is cancelled. Who booked them: Megan Hyrre, or Rubal / Jess when Hyrre's note says "Booked by Rubal".
 // Since 30 Oct (Angad) the team sends them our reminder from Book Appts too, signed Megan, with a CONFIRM link; the rest stays Hyrre's.
+// And once a presentation is over, the pulls mark Hyrre's attended / no-show from our check-ins (hyrreMarks): the only change made there.
 const HYRRE_BOOKER_ID = 'hyrremegan';
 const HYRRE_OWNS = 'This booking comes from Hyrre: change or cancel it in Hyrre. The next pull brings it here.';
 function isHyrreBooker(u) { return !!u && u.id === HYRRE_BOOKER_ID; }
@@ -2881,7 +2887,29 @@ function hyrreImport(req) {
   PropertiesService.getScriptProperties().setProperty('HYRRE_LAST', JSON.stringify(last));
   log({ name: 'Hyrre' }, 'hyrre_sync', '', n.approved + ' approved · ' + n.added + ' new · ' + n.updated + ' changed · ' + n.cancelled + ' cancelled' + (n.skipped ? ' · ' + n.skipped + ' skipped' : ''));
   hyrreMorningReminders();
-  return last;
+  const marks = hyrreMarks(items);
+  if (marks.length) log({ name: 'Hyrre' }, 'hyrre_marks', '', marks.filter(m => m.status === 'attended').length + ' attended · ' + marks.filter(m => m.status === 'no_show').length + ' no-show');
+  return Object.assign({ marks: marks }, last);
+}
+/** Hyrre's attended / no-show, from our check-ins (Angad, 30 Oct: "so I don't have to manually keep doing this every day"). Every
+ *  Hyrre booking since HYRRE_MARK_FROM whose presentation is over (today's from BOOK_MISSED_TIME) and that Hyrre still has as "none":
+ *  checked in → attended; not → no_show, and Hyrre sends its rebook message. A check-in that day under the same mobile or full name
+ *  counts as there (approved after the morning pull and in the room before the next one), so nobody who came gets "we missed you".
+ *  The Hyrre tab marks them (scripts/hyrre-pull.js); the next pull sees them done. Only ids and the mark leave here. */
+function hyrreMarkFrom() { return PropertiesService.getScriptProperties().getProperty('HYRRE_MARK_FROM') || CONFIG.HYRRE.MARK_FROM; }
+function hyrreMarking(day) { return day >= hyrreMarkFrom(); }
+function hyrreMarks(items) {
+  const now = nowStr(), today = now.slice(0, 10), over = now.slice(11, 16) >= CONFIG.BOOK_MISSED_TIME, from = hyrreMarkFrom();
+  const open = {};
+  items.forEach(x => { if (x.approval === 'approved' && (!x.attendance || x.attendance === 'none')) open[String(x.id).slice(0, 40) + '|' + x.date] = true; });
+  delete MEMO.Bookings;
+  const due = readTable('Bookings').filter(b => b.hyrre_id && (b.status === 'came' || b.status === 'booked') && b.slot_date >= from &&
+    (b.slot_date < today || (b.slot_date === today && over)) && open[b.hyrre_id + '|' + b.slot_date]);
+  if (!due.length) return [];
+  const key = s => String(s || '').toLowerCase().replace(/[^a-z\s]/g, '').replace(/\s+/g, ' ').trim();
+  const days = {}; due.forEach(b => { days[b.slot_date] = true; });
+  const ins = readTable('Candidates').filter(c => days[c.attended_date]);
+  return due.map(b => ({ id: b.hyrre_id, status: b.status === 'came' || ins.some(c => c.attended_date === b.slot_date && (c.mobile === b.mobile || key(c.full_name) === key(bookingName(b)))) ? 'attended' : 'no_show' }));
 }
 /** A pull before the presentation (the 08:15 one): today's Hyrre bookings nobody has reminded since the evening before →
  *  "📲 N of Megan's to remind for today", once a morning (approved after the evening pull, or not sent last night). */

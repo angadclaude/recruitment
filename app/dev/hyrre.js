@@ -174,6 +174,8 @@ const FIRST = [
     !to(cp, meganId).length && !cp.some(p => /No booker/.test(p.body.headings.en)), 'Megan\'s "🙌 Hana just checked in" goes to Rubal and Jess; no "No booker" alert');
   list = (await api(rubal, 'bookingList', {})).items;
   ok(list.find(b => b.hyrre_id === 'h8').status === 'came', 'her booking: came');
+  // Kim: approved in Hyrre after the morning pull, so in the room before J&L knows her booking
+  await api('', 'checkin', { form: { full_name: 'Kim Lee', mobile: '07700900210', email: 'kim@example.com', over18: 'Yes', rtw: 'British or Irish citizen', privacy_ok: true, source: 'Indeed' } });
   ok(await runEval('recruitSourceOf(getC(' + JSON.stringify(ci.id) + '))') === 'Office Recruitment', 'Megan\'s starters are Office Recruitment (no incentive)');
   const pr = await api(satpal, 'payReport', { weekEnding: '2026-11-01' });
   ok(!pr.unassigned.some(x => x.id === ci.id) && !pr.rows.some(r => r.name === 'Megan Hyrre'), 'the pay report: Hana isn\'t "needs a booker", and Megan earns nothing');
@@ -193,6 +195,23 @@ const FIRST = [
   const megRow = su.rows.find(r => r.name === 'Megan Hyrre');
   ok(megRow && megRow.booked === 2 && megRow.came === 1, 'show-up: Megan Hyrre 1 of 2 came (Hana yes, Ian no)');
 
+  console.log('after the presentation: Hyrre\'s attended / no-show from our check-ins (Angad, 30 Oct)');
+  await setTime('2026-10-27T10:40:00+00:00');
+  const third = second.concat([item('h10', 'Kim Lee', '07700900210', '2026-10-27')]);
+  const m0 = await api('', 'hyrreImport', { ticket: await ticket(), pipeline: '403', window: WINDOW, items: third });
+  ok(Array.isArray(m0.marks) && m0.marks.length === 0 && m0.added === 1, 'before MARK_FROM (2 Nov): nothing to mark (Kim\'s booking comes in)');
+  await post('/dev/props', { HYRRE_MARK_FROM: '2026-10-01' });
+  const m1 = await api('', 'hyrreImport', { ticket: await ticket(), pipeline: '403', window: WINDOW, items: third });
+  const marks = JSON.stringify(m1.marks.slice().sort((a, b) => a.id.localeCompare(b.id)));
+  ok(marks === JSON.stringify([{ id: 'h10', status: 'attended' }, { id: 'h2', status: 'no_show' }, { id: 'h7', status: 'no_show' }, { id: 'h8', status: 'attended' }, { id: 'h9', status: 'no_show' }]),
+    'Tue 10:40: Hana (checked in) and Kim (in the room before her booking came) → attended; Ben, Gus, Ian → no-show: ' + marks);
+  ok(!m1.marks.some(m => m.id === 'h1' || m.id === 'h5') && !('name' in m1.marks[0]) && !('mobile' in m1.marks[0]), 'later days aren\'t marked, and only the Hyrre id and the mark go back');
+  const done = third.map(x => ({ h8: 'attended', h10: 'attended', h2: 'no_show', h7: 'no_show', h9: 'no_show' }[x.id] ? Object.assign({}, x, { attendance: { h8: 'attended', h10: 'attended', h2: 'no_show', h7: 'no_show', h9: 'no_show' }[x.id] }) : x));
+  const m2 = await api('', 'hyrreImport', { ticket: await ticket(), pipeline: '403', window: WINDOW, items: done.map(x => x.id === 'h9' ? Object.assign({}, x, { attendance: 'none' }) : x) });
+  ok(JSON.stringify(m2.marks) === JSON.stringify([{ id: 'h9', status: 'no_show' }]), 'the next pull: only what Hyrre still has unmarked (Ian), never one marked there already');
+  const m3 = await api('', 'hyrreImport', { ticket: await ticket(), pipeline: '403', window: WINDOW, items: done });
+  ok(m3.marks.length === 0, 'all marked in Hyrre: nothing more to do');
+
   console.log('a weekday with no pull');
   n0 = (await getJson('/dev/pushes')).length;
   await setTime('2026-10-28T09:10:00+00:00'); await post('/dev/run', { fn: 'keepWarm' });
@@ -208,7 +227,8 @@ const FIRST = [
 
   console.log('the screens');
   await setTime('2026-10-28T08:35:00+00:00');
-  await api('', 'hyrreImport', { ticket: await ticket(), pipeline: '403', window: WINDOW, items: second });
+  const m4 = await api('', 'hyrreImport', { ticket: await ticket(), pipeline: '403', window: WINDOW, items: second });
+  ok(!m4.marks.some(m => m.id === 'h5') && m4.marks.some(m => m.id === 'h9'), 'Wed 08:35: Eva\'s (today, 10:00) waits until the presentation is over; Tuesday\'s still unmarked in Hyrre are asked again');
   await setTime('2026-10-29T08:40:00+00:00');  // Thursday: Aisha's day
   await api('', 'hyrreImport', { ticket: await ticket(), pipeline: '403', window: WINDOW, items: second });
   await api(jess, 'saveBooking', { booking: { first_name: 'Leah', last_name: 'Brown', mobile: '07700900126', slot_date: '2026-10-29', source: 'Teamtailor' } });
@@ -253,11 +273,16 @@ const FIRST = [
     'her booking: "📲 Send a reminder · signed Megan" and "Mark as confirmed"; no confirmation, change or cancel (Hyrre\'s)');
   await shot(rp, 'h2-booking-sheet');
   await rp.click('#bkdone');
-  await setTime('2026-10-29T10:40:00+00:00'); await rp.reload(); await rp.waitForSelector('.tabbar button');
+  await setTime('2026-10-29T10:40:00+00:00');
+  n0 = (await getJson('/dev/pushes')).length; await post('/dev/run', { fn: 'keepWarm' });
+  const ma = to(await pushesSince(n0), rubalId).find(p => /^Aisha didn't check in/.test(p.body.contents.en));
+  ok(ma && /The 11:15 pull marks them absent in Hyrre, and Hyrre sends the rebook link\.$/.test(ma.body.contents.en) && !/Shift \+ click/.test(ma.body.contents.en),
+    'Thu 10:40, marking on: "Aisha didn\'t check in… The 11:15 pull marks them absent in Hyrre, and Hyrre sends the rebook link."');
+  await rp.reload(); await rp.waitForSelector('.tabbar button');
   await rp.click('.tabbar button[data-tab=book]'); await rp.waitForSelector('.bkrow');
   const after = await rp.$eval('.bkrow:has-text("Aisha Khan")', el => el.innerText);
-  ok(/Didn't come/.test(after) && /Mark them absent in Hyrre/.test(after) && !(await rp.$('.bkrow:has-text("Aisha Khan") [data-bks]')),
-    'after 10:30: Aisha "didn\'t come" with "Mark them absent in Hyrre…" instead of our WhatsApp');
+  ok(/Didn't come/.test(after) && /The 11:15 pull marks them absent in Hyrre/.test(after) && !(await rp.$('.bkrow:has-text("Aisha Khan") [data-bks]')),
+    'after 10:30: Aisha "didn\'t come" with "🤖 The 11:15 pull marks them absent in Hyrre…" instead of our WhatsApp');
   await shot(rp, 'h3-didnt-come', true);
   await browser.close();
 

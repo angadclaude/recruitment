@@ -148,18 +148,18 @@ Applicants from Teamtailor are called by **Jess, Rubal or Angad** (`BOOK_TEAM` i
 
 **GDPR:** a booking's notes go after 12 weeks; the whole booking is deleted after 6 months, like everything else.
 
-## 🤖 Megan's bookings from Hyrre (Slough, every day at 08:15 and 17:15)
-Hyrre's AI caller, **Megan**, screens Slough's CVs and pencils people into the 10:00; Rubal approves them in Hyrre, and **Hyrre sends their confirmation** and its own texts. Every day at **08:15 and 17:15** the approved ones come into **Book Appts** by themselves, and **our reminder goes to them too, signed Megan**:
+## 🤖 Megan's bookings from Hyrre (Slough, every day at 08:15, 11:15 and 17:15)
+Hyrre's AI caller, **Megan**, screens Slough's CVs and pencils people into the 10:00; Rubal approves them in Hyrre, and **Hyrre sends their confirmation** and its own texts. Every day at **08:15, 11:15 and 17:15** the approved ones come into **Book Appts** by themselves, and **our reminder goes to them too, signed Megan**:
 
 - **Who booked them:** **Megan Hyrre**, or **Rubal / Jess** when Hyrre's note says *"Booked by Rubal"* (a callback booked by hand in Hyrre). Megan Hyrre counts as **Office Recruitment** (no incentive). She isn't on the Team list and can't log in; her alerts (*"🙌 … just checked in"*, *"😕 … didn't come today"*) go to **Rubal and Jess** (`CONFIG.HYRRE.ALERTS_TO`).
 - **On Book Appts** they show *"booked by Megan Hyrre · Hirematic · 🤖 Hyrre"* and **✅ Approved in Hyrre**. At the top: *"🤖 Hyrre · pulled today at 08:15: N approved bookings"*.
 - **Reminders:** they're in **📲 Send tomorrow's / today's reminders** like everyone else, signed **Megan** (or Rubal / Jess for the ones they booked in Hyrre), with the CONFIRM link. Rubal and Jess get *"📲 N of Megan's to remind for tomorrow"* at 18:00, and after the 08:15 pull *"📲 N of Megan's to remind for today"* for anyone not reminded the evening before (approved late in the day). Tapping CONFIRM tells Rubal and Jess.
 - **Change or cancel them in Hyrre**, not here: the next pull brings it across (moved day, declined, a corrected name). Pencilled-in (not yet approved) people don't come across.
-- **Didn't come (10:30):** mark them **absent in Hyrre** (Shift + click their appointment) and Hyrre sends the rebook link.
+- **Attended / no-show is marked in Hyrre for you** (from Mon 2 Nov): the 11:15 pull marks everyone who checked in as **attended**, and everyone who didn't as **no-show**, and Hyrre sends them its rebook link. Someone who checked in under another number is matched by name. It only marks appointments still unmarked in Hyrre, so anything Rubal ticks by hand stays as she left it. Make sure everyone in the room scans the check-in QR: J&L only knows who checked in.
 - **Check-in** finds them by mobile like any booking (*"booked by Megan Hyrre"*); show-up on Appts Attended has a Megan Hyrre row.
 - **No pull by 09:15 on a weekday:** Angad, Rubal and Jess get *"🤖 Hyrre's bookings didn't come in this morning"*.
 
-**How it runs (Angad's computer):** a Claude scheduled task, **hyrre-morning-pull**, at 08:15 and 17:15 every day. It runs `node scripts/hyrre-sync.js snippet` (a one-time ticket, good for 15 minutes) and runs `scripts/hyrre-pull.js` in a Chrome tab on hyrre.co.uk, logged in as Rubal. That page only reads Slough's appointments (pipeline 403) and sends them to J&L (`hyrreImport`). Hyrre's own Claude/ChatGPT connection only admits those two apps, so J&L can't connect to Hyrre directly. It needs:
+**How it runs (Angad's computer):** a Claude scheduled task, **hyrre-morning-pull**, at 08:15, 11:15 and 17:15 every day (backups: 08:30, 22:00 Mon–Fri, Sundays 21:00). It runs `node scripts/hyrre-sync.js snippet` (a one-time ticket, good for 15 minutes) and runs `scripts/hyrre-pull.js` in a Chrome tab on hyrre.co.uk, logged in as Rubal. That page reads Slough's appointments (pipeline 403), sends them to J&L (`hyrreImport`) and, after the presentation, ticks attended / no-show as J&L says: the only change it makes in Hyrre. Hyrre's own Claude/ChatGPT connection only admits those two apps, so J&L can't connect to Hyrre directly. It needs:
 1. the computer on at 08:15 (and 17:15 for the evening list), with the Claude app and Chrome open (Claude in Chrome connected);
 2. Hyrre logged in, in that Chrome;
 3. the key in `.env.hyrre` (made once by `node scripts/hyrre-sync.js setup`; J&L keeps only its fingerprint, `HYRRE_SYNC_SHA256`).
