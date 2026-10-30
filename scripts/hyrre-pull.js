@@ -1,7 +1,9 @@
-// Runs INSIDE a hyrre.co.uk tab that's logged in (Rubal's login, in Angad's Chrome), from the 8:30 scheduled task:
-// reads the Slough pipeline's appointments (look-only: GET requests, nothing in Hyrre changes) and hands them to J&L with a
-// one-time ticket from `node scripts/hyrre-sync.js ticket`. J&L decides what to keep (approved only) and who booked them.
-// The task swaps __TICKET__ for the ticket and __DRY__ for false; dry run (true) only says what it found, sends nothing.
+// Runs INSIDE a hyrre.co.uk tab that's logged in (Rubal's login, in Angad's Chrome), from the scheduled task (08:15, 11:15, 17:15):
+// reads the Slough pipeline's appointments (GET requests) and hands them to J&L with a one-time ticket from
+// `node scripts/hyrre-sync.js ticket`. J&L decides what to keep (approved only) and who booked them. Once a presentation is over, J&L
+// answers with who to mark from our check-ins (attended, or no-show with Hyrre's rebook), and this page marks them: the only change
+// it makes in Hyrre (Angad, 30 Oct).
+// The task swaps __TICKET__ for the ticket and __DRY__ for false; dry run (true) only says what it found, sends and marks nothing.
 (async (TICKET, DRY) => {
   const PIPELINE = '403';                                // Slough (Cardiff is 402)
   const JL = 'https://jl-recruitment.vercel.app/api/rpc';
@@ -24,9 +26,22 @@
   if (DRY) {
     const count = (f) => items.reduce((o, x) => (o[f(x)] = (o[f(x)] || 0) + 1, o), {});
     return { ok: true, dry: true, window: { from, to }, found: items.length, byApproval: count(x => x.approval), byDate: count(x => x.date + ' ' + x.time),
-      byNote: count(x => x.note || '(none)'), bySource: count(x => x.source), phonesLookUk: items.filter(x => /^(\+44|0)7\d{9}$/.test(x.phone.replace(/\s/g, ''))).length };
+      byAttendance: count(x => x.date + ' ' + (x.attendance || 'none')), byNote: count(x => x.note || '(none)'), bySource: count(x => x.source), phonesLookUk: items.filter(x => /^(\+44|0)7\d{9}$/.test(x.phone.replace(/\s/g, ''))).length };
   }
   const res = await fetch(JL, { method: 'POST', body: JSON.stringify({ action: 'hyrreImport', ticket: TICKET, pipeline: PIPELINE, window: { from, to }, items }) });
   const out = await res.json().catch(() => ({ ok: false, error: 'J&L answered ' + res.status }));
-  return out.ok ? Object.assign({ ok: true }, out.data) : { ok: false, error: out.error || 'J&L refused it' };
+  if (!out.ok) return { ok: false, error: out.error || 'J&L refused it' };
+  // Attended / no-show from our check-ins (Angad, 30 Oct), the way Hyrre's own appointment box does it: only appointments this
+  // read showed as still unmarked, and only those two marks. A no-show is asked to rebook (Hyrre sends its message).
+  const unmarked = {}; items.forEach(x => { if (!x.attendance || x.attendance === 'none') unmarked[x.id] = true; });
+  const marked = { attended: 0, no_show: 0, skipped: 0, failed: 0 };
+  for (const m of (out.data && out.data.marks) || []) {
+    if (!/^\d+$/.test(String(m.id)) || !unmarked[m.id] || (m.status !== 'attended' && m.status !== 'no_show')) { marked.skipped++; continue; }
+    const p = await fetch('/api/applications/' + m.id + '/first-appointment/', { method: 'PATCH', credentials: 'include',
+      headers: { 'X-Pipeline-Id': PIPELINE, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ attendance_status: m.status, ask_rebook: m.status === 'no_show' }) });
+    if (p.ok) marked[m.status]++; else marked.failed++;
+  }
+  const data = Object.assign({}, out.data); delete data.marks;
+  return Object.assign({ ok: true }, data, { marked });
 })('__TICKET__', __DRY__);

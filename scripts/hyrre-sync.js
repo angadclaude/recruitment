@@ -1,4 +1,4 @@
-// The 08:15 / 17:15 pull from Hyrre, the part that runs on Angad's computer (the scheduled task "hyrre-morning-pull" calls it).
+// The 08:15 / 11:15 / 17:15 pull from Hyrre, the part that runs on Angad's computer (the scheduled task "hyrre-morning-pull" calls it).
 //
 //   node scripts/hyrre-sync.js setup    once: makes the key (.env.hyrre, gitignored, never printed) and gives J&L its SHA-256
 //   node scripts/hyrre-sync.js ticket   prints a one-time ticket (15 minutes) for scripts/hyrre-pull.js to send Hyrre's bookings with

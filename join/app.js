@@ -1,4 +1,4 @@
-window.APP_VERSION = '5d3ffe19';
+window.APP_VERSION = 'aa7d75f6';
 
 (function () {
 'use strict';
@@ -3276,6 +3276,11 @@ function bookName(b) { return (b.first_name + ' ' + (b.last_name || '')).trim();
 function bookCo(b) { return b.company === 'LINK' ? 'LINK' : 'JUSS'; }
 /** Booked in Hyrre (Megan, or by hand there): approved there, Hyrre sends their confirmation; ours is only the reminder (30 Oct). */
 function bookHy(b) { return !!b.hyrre_id; }
+/** Hyrre's who didn't come get Hyrre's rebook link once they're marked absent there: by the pull after the presentation (30 Oct). */
+function bookHyAbsent() {
+  const at = bookCfg().hyrreMarks;
+  return at ? '🤖 The ' + h(at) + ' pull marks them absent in Hyrre, and Hyrre sends the rebook link.' : 'Mark them absent in Hyrre (Shift + click their appointment): Hyrre sends the rebook link.';
+}
 /** Reminded the evening before or on the day (so the morning list doesn't send them a second one). */
 function bookReminded(b) { return !!b.remind_at && String(b.remind_at).slice(0, 10) >= addDays(b.slot_date, -1); }
 /** Confirmed, or approved in Hyrre (Hyrre's people don't tap our CONFIRM). */
@@ -3487,7 +3492,7 @@ function bookPills(b, yes) {
 }
 function bookRow(b) {
   const missed = bookMissed(b);
-  const act = missed && b.status === 'booked' ? (bookHy(b) ? '<p class="hint bkhyact">Mark them absent in Hyrre (Shift + click their appointment): Hyrre sends the rebook link.</p>'
+  const act = missed && b.status === 'booked' ? (bookHy(b) ? '<p class="hint bkhyact">' + bookHyAbsent() + '</p>'
     : '<div class="bkbtns">' + bookSend(b, 'missed', 'Sorry we missed you') + '<button class="btn ghost sm" data-bkre="' + h(b.id) + '">📅 Rebook</button></div>') : '';
   return '<div class="trow bkrow' + (b.status === 'came' ? ' arrived' : '') + '"><span class="av co-' + bookCo(b) + '">' + h(initials(bookName(b))) + '</span>' +
     '<div class="main" data-bk="' + h(b.id) + '"><div class="name">' + h(bookName(b)) + ' <span class="co ' + bookCo(b) + '">' + bookCo(b) + '</span></div>' +
@@ -3634,7 +3639,7 @@ function bookSheet(id) {
       sentLine('confirm') + sentLine('remind') + sentLine('missed') +
       (b.confirmed_at ? '<div>✅ ' + (b.confirmed_by === 'CONFIRM' ? 'Tapped CONFIRM · ' + h(fmtTs(b.confirmed_at)) : 'Replied YES · ' + h(fmtTs(b.confirmed_at)) + (b.confirmed_by ? ' · ' + h(String(b.confirmed_by).split(' ')[0]) : '')) + '</div>' : '') +
       (hy ? '<div>🤖 From Hyrre, approved there' + (b.hyrre_at ? ' · seen ' + h(fmtTs(b.hyrre_at)) : '') + '. Hyrre sends their confirmation and texts; our 📲 reminder is ' + h(bookSignedBy(b)) + '. ' +
-        'To change the day or cancel, do it in Hyrre: the next pull brings it here.' + (missed && b.status === 'booked' ? ' Didn\'t come? Mark them absent in Hyrre (Shift + click) and Hyrre sends the rebook link.' : '') + '</div>' : '') + '</div>' +
+        'To change the day or cancel, do it in Hyrre: the next pull brings it here.' + (missed && b.status === 'booked' ? ' Didn\'t come? ' + bookHyAbsent() : '') + '</div>' : '') + '</div>' +
     (hyOpen ? '<button class="btn wa block" id="bkr">📲 Send a reminder · ' + h(bookSignedBy(b)) + '</button>' +
       (b.confirmed_at ? '' : '<button class="btn ghost block" id="bky" style="margin-top:8px">✅ Mark as confirmed (they said yes)</button>') : '') +
     (open ? '<button class="btn wa block" id="bkc">💬 ' + (b.confirm_at ? 'Send the confirmation again' : 'Send the confirmation') + ' · WhatsApp or 📱 Text</button>' +
