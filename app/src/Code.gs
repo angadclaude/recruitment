@@ -63,7 +63,7 @@ const CONFIG = {
   EMAIL_ALERTS: false,            // true = also email every alert. Push is used when OneSignal keys are set.
   SESSION_DAYS: 30,               // staff stay logged in for this long
   SHEET_ID: '',                   // the data Sheet; only needed if this script isn't opened from the Sheet itself
-  HISTORY_SOURCE_ID: '1SjfhyQw-mnJY3iT8Q7p50795kP4DySJFx9fVcEEB_P8', // old Google Form sheet
+  HISTORY_SOURCE_ID: '',           // the old Google Form sheet: its id is the Script Property HISTORY_SOURCE_ID (never in this public repo)
   HISTORY_SOURCE_TAB: 'Form Responses 1',
 };
 
@@ -695,13 +695,15 @@ function publicUser(u) { return { id: u.id, name: u.name, email: u.email, compan
 function userFromToken(tok) {
   if (!tok) return null;
   const cache = CacheService.getScriptCache();
-  let uidv = cache.get('s_' + tok);
+  let uidv = cache.get('s_' + tok), exp = '';
+  if (uidv && uidv.indexOf('|') > 0) { exp = uidv.split('|')[1]; uidv = uidv.split('|')[0]; }
   if (!uidv) {
     const s = readTable('Sessions').filter(x => x.token === sha(tok))[0];
     if (!s || s.expires < nowStr()) return null;
-    uidv = s.user_id;
-    cache.put('s_' + tok, uidv, 21600);
+    uidv = s.user_id; exp = s.expires;
+    cache.put('s_' + tok, uidv + '|' + exp, 21600);
   }
+  if (exp && exp < nowStr()) return null;  // the 30 days are up: the cache gives no extra hours
   const u = userById(uidv);
   return u && truthy(u.active) ? u : null;
 }
@@ -724,6 +726,7 @@ function issueCode(email) {
 }
 function requestCode(req) {
   const email = normEmail(req.email);
+  if (!email) throw new Error('Type your work email.');  // never a code for someone on the team by name only (no email)
   const cache = CacheService.getScriptCache(), rk = codeLimitKey(email), n = Number(cache.get(rk) || 0);
   if (n >= 5) {
     log(null, 'login_code', '', email + ' · limit reached');
@@ -762,6 +765,7 @@ function adminCode(req, u) {
 
 function verifyCode(req) {
   const email = normEmail(req.email);
+  if (!email) throw new Error('Type your work email.');
   const code = String(req.code || '').trim();
   return withLock(() => {
     const rec = readTable('Codes').filter(x => x.email === email)[0];
@@ -895,7 +899,7 @@ function checkin(req) {
   if (res.isNew && auto && !bk) log(null, 'auto_booker', res.c.id, '"' + res.c.booker_typed + '" → ' + auto.name);
   if (res.isNew && gone && !bk) log(null, 'auto_booker', res.c.id, 'picked ' + gone.name + ' (switched off) → ' + (booker ? booker.name : 'no booker'));
   if (res.isNew && bk) log(null, 'booking_came', res.c.id, 'booked by ' + bk.booked_by + ' for ' + bk.slot_date + (picked ? ' (they picked ' + picked + ')' : '') +
-    (bk.mobile !== mobile ? ' (found by name: booked as ' + bk.mobile + ')' : ''));
+    (bk.mobile !== mobile ? ' (found by name: booked under another mobile)' : ''));
   const nq = nonQualifier(res.c);
   if (res.isNew && nq) {
     // Straight to Jess + Rubal and the booker, so someone speaks to them before they leave
@@ -904,7 +908,7 @@ function checkin(req) {
       nq + ' · ' + (booker ? 'booked by ' + booker.name : 'booker not confirmed' + (res.c.booker_typed ? ' ("' + res.c.booker_typed + '")' : '')) +
       '. No evaluation form for them. Have a word before they leave.', res.c.id);
   } else if (res.isNew && booker) {
-    notify([booker], '🙌 ' + name.split(' ')[0] + ' just checked in', name + ' is in the room for your appointment.', res.c.id);
+    notify([booker], whose(booker, '🙌 ' + name.split(' ')[0] + ' just checked in'), name + ' is in the room for your appointment.', res.c.id);
   } else if (res.isNew) {
     // Nobody to tell: no booker = no check-in or evaluation alert and nobody calls them. Jess + Rubal pick a booker.
     const ids = [thanksTeam().LINK.id, thanksTeam().JUSS.id].filter(Boolean);
@@ -1019,8 +1023,8 @@ function submitEval(req) {
   const c = res.c, first = c.full_name.split(' ')[0];
   if (res.status !== 'already') log(null, res.status === 'edited' ? 'evaluation_changed' : 'evaluation', c.id, '');
   const b = c.booker_id ? userById(c.booker_id) : null;
-  if (b && res.status === 'new') notify([b], '📋 ' + first + "'s evaluation is in", 'Call ' + c.full_name + ' — log the outcome by ' + deadlineLabel() + '.', c.id);
-  if (b && res.status === 'edited') notify([b], '✏️ ' + first + ' changed their evaluation answers', 'Have a look before you call ' + first + '.', c.id);
+  if (b && res.status === 'new') notify([b], whose(b, '📋 ' + first + "'s evaluation is in"), 'Call ' + c.full_name + ' — log the outcome by ' + deadlineLabel() + '.', c.id);
+  if (b && res.status === 'edited') notify([b], whose(b, '✏️ ' + first + ' changed their evaluation answers'), 'Have a look before you call ' + first + '.', c.id);
   return { status: res.status, booker_first: c.booker_name ? c.booker_name.split(' ')[0] : 'Our team' };
 }
 
@@ -1047,7 +1051,7 @@ function confirmAcademy(req) {
     return x;
   });
   const b = c._new && c.booker_id ? userById(c.booker_id) : null;
-  if (b) notify([b], '✅ ' + c.full_name.split(' ')[0] + ' confirmed Day 1!', c.full_name + ' locked in BA Academy for ' + c.academy_date + '.', c.id);
+  if (b) notify([b], whose(b, '✅ ' + c.full_name.split(' ')[0] + ' confirmed Day 1!'), c.full_name + ' locked in BA Academy for ' + c.academy_date + '.', c.id);
   return { confirmed_at: c.academy_confirmed_at };
 }
 
@@ -1224,7 +1228,8 @@ function saveOutcome(req, u) {
     // an outcome that was in on time LATE, or last week's late count change
     c.outcome_late = (firstAt || c.outcome_at) > outcomeDeadline(c.attended_date) ? 'TRUE' : '';
     // "Thinking it over": when they asked to be called back. Whoever logged it gets "🔁 Call them back now" at that time.
-    if (wantsCallback(req.outcome) && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(req.callback_at || '')) {
+    if (wantsCallback(req.outcome) && !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(req.callback_at || '')) throw new Error('When did they ask us to call back? Pick a time.');
+    if (wantsCallback(req.outcome)) {
       if (req.callback_at !== c.callback_at) c.callback_nudged = '';
       c.callback_at = req.callback_at; c.callback_by_id = u.id;
     } else if (!wantsCallback(req.outcome)) { c.callback_at = ''; c.callback_by_id = ''; c.callback_nudged = ''; }
@@ -1470,8 +1475,8 @@ function payReport(req, u) {
   const by = {}, admin = {};
   usersAll().forEach(b => {
     if (isAdmin(b)) { admin[b.id] = true; return; }
-    if (!has(b, 'booker')) return;
-    by[b.id] = { booker_id: b.id, name: b.name, company: b.company, active: truthy(b.active) && earnsIncentive(b),
+    if (!has(b, 'booker') && !rows.some(c => c.booker_id === b.id)) return;  // no longer a booker: the weeks they booked still read as they happened
+    by[b.id] = { booker_id: b.id, name: b.name, company: b.company, active: truthy(b.active) && earnsIncentive(b) && has(b, 'booker'),
       attended: 0, net: 0, excluded: [], outcomes: 0, late: 0, missing: 0 };
   });
   const unassigned = [];
@@ -1520,7 +1525,8 @@ function saveUser(req, u) {
   const saved = withLock(() => {
     const all = readTable('Users');
     if (email && all.some(o => o.email.toLowerCase() === email && o.id !== x.id)) throw new Error('That email is already used.');
-    if (isNew && all.some(o => normName(o.name) === normName(x.name))) throw new Error(cleanName(x.name) + ' is already on the team. Tap their name to edit them.');
+    if (all.some(o => o.id !== x.id && normName(o.name) === normName(x.name)))
+      throw new Error(cleanName(x.name) + ' is already on the team.' + (isNew ? ' Tap their name to edit them.' : ' Two people with the same name would split the check-ins typed as it.'));
     // "Ali Abass" when "Ali Abbas" (or "Ramis - Ali Abbas") is already there = the same person twice, splitting their credit
     const sim = isNew && !req.allowSimilar ? similarUser(x.name, all) : null;
     if (sim) throw new Error('SIMILAR|' + sim.u.id + '|' + sim.u.name + '|' + sim.u.company + '|' + (sim.via || ''));
@@ -1874,7 +1880,7 @@ function saveAvail(req, u) {
   log(u, 'availability', r.candidate_id, r.full_name + ': W1 ' + r.w1 + ' · W2 ' + r.w2 + (r.driver ? ' · driver ' + r.driver : ''));
   // Days changed after the one-to-one: their coach hears (not on the first fill, not when the coach made the change)
   const ch = userById(r.coach_id);
-  if (filledBefore && changed && ch && ch.id !== u.id) notify([ch], '🗓️ ' + r.full_name.split(' ')[0] + '\'s days changed',
+  if (filledBefore && changed && ch && ch.id !== u.id) notify([ch], whose(ch, '🗓️ ' + r.full_name.split(' ')[0] + '\'s days changed'),
     'Week 1: ' + availDaysText(r.w1) + '\nWeek 2: ' + availDaysText(r.w2) + '\nChanged by ' + u.name.split(' ')[0] + '.', 'avail');
   return availRows(r.week_ending).filter(x => x.id === r.id)[0] || null;
 }
@@ -1955,30 +1961,37 @@ function day1Photo(req, u) {
 function maybeAvailReminder() {
   const now = nowStr(), today = now.slice(0, 10), hm = now.slice(11, 16);
   if (hm < (CONFIG.AVAIL_REMIND_TIME || '18:00') || hm > '20:59' || weekday(today) === 0) return;
-  const p = PropertiesService.getScriptProperties();
   if (!claim('AVAIL_REMINDED', today)) return;  // claimed (and saved) before anything goes out
-  const we = weekEnding(today), rows = availRows(we).filter(r => r.day1_date < today && !r.no_longer);
+  const thisWe = weekEnding(today);
+  availNag(thisWe, today, '');
+  availNag(addDays(thisWe, -7), today, ' (last week)');  // a one-to-one missed: still chased the week after
+}
+function availNag(we, today, tag) {
+  const p = PropertiesService.getScriptProperties();
+  const rows = availRows(we).filter(r => r.day1_date < today && !r.no_longer);
   if (!rows.length) return;
   const done = r => /[IO]/.test(r.w1), line = r => r.full_name.split(' ')[0] + ': ' + (done(r) ? availDaysText(r.w1) : 'not filled in yet');
   const admins = usersAll().filter(x => truthy(x.active) && isAdmin(x)), blank = rows.filter(r => !done(r));
-  if (blank.length) notify(admins, '🗓️ Availability: ' + (rows.length - blank.length) + ' of ' + rows.length + ' done',
+  if (blank.length) notify(admins, '🗓️ Availability' + tag + ': ' + (rows.length - blank.length) + ' of ' + rows.length + ' done',
     'Still to fill in: ' + firstNames(blank.map(r => ({ full_name: r.full_name })), 8) + '. Tap to fill in their Week 1 and Week 2.', 'avail');
   else if (claim('AVAIL_READY', we)) {
     const inOn = i => rows.filter(r => r.w1[i] === 'I'), days = AV_DAY.map((d, i) => d + ' ' + inOn(i).length).filter((x, i) => inOn(i).length);
-    notify(admins, '✅ Availability ready: ' + plural(rows.length, 'new starter'), 'Week 1 in: ' + days.join(' · ') + ' · 🚗 ' + rows.filter(r => r.driver === 'Yes').length + ' drive' +
+    notify(admins, '✅ Availability ready' + tag + ': ' + plural(rows.length, 'new starter'), 'Week 1 in: ' + days.join(' · ') + ' · 🚗 ' + rows.filter(r => r.driver === 'Yes').length + ' drive' +
       '\nTap for the poster (WhatsApp) and the PDF.', 'avail');
   }
   // Coaches: their own new starters, done vs missing (admins have the whole list above)
   let ready = []; try { ready = JSON.parse(p.getProperty('AVAIL_COACH_READY_' + we) || '[]'); } catch (e) { ready = []; }
   const byCoach = {};
   rows.filter(r => r.coach_id).forEach(r => { (byCoach[r.coach_id] = byCoach[r.coach_id] || []).push(r); });
-  Object.keys(byCoach).forEach(id => {
-    const ch = userById(id), mine = byCoach[id], left = mine.filter(r => !done(r));
-    if (!ch || !truthy(ch.active) || isAdmin(ch)) return;
-    if (left.length) notify([ch], '🗓️ Your new starters: ' + (mine.length - left.length) + ' of ' + mine.length + ' done', mine.map(line).join('\n'), 'avail');
-    else if (ready.indexOf(id) < 0) { ready.push(id); notify([ch], '✅ Your new starters\' days', mine.map(line).join('\n'), 'avail'); }
+  const coaches = Object.keys(byCoach).map(id => ({ ch: userById(id), mine: byCoach[id] })).filter(x => x.ch && truthy(x.ch.active) && !isAdmin(x.ch));
+  const nowReady = coaches.filter(x => !x.mine.some(r => !done(r)) && ready.indexOf(x.ch.id) < 0);
+  // Their once-only "ready" is saved (and, on Vercel, committed by the lock) before it goes, like every other once-only alert
+  if (nowReady.length) withLock(() => p.setProperty('AVAIL_COACH_READY_' + we, JSON.stringify(ready.concat(nowReady.map(x => x.ch.id)))));
+  coaches.forEach(x => {
+    const left = x.mine.filter(r => !done(r));
+    if (left.length) notify([x.ch], '🗓️ Your new starters' + tag + ': ' + (x.mine.length - left.length) + ' of ' + x.mine.length + ' done', x.mine.map(line).join('\n'), 'avail');
+    else if (nowReady.indexOf(x) >= 0) notify([x.ch], '✅ Your new starters\' days' + tag, x.mine.map(line).join('\n'), 'avail');
   });
-  withLock(() => p.setProperty('AVAIL_COACH_READY_' + we, JSON.stringify(ready)));  // saved now: they've been told
 }
 
 // ───────────────────────── BELL SHEETS (Angad, 27 Oct) ─────────────────────────
@@ -2000,15 +2013,19 @@ function bellRow(r) {
 function bellDue() {
   const ids = bellProp('BELL_SHEETS', {});
   if (!ids.FR && !ids.HF) return null;
-  const now = nowStr(), stamp = now.slice(0, 10) + ' ' + now.slice(11, 16), at = CONFIG.AVAIL_REMIND_TIME || '18:00', we = weekEnding(now.slice(0, 10));
-  if (stamp < addDays(we, -5) + ' ' + at) return null;  // the first of them is due at 18:00 on the Tuesday
-  const sent = bellProp('BELL_SENT_' + we, {});
-  // Not on their campaign's sheet yet: new, or switched FR ↔ HF since they went on the other one
-  const due = availRows(we).filter(r => !r.no_longer && /[IO]/.test(r.w1) && sent[r.id] !== r.campaign && stamp >= addDays(r.day1_date, 1) + ' ' + at);
-  const sheets = Object.keys(BELL).filter(k => ids[k]).map(k => ({ key: k, id: ids[k], section: BELL[k].section,
-    rows: due.filter(r => r.campaign === k).map(bellRow).sort((a, b) => (b.office - a.office) || a.coach.localeCompare(b.coach) || a.name.localeCompare(b.name)) }))
-    .filter(x => x.rows.length);
-  return sheets.length ? { we: we, tab: bellTab(we), sheets: sheets } : null;
+  const now = nowStr(), stamp = now.slice(0, 10) + ' ' + now.slice(11, 16), at = CONFIG.AVAIL_REMIND_TIME || '18:00', thisWe = weekEnding(now.slice(0, 10));
+  // This week's cohort, then last week's: a Week 1 filled in the week after still goes on that week's tab
+  for (const we of [thisWe, addDays(thisWe, -7)]) {
+    if (stamp < addDays(we, -5) + ' ' + at) continue;  // the first of them is due at 18:00 on the Tuesday
+    const sent = bellProp('BELL_SENT_' + we, {});
+    // Not on their campaign's sheet yet: new, or switched FR ↔ HF since they went on the other one
+    const due = availRows(we).filter(r => !r.no_longer && /[IO]/.test(r.w1) && sent[r.id] !== r.campaign && stamp >= addDays(r.day1_date, 1) + ' ' + at);
+    const sheets = Object.keys(BELL).filter(k => ids[k]).map(k => ({ key: k, id: ids[k], section: BELL[k].section,
+      rows: due.filter(r => r.campaign === k).map(bellRow).sort((a, b) => (b.office - a.office) || a.coach.localeCompare(b.coach) || a.name.localeCompare(b.name)) }))
+      .filter(x => x.rows.length);
+    if (sheets.length) return { we: we, tab: bellTab(we), sheets: sheets };
+  }
+  return null;
 }
 /** What Google wrote (server/bell.js): keeps who's on, tells the admins who went on and, once each, what's in the way. */
 function bellDone(res) {
@@ -2037,9 +2054,11 @@ function bellDone(res) {
     Object.keys(probs).filter(k => k.indexOf(s.key + ' ') === 0 && !now[k.slice(s.key.length + 1)]).forEach(k => { delete probs[k]; });
     Object.keys(now).forEach(k => { if (!probs[s.key + ' ' + k]) fresh.push(now[k]); probs[s.key + ' ' + k] = now[k]; });
   });
-  p.setProperty('BELL_SENT_' + we, JSON.stringify(sent));
-  p.setProperty('BELL_PROBLEM_' + we, JSON.stringify(probs));
-  p.setProperty('BELL_TITLES', JSON.stringify(titles));
+  withLock(() => {  // saved (and, on Vercel, committed by the lock) before the alerts go, so a hiccup after can't repeat them
+    p.setProperty('BELL_SENT_' + we, JSON.stringify(sent));
+    p.setProperty('BELL_PROBLEM_' + we, JSON.stringify(probs));
+    p.setProperty('BELL_TITLES', JSON.stringify(titles));
+  });
   const admins = usersAll().filter(x => truthy(x.active) && isAdmin(x));
   if (n) notify(admins, '🔔 On the bell sheets: ' + plural(n, 'new starter'), added.join('\n') + '\n' + tab + ', under New Starts.', 'avail');
   if (fresh.length) notify(admins, '🔔 Bell sheets: not done yet', fresh.join('\n'), 'avail');
@@ -2319,7 +2338,8 @@ function maybeCallbackReminders() {
   const send = withLock(() => ids.map(id => getC(id)).filter(due).map(c => { c.callback_nudged = c.callback_at; writeRow('Candidates', c); return c; }));
   send.forEach(c => {
     const u = userById(c.callback_by_id) || userById(c.booker_id);
-    notify([u], '🔁 Call ' + c.full_name.split(' ')[0] + ' back now', 'They asked for a call back at ' + c.callback_at.slice(11, 16) + ' (' + c.outcome + '). Tap to call.', c.id);  // notify logs it
+    if (!u) return;
+    notify([u], whose(u, '🔁 Call ' + c.full_name.split(' ')[0] + ' back now'), 'They asked for a call back at ' + c.callback_at.slice(11, 16) + ' (' + c.outcome + '). Tap to call.', c.id);  // notify logs it
   });
 }
 /** Runs from keepWarm (every 5 min), so no extra trigger to install: one message a day, Mon–Thu at DIGEST_TIME, Friday at ROUNDUP_TIME. */
@@ -2490,6 +2510,10 @@ function markDay1(req, u) {
   return withLock(() => {
     const c = getC(req.id);
     if (!fullAccess(u, c)) throw new Error('No access');
+    // Arrived / No-show on the day and 🚪 Didn't continue after it are the admins' ticks (Jess, Rubal); a booker can still mark their
+    // own starter dropped out or move them to Tuesday (30 Oct: a booker marked their starter "didn't continue" at 2 am)
+    if (!isAdmin(u) && (['arrived', 'no_show', 'left', 'stayed'].indexOf(req.status) >= 0 || (req.status === '' && c.day1_status !== 'dropped')))
+      throw new Error('Arrived, no-show and didn\'t continue are ticked by Jess or Rubal.');
     if (c.outcome !== 'Academy booked') throw new Error('They aren\'t booked onto the Academy.');
     // Came on Day 1 but didn't come back after it (Angad's Tuesday list, 27 Oct): still a Day 1 start, off availability. stayed = undo.
     if (req.status === 'left' || req.status === 'stayed') {
@@ -2573,7 +2597,7 @@ function maybeAcademyBriefing() {
   rows.forEach(c => { if (c.booker_id) (by[c.booker_id] = by[c.booker_id] || []).push(c); });
   Object.keys(by).forEach(id => {
     const b = userById(id), list = by[id], not = list.filter(c => !c.academy_confirmed_at);
-    if (b) notify([b], '🎓 Tomorrow\'s BA Academy: ' + plural(list.length, 'starter') + ' of yours', list.map(tag).join(', ') +
+    if (b) notify([b], whose(b, '🎓 Tomorrow\'s BA Academy: ' + plural(list.length, 'starter') + (truthy(b.active) ? ' of yours' : '')), list.map(tag).join(', ') +
       (not.length ? '\n⏳ Not confirmed: ' + firstNames(not) + '. Send a reminder now.' : '\nAll confirmed 🔥'), 'academy');
   });
   const not = rows.filter(c => !c.academy_confirmed_at);
@@ -2636,10 +2660,45 @@ function bookingFor(mobile, today, name) {
     .sort((a, b) => near(a) - near(b) || a.slot_date.localeCompare(b.slot_date))[0];
   if (byMobile || !name) return byMobile || null;
   // Typed another number than the one on their booking (a second phone, a typo at booking): today's booking under the same
-  // full name, if it's the only one (Angad, 26 Oct: "make sure booked appointments go on the list properly")
-  const key = s => String(s || '').toLowerCase().replace(/[^a-z\s]/g, '').replace(/\s+/g, ' ').trim();
-  const same = open.filter(b => b.slot_date === today && key(b.first_name + ' ' + b.last_name) === key(name));
+  // name (or near enough, nameNear), if it's the only one (Angad, 26 Oct: "make sure booked appointments go on the list properly")
+  const same = open.filter(b => b.slot_date === today && nameNear(bookingName(b), name));
   return same.length === 1 ? same[0] : null;
+}
+/** The same person, as Hyrre's caller or the booker heard their name: the same letters, or the same surname with the first
+ *  names equal to a letter or two ("Sitar Iqbal" / "Sitara Iqbal", "Beni" / "Benie"; not "Priya" / "Priyanka"). 30 Oct: Sitara
+ *  came, picked Megan, and her booking stayed "didn't come" because Hyrre had her as Sitar under another mobile. */
+function nameNear(a, b) {
+  const key = s => String(s || '').toLowerCase().replace(/[^a-z\s]/g, '').replace(/\s+/g, ' ').trim();
+  const ka = key(a), kb = key(b);
+  if (!ka || !kb) return false;
+  if (ka === kb) return true;
+  const wa = ka.split(' '), wb = kb.split(' ');
+  if (wa.length < 2 || wb.length < 2 || wa[wa.length - 1] !== wb[wb.length - 1]) return false;
+  const fa = wa[0], fb = wb[0], n = Math.min(fa.length, fb.length);
+  return n >= 3 && Math.abs(fa.length - fb.length) <= 2 && fa.slice(0, n) === fb.slice(0, n);
+}
+/** A booking still "booked" though they came: they checked in that day under another mobile and a name heard a little
+ *  differently (nameNear), or their booking only reached J&L after they were in the room (approved in Hyrre after the morning
+ *  pull). The booking becomes came and the check-in points at it; who booked the check-in never changes (Angad, 27 Oct).
+ *  From the 10:30 "didn't come" and every Hyrre pull, for the days in the window. */
+function linkLateCheckins(from, to) {
+  const open = readTable('Bookings').filter(b => b.status === 'booked' && b.slot_date >= from && b.slot_date <= to);
+  if (!open.length) return 0;
+  const days = {}; open.forEach(b => { days[b.slot_date] = true; });
+  const taken = {}; readTable('Bookings').forEach(b => { if (b.candidate_id) taken[b.candidate_id] = true; });
+  const ins = readTable('Candidates').filter(c => days[c.attended_date] && !taken[c.id] && !c.booking_id);
+  let n = 0;
+  open.forEach(b => {
+    const hits = ins.filter(c => c.attended_date === b.slot_date && !taken[c.id] && (c.mobile === b.mobile || nameNear(c.full_name, bookingName(b))));
+    if (hits.length !== 1) return;  // two could be them: no guessing
+    const c = hits[0];
+    b.status = 'came'; b.candidate_id = c.id; b.came_at = c.created_at; b.updated_at = nowStr(); writeRow('Bookings', b); taken[c.id] = true;
+    c.booking_id = b.id; if (!c.booking_note) c.booking_note = b.notes || ''; writeRow('Candidates', c);
+    log(null, 'booking_came', c.id, 'booked by ' + b.booked_by + ' for ' + b.slot_date + ' (linked later: ' + (c.mobile === b.mobile ? 'same mobile' : 'checked in as ' + c.full_name + ', booked as ' + bookingName(b)) + ')');
+    n++;
+  });
+  if (n) { delete MEMO.Bookings; delete MEMO.Candidates; }
+  return n;
 }
 /** Check-in page: their mobile → "Found your booking: today 10:00, booked by Jess Grace" (who booked them, nothing about them). */
 function bookingByMobile(req) {
@@ -2652,6 +2711,7 @@ function bookingByMobile(req) {
 function bookingByToken(t) {
   const b = t && String(t).length >= 16 ? readTable('Bookings').filter(x => x.confirm_token === String(t))[0] : null;
   if (!b || b.status === 'cancelled') throw new Error('This link has expired. Message the person who booked you and they\'ll sort it.');
+  if (b.status === 'no_show') throw new Error('That day has passed and you\'ve been rebooked: your newest message has your new day and its own CONFIRM link.');
   return b;
 }
 function bookingInfo(req) {
@@ -2768,6 +2828,7 @@ function maybeMissedBookings() {
   if (hm < CONFIG.BOOK_MISSED_TIME || hm > '16:59') return;
   const p = PropertiesService.getScriptProperties();
   if (!claim('BOOK_MISSED', today)) return;  // claimed (and saved) before anything goes out
+  withLock(() => linkLateCheckins(today, today));  // a check-in under another mobile and a near name isn't a no-show
   const rows = readTable('Bookings').filter(b => b.status === 'booked' && b.slot_date === today);
   const by = {};
   rows.forEach(b => { (by[b.booked_by_id] = by[b.booked_by_id] || []).push(b); });
@@ -2895,14 +2956,23 @@ function hyrreImport(req) {
         confirm_token: token().slice(0, 24), hyrre_id: id, hyrre_at: now, updated_at: now });
       n.added++;
     });
-    // No longer approved in Hyrre (declined, moved to another day, taken off) and still to come: off the list
+    // No longer approved in Hyrre (declined, moved to another day, taken off) and still to come: off the list. One whose
+    // presentation is over is a no-show, never cancelled (the show-up and the "didn't come" row stay): moved to a later day in
+    // Hyrre after missing it, it reads as rebooked, like a J&L rebook does
     rows.filter(b => b.hyrre_id && b.status === 'booked' && b.slot_date >= today && b.slot_date >= w.from && b.slot_date <= w.to && !seen[keyOf(b.hyrre_id, b.slot_date)])
-      .forEach(b => { b.status = 'cancelled'; b.updated_at = now; writeRow('Bookings', b); n.cancelled++; });
+      .forEach(b => {
+        if (bookingOver(b)) {
+          if (Object.keys(seen).some(k => k.split('|')[0] === String(b.hyrre_id) && k.split('|')[1] > b.slot_date)) { b.status = 'no_show'; b.updated_at = now; writeRow('Bookings', b); n.updated++; }
+          return;
+        }
+        b.status = 'cancelled'; b.updated_at = now; writeRow('Bookings', b); n.cancelled++;
+      });
     return n;
   });
   moved.forEach(m => notify([userById(m.b.booked_by_id)], '📅 ' + m.b.first_name + ' rebooked in Hyrre too: now ' + DAYS_LONG[weekday(m.b.slot_date)],
     'Rebooked here for ' + longDate(m.was) + ', then for ' + longDate(m.b.slot_date) + ' in Hyrre. It\'s one booking now, on Hyrre\'s day (Hyrre texts them for it). ' +
     'If ' + DAYS_LONG[weekday(m.was)] + ' was agreed with them, change it in Hyrre.', 'book'));
+  withLock(() => linkLateCheckins(w.from, today));  // in the room before their booking came, or under a name heard differently
   const last = Object.assign({ at: now }, n);
   PropertiesService.getScriptProperties().setProperty('HYRRE_LAST', JSON.stringify(last));
   log({ name: 'Hyrre' }, 'hyrre_sync', '', n.approved + ' approved · ' + n.added + ' new · ' + n.updated + ' changed · ' + n.cancelled + ' cancelled' + (n.skipped ? ' · ' + n.skipped + ' skipped' : ''));
@@ -2935,10 +3005,9 @@ function hyrreMarks(items) {
   const due = readTable('Bookings').filter(b => b.hyrre_id && ['came', 'booked', 'no_show'].indexOf(b.status) >= 0 && b.slot_date >= from &&
     (b.slot_date < today || (b.slot_date === today && over)) && open[b.hyrre_id + '|' + b.slot_date]);
   if (!due.length) return [];
-  const key = s => String(s || '').toLowerCase().replace(/[^a-z\s]/g, '').replace(/\s+/g, ' ').trim();
   const days = {}; due.forEach(b => { days[b.slot_date] = true; });
   const ins = readTable('Candidates').filter(c => days[c.attended_date]);
-  return due.map(b => ({ id: b.hyrre_id, status: b.status === 'came' || ins.some(c => c.attended_date === b.slot_date && (c.mobile === b.mobile || key(c.full_name) === key(bookingName(b)))) ? 'attended' : 'no_show' }));
+  return due.map(b => ({ id: b.hyrre_id, status: b.status === 'came' || ins.some(c => c.attended_date === b.slot_date && (c.mobile === b.mobile || nameNear(c.full_name, bookingName(b)))) ? 'attended' : 'no_show' }));
 }
 /** A pull before the presentation (the 08:15 one): today's Hyrre bookings nobody has reminded since the evening before →
  *  "📲 N of Megan's to remind for today", once a morning (approved after the evening pull, or not sent last night). */
@@ -2981,7 +3050,7 @@ function longDate(ymd) {
   const d = new Date(ymd + 'T00:00:00Z'), n = d.getUTCDate(), v = n % 100, sx = ['th', 'st', 'nd', 'rd'];
   return DAYS_LONG[d.getUTCDay()] + ' ' + n + (sx[(v - 20) % 10] || sx[v] || sx[0]) + ' ' + MONTHS_LONG[d.getUTCMonth()];
 }
-function onboardable(c) { return c.outcome === 'Academy booked' && c.admin_status !== 'pending' && c.admin_status !== 'rejected' && /^\d{4}-\d{2}-\d{2}$/.test(c.academy_date || ''); }
+function onboardable(c) { return c.outcome === 'Academy booked' && c.admin_status !== 'pending' && c.admin_status !== 'rejected' && c.day1_status !== 'dropped' && /^\d{4}-\d{2}-\d{2}$/.test(c.academy_date || ''); }
 /** Office Recruitment = booked by the office (Jess, Rubal: any admin) or nobody; Personal Recruitment = booked by any booker. */
 function recruitSourceOf(c) {
   const b = c.booker_id ? userById(c.booker_id) : null;
@@ -3197,7 +3266,7 @@ function onboardSend(req, u) {
     const x = getC(req.id);
     x.onboard_email_at = nowStr(); x.onboard_email_by = u.name;
     writeRow('Candidates', x);
-    log(u, 'welcome_email', x.id, m.to + ' from ' + s.email);
+    log(u, 'welcome_email', x.id, 'from ' + s.email);  // their address stays on the candidate only (GDPR)
     return shape(x, u);
   });
 }
@@ -3429,7 +3498,9 @@ function installTriggers() {
  * so repeat candidates are spotted from day one. Run once from the editor.
  */
 function importHistory() {
-  const src = SpreadsheetApp.openById(CONFIG.HISTORY_SOURCE_ID).getSheetByName(CONFIG.HISTORY_SOURCE_TAB);
+  const srcId = PropertiesService.getScriptProperties().getProperty('HISTORY_SOURCE_ID') || CONFIG.HISTORY_SOURCE_ID;
+  if (!srcId) throw new Error('Set the Script Property HISTORY_SOURCE_ID (the old form sheet) first.');
+  const src = SpreadsheetApp.openById(srcId).getSheetByName(CONFIG.HISTORY_SOURCE_TAB);
   const values = src.getDataRange().getValues();
   const head = values.shift().map(h => String(h).toLowerCase());
   const col = re => head.findIndex(h => re.test(h));

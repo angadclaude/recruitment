@@ -177,6 +177,8 @@ const FIRST = [
   ok(list.find(b => b.hyrre_id === 'h8').status === 'came', 'her booking: came');
   // Kim: approved in Hyrre after the morning pull, so in the room before J&L knows her booking
   await api('', 'checkin', { form: { full_name: 'Kim Lee', mobile: '07700900210', email: 'kim@example.com', over18: 'Yes', rtw: 'British or Irish citizen', privacy_ok: true, source: 'Indeed' } });
+  // Sitara: Hyrre's caller heard "Sitar" and another mobile; she types her own name and number (30 Oct, Sitara Iqbal)
+  await api('', 'checkin', { form: { full_name: 'Sitara Iqbal', mobile: '07700900213', email: 'sitara@example.com', over18: 'Yes', rtw: 'British or Irish citizen', privacy_ok: true, source: 'Indeed', booker_typed: 'Megan Hyrre' } });
   ok(await runEval('recruitSourceOf(getC(' + JSON.stringify(ci.id) + '))') === 'Office Recruitment', 'Megan\'s starters are Office Recruitment (no incentive)');
   const pr = await api(satpal, 'payReport', { weekEnding: '2026-11-01' });
   ok(!pr.unassigned.some(x => x.id === ci.id) && !pr.rows.some(r => r.name === 'Megan Hyrre'), 'the pay report: Hana isn\'t "needs a booker", and Megan earns nothing');
@@ -198,20 +200,33 @@ const FIRST = [
 
   console.log('after the presentation: Hyrre\'s attended / no-show from our check-ins (Angad, 30 Oct)');
   await setTime('2026-10-27T10:40:00+00:00');
-  const third = second.concat([item('h10', 'Kim Lee', '07700900210', '2026-10-27')]);
+  const third = second.concat([item('h10', 'Kim Lee', '07700900210', '2026-10-27'), item('h12', 'Sitar Iqbal', '07700900212', '2026-10-27')]);
   const m0 = await api('', 'hyrreImport', { ticket: await ticket(), pipeline: '403', window: WINDOW, items: third });
-  ok(Array.isArray(m0.marks) && m0.marks.length === 0 && m0.added === 1, 'before MARK_FROM (2 Nov): nothing to mark (Kim\'s booking comes in)');
+  ok(Array.isArray(m0.marks) && m0.marks.length === 0 && m0.added === 2, 'before MARK_FROM (2 Nov): nothing to mark (Kim\'s and Sitar\'s bookings come in)');
+  const linked = (await api(rubal, 'bookingList', {})).items, kimB = linked.find(b => b.hyrre_id === 'h10'), sitB = linked.find(b => b.hyrre_id === 'h12');
+  ok(kimB.status === 'came' && sitB.status === 'came' && (await api(angad, 'getCandidate', { id: sitB.candidate_id })).full_name === 'Sitara Iqbal',
+    'the pull links them to their check-ins: Kim (same mobile, booked after she was in the room) and Sitara (heard as "Sitar", another mobile) → came, not "didn\'t come"');
   await post('/dev/props', { HYRRE_MARK_FROM: '2026-10-01' });
   const m1 = await api('', 'hyrreImport', { ticket: await ticket(), pipeline: '403', window: WINDOW, items: third });
   const marks = JSON.stringify(m1.marks.slice().sort((a, b) => a.id.localeCompare(b.id)));
-  ok(marks === JSON.stringify([{ id: 'h10', status: 'attended' }, { id: 'h2', status: 'no_show' }, { id: 'h7', status: 'no_show' }, { id: 'h8', status: 'attended' }, { id: 'h9', status: 'no_show' }]),
-    'Tue 10:40: Hana (checked in) and Kim (in the room before her booking came) → attended; Ben, Gus, Ian → no-show: ' + marks);
+  ok(marks === JSON.stringify([{ id: 'h10', status: 'attended' }, { id: 'h12', status: 'attended' }, { id: 'h2', status: 'no_show' }, { id: 'h7', status: 'no_show' }, { id: 'h8', status: 'attended' }, { id: 'h9', status: 'no_show' }]),
+    'Tue 10:40: Hana (checked in), Kim (in the room before her booking came) and Sitara (Sitar) → attended; Ben, Gus, Ian → no-show: ' + marks);
   ok(!m1.marks.some(m => m.id === 'h1' || m.id === 'h5') && !('name' in m1.marks[0]) && !('mobile' in m1.marks[0]), 'later days aren\'t marked, and only the Hyrre id and the mark go back');
-  const done = third.map(x => ({ h8: 'attended', h10: 'attended', h2: 'no_show', h7: 'no_show', h9: 'no_show' }[x.id] ? Object.assign({}, x, { attendance: { h8: 'attended', h10: 'attended', h2: 'no_show', h7: 'no_show', h9: 'no_show' }[x.id] }) : x));
+  const did = { h8: 'attended', h10: 'attended', h12: 'attended', h2: 'no_show', h7: 'no_show', h9: 'no_show' };
+  const done = third.map(x => (did[x.id] ? Object.assign({}, x, { attendance: did[x.id] }) : x));
   const m2 = await api('', 'hyrreImport', { ticket: await ticket(), pipeline: '403', window: WINDOW, items: done.map(x => x.id === 'h9' ? Object.assign({}, x, { attendance: 'none' }) : x) });
   ok(JSON.stringify(m2.marks) === JSON.stringify([{ id: 'h9', status: 'no_show' }]), 'the next pull: only what Hyrre still has unmarked (Ian), never one marked there already');
   const m3 = await api('', 'hyrreImport', { ticket: await ticket(), pipeline: '403', window: WINDOW, items: done });
   ok(m3.marks.length === 0, 'all marked in Hyrre: nothing more to do');
+
+  // Ian missed Tuesday; Hyrre's rebook link moves him to Thursday that afternoon: Tuesday stays a no-show (the show-up keeps him), Thursday is new
+  const mvHy = await api('', 'hyrreImport', { ticket: await ticket(), pipeline: '403', window: WINDOW, items: done.map(x => x.id === 'h9' ? Object.assign({}, x, { date: '2026-10-29', attendance: 'none' }) : x) });
+  const ianRows = (await api(rubal, 'bookingList', {})).items.filter(b => b.hyrre_id === 'h9').sort((a, b) => a.slot_date.localeCompare(b.slot_date));
+  ok(mvHy.added === 1 && mvHy.cancelled === 0 && ianRows.length === 2 && ianRows[0].slot_date === '2026-10-27' && ianRows[0].status === 'no_show' && ianRows[1].slot_date === '2026-10-29' && ianRows[1].status === 'booked',
+    'Ian moved to Thursday in Hyrre after missing Tuesday: Tuesday reads as a no-show (📅 Rebooked), not cancelled; Thursday is booked');
+  const su2 = (await api(satpal, 'payReport', { weekEnding: '2026-11-01' })).showup.rows.find(r => r.name === 'Megan Hyrre');
+  ok(su2 && su2.booked === 4 && su2.came === 3, 'show-up still counts his Tuesday: Megan Hyrre 3 of 4 came (Hana, Kim, Sitara; not Ian)');
+  await api('', 'hyrreImport', { ticket: await ticket(), pipeline: '403', window: WINDOW, items: done });  // back to the fixtures: Thursday's dropped again (still to come → cancelled)
 
   console.log('a weekday with no pull');
   n0 = (await getJson('/dev/pushes')).length;
