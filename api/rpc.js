@@ -14,7 +14,7 @@ async function isLive(rt) {
   return LIVE;
 }
 
-// The 08:30 pull from Hyrre posts from a hyrre.co.uk tab (scripts/hyrre-pull.js): that page may read the answer. Nothing else is
+// The 08:15 / 17:15 pull from Hyrre posts from a hyrre.co.uk tab (scripts/hyrre-pull.js): that page may read the answer. Nothing else is
 // let in: the post carries a one-time ticket (hyrreImport) and every other action still needs a login.
 const HYRRE_ORIGIN = 'https://hyrre.co.uk';
 
