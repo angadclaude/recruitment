@@ -1523,6 +1523,7 @@ const wantsCb = o => CB_OUTCOMES.indexOf(o) >= 0;
 function statusPill(c) {
   if (c.limited) return c.in_room ? '<span class="pill green">✅ In the room</span>' : '';
   if (c.admin_status === 'pending') return '<span class="pill red">Awaiting admin</span>';
+  if (c.outcome === 'Academy booked' && c.day1_status === 'dropped') return '<span class="pill red">🚫 Dropped out · Day 1 ' + fmt(c.academy_date) + '</span>';
   if (c.outcome === 'Academy booked' && c.welcome_url && !c.offer_sent_at && !c.academy_confirmed_at && c.admin_status !== 'pending' && c.admin_status !== 'rejected' && S.me && (isAdmin() || c.booker_id === S.me.user.id))
     return '<span class="pill orange">🎉 Send congratulations</span>';
   if (c.outcome === 'Academy booked') return '<span class="pill green">' + (c.academy_confirmed_at ? '✅ Day 1 confirmed' : 'Academy ' + fmt(c.academy_date)) + (c.outcome_late ? ' · late' : '') + '</span>';
@@ -1542,7 +1543,7 @@ function noRating(c) { return !!(c.non_qual || c.no_rating); }
 function walkLocked(c) { return c.rag === 'W' && !isAdmin(); }
 function avatar(c, cls) { return '<span class="av ' + (cls || '') + ' rag-' + (c.rag || 'X') + '">' + h(initials(c.full_name)) + '</span>'; }
 function waFor(c) {
-  const offerReady = c.outcome === 'Academy booked' && c.admin_status !== 'pending' && c.admin_status !== 'rejected' && c.welcome_url;
+  const offerReady = c.outcome === 'Academy booked' && c.admin_status !== 'pending' && c.admin_status !== 'rejected' && c.day1_status !== 'dropped' && c.welcome_url;
   if (offerReady && (isAdmin() || c.booker_id === S.me.user.id)) return msgUrl(c, msgAcademy(c));
   if (canThank()) return msgUrl(c, msgThanks(c));
   return msgUrl(c, '');
@@ -1753,7 +1754,9 @@ function viewMine(quiet) {
   const page = paint('', body, quiet);
   bindItems(page); bindWeekNav();
   page.querySelectorAll('[data-open]').forEach(b => { b.onclick = () => nav('cand', { id: b.dataset.open }, true); });
-  page.querySelectorAll('[data-remind]').forEach(a => { a.addEventListener('click', () => { const c = findCand(a.dataset.remind); markReminded(c, a.dataset.via); setTimeout(() => render(true), 400); }); });
+  // onclick, not addEventListener: a background refresh keeps these rows (morph), so a listener added each time stacked up
+  // and one tap logged the reminder five times (30 Oct)
+  page.querySelectorAll('[data-remind]').forEach(a => { a.onclick = () => { const c = findCand(a.dataset.remind); markReminded(c, a.dataset.via); setTimeout(() => render(true), 400); }; });
 }
 /** Mine → Do now: everyone of yours Chase has, this week and carried over (log the call, call back, over 2 weeks). */
 function doNow() {
@@ -2289,7 +2292,7 @@ function editUser(u) {
 // out, driver, notes and a photo. Filled in at the one-to-one on Day 1 by Angad, Satpal or whoever they tick in Team; everyone
 // can see it, phone numbers included (like the sheet). Every week is kept: ‹ › goes back through them.
 const AV_DAY = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-function canAvail() { return isAdmin() || (S.me.user.roles || []).indexOf('availability') >= 0; }
+function canAvail() { return isAdmin() || isPresenter() || (S.me.user.roles || []).indexOf('availability') >= 0; }
 function avIn(w) { return String(w || '').split('').filter(x => x === 'I').length; }
 /** "5 days" → 5 (their evaluation answer), so someone ticked in for fewer days than they said stands out. */
 function saidDays(s) { const m = /^(\d)/.exec(String(s || '')); return m ? Number(m[1]) : 0; }
@@ -3058,7 +3061,7 @@ function drawAcademy(r, quiet) {
     const started = c.academy_date <= today, dropped = c.day1_status === 'dropped';
     // Dropped out (Angad, 26 Oct): just that, and Undo; no reminders, Day 1 details or onboarding for them
     const dq = ' data-q="' + h((c.full_name + ' ' + (c.mobile || '')).toLowerCase()) + '"', cp = campaignOf(c);
-    // Where they go, FR or HF, picked on Day 1 (Angad, 27 Oct): orange FR, pink HF, like the team's highlighter
+    // Where they go, FR or HF, picked on Day 1 (Angad, 27 Oct): FR in the NDCS purple, HF in HelloFresh green
     const camp = admin ? '<span class="campsw" data-campsw="' + h(c.id) + '">' + ['FR', 'HF'].map(k => '<button type="button" class="' + k + (cp === k ? ' on' : '') + '" data-camp="' + k + '">' + k + '</button>').join('') + '</span>'
       : '<span class="pill camp ' + cp + '">' + cp + '</span>';
     const left = c.day1_status === 'arrived' && c.day1_left_at;
@@ -3095,9 +3098,10 @@ function drawAcademy(r, quiet) {
     // Came on Day 1 but not back after it (the struck-through arrivals on the team's Tuesday list): two taps, Undo
     const leftBtn = c.day1_status !== 'arrived' ? '' : left ? '<button class="btn sm ghost" data-d1="stayed" data-id="' + h(c.id) + '">↩️ Undo</button>'
       : '<button class="btn sm ghost' + (sureOf('left') ? ' sure' : '') + '" data-d1="left" data-id="' + h(c.id) + '">' + (sureOf('left') ? 'Didn\'t continue?' : '🚪 Didn\'t continue') + '</button>';
+    // On the day and after it the ticks are the admins' (Jess, Rubal); a booker sees how it went (the pills)
     const act = started
-      ? '<div class="d1btns"><button class="btn sm ' + (c.day1_status === 'arrived' ? 'green' : 'ghost') + '" data-d1="arrived" data-id="' + h(c.id) + '">Arrived</button>' +
-        '<button class="btn sm ' + (c.day1_status === 'no_show' ? 'red' : 'ghost') + '" data-d1="no_show" data-id="' + h(c.id) + '">No-show</button>' + camBtn + mvBtn + dropBtn + leftBtn + '</div>'
+      ? (!admin ? '' : '<div class="d1btns"><button class="btn sm ' + (c.day1_status === 'arrived' ? 'green' : 'ghost') + '" data-d1="arrived" data-id="' + h(c.id) + '">Arrived</button>' +
+        '<button class="btn sm ' + (c.day1_status === 'no_show' ? 'red' : 'ghost') + '" data-d1="no_show" data-id="' + h(c.id) + '">No-show</button>' + camBtn + mvBtn + dropBtn + leftBtn + '</div>')
       : '<div class="d1btns">' + (offer ? '' : '<a class="btn ' + (c.no_whatsapp ? 'sms' : 'wa') + ' sm" data-rem1="' + h(c.id) + '" data-via="' + (c.no_whatsapp ? 'sms' : 'whatsapp') + '" target="_blank" rel="noopener" href="' + h(msgUrl(c, msgDay1Reminder(c))) + '">💬 Remind</a>') + mvBtn + dropBtn + '</div>';
     return '<div class="trow' + (q ? ' d1q' : '') + (left ? ' left' : c.day1_status === 'arrived' ? ' arrived' : '') + ' camp' + cp + '" data-cand="' + h(c.id) + '"' + dq + '>' + pic + '<div class="main"><div class="name">' + h(c.full_name) + ' <span class="co ' + h(c.company) + '">' + h(c.company) + '</span></div>' +
       '<div class="sub">' + (c.booker_name ? 'booked by ' + h(c.booker_name) : 'no booker') + (closedBy(c) ? ' · closed by ' + h(closedBy(c)) : '') + '</div>' +
@@ -3264,7 +3268,7 @@ function day1Sheet(date) {
   back.innerHTML = '<div class="sheet" role="dialog" aria-label="Day 1 reminders"><div class="grab"></div>' +
     '<div class="sheet-h"><div><div class="label muted">BA Academy Day 1 · ' + h(n) + '</div><div class="display">Send reminders 📲</div></div></div>' +
     '<p class="hint" style="margin-top:-6px"><b id="d1prog">' + prog() + '</b>. Short and snappy, signed by you' + (mine.length ? ', your ' + mine.join(' + ') + ' starters first' : '') + '. Tap send, come back, next one.</p>' +
-    '<div class="list">' + items.map(c => '<div class="trow">' + avatar(c) + '<div class="main"><div class="name">' + h(c.full_name) + '</div><div class="sub"><span class="co ' + thanksCo(c) + '">' + thanksCo(c) + '</span> ' +
+    '<div class="list">' + items.map(c => '<div class="trow">' + avatar(c) + '<div class="main"><div class="name">' + h(c.full_name) + '</div><div class="sub"><span class="co ' + brandCo(c) + '">' + brandCo(c) + '</span> ' +
       (c.academy_confirmed_at ? '✅ confirmed' : '⏳ not confirmed') + '</div></div>' + (remindedToday(c) ? sent(c) : send(c)) + '</div>').join('') + '</div>' +
     '<button class="btn ghost block" id="d1done" style="margin-top:14px">Done</button></div>';
   document.body.appendChild(back);
@@ -4711,11 +4715,12 @@ function submitOutcome(c, payload, errEl) {
   const local = Object.assign({}, c, {
     outcome: payload.outcome, academy_date: acad, outcome_notes: payload.outcome_notes, outcome_by: S.me.user.name, outcome_at: now,
     callback_at: wantsCb(payload.outcome) ? payload.callback_at : '',
-    outcome_late: now > c.deadline ? 'TRUE' : '', academy_confirmed_at: acad === c.academy_date ? c.academy_confirmed_at : '',
+    outcome_late: c.outcome_at ? c.outcome_late : (now > c.deadline ? 'TRUE' : ''),  // a change never turns an on-time outcome late (the server goes by the first one logged)
+    academy_confirmed_at: acad === c.academy_date ? c.academy_confirmed_at : '',
     day1_status: acad === c.academy_date ? c.day1_status : '',
     admin_status: acad && (c.rag === 'R' || c.rag === 'W' || c.repeat_block) && !isAdmin() && c.admin_status !== 'approved' ? 'pending' : (acad ? c.admin_status : (c.admin_status === 'pending' ? '' : c.admin_status)),
   });
-  queueSave('saveOutcome', payload, local, local.outcome_late ? 'Saved — flagged late' : 'Outcome saved ✓');
+  queueSave('saveOutcome', payload, local, local.outcome_late && !c.outcome_at ? 'Saved — flagged late' : 'Outcome saved ✓');
   return true;
 }
 
@@ -4942,7 +4947,7 @@ function renderCandidate(c, quiet) {
       (isAdmin() ? qa(Q('q13_unspent') + ' (admin only)', c.q13_unspent) : '') + qa(Q('q14_questions'), c.q14_questions)
     : '<p class="muted">' + (c.non_qual ? 'Non-qualifier: no evaluation form.' : 'Not submitted yet.') + '</p>';
   const academyDefault = c.academy_date || nextMonday(S.me.today);
-  const offerReady = c.outcome === 'Academy booked' && c.admin_status !== 'pending' && c.admin_status !== 'rejected';
+  const offerReady = c.outcome === 'Academy booked' && c.admin_status !== 'pending' && c.admin_status !== 'rejected' && c.day1_status !== 'dropped';
   const waMain = canOutcome && offerReady ? msgUrl(c, msgAcademy(c)) : canThank() ? msgUrl(c, msgThanks(c)) : msgUrl(c, '');
 
 

@@ -118,7 +118,7 @@ async function fillEval(p) {
   // headers written twice (two people opened the app the moment that version went live)
   await post('/dev/eval', { js: "(() => { const h = SpreadsheetApp.getActive().getSheetByName('Candidates').data[0]; h.splice(-7); h.push('presented_by_id', 'presented_by'); return h.length; })()" });
   await setTime('2026-10-12T09:30:00+01:00'); // Monday morning
-  const admin = await loginApi('angad@linkmarketing.org.uk');
+  let admin = await loginApi('angad@linkmarketing.org.uk');
   const users = (await api(admin, 'listUsers')).users;
   ok(users.length === 4 && users.every(u => u.roles.includes('admin')), '4 admins seeded (Angad, Jess, Satpal, Rubal)');
   ok((await post('/dev/eval', { js: 'JSON.stringify(ScriptApp.getProjectTriggers().map(t => t.fn))' })).out.includes('keepWarm'), 'keep-warm trigger installed');
@@ -141,6 +141,7 @@ async function fillEval(p) {
       [new Date('2026-06-05T10:00:00Z'),'','jagpreet kular','07700 900999','jag@example.com','Abdullahi','asap','Nathan'],
       [new Date('2026-03-01T10:00:00Z'),'','Seven Months','07700 900777','seven@example.com','Ian','asap','Mo'],
       [new Date('2025-01-05T10:00:00Z'),'','Too Old','07700 900888','old@example.com','X','asap','Y']];
+    PropertiesService.getScriptProperties().setProperty('HISTORY_SOURCE_ID', 'FAKE-HISTORY');  // the old form sheet's id is a Script Property, never in the repo
     importHistory();` });
   const hist = await getJson('/dev/sheet?name=History');
   ok(hist.length === 2, 'history import keeps the last 6 months only');
@@ -2578,18 +2579,18 @@ async function fillEval(p) {
   console.log('login codes');
   // The race that hit Monish: a check-in read the team list just before he was added, then saved that old list back afterwards
   await post('/dev/eval', { js: "MEMO = {}; globalThis.__ver0 = PropertiesService.getScriptProperties().getProperty('USERS_VER') || '0'; globalThis.__stale = JSON.stringify(readTable('Users')); 1" });
-  const monish = await api(admin, 'saveUser', { user: { name: 'Monish Somalai', email: 'monish_m4@yahoo.com', company: 'LINK', roles: ['booker', 'presenter'], active: true } });
+  const monish = await api(admin, 'saveUser', { user: { name: 'Monish Somalai', email: 'monish.s@example.com', company: 'LINK', roles: ['booker', 'presenter'], active: true } });
   await post('/dev/eval', { js: "CacheService.getScriptCache().put('users_v3_' + __ver0, __stale, 600); 1" });
   const mb3 = (await getJson('/dev/mail')).length;
-  await api('', 'requestCode', { email: ' Monish_M4@yahoo.com ' });
-  ok((await getJson('/dev/mail')).slice(mb3).some(m => m.to === 'monish_m4@yahoo.com' && /login code/.test(m.subject)),
+  await api('', 'requestCode', { email: ' Monish.S@example.com ' });
+  ok((await getJson('/dev/mail')).slice(mb3).some(m => m.to === 'monish.s@example.com' && /login code/.test(m.subject)),
     'someone added a moment ago gets their login code, even if a check-in saved the old team list at that moment (capitals / spaces don\'t matter)');
   await api('', 'requestCode', { email: 'nobody@example.com' });
   const codeLog = (await getJson('/dev/sheet?name=Log')).filter(r => r[2] === 'login_code').map(r => r[4]);
-  ok(codeLog.some(d => /monish_m4@yahoo\.com · emailed/.test(d)) && codeLog.some(d => /nobody@example\.com · no active team member/.test(d)),
+  ok(codeLog.some(d => /monish\.s@example\.com · emailed/.test(d)) && codeLog.some(d => /nobody@example\.com · no active team member/.test(d)),
     'every code request is logged (emailed / no such person), so "I never got a code" can be checked');
-  for (let i = 0; i < 4; i++) await api('', 'requestCode', { email: 'monish_m4@yahoo.com' });
-  const lim = await post('/api', { action: 'requestCode', email: 'monish_m4@yahoo.com' });
+  for (let i = 0; i < 4; i++) await api('', 'requestCode', { email: 'monish.s@example.com' });
+  const lim = await post('/api', { action: 'requestCode', email: 'monish.s@example.com' });
   ok(!lim.ok && /Check Spam\/Junk/.test(lim.error) && /show you a code/.test(lim.error), 'after 5 codes in 15 minutes: "Check Spam/Junk… or ask an admin to show you a code"');
   await ap.evaluate(() => localStorage.removeItem('lr_cache'));
   await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button');
@@ -2601,7 +2602,7 @@ async function fillEval(p) {
   await ap.locator('#uf').screenshot({ path: SHOTS + '/20-admin-login-code.png' });
   const mc = await browser.newContext(PHONE); const mp = await mc.newPage();
   await mp.goto(APP + 'index.html'); await mp.click('#doors button[data-door=ba]');
-  await mp.fill('#em', 'monish_m4@yahoo.com'); await mp.click('#haveCode'); await mp.fill('#code', shown); await mp.click('#go');
+  await mp.fill('#em', 'monish.s@example.com'); await mp.click('#haveCode'); await mp.fill('#code', shown); await mp.click('#go');
   await mp.waitForSelector('.tabbar button');
   ok(true, 'Monish logs in with that code via "Already have a code?", even after hitting the limit');
   await mc.close();
@@ -3049,6 +3050,19 @@ async function fillEval(p) {
   ok(true, 'Google Apps Script link still works as a fallback');
 
   // GDPR, as the check-in page says: full details 12 weeks → only the basics → deleted after 6 months
+  // Day 1 ticks are the admins' (30 Oct: a booker marked their starter "didn't continue" at 2 am)
+  ok(/ticked by Jess or Rubal/.test(await refused(abdT, 'markDay1', { id: adham.id, status: 'no_show' })) && /ticked by Jess or Rubal/.test(await refused(abdT, 'markDay1', { id: adham.id, status: 'left' })),
+    'a booker can\'t tick Arrived / No-show / Didn\'t continue on their own starter: "ticked by Jess or Rubal"');
+  ok(/work email/.test(await refused('', 'requestCode', { email: '' })) && /work email/.test(await refused('', 'verifyCode', { email: ' ', code: '123456' })), 'no login code for an empty email (someone on the team by name only can\'t be signed in as)');
+  const nathanRec = (await api(admin, 'listUsers')).users.find(u => u.id === nathanId);
+  ok(/already on the team/.test(await refused(admin, 'saveUser', { user: Object.assign({}, nathanRec, { name: 'Abdullahi Ahmed' }) })), 'renaming someone to a name already on the team is refused (two records would split their check-ins)');
+  const abdRec = (await api(admin, 'listUsers')).users.find(u => u.id === abd.id), adhamWe = (await api(admin, 'getCandidate', { id: adham.id })).week_ending;
+  await api(admin, 'saveUser', { user: Object.assign({}, abdRec, { roles: ['presenter'] }) });
+  const prFormer = await api(admin, 'payReport', { weekEnding: adhamWe });
+  ok(prFormer.rows.some(r => r.booker_id === abd.id && r.attended >= 1) && !prFormer.unassigned.some(x => x.id === adham.id),
+    'a booker made presenter keeps their past weeks on Appts Attended (Adham stays Abdullahi\'s, not "no confirmed booker")');
+  await api(admin, 'saveUser', { user: abdRec });
+
   await setTime('2027-01-20T03:00:00+00:00');  // ~14 weeks after the Monday check-ins
   await post('/dev/run', { fn: 'dailyMaintenance' });
   const tsheet = await getJson('/dev/sheet?name=Candidates'), th = tsheet[0];
@@ -3059,6 +3073,10 @@ async function fillEval(p) {
   const adRow = tsheet.find(r => r[th.indexOf('full_name')] === 'Adham Soliman'), adOl = JSON.parse(adRow[th.indexOf('outcome_log')] || '[]');
   ok(adOl.length === 3 && adOl.every(e => e.at && e.by && e.o && !e.n) && !/missed the train/.test(adRow.join('|')), 'call log after 12 weeks: who, when and outcome kept; the call notes wiped with the rest');
   await setTime('2027-10-25T03:00:00+01:00');
+  // A year on, the admin's token is a year past its 30 days: refused even though the 6-hour token cache still holds it (30 Oct)
+  const staleTok = admin;
+  ok(/log in again/i.test(await refused(staleTok, 'listUsers', {})), 'a token is good for 30 days exactly: a year later it\'s "Please log in again", cache or no cache');
+  admin = await loginApi('angad@linkmarketing.org.uk');
   await post('/dev/run', { fn: 'dailyMaintenance' });
   ok((await getJson('/dev/sheet?name=Candidates')).length === 1, 'records older than 6 months deleted automatically');
   const avKept = await getJson('/dev/sheet?name=Availability');
@@ -3099,7 +3117,7 @@ async function fillEval(p) {
     const es = (we, d) => ({ name: `Hello Fresh Earnings Summary WE ${d} Juss.xlsx`, text: 'HF ' + we }), gc = (we, d) => ({ name: `Green Chef Earnings Summary WE ${d} Juss.xlsx`, text: 'GC ' + we });
     await post('/dev/eval', { js: 'globalThis.__inbox = ' + JSON.stringify([
       [{ id: 'm18', from: sat, date: '2026-10-21T14:38:11Z', subject: 'HF & GC ES WE 18.10.26 - JUSS', files: [es('18.10.26', '2026.10.18'), gc('18.10.26', '2026.10.18'), { name: 'Outlook-logo.png', text: 'png' }] },
-        { id: 'r18', from: 'jess@watfordhubs.co.uk', date: '2026-10-23T10:29:08Z', subject: 'Re: HF & GC ES WE 18.10.26 - JUSS', files: [] }],
+        { id: 'r18', from: 'a.reply@example.org', date: '2026-10-23T10:29:08Z', subject: 'Re: HF & GC ES WE 18.10.26 - JUSS', files: [] }],
       [{ id: 'x1', from: 'someone@example.com', date: '2026-10-22T09:00:00Z', subject: 'Fwd: HF & GC ES WE 18.10.26 - JUSS', files: [es('fake', '2026.10.18')] }],
       [{ id: 'm11', from: sat, date: '2026-10-14T14:28:26Z', subject: 'HF & GC ES WE 11.10.26 - JUSS', files: [es('11.10.26', '2026.10.11'), gc('11.10.26', '2026.10.11')] }],
     ]) + '; "ok"' });
@@ -3204,6 +3222,15 @@ async function fillEval(p) {
     // The bell sheets: the same person typed a little differently is the same person
     const bk = await ev("[bellKey('HILAIRE (EMMANUEL) EBILA'), bellKey('Hilaire Ebila'), bellKey('Jasraj Bhuller-Singh'), bellKey('JOSÉ  GARCÍA')]");
     ok(bk.join() === 'HILAIRE EBILA,HILAIRE EBILA,JASRAJ SINGH,JOSE GARCIA', 'bell sheets match a name however it was typed: ' + bk.join(', '));
+    // The 30 Oct audit's rules
+    const nn = await ev("[nameNear('Sitar Iqbal', 'Sitara Iqbal'), nameNear('Beni Bofoya', 'BENIE BOFOYA'), nameNear('Larry Oguabia Oguabia', 'Larry Oguabia'), nameNear('Priya Patel', 'Priyanka Patel'), nameNear('Sam Jones', 'Sam Smith'), nameNear('Sitara', 'Sitara Iqbal')]");
+    ok(nn.join() === 'true,true,true,false,false,false', 'a booking and a check-in are the same person when the surname matches and the first name is a letter or two out (Sitar / Sitara), never Priya / Priyanka: ' + nn.join());
+    ok((await ev("onboardable({ outcome: 'Academy booked', academy_date: '2026-11-09', admin_status: '', day1_status: 'dropped' })")) === false &&
+      (await ev("onboardable({ outcome: 'Academy booked', academy_date: '2026-11-09', admin_status: '' })")) === true, 'dropped out: no welcome email, no onboarding (Angad: "left out of counts and onboarding")');
+    const jsSrc2 = fs.readFileSync(require('path').join(__dirname, '..', 'src', 'JS.html'), 'utf8');
+    ok(/outcome_late: c\.outcome_at \? c\.outcome_late :/.test(jsSrc2) && jsSrc2.match(/const offerReady = [^\n]*/g).every(l => /day1_status !== 'dropped'/.test(l)),
+      'the phone\'s copy keeps an on-time outcome on time when it\'s changed later, and a dropped-out starter gets no onboard card');
+    ok(/\[data-remind\]'\)\.forEach\(a => \{ a\.onclick = /.test(jsSrc2), 'Mine\'s Remind is wired once per row (a refresh keeps the rows, so a stacked listener logged one tap five times)');
   }
 
   await browser.close();

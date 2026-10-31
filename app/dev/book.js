@@ -405,6 +405,10 @@ const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked 
   await api(jess, 'saveBooking', { booking: { first_name: 'Tom', last_name: 'Reed', mobile: '07700900160', slot_date: '2026-11-03' } });
   const tom = await api('', 'checkin', form('Tom Reed', '07700900161'));
   ok(!(await api(angad, 'getCandidate', { id: tom.id })).booking_id, 'by name only for today\'s bookings (Tom is booked for tomorrow)');
+  const benie = await api(jess, 'saveBooking', { booking: { first_name: 'Benie', last_name: 'Bofoya', mobile: '07700900170', slot_date: '2026-11-02' } });
+  const beni = await api('', 'checkin', form('Beni Bofoya', '07700900171'));
+  ok((await api(angad, 'getCandidate', { id: beni.id })).booking_id === benie.id && (await api(jess, 'bookingList', {})).items.find(b => b.id === benie.id).status === 'came',
+    'a name a letter out ("Beni" booked as "Benie", another mobile) still finds today\'s booking (30 Oct: Sitar / Sitara)');
   await browser.close();
 
   console.log('GDPR');
