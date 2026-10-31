@@ -1,4 +1,4 @@
-window.APP_VERSION = 'fd2a4151';
+window.APP_VERSION = 'a97503b0';
 
 (function () {
 'use strict';
@@ -1544,7 +1544,7 @@ function noRating(c) { return !!(c.non_qual || c.no_rating); }
 function walkLocked(c) { return c.rag === 'W' && !isAdmin(); }
 function avatar(c, cls) { return '<span class="av ' + (cls || '') + ' rag-' + (c.rag || 'X') + '">' + h(initials(c.full_name)) + '</span>'; }
 function waFor(c) {
-  const offerReady = c.outcome === 'Academy booked' && c.admin_status !== 'pending' && c.admin_status !== 'rejected' && c.welcome_url;
+  const offerReady = c.outcome === 'Academy booked' && c.admin_status !== 'pending' && c.admin_status !== 'rejected' && c.day1_status !== 'dropped' && c.welcome_url;
   if (offerReady && (isAdmin() || c.booker_id === S.me.user.id)) return msgUrl(c, msgAcademy(c));
   if (canThank()) return msgUrl(c, msgThanks(c));
   return msgUrl(c, '');

@@ -171,8 +171,8 @@ const FIRST = [
   const ci = await api('', 'checkin', { form: { full_name: 'hana iqbal', mobile: '07700900208', email: 'hana@example.com', over18: 'Yes', rtw: 'British or Irish citizen', privacy_ok: true, source: 'Indeed' } });
   const hc = await api(angad, 'getCandidate', { id: ci.id }), cp = await pushesSince(n0);
   ok(hc.booker_id === meganId && hc.booker_name === 'Megan Hyrre' && hc.brand === 'JUSS' && ci.company === 'JUSS', 'Hana checks in: booked by Megan Hyrre, JUSS');
-  ok(to(cp, rubalId).some(p => p.body.headings.en === '🙌 Hana just checked in') && to(cp, jessId).some(p => p.body.headings.en === '🙌 Hana just checked in') &&
-    !to(cp, meganId).length && !cp.some(p => /No booker/.test(p.body.headings.en)), 'Megan\'s "🙌 Hana just checked in" goes to Rubal and Jess; no "No booker" alert');
+  ok(to(cp, rubalId).some(p => p.body.headings.en === '🙌 Hana just checked in (Megan\'s)') && to(cp, jessId).some(p => p.body.headings.en === '🙌 Hana just checked in (Megan\'s)') &&
+    !to(cp, meganId).length && !cp.some(p => /No booker/.test(p.body.headings.en)), 'Megan\'s "🙌 Hana just checked in (Megan\'s)" goes to Rubal and Jess, titled whose; no "No booker" alert');
   list = (await api(rubal, 'bookingList', {})).items;
   ok(list.find(b => b.hyrre_id === 'h8').status === 'came', 'her booking: came');
   // Kim: approved in Hyrre after the morning pull, so in the room before J&L knows her booking
