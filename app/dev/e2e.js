@@ -2071,10 +2071,8 @@ async function fillEval(p) {
     await setTime('2026-10-20T18:05:00+01:00');
     const rem = await runRem(), again = await runRem();
     const miss = rem.filter(x => /^🗓️ Availability: /.test(ttl(x))), coachP = rem.filter(x => /Your new starters/.test(ttl(x)));
-    ok(dueBlank.length >= 1 && !due.some(r => r.full_name === 'Mira Manual') && miss.length === adminIds.length && adminIds.every(id => miss.some(x => to(x).join() === id)) &&
-      ttl(miss[0]) === '🗓️ Availability: ' + (due.length - dueBlank.length) + ' of ' + due.length + ' done' &&
-      miss[0].body.contents.en.startsWith('Still to fill in: ' + dueBlank.map(r => r.full_name.split(' ')[0]).join(', ') + '.') && !again.length,
-      '18:00 the day after Day 1: "' + (miss[0] ? ttl(miss[0]) + ' · ' + miss[0].body.contents.en : 'none') + '" to the ' + adminIds.length + ' admins only (Satpal, Rubal, Jess and Angad in real life), once a day (Mira, Day 1 today, isn\'t due yet)');
+    ok(dueBlank.length >= 1 && !due.some(r => r.full_name === 'Mira Manual') && miss.length === 0 && !rem.some(x => /Availability ready/.test(ttl(x))) && !again.length,
+      '18:00 the day after Day 1, days still missing: no "still to fill in" nag to the admins (Angad, 2 Nov: not needed), and no "ready" yet; the coaches hear about their own');
     const jasCoach = coachP.find(x => to(x).join() === s1.coach_id), blankCoach = coachIds.find(id => due.some(r => r.coach_id === id && !/[IO]/.test(r.w1)));
     ok(coachIds.length >= 2 && coachP.length === coachIds.length && coachP.every(x => to(x).length === 1 && !isAdm(to(x)[0])) && coachOk(coachP, coachIds, due) &&
       jasCoach && ttl(jasCoach) === '✅ Your new starters\' days' && /^Jasraj: Mon Tue Wed Thu Fri$/m.test(jasCoach.body.contents.en) && !!blankCoach,
