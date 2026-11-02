@@ -1972,9 +1972,8 @@ function availNag(we, today, tag) {
   if (!rows.length) return;
   const done = r => /[IO]/.test(r.w1), line = r => r.full_name.split(' ')[0] + ': ' + (done(r) ? availDaysText(r.w1) : 'not filled in yet');
   const admins = usersAll().filter(x => truthy(x.active) && isAdmin(x)), blank = rows.filter(r => !done(r));
-  if (blank.length) notify(admins, '🗓️ Availability' + tag + ': ' + (rows.length - blank.length) + ' of ' + rows.length + ' done',
-    'Still to fill in: ' + firstNames(blank.map(r => ({ full_name: r.full_name })), 8) + '. Tap to fill in their Week 1 and Week 2.', 'avail');
-  else if (claim('AVAIL_READY', we)) {
+  // No "still to fill in" nag to the admins (Angad, 2 Nov: "not needed"): they hear once, when everyone's days are in
+  if (!blank.length && claim('AVAIL_READY', we)) {
     const inOn = i => rows.filter(r => r.w1[i] === 'I'), days = AV_DAY.map((d, i) => d + ' ' + inOn(i).length).filter((x, i) => inOn(i).length);
     notify(admins, '✅ Availability ready' + tag + ': ' + plural(rows.length, 'new starter'), 'Week 1 in: ' + days.join(' · ') + ' · 🚗 ' + rows.filter(r => r.driver === 'Yes').length + ' drive' +
       '\nTap for the poster (WhatsApp) and the PDF.', 'avail');
