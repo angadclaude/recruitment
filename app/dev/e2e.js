@@ -2960,13 +2960,17 @@ async function fillEval(p) {
     'admin: red flag "⛔ Declared an unspent conviction: the client won\'t badge them · an admin decides before any Day 1 booking"; still counts for the incentive');
   ok(cvBk.q13_unspent === '' && cvBk.admin_check === 'TRUE' && cvBk.flags.some(f => f.level === 'red' && f.text === '⛔ Admin check needed before a Day 1 booking') && !/convict/i.test(JSON.stringify(cvBk)),
     'booker: red "⛔ Admin check needed before a Day 1 booking", and nothing says why (the answer is senior-admin only)');
-  // Fiza's phone: a red card like a non-qualifier, "⛔ Admin check", no word of why
+  // Angad's Today: a red card like a non-qualifier, "⛔ Admin check"
+  await ap.goto(APP + 'index.html?c=today'); await ap.waitForSelector('.ccard.walkout .item[data-id="' + cv1.id + '"]');
+  ok(/⛔ Admin check/.test(await ap.innerText('.item[data-id="' + cv1.id + '"]')) && /1 red/.test(await ap.innerText('.item[data-id="' + cv1.id + '"]')), 'Today (admin): Connor\'s card is red like a non-qualifier, "⛔ Admin check · 1 red"');
+  // Fiza's phone (bookers have Mine, not Today): his Do now row and his outcome line are red with "⛔ Admin check", and no word of why
   const cvB = await browser.newContext(PHONE), cvbp = await cvB.newPage();
   await cvbp.goto(APP + 'index.html'); await cvbp.evaluate(t => localStorage.setItem('lr_tok', JSON.stringify(t)), fizaTok);
-  await cvbp.goto(APP + 'index.html?c=today'); await cvbp.waitForSelector('.ccard.walkout .item[data-id="' + cv1.id + '"]');
-  ok(/⛔ Admin check/.test(await cvbp.innerText('.item[data-id="' + cv1.id + '"]')) && !/convict/i.test(await cvbp.innerText('body')),
-    'booker\'s Today: Connor\'s card is red (like a non-qualifier) with "⛔ Admin check"; "conviction" appears nowhere on her screen');
-  await shot(cvbp, '42-conviction-booker-list');
+  await cvbp.goto(APP + 'index.html'); await cvbp.waitForSelector('.drow.chk[data-for="' + cv1.id + '"]');
+  ok(/⛔ Admin check/.test(await cvbp.innerText('.drow[data-for="' + cv1.id + '"]')) && /📞 Log the call/.test(await cvbp.innerText('.drow[data-for="' + cv1.id + '"]')) &&
+    /⛔ Admin check/.test(await cvbp.innerText('.dout.chk[data-open="' + cv1.id + '"]')) && !/convict/i.test(await cvbp.innerText('body')),
+    'booker\'s Mine: Connor\'s Do now row is red, "⛔ Admin check · 📞 Log the call" (she still calls him), his outcome line too; "conviction" appears nowhere on her screen');
+  await shot(cvbp, '42-conviction-booker-mine');
   // 1. Connor: booked by his booker → waits for an admin, no Day 1 details, no welcome page; the admins hear why
   const cvPend = await api(fizaTok, 'saveOutcome', { id: cv1.id, outcome: 'Academy booked', academy_date: '2026-11-02', outcome_notes: '' });
   const cvTok = (String(cvPend.welcome_url || '').match(/[?&]t=([^&]+)/) || [])[1];

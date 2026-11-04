@@ -1,4 +1,4 @@
-window.APP_VERSION = 'bc675cf5';
+window.APP_VERSION = 'dc255132';
 
 (function () {
 'use strict';
@@ -1753,7 +1753,7 @@ function viewMine(quiet) {
         '<div class="dhead">' + g.list.filter(c => c.academy_confirmed_at || c.day1_status === 'arrived').length + ' of ' + g.list.length + ' confirmed</div>' + g.list.map(d1Row).join('') + '</div>').join('') +
       (items.length ? '<div class="section-h"><b>📋 ' + (thisWeek ? 'This week\'s outcomes' : 'Outcomes') + '</b><span>' + items.length + ' checked in</span></div><div class="dcard">' +
         items.filter(c => !notCounting(c)).sort((a, b) => outRank(a) - outRank(b) || a.full_name.localeCompare(b.full_name))
-          .map(c => '<button type="button" class="dout" data-open="' + h(c.id) + '"><span>' + h(c.full_name) + '</span>' + outPill(c) + '</button>').join('') +
+          .map(c => '<button type="button" class="dout' + (c.admin_check ? ' chk' : '') + '" data-open="' + h(c.id) + '"><span>' + h(c.full_name) + '</span><span class="pills">' + nqPill(c) + outPill(c) + '</span></button>').join('') +
         (nq.length ? '<div class="dfold">⛔ Don\'t count (' + nq.length + '): ' + h(foldWhy(nq)) + '</div>' : '') + '</div>'
         : empty('🗓️', 'No candidates this week yet.'));
   }
@@ -1783,7 +1783,7 @@ function doRow(x) {
   const pill = x.k === 'log' ? '<span class="pill red">📞 Log the call' + (c.deadline && londonNow() > c.deadline ? ' · LATE' : '') + '</span>'
     : x.k === 'stale' ? '<span class="pill red">🔴 Over 2 weeks: close it</span>'
     : na ? '<span class="pill amber">📵 No answer: call again</span>' : '<span class="pill amber">🔁 Call back' + (c.callback_at ? ' ' + h(whenShort(c.callback_at)) : '') + '</span>';
-  return '<div class="drow" data-for="' + h(c.id) + '">' + avatar(c) + '<button type="button" class="dmain" data-open="' + h(c.id) + '"><b>' + h(c.full_name) + '</b><span>' + pill +
+  return '<div class="drow' + (c.admin_check ? ' chk' : '') + '" data-for="' + h(c.id) + '">' + avatar(c) + '<button type="button" class="dmain" data-open="' + h(c.id) + '"><b>' + h(c.full_name) + '</b><span>' + nqPill(c) + pill +
     (c.stars ? '<i class="stars-sm">' + '★'.repeat(Number(c.stars)) + '</i>' : '') + '</span></button>' +
     '<a class="dic" href="tel:' + h(c.mobile) + '" aria-label="Call">' + icon('phone', 18) + '</a>' +
     (na ? '<a class="dic" data-na="1" data-send="noanswer" data-via="' + via + '" href="' + h(msgUrl(c, msgNoAnswer(c))) + '" target="_blank" rel="noopener" aria-label="We tried calling you">' + icon('chat', 18) + '</a>' : '') +
