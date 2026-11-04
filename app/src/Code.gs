@@ -628,13 +628,32 @@ function flagsFor(c, isAdmin) {
   if (c.q10_door && c.q10_door.indexOf('C)') === 0) amber('Door scenario: "maybe this isn\'t for me"');
   if (c.q11_coach && (c.q11_coach.indexOf('B)') === 0 || c.q11_coach.indexOf('C)') === 0)) amber('Coachability answer: ' + c.q11_coach.slice(3));
   if (!c.booker_id) amber('Booker not confirmed' + (c.booker_typed ? ' (typed "' + c.booker_typed + '")' : ''));
-  if (isAdmin && c.q13_unspent === 'Yes') amber('Declared an unspent conviction');
+  // An unspent conviction (Angad, 3 Nov: a new starter started with one, and the client won't badge him): red for everyone, like a
+  // non-qualifier, and an admin decides before any Day 1 booking. Only admins see why (the answer is senior-admin only).
+  if (c.q13_unspent === 'Yes') {
+    if (isAdmin) (convictionCheck(c) ? red : amber)('⛔ Declared an unspent conviction: the client won\'t badge them' +
+      (c.admin_status === 'approved' ? ' · approved by ' + c.admin_by : c.admin_status === 'rejected' ? ' · declined by ' + c.admin_by : ' · an admin decides before any Day 1 booking'));
+    else if (convictionCheck(c)) red('⛔ Admin check needed before a Day 1 booking');
+  }
   const at = String(c.created_at || '').slice(11, 16);
   if (isAdmin && at && (at < CONFIG.CHECKIN_FROM || at > CONFIG.CHECKIN_TO)) amber('Checked in at ' + at + ' (outside office hours)');
   if (truthy(c.outcome_late)) amber('Outcome logged late (after ' + deadlineLabel() + ')');
   if (c.q12_bdp_stage && c.q12_bdp_stage.indexOf('Ownership') >= 0) green('Future owner ambition');
   if (Number(c.stars) >= 4) green(c.stars + '★ from presenter');
   return f;
+}
+
+/** Declared an unspent conviction and no admin has decided yet (Angad, 3 Nov): red everywhere, "Academy booked" waits for an admin,
+ *  and the booker's "Awaiting admin" says only that (the answer is senior-admin only). Nothing happens by itself: an admin approves
+ *  (they can be booked) or declines (Not suitable), or corrects a "Yes" tapped by mistake (fixConviction). They still count for the incentive. */
+function convictionCheck(c) { return c.q13_unspent === 'Yes' && c.admin_status !== 'approved' && c.admin_status !== 'rejected'; }
+/** Why an Academy booking waits for an admin (for the admins' alert: the conviction answer is senior-admin only). */
+function decisionWhy(c) {
+  const w = [];
+  if (c.q13_unspent === 'Yes') w.push('they declared an unspent conviction (the client won\'t badge them)');
+  if (c.rag === 'R') w.push('the presenter marked RED');
+  if (truthy(c.repeat_block)) w.push('they were previously not suitable');
+  return w.join(', and ') || 'an admin\'s decision is needed';
 }
 
 /** Non-qualifier: can't be taken on, known from their check-in answers ('' = qualifies).
@@ -1013,18 +1032,22 @@ function submitEval(req) {
       if (!canEditEval(c)) throw new Error("Your answers can't be changed now. Speak to the person who booked you in.");
       status = 'edited';
     }
+    const wasYes = c.q13_unspent === 'Yes';
     EVAL_FIELDS.forEach(k => { c[k] = String(a[k] || '').trim().slice(0, 1000); });
     const pres = presenterAnswer(a);
     if (pres) { c.presented_by_id = pres.id; c.presented_by = pres.name; }
     if (status === 'new') c.eval_at = nowStr(); else c.eval_edited_at = nowStr();
     writeRow('Candidates', c);
-    return { c: c, status: status };
+    return { c: c, status: status, newYes: c.q13_unspent === 'Yes' && !wasYes };
   });
   const c = res.c, first = c.full_name.split(' ')[0];
   if (res.status !== 'already') log(null, res.status === 'edited' ? 'evaluation_changed' : 'evaluation', c.id, '');
   const b = c.booker_id ? userById(c.booker_id) : null;
   if (b && res.status === 'new') notify([b], whose(b, '📋 ' + first + "'s evaluation is in"), 'Call ' + c.full_name + ' — log the outcome by ' + deadlineLabel() + '.', c.id);
   if (b && res.status === 'edited') notify([b], whose(b, '✏️ ' + first + ' changed their evaluation answers'), 'Have a look before you call ' + first + '.', c.id);
+  // An unspent conviction: the admins decide before anyone books Day 1 (Angad, 3 Nov). The booker's alert above says nothing about it.
+  if (res.newYes) notify(usersAll().filter(isAdmin), '⛔ ' + first + ' declared an unspent conviction',
+    'The client won\'t badge them. Approve or decline on ' + first + '\'s page before anyone books Day 1' + (c.booker_name ? ' (booked by ' + c.booker_name + ')' : '') + '.', c.id);
   return { status: res.status, booker_first: c.booker_name ? c.booker_name.split(' ')[0] : 'Our team' };
 }
 
@@ -1084,6 +1107,7 @@ function shape(c, u) {
   delete o.welcome_token;
   if (c.welcome_token) o.welcome_url = welcomeUrl(c);
   if (!isAdmin(u)) o.q13_unspent = '';
+  o.admin_check = convictionCheck(c) ? 'TRUE' : '';  // red card + "Academy booked" waits for an admin; the reason stays with the admins
   o.flags = flagsFor(c, isAdmin(u));
   o.pay_reason = payExclusion(c);
   o.non_qual = nonQualifier(c);
@@ -1233,8 +1257,8 @@ function saveOutcome(req, u) {
       if (req.callback_at !== c.callback_at) c.callback_nudged = '';
       c.callback_at = req.callback_at; c.callback_by_id = u.id;
     } else if (!wantsCallback(req.outcome)) { c.callback_at = ''; c.callback_by_id = ''; c.callback_nudged = ''; }
-    // RED from presenter (or a repeat block) → admin has the final say on an Academy booking.
-    if (req.outcome === 'Academy booked' && (c.rag === 'R' || truthy(c.repeat_block))) {
+    // RED from presenter, a repeat block or an unspent conviction → admin has the final say on an Academy booking.
+    if (req.outcome === 'Academy booked' && (c.rag === 'R' || truthy(c.repeat_block) || c.q13_unspent === 'Yes')) {
       if (isAdmin(u)) { c.admin_status = 'approved'; c.admin_by = u.name; c.admin_at = nowStr(); }
       else if (c.admin_status !== 'approved') c.admin_status = 'pending';
     } else if (c.admin_status === 'pending') c.admin_status = '';
@@ -1249,7 +1273,7 @@ function saveOutcome(req, u) {
   log(u, 'outcome', c.id, c.outcome + (c.outcome_late ? ' LATE' : ''));
   if (res.alert) {
     notify(usersAll().filter(isAdmin), '🔴 Decision needed: ' + c.full_name,
-      c.booker_name + ' wants to book BA Academy, but the presenter marked RED or they were previously not suitable.', c.id);
+      c.booker_name + ' wants to book BA Academy, but ' + decisionWhy(c) + '.', c.id);
   }
   return shape(c, u);
 }
@@ -1275,8 +1299,10 @@ function adminDecision(req, u) {
     c.admin_status = req.decision; c.admin_note = String(req.note || '').slice(0, 500);
     c.admin_by = u.name; c.admin_at = nowStr();
     if (req.decision === 'rejected') {
+      const why = (c.outcome === 'Academy booked' ? 'Academy booking rejected' : 'Declined by admin') + (c.admin_note ? ': ' + c.admin_note : '');
       c.outcome = 'Not suitable'; c.academy_date = '';
-      addOutcomeLog(c, { at: c.admin_at, by: u.name, o: 'Not suitable', n: 'Academy booking rejected' + (c.admin_note ? ': ' + c.admin_note : '') });
+      if (!c.outcome_at) { c.outcome_at = c.admin_at; c.outcome_by = u.name; }  // declined before any call (an unspent conviction): the decision is the outcome, never LATE for the booker
+      addOutcomeLog(c, { at: c.admin_at, by: u.name, o: 'Not suitable', n: why });
     }
     writeRow('Candidates', c);
     log(u, 'admin_' + req.decision, c.id, c.admin_note ? 'with a note' : '');  // the note stays on them (trimmed at 12 weeks), not in the Log
@@ -1312,6 +1338,28 @@ function fixEligibility(req, u) {
     log(u, 'eligibility_fixed', c.id, was + ' → ' + c.over18 + ' / ' + c.rtw);
     return shape(c, u);
   });
+}
+
+/** Admin: correct the convictions answer when a candidate tapped "Yes" by mistake (Angad, 3 Nov: "sometimes that also happens"), or
+ *  set it to "Yes" when the team learns of one. The Log says which question was corrected, never the answer.
+ *  "No": a booking that was only waiting on this goes through (new-starter alert). "Yes": a booking already made waits for an admin. */
+function fixConviction(req, u) {
+  if (!isAdmin(u)) throw new Error('Admin only');
+  if (['Yes', 'No'].indexOf(req.answer) < 0) throw new Error('Choose Yes or No');
+  const res = withLock(() => {
+    const c = getC(req.id);
+    if (!c.eval_at) throw new Error("They haven't done the evaluation yet.");
+    const changed = c.q13_unspent !== req.answer;
+    c.q13_unspent = req.answer;
+    let through = false;
+    if (req.answer === 'No' && c.admin_status === 'pending' && c.rag !== 'R' && !truthy(c.repeat_block)) { c.admin_status = ''; through = c.outcome === 'Academy booked'; }
+    if (req.answer === 'Yes' && changed && c.outcome === 'Academy booked' && !c.admin_status) c.admin_status = 'pending';
+    writeRow('Candidates', c);
+    if (changed) log(u, 'answer_fixed', c.id, 'convictions question');
+    return { c: c, through: through };
+  });
+  if (res.through && onboardable(res.c)) newStarterAlert(res.c);
+  return shape(res.c, u);
 }
 
 /** Where a starter goes, HF or FR, set on Day 1 (Angad, 27 Oct: his list had JUSS starters placed in FR). '' = their company's.
@@ -1791,7 +1839,7 @@ const PUBLIC_ACTIONS = {
 const STAFF_ACTIONS = {
   me: me, bundle: bundle, listDay: listDay, listWeek: listWeek, search: search, getCandidate: getCandidate,
   saveNotes: saveNotes, markInRoom: markInRoom, saveOutcome: saveOutcome,
-  adminDecision: adminDecision, setPayExcluded: setPayExcluded, fixEligibility: fixEligibility, reassignBooker: reassignBooker,
+  adminDecision: adminDecision, setPayExcluded: setPayExcluded, fixEligibility: fixEligibility, fixConviction: fixConviction, reassignBooker: reassignBooker,
   markSent: markSent, payReport: payReport, listUsers: listUsers, saveUser: saveUser, deleteUser: deleteUser,
   alertsCheck: alertsCheck, testAlert: testAlert, sendSetupEmails: sendSetupEmails, adminCode: adminCode,
   chaseOutcomes: chaseOutcomes, chaseList: chaseList, academyList: academyList, markDay1: markDay1, markConfirmed: markConfirmed,

@@ -1,4 +1,4 @@
-window.APP_VERSION = 'a97503b0';
+window.APP_VERSION = 'bc675cf5';
 
 (function () {
 'use strict';
@@ -1537,7 +1537,12 @@ function statusPill(c) {
   return '<span class="pill">Awaiting evaluation</span>';
 }
 /** Non-qualifier (under 18 / no right to work self-employed): set by their check-in answers. */
-function nqPill(c) { return c.non_qual ? '<span class="pill red">⛔ Non-qualifier</span>' : ''; }
+function nqPill(c) {
+  if (c.non_qual) return '<span class="pill red">⛔ Non-qualifier</span>';
+  // Declared an unspent conviction (Angad, 3 Nov): red until an admin decides. Bookers see only that a check is needed.
+  if (c.admin_check) return '<span class="pill red">⛔ Admin check</span>';
+  return '';
+}
 /** Under 18 / no right to work: the presenter doesn't rate them (Angad, 20 Oct). no_rating: someone else's candidate. */
 function noRating(c) { return !!(c.non_qual || c.no_rating); }
 /** Walked out (Angad, 20 Oct): their booker sees them, but can't call, message, log an outcome or book them. Admins can. */
@@ -1579,7 +1584,7 @@ function quickRow(c, kind) {
 function item(c, showStatus, kind) {
   const q = kind ? quickRow(c, kind) : '';
   // Someone else's candidate (presenter rating the room): name + rating only, no call / WhatsApp. A walk out: no call either.
-  const cls = 'ccard' + (q ? ' has-quick' : '') + (c.rag === 'W' || c.non_qual ? ' walkout' : '');  // a walk out or non-qualifier stands out in light red (Angad, 20 Oct)
+  const cls = 'ccard' + (q ? ' has-quick' : '') + (c.rag === 'W' || c.non_qual || c.admin_check ? ' walkout' : '');  // a walk out, non-qualifier or admin check (unspent conviction) stands out in light red (Angad, 20 Oct + 3 Nov)
   if (c.limited || walkLocked(c)) return '<div class="' + cls + '">' + itemBtn(c, showStatus, kind === 'rate') + q + '</div>';
   return '<div class="' + cls + '"><div class="swipe"><div class="acts"><a class="act call" href="tel:' + h(c.mobile) + '">' + icon('phone', 20) + '<span>Call</span></a>' +
     '<a class="act wa" href="' + h(waFor(c)) + '" target="_blank" rel="noopener">' + icon('chat', 20) + '<span>' + chanName(c) + '</span></a></div>' + itemBtn(c, showStatus, kind === 'rate') + '</div>' + q + '</div>';
@@ -4711,6 +4716,7 @@ function submitOutcome(c, payload, errEl) {
   if (!payload.outcome) { showErr(errEl, 'Choose an outcome.'); return false; }
   if (wantsCb(payload.outcome) && !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(payload.callback_at || '')) { showErr(errEl, 'When did they ask us to call back? Pick a time.'); return false; }
   if (payload.outcome === 'Academy booked' && !/^\d{4}-\d{2}-\d{2}$/.test(payload.academy_date)) { showErr(errEl, 'Pick the BA Academy Day 1 date.'); return false; }
+  if (payload.outcome === 'Academy booked' && isAdmin() && c.admin_check && !window.confirm('⛔ ' + c.first_name + ' declared an unspent conviction: the client won\'t badge them.\n\nBook Day 1 anyway? That counts as your approval.')) return false;
   const acad = payload.outcome === 'Academy booked' ? payload.academy_date : '';
   const now = londonNow();
   const local = Object.assign({}, c, {
@@ -4719,7 +4725,7 @@ function submitOutcome(c, payload, errEl) {
     outcome_late: c.outcome_at ? c.outcome_late : (now > c.deadline ? 'TRUE' : ''),  // a change never turns an on-time outcome late (the server goes by the first one logged)
     academy_confirmed_at: acad === c.academy_date ? c.academy_confirmed_at : '',
     day1_status: acad === c.academy_date ? c.day1_status : '',
-    admin_status: acad && (c.rag === 'R' || c.rag === 'W' || c.repeat_block) && !isAdmin() && c.admin_status !== 'approved' ? 'pending' : (acad ? c.admin_status : (c.admin_status === 'pending' ? '' : c.admin_status)),
+    admin_status: acad && (c.rag === 'R' || c.rag === 'W' || c.repeat_block || c.admin_check) && !isAdmin() && c.admin_status !== 'approved' ? 'pending' : (acad ? (c.admin_check && isAdmin() ? 'approved' : c.admin_status) : (c.admin_status === 'pending' ? '' : c.admin_status)),
   });
   queueSave('saveOutcome', payload, local, local.outcome_late && !c.outcome_at ? 'Saved — flagged late' : 'Outcome saved ✓');
   return true;
@@ -4977,7 +4983,7 @@ function renderCandidate(c, quiet) {
       (c.outcome === 'Academy booked' && offerReady ? (c.academy_confirmed_at
         ? '<div class="flag green">✅ ' + h(c.first_name) + ' confirmed Day 1 on their welcome page · ' + fmtTs(c.academy_confirmed_at) + '</div>'
         : '<div class="flag amber">⏳ Not confirmed yet. They confirm by tapping the link in your WhatsApp.</div>') : '') +
-      (c.admin_status === 'pending' ? '<div class="flag red">Waiting for admin to approve this Academy booking (presenter marked RED or previously not suitable).</div>' : '') +
+      (c.admin_status === 'pending' ? '<div class="flag red">Waiting for admin to approve this Academy booking (' + (c.admin_check ? (isAdmin() ? 'they declared an unspent conviction' : 'admin check needed') : 'presenter marked RED or previously not suitable') + ').</div>' : '') +
       (c.admin_status === 'approved' ? '<div class="flag green">Approved by ' + h(c.admin_by) + (c.admin_note ? ': ' + h(c.admin_note) : '') + '</div>' : '') +
       (c.admin_status === 'rejected' ? '<div class="flag red">Rejected by ' + h(c.admin_by) + (c.admin_note ? ': ' + h(c.admin_note) : '') + '</div>' : '') +
       sentList(c);
@@ -5016,9 +5022,12 @@ function renderCandidate(c, quiet) {
   let adm = '';
   if (isAdmin()) {
     adm = '<div class="card">';
-    if (c.admin_status === 'pending') {
-      adm += '<p><b>Decision needed:</b> ' + h(c.outcome_by) + ' wants to book BA Academy.</p><input type="text" id="anote" placeholder="Note (optional)">' +
-        '<div class="row" style="margin-top:8px"><button class="btn green grow" id="approve">Approve</button><button class="btn red grow" id="reject">Reject</button></div><hr>';
+    if (c.admin_status === 'pending' || c.admin_check) {
+      // An unspent conviction (Angad, 3 Nov): nothing happens by itself. Approve = they can be booked; Decline = Not suitable, nobody books them.
+      adm += '<p><b>Decision needed:</b> ' + (c.admin_status === 'pending' ? h(c.outcome_by) + ' wants to book BA Academy' + (c.admin_check ? ', and they declared an unspent conviction (the client won\'t badge them)' : '') + '.'
+          : '⛔ They declared an unspent conviction: the client won\'t badge them. <b>Approve</b> and they can be booked onto Day 1 as normal; <b>Decline</b> marks them Not suitable, so nobody books them.') +
+        (c.admin_check ? ' Tapped Yes by mistake? Correct the answer below.' : '') + '</p><input type="text" id="anote" placeholder="Note (optional)">' +
+        '<div class="row" style="margin-top:8px"><button class="btn green grow" id="approve">Approve</button><button class="btn red grow" id="reject">' + (c.admin_status === 'pending' ? 'Reject' : 'Decline') + '</button></div><hr>';
     }
     const byAdmin = (S.users || []).some(u => u.id === c.booker_id && u.roles.indexOf('admin') >= 0);
     adm += '<p><b>Recruitment incentive:</b> ' + (byAdmin ? '<span class="muted">Booked by ' + h(c.booker_name) + ' (admin), so no incentive</span>'
@@ -5038,6 +5047,11 @@ function renderCandidate(c, quiet) {
         '<label class="q">Right to work</label><select id="fxrtw">' + (S.me.rtw || []).map(r => '<option' + (c.rtw === r.label ? ' selected' : '') + '>' + h(r.label) + '</option>').join('') + '</select>' +
         '<label class="q">Visa expiry (visas only)</label><input type="date" id="fxexp" value="' + h(c.visa_expiry) + '">' +
         '<button class="btn ghost sm" id="fxsave" style="margin-top:10px">Save answers</button></details>' +
+      // The convictions answer (senior-admin only): a "Yes" tapped by mistake (Angad, 3 Nov), or a conviction the team learns of
+      (c.eval_at ? '<details class="fixel" id="fixcv"' + (c.admin_check ? ' open' : '') + '><summary><b>Convictions answer</b></summary>' +
+        '<label class="q">' + h(Q('q13_unspent')) + '</label><select id="fxcv">' + ['No', 'Yes'].map(v => '<option' + (c.q13_unspent === v ? ' selected' : '') + '>' + v + '</option>').join('') + '</select>' +
+        '<div class="help">Only admins see this answer. Changing it is logged (not the answer itself).</div>' +
+        '<button class="btn ghost sm" id="fxcvsave" style="margin-top:10px">Save answer</button></details>' : '') +
       '<hr><label class="q" style="margin-top:0">Booker</label><div class="row"><select id="rb" style="flex:1"><option value="">Choose booker…</option>' +
       (S.users || []).filter(u => u.active && (u.roles.indexOf('booker') >= 0 || u.roles.indexOf('admin') >= 0)).map(u => '<option value="' + h(u.id) + '"' + (u.id === c.booker_id ? ' selected' : '') + '>' + h(u.name) + ' (' + h(u.company) + ')</option>').join('') +
       '<option value="__new">＋ Someone not on the list…</option></select><button class="btn ghost sm" id="reas">Save</button></div>' +
@@ -5125,6 +5139,9 @@ function renderCandidate(c, quiet) {
       .then(nc => saved(nc, nc.non_qual ? 'Saved: still a non-qualifier' : 'Saved ✓ They can do the evaluation now')).catch(x => toast(x.message));
     const inc = document.getElementById('incl');
     if (inc) inc.onclick = () => call('setPayExcluded', { id: c.id, excluded: false }).then(nc => saved(nc, 'Counted again')).catch(x => toast(x.message));
+    const cv = document.getElementById('fxcvsave');
+    if (cv) cv.onclick = () => call('fixConviction', { id: c.id, answer: document.getElementById('fxcv').value })
+      .then(nc => saved(nc, nc.q13_unspent === 'Yes' ? 'Saved: an admin decides before any Day 1 booking' : 'Saved ✓ No conviction declared' + (nc.outcome === 'Academy booked' && !nc.admin_status ? ': their Day 1 booking goes ahead' : ''))).catch(x => toast(x.message));
     const rb = document.getElementById('rb'), nbk = document.getElementById('nbk');
     rb.onchange = () => { nbk.hidden = rb.value !== '__new'; document.getElementById('reas').hidden = rb.value === '__new'; };
     bindChips(nbk);
