@@ -2937,6 +2937,95 @@ async function fillEval(p) {
     'Appointments total PDF: ' + wkAtt.filter(c => !c.pay_reason).length + ' attended (the walk out included; Nadia, a non-qualifier, in her own column), ' + wkAtt.filter(c => c.pay_reason).length + ' non qualifier in red, then a WALK OUTS column (1), and under the grid "Non qualifiers: 1 not eligible."');
   try { require('child_process').execFileSync('pdftoppm', ['-png', '-r', '70', '-singlefile', gPath, `${SHOTS}/14e-grid-walkout`]); } catch (e) { /* no renderer here */ }
 
+  // ── Unspent conviction (Angad, 3 Nov: a new starter started with one, and the client won't badge him) ──
+  // "Yes" → red for everyone like a non-qualifier, the reason admin-only; "Academy booked" waits for an admin; nothing happens by itself:
+  // Jess or Rubal approve, decline (Not suitable) or correct a Yes tapped by mistake. They still count for the incentive.
+  console.log('unspent conviction');
+  const cv1 = await ci({ full_name: 'Connor Vickers', mobile: '07700900884', email: 'connor@example.com', booker_id: fiza.id });
+  const cv2 = await ci({ full_name: 'Mia Mistap', mobile: '07700900885', email: 'mia@example.com', booker_id: fiza.id });
+  const cv3 = await ci({ full_name: 'Dev Declined', mobile: '07700900886', email: 'dev@example.com', booker_id: fiza.id });
+  const cv4 = await ci({ full_name: 'Ade Adminbooked', mobile: '07700900887', email: 'ade@example.com', booker_id: fiza.id });
+  for (const c of [cv1, cv2, cv3, cv4]) await api(nathan, 'saveNotes', { id: c.id, rag: 'G', stars: 4, tags: [], notes: '' });
+  const pushN = (id, re) => pushesTo(id).then(ps => ps.filter(p => re.test(p.body.headings.en)).length);
+  const fzBefore = (await pushesTo(fiza.id)).length;
+  await ev(cv1, { q13_unspent: 'Yes' }); await ev(cv2, { q13_unspent: 'Yes' }); await ev(cv3, { q13_unspent: 'Yes' }); await ev(cv4, { q13_unspent: 'Yes' });
+  const fzNew = (await pushesTo(fiza.id)).slice(fzBefore);
+  ok(await pushN(angadId, /^⛔ Connor declared an unspent conviction$/) === 1 && await pushN(jessId, /^⛔ Connor declared an unspent conviction$/) === 1 &&
+    (await pushesTo(angadId)).some(p => /^⛔ Connor declared/.test(p.body.headings.en) && /The client won't badge them\. Approve or decline on Connor's page before anyone books Day 1 \(booked by Fiza Iqbal\)\./.test(p.body.contents.en)) &&
+    fzNew.filter(p => /'s evaluation is in$/.test(p.body.headings.en)).length === 4 && fzNew.every(p => !/convict/i.test(p.body.headings.en + p.body.contents.en)),
+    'PUSH → admins: "⛔ Connor declared an unspent conviction · The client won\'t badge them. Approve or decline on Connor\'s page before anyone books Day 1"; the booker\'s "evaluation is in" says nothing about it');
+  const cvAdm = await api(admin, 'getCandidate', { id: cv1.id }), cvBk = await api(fizaTok, 'getCandidate', { id: cv1.id });
+  ok(cvAdm.q13_unspent === 'Yes' && cvAdm.admin_check === 'TRUE' && !cvAdm.pay_reason &&
+    cvAdm.flags.some(f => f.level === 'red' && f.text === '⛔ Declared an unspent conviction: the client won\'t badge them · an admin decides before any Day 1 booking'),
+    'admin: red flag "⛔ Declared an unspent conviction: the client won\'t badge them · an admin decides before any Day 1 booking"; still counts for the incentive');
+  ok(cvBk.q13_unspent === '' && cvBk.admin_check === 'TRUE' && cvBk.flags.some(f => f.level === 'red' && f.text === '⛔ Admin check needed before a Day 1 booking') && !/convict/i.test(JSON.stringify(cvBk)),
+    'booker: red "⛔ Admin check needed before a Day 1 booking", and nothing says why (the answer is senior-admin only)');
+  // Angad's Today: a red card like a non-qualifier, "⛔ Admin check"
+  await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button[data-tab=today]'); await ap.click('.tabbar button[data-tab=today]');
+  await ap.waitForSelector('.ccard.walkout .item[data-id="' + cv1.id + '"]');
+  ok(/⛔ Admin check/.test(await ap.innerText('.item[data-id="' + cv1.id + '"]')) && /1 red/.test(await ap.innerText('.item[data-id="' + cv1.id + '"]')), 'Today (admin): Connor\'s card is red like a non-qualifier, "⛔ Admin check · 1 red"');
+  // Fiza's phone (bookers have Mine, not Today): his Do now row and his outcome line are red with "⛔ Admin check", and no word of why
+  const cvB = await browser.newContext(PHONE), cvbp = await cvB.newPage();
+  await cvbp.goto(APP + 'index.html'); await cvbp.evaluate(t => localStorage.setItem('lr_tok', JSON.stringify(t)), fizaTok);
+  await cvbp.goto(APP + 'index.html'); await cvbp.waitForSelector('.drow.chk[data-for="' + cv1.id + '"]');
+  ok(/⛔ Admin check/.test(await cvbp.innerText('.drow[data-for="' + cv1.id + '"]')) && /📞 Log the call/.test(await cvbp.innerText('.drow[data-for="' + cv1.id + '"]')) &&
+    /⛔ Admin check/.test(await cvbp.innerText('.dout.chk[data-open="' + cv1.id + '"]')) && !/convict/i.test(await cvbp.innerText('body')),
+    'booker\'s Mine: Connor\'s Do now row is red, "⛔ Admin check · 📞 Log the call" (she still calls him), his outcome line too; "conviction" appears nowhere on her screen');
+  await shot(cvbp, '42-conviction-booker-mine');
+  // 1. Connor: booked by his booker → waits for an admin, no Day 1 details, no welcome page; the admins hear why
+  const cvPend = await api(fizaTok, 'saveOutcome', { id: cv1.id, outcome: 'Academy booked', academy_date: '2026-11-02', outcome_notes: '' });
+  const cvTok = (String(cvPend.welcome_url || '').match(/[?&]t=([^&]+)/) || [])[1];
+  const dn = (await pushesTo(angadId)).find(p => /Decision needed: Connor Vickers/.test(p.body.headings.en));
+  ok(cvPend.admin_status === 'pending' && dn && /^Fiza Iqbal wants to book BA Academy, but they declared an unspent conviction \(the client won't badge them\)\.$/.test(dn.body.contents.en) &&
+    !(await post('/api', { action: 'welcomeInfo', t: cvTok })).ok && !(await api(admin, 'academyList', {})).items.some(c => c.id === cv1.id) && (await api(admin, 'academyList', {})).pending.some(c => c.id === cv1.id),
+    'his booker books Day 1 → "Awaiting admin": PUSH → admins "🔴 Decision needed: Fiza Iqbal wants to book BA Academy, but they declared an unspent conviction"; no welcome page, not on the Day 1 list, waiting on the admins\' Day 1 tab');
+  await cvbp.goto(APP + 'index.html?c=' + cv1.id); await cvbp.waitForSelector('.profile h1');
+  const cvbTxt = await cvbp.innerText('#page');
+  ok(/Awaiting admin/.test(cvbTxt) && /Waiting for admin to approve this Academy booking \(admin check needed\)\./.test(cvbTxt) && !(await cvbp.$('a.wa[data-kind=offer]')) && !/convict/i.test(cvbTxt),
+    'her phone: "Awaiting admin · Waiting for admin to approve this Academy booking (admin check needed)", no 🎉 Day 1 details button, still no why');
+  await cvB.close();
+  await ap.goto(APP + 'index.html?c=' + cv1.id); await ap.waitForSelector('#approve');
+  const cvaTxt = await ap.innerText('#page');
+  ok(/Decision needed: Fiza Iqbal wants to book BA Academy, and they declared an unspent conviction \(the client won't badge them\)\. Tapped Yes by mistake\? Correct the answer below\./.test(cvaTxt) &&
+    /Waiting for admin to approve this Academy booking \(they declared an unspent conviction\)/.test(cvaTxt) && await ap.$('#fixcv[open] #fxcv') && (await ap.$eval('#fxcv', s => s.value)) === 'Yes' && await ap.$('#reject:has-text("Reject")'),
+    'Angad\'s phone: "Decision needed: … they declared an unspent conviction (the client won\'t badge them). Tapped Yes by mistake? Correct the answer below." + Approve / Reject + the Convictions answer (Yes) open');
+  await shot(ap, '42b-conviction-admin-decision', true);
+  const cvOk = await api(jessT, 'adminDecision', { id: cv1.id, decision: 'approved', note: 'spent by Day 1, client confirmed' });
+  const cvBk2 = await api(fizaTok, 'getCandidate', { id: cv1.id });
+  ok(cvOk.admin_status === 'approved' && cvOk.admin_by === 'Jess Grace' && cvOk.admin_check === '' && cvOk.flags.some(f => f.level === 'amber' && /unspent conviction: the client won't badge them · approved by Jess Grace$/.test(f.text)) &&
+    cvBk2.admin_check === '' && !cvBk2.flags.some(f => /Admin check/.test(f.text)) && (await post('/api', { action: 'welcomeInfo', t: cvTok })).ok && (await api(admin, 'academyList', {})).items.some(c => c.id === cv1.id),
+    'Jess approves → booked as normal: welcome page live, on the Day 1 list; her flag turns amber "· approved by Jess Grace", the booker\'s red goes');
+  // 2. Mia tapped Yes by mistake (Angad: "sometimes that also happens"): booked → waiting; Angad corrects the answer → the booking goes ahead
+  ok((await api(fizaTok, 'saveOutcome', { id: cv2.id, outcome: 'Academy booked', academy_date: '2026-11-02', outcome_notes: '' })).admin_status === 'pending', 'Mia (Yes by mistake) booked by her booker → waits too');
+  ok(/Admin only/.test(await refused(fizaTok, 'fixConviction', { id: cv2.id, answer: 'No' })) && /Choose Yes or No/.test(await refused(admin, 'fixConviction', { id: cv2.id, answer: 'Maybe' })), 'only an admin can correct the convictions answer, and only to Yes or No');
+  await ap.goto(APP + 'index.html?c=' + cv2.id); await ap.waitForSelector('#fixcv[open] #fxcv');
+  await ap.selectOption('#fxcv', 'No');
+  await tapToText(ap, '#fxcvsave', 'No conviction declared: their Day 1 booking goes ahead');
+  const miaNow = await api(admin, 'getCandidate', { id: cv2.id }), miaLog = (await getJson('/dev/sheet?name=Log')).filter(r => r[2] === 'answer_fixed' && r[3] === cv2.id);
+  ok(miaNow.q13_unspent === 'No' && miaNow.admin_status === '' && miaNow.admin_check === '' && !miaNow.flags.some(f => /conviction|Admin check/.test(f.text)) && miaNow.outcome === 'Academy booked' &&
+    (await api(admin, 'academyList', {})).items.some(c => c.id === cv2.id) && miaLog.length === 1 && miaLog[0][4] === 'convictions question' && !/\bYes\b|\bNo\b/.test(miaLog[0].join('|')),
+    'Angad: Convictions answer → No → "Saved ✓ No conviction declared: their Day 1 booking goes ahead": flags gone, on the Day 1 list; the Log says "convictions question", never the answer');
+  // 3. Dev: declined by an admin before anyone calls (nothing happens by itself: the decline is the admins'); a re-book waits again
+  const devNo = await api(jessT, 'adminDecision', { id: cv3.id, decision: 'rejected', note: 'client badge' });
+  const devBk = await api(fizaTok, 'getCandidate', { id: cv3.id }), devLog = JSON.parse(devNo.outcome_log || '[]');
+  ok(devNo.outcome === 'Not suitable' && devNo.admin_status === 'rejected' && devNo.outcome_by === 'Jess Grace' && devNo.outcome_at && !devNo.outcome_late && devLog.length === 1 && devLog[0].o === 'Not suitable' && devLog[0].n === 'Declined by admin: client badge' &&
+    devBk.outcome === 'Not suitable' && devBk.admin_check === '' && !devBk.flags.some(f => /Admin check/.test(f.text)) && !(await api(admin, 'chaseList', {})).items.some(c => c.id === cv3.id),
+    'Jess declines Dev before any call → Not suitable (logged "Declined by admin: client badge", not LATE, off Chase); his booker sees Not suitable and no more red');
+  ok((await api(fizaTok, 'saveOutcome', { id: cv3.id, outcome: 'Academy booked', academy_date: '2026-11-02', outcome_notes: '' })).admin_status === 'pending', 'booking him after the decline waits for an admin again');
+  await api(jessT, 'adminDecision', { id: cv3.id, decision: 'rejected', note: '' });
+  // 4. Ade: an admin books them directly → the phone asks first ("Book Day 1 anyway? That counts as your approval"); saved as approved
+  await ap.goto(APP + 'index.html?c=' + cv4.id); await ap.waitForSelector('#saveout');
+  await ap.click('#out .chips[data-name=outcome] .chip:has-text("Academy booked")'); await ap.fill('#adate', '2026-11-02');
+  let asked = ''; ap.once('dialog', d => { asked = d.message(); d.dismiss(); });
+  await ap.click('#saveout'); await ap.waitForTimeout(400);
+  ok(/^⛔ Ade declared an unspent conviction: the client won't badge them\.\n\nBook Day 1 anyway\? That counts as your approval\.$/.test(asked) && !(await api(admin, 'getCandidate', { id: cv4.id })).outcome,
+    'Angad books Ade himself → "⛔ Ade declared an unspent conviction: the client won\'t badge them. Book Day 1 anyway? That counts as your approval." Cancel → nothing saved');
+  ap.once('dialog', d => d.accept());
+  await ap.click('#saveout'); await ap.waitForFunction(() => !JSON.parse(localStorage.getItem('lr_outbox') || '[]').length);
+  const adeNow = await api(admin, 'getCandidate', { id: cv4.id });
+  ok(adeNow.outcome === 'Academy booked' && adeNow.admin_status === 'approved' && adeNow.admin_by === 'Angad Oshan' && adeNow.admin_check === '' && (await api(admin, 'academyList', {})).pending.length === 0,
+    'OK → booked and approved by Angad (no "Awaiting admin"); nothing left waiting on the Day 1 tab');
+
   // ── Day 1 tab, week by week (Angad, 20 Oct: "week ending wise similar to All tab") ──
   const d1Week = await api(admin, 'academyList', { weekEnding: '2026-10-25' });
   ok(d1Week.weekEnding === '2026-10-25' && d1Week.items.length && d1Week.items.every(c => c.academy_date >= '2026-10-19' && c.academy_date <= '2026-10-25') && d1Week.items.some(c => c.id === jasId) && !d1Week.pending,
