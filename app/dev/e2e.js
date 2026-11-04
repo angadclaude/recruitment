@@ -2961,7 +2961,8 @@ async function fillEval(p) {
   ok(cvBk.q13_unspent === '' && cvBk.admin_check === 'TRUE' && cvBk.flags.some(f => f.level === 'red' && f.text === '⛔ Admin check needed before a Day 1 booking') && !/convict/i.test(JSON.stringify(cvBk)),
     'booker: red "⛔ Admin check needed before a Day 1 booking", and nothing says why (the answer is senior-admin only)');
   // Angad's Today: a red card like a non-qualifier, "⛔ Admin check"
-  await ap.goto(APP + 'index.html?c=today'); await ap.waitForSelector('.ccard.walkout .item[data-id="' + cv1.id + '"]');
+  await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button[data-tab=today]'); await ap.click('.tabbar button[data-tab=today]');
+  await ap.waitForSelector('.ccard.walkout .item[data-id="' + cv1.id + '"]');
   ok(/⛔ Admin check/.test(await ap.innerText('.item[data-id="' + cv1.id + '"]')) && /1 red/.test(await ap.innerText('.item[data-id="' + cv1.id + '"]')), 'Today (admin): Connor\'s card is red like a non-qualifier, "⛔ Admin check · 1 red"');
   // Fiza's phone (bookers have Mine, not Today): his Do now row and his outcome line are red with "⛔ Admin check", and no word of why
   const cvB = await browser.newContext(PHONE), cvbp = await cvB.newPage();
