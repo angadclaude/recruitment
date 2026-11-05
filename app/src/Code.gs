@@ -3234,6 +3234,13 @@ function onboardEmail(c, u, pick) {
     (solid ? gradBg + 'color:#ffffff;border:0;">' + split(label, white) : fill(S.tint) + 'color:#22222B;border:0;">' + split(label, dk)) + '</a>';
   const bigBtn = (label, url) => '<a href="' + esc(url) + '" style="display:block;margin:10px 0 0;padding:16px 18px;border-radius:16px;text-align:center;' + F + 'font-weight:800;font-size:16px;text-decoration:none;color:#ffffff;' + gradBg + '">' + split(label, white) + '</a>';
   const gap = h => '<tr><td style="height:' + h + 'px;line-height:' + h + 'px;font-size:0">&nbsp;</td></tr>';
+  /** "First: activate your login", as big as the buttons under it, with a mailto to whoever sent this email. */
+  const resend = 'mailto:' + encodeURIComponent(u.email || '') + '?subject=' + encodeURIComponent('Please resend my DataByte email') +
+    '&body=' + encodeURIComponent('Hi ' + String(u.name || '').split(' ')[0] + ',\n\nI can\'t find the email from DataByte to activate my login. Please could you send it again?\n\nThanks,\n' + first);
+  const keyPanel = '<div style="margin:10px 0 0;padding:2px;border-radius:16px;' + gradBg + '"><div style="padding:14px 16px;border-radius:14px;background:#ffffff;background-image:linear-gradient(#ffffff,#ffffff);text-align:center;' + F + 'color:#22222B">' +
+    '<div style="font-weight:800;font-size:16px;line-height:1.3">' + dk('🔑 First: activate your login') + '</div>' +
+    '<div style="margin-top:4px;font-size:14px;line-height:1.45">' + dk('Open the email from <b>DataByte</b> (check Junk / Spam) and tap its link.') + '</div>' +
+    '<a href="' + esc(resend) + '" style="display:inline-block;margin-top:8px;font-weight:700;font-size:14px;color:' + S.solid + ';text-decoration:underline">Can\'t find it? Tap to ask us to resend it</a></div></div>';
   /** A section heading like the app's: emoji tile, label, one line under it. */
   const head = (emoji, label, sub) => '<tr><td style="padding:28px 2px 12px;' + F + '"><table role="presentation" cellpadding="0" cellspacing="0"><tr>' +
     '<td style="width:40px;height:40px;border-radius:13px;' + fill(S.tint) + 'text-align:center;font-size:19px;line-height:40px">' + emoji + '</td>' +
@@ -3321,7 +3328,9 @@ function onboardEmail(c, u, pick) {
       (o.preCoaching ? step(2, 'Complete the short online <b>Pre-Coaching Module</b>: around <b>15–20 minutes</b> of short videos and quick questions. It’s important it’s done before ' + DAYS_LONG[weekday(d1)] + ', so you’re fully prepared for coaching.') : '') +
       // Our email doesn't make their playbook login (5 Nov live test): they make it themselves, as the Day 1 WhatsApp already says
       step(o.preCoaching ? 3 : 2, 'Read your <b>' + esc(o.playbook[0]) + '</b>, so you walk in on Day 1 already knowing how we work. First time? Tap <b>New BA – set up profile</b> to make your login.') +
-      '</table>' + bigBtn('📲 Get FieldIQ (TFO\'s download page)', ONBOARD.FIELDIQ_URL) + (o.preCoaching ? bigBtn('📝 Open the Pre-Coaching Module', o.preCoaching[1]) : '') +
+      // Step 1 as visible as the FieldIQ button (Angad, 5 Nov). The link that activates their login is personal and only in DataByte's
+      // own email, so this can't be a link to it: it's a panel, and the one thing they can tap there is asking us to resend it.
+      '</table>' + keyPanel + bigBtn('📲 Then: get FieldIQ (TFO\'s download page)', ONBOARD.FIELDIQ_URL) + (o.preCoaching ? bigBtn('📝 Open the Pre-Coaching Module', o.preCoaching[1]) : '') +
       bigBtn('📘 Open my ' + esc(o.playbook[0]), pbUrl)) +
     // Bring
     head('🎒', 'Bring with you') +
