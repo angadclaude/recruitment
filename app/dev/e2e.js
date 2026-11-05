@@ -3151,6 +3151,37 @@ async function fillEval(p) {
   ok(/work email/.test(await refused('', 'requestCode', { email: '' })) && /work email/.test(await refused('', 'verifyCode', { email: ' ', code: '123456' })), 'no login code for an empty email (someone on the team by name only can\'t be signed in as)');
   const nathanRec = (await api(admin, 'listUsers')).users.find(u => u.id === nathanId);
   ok(/already on the team/.test(await refused(admin, 'saveUser', { user: Object.assign({}, nathanRec, { name: 'Abdullahi Ahmed' }) })), 'renaming someone to a name already on the team is refused (two records would split their check-ins)');
+  // A leaver's record is never turned into someone else's (5 Nov: Fiza's switched-off record was renamed to the new recruiter, Christie)
+  const fizaRec = (await api(admin, 'listUsers')).users.find(u => u.id === fiza.id);
+  const fizaN = async () => (await post('/dev/eval', { js: `readTable('Candidates').filter(c => c.booker_id === '${fiza.id}' && c.booker_name === 'Fiza Iqbal').length` })).out;
+  const nFiza = await fizaN();
+  ok(fizaRec && !fizaRec.active && nFiza > 0 && /^Fiza Iqbal has left: their past weeks keep their name\. To add someone new, use Add a person \(an email they share with Fiza moves across by itself\)\.$/.test(await refused(admin, 'saveUser', { user: Object.assign({}, fizaRec, { name: 'Christie Zammit', company: 'JUSS' }) })) && await fizaN() === nFiza,
+    'a leaver\'s record can\'t be renamed into someone else: Fiza → "Christie Zammit" refused ("has left: their past weeks keep their name… use Add a person"); her ' + nFiza + ' candidates still read Fiza Iqbal');
+  const fzTypo = await api(admin, 'saveUser', { user: Object.assign({}, fizaRec, { name: 'Fiza Iqbaal' }) });
+  await api(admin, 'saveUser', { user: Object.assign({}, fizaRec, { name: 'Fiza Iqbal' }) });
+  ok(fzTypo.name === 'Fiza Iqbaal' && await fizaN() === nFiza, 'a typo fix to a leaver\'s name (Fiza Iqbaal) still goes through, and back');
+  // The live repair (fizaRecordRestored): the record renamed by mistake is Fiza's again, so are her candidates, and Christie gets her own
+  const setupTo = async e => (await getJson('/dev/mail')).filter(m => m.to === e && /Set up the/.test(m.subject)).length;
+  await post('/dev/eval', { js: `(() => { const r = readTable('Users').filter(o => o.id === '${fiza.id}')[0]; r.name = 'Christie Zammit'; r.company = 'JUSS'; writeRow('Users', r); readTable('Candidates').filter(c => c.booker_id === r.id).forEach(c => { c.booker_name = 'Christie Zammit'; writeRow('Candidates', c); }); usersChanged(); return 1; })()` });
+  const setupWas = await setupTo('fiza@example.com');
+  ok(await fizaN() === 0 && (await api(admin, 'listUsers')).users.find(u => u.id === fiza.id).name === 'Christie Zammit', 'the live mess, replayed: Fiza\'s record and every candidate of hers read "Christie Zammit"');
+  await post('/dev/eval', { js: `fizaRecordRestored('${fiza.id}')` });
+  const usersNow = (await api(admin, 'listUsers')).users, fzR = usersNow.find(u => u.id === fiza.id), chR = usersNow.find(u => u.name === 'Christie Zammit');
+  ok(fzR && fzR.name === 'Fiza Iqbal' && fzR.company === 'LINK' && !fzR.active && !fzR.email && await fizaN() === nFiza &&
+    chR && chR.id !== fiza.id && chR.email === 'fiza@example.com' && chR.company === 'JUSS' && chR.active && chR.roles.indexOf('admin') >= 0 && chR.roles.indexOf('booker') >= 0 &&
+    await setupTo('fiza@example.com') === setupWas + 1 && (await post('/dev/eval', { js: "PropertiesService.getScriptProperties().getProperty('FIZA_RECORD_RESTORED')" })).out,
+    'fizaRecordRestored (once): Fiza Iqbal again (LINK · off · no email), her ' + nFiza + ' candidates read Fiza Iqbal, and Christie Zammit gets her own record (JUSS · booker + admin · on) with the mailbox and the setup email');
+  const logRows = await getJson('/dev/sheet?name=Log');
+  ok(logRows.some(r => r[2] === 'user_save' && /^Fiza Iqbal restored .*: \d+ of her candidates read Fiza Iqbal again; her email cleared$/.test(r[4])) && logRows.some(r => r[2] === 'user_save' && /^Christie Zammit booker,admin active=TRUE/.test(r[4])) && !logRows.some(r => r[2] === 'user_save' && /@/.test(r[4])),
+    'the Log says what was put right, never the email address');
+  // Someone new on a leaver's shared mailbox: Add a person just works, the email moves across (Mo is switched off, with candidates)
+  const setupMo = await setupTo('mo@example.com');
+  const mona = await api(admin, 'saveUser', { user: { name: 'Mona Newperson', email: 'mo@example.com', company: 'JUSS', roles: ['booker', 'admin'], active: true } });
+  const moRec = (await api(admin, 'listUsers')).users.find(u => u.id === mo.id);
+  ok(mona.took_email_from === 'Mo Aden' && mona.email === 'mo@example.com' && mona.active && moRec && !moRec.email && moRec.name === 'Mo Aden' && await setupTo('mo@example.com') === setupMo + 1 &&
+    (await getJson('/dev/sheet?name=Log')).some(r => r[2] === 'user_save' && r[4] === 'Mo Aden: email moved to Mona Newperson (switched off)') &&
+    /already used/.test(await refused(admin, 'saveUser', { user: { name: 'Another Nathan', email: 'nathan@example.com', company: 'LINK', roles: ['booker'], active: true } })),
+    'Add a person with a leaver\'s email (Mo\'s): it moves to the new person (took_email_from "Mo Aden", Mo keeps his name and candidates, setup email sent, logged without the address); an email someone with access holds is still "already used"');
   const abdRec = (await api(admin, 'listUsers')).users.find(u => u.id === abd.id), adhamWe = (await api(admin, 'getCandidate', { id: adham.id })).week_ending;
   await api(admin, 'saveUser', { user: Object.assign({}, abdRec, { roles: ['presenter'] }) });
   const prFormer = await api(admin, 'payReport', { weekEnding: adhamWe });

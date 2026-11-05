@@ -1569,10 +1569,13 @@ function saveUser(req, u) {
   if (!roles.length) throw new Error('Pick at least one role');
   if (!email && roles.indexOf('booker') < 0) throw new Error('Add their email: only bookers can be added by name alone.');
   const isNew = !x.id;
-  let oldEmail = '', moved = 0;
+  let oldEmail = '', moved = 0, tookFrom = '';
   const saved = withLock(() => {
     const all = readTable('Users');
-    if (email && all.some(o => o.email.toLowerCase() === email && o.id !== x.id)) throw new Error('That email is already used.');
+    // Someone who left still holding the email (5 Nov: the shared recruitment mailbox was Fiza's; Christie took it over, and "Add a
+    // person" said "already used"): it moves to the new person. Someone with access keeps theirs.
+    const holder = email ? all.filter(o => o.email.toLowerCase() === email && o.id !== x.id)[0] : null;
+    if (holder && truthy(holder.active)) throw new Error('That email is already used.');
     if (all.some(o => o.id !== x.id && normName(o.name) === normName(x.name)))
       throw new Error(cleanName(x.name) + ' is already on the team.' + (isNew ? ' Tap their name to edit them.' : ' Two people with the same name would split the check-ins typed as it.'));
     // "Ali Abass" when "Ali Abbas" (or "Ramis - Ali Abbas") is already there = the same person twice, splitting their credit
@@ -1582,12 +1585,17 @@ function saveUser(req, u) {
     if (x.id && !rec) throw new Error('User not found');
     oldEmail = rec ? normEmail(rec.email) : '';
     const renamed = rec && rec.name !== cleanName(x.name), oldCo = rec ? rec.company : '';
+    // A leaver's record is never turned into someone else's (5 Nov: Fiza's switched-off record was renamed to the new recruiter, which
+    // put her name on every appointment Fiza booked, and the record stayed switched off). A typo fix (a near spelling) is fine.
+    if (rec && renamed && !truthy(rec.active) && !nameNear(rec.name, x.name) && readTable('Candidates').some(c => c.booker_id === rec.id))
+      throw new Error(rec.name + ' has left: their past weeks keep their name. To add someone new, use Add a person (an email they share with ' + rec.name.split(' ')[0] + ' moves across by itself).');
     if (rec && rec.id === u.id && (roles.indexOf('admin') < 0 || !x.active)) throw new Error("You can't remove your own admin access.");
     if (!rec) rec = { id: uid(), created_at: nowStr() };
     if (x.aliases !== undefined) rec.aliases = checkAliases(x.aliases, rec, x.name, all);
     else rec.aliases = rec.aliases || '';
     rec.name = cleanName(x.name); rec.email = email; rec.company = x.company;
     rec.roles = roles.join(','); rec.active = x.active ? 'TRUE' : '';
+    if (holder) { holder.email = ''; writeRow('Users', holder); tookFrom = holder.name; log(u, 'user_save', '', holder.name + ': email moved to ' + rec.name + ' (switched off)'); }
     rec._row ? writeRow('Users', rec) : appendRow('Users', rec);
     usersChanged();
     // Renamed: their candidates show the new name too
@@ -1599,7 +1607,41 @@ function saveUser(req, u) {
   // New person, email just added, or email corrected: the setup steps land in the (new) inbox
   if (saved.active && saved.email && normEmail(saved.email) !== oldEmail) sendSetupEmail(saved);
   const linked = saved.active && rolesOf(saved).indexOf('booker') >= 0 ? linkTypedBookings(saved, u) : 0;
-  return Object.assign(saved, { linked: linked, moved: moved });
+  return Object.assign(saved, { linked: linked, moved: moved, took_email_from: tookFrom });
+}
+
+/** Once (Angad, 5 Nov): on 4 Nov Fiza's switched-off record (the shared recruitment mailbox) was renamed to Christie Zammit, the new
+ *  recruiter, instead of adding her: the rename put Christie's name on every appointment Fiza ever booked, the record stayed switched
+ *  off, so Christie couldn't log in, and "Add a person" refused her email as already used. Fiza's record gets her name back (and so do
+ *  her candidates), her email is cleared, and the mailbox moves to a new record for Christie (JUSS · booker + admin · access on), who
+ *  gets the setup email. saveUser now refuses such a rename and moves a leaver's email by itself. */
+function fizaRecordRestored(id) {
+  const p = PropertiesService.getScriptProperties();
+  if (p.getProperty('FIZA_RECORD_RESTORED')) return;
+  let christie = null;
+  withLock(() => {
+    if (p.getProperty('FIZA_RECORD_RESTORED')) return;
+    delete MEMO.Users;
+    const all = readTable('Users'), rec = all.filter(o => o.id === (id || '337e543add4e'))[0];
+    let note = 'nothing to do';
+    if (rec && normName(rec.name) === 'christie zammit') {
+      const mailbox = normEmail(rec.email);
+      rec.name = 'Fiza Iqbal'; rec.company = 'LINK'; rec.roles = 'booker,admin'; rec.active = ''; rec.email = '';
+      writeRow('Users', rec);
+      let n = 0;
+      readTable('Candidates').filter(c => c.booker_id === rec.id && c.booker_name !== rec.name).forEach(c => { c.booker_name = rec.name; writeRow('Candidates', c); n++; });
+      log(null, 'user_save', '', 'Fiza Iqbal restored (her record was renamed to Christie Zammit by mistake on 4 Nov): ' + n + ' of her candidates read Fiza Iqbal again; her email cleared');
+      if (mailbox && !all.some(o => o.id !== rec.id && normName(o.name) === 'christie zammit')) {
+        christie = { id: uid(), name: 'Christie Zammit', email: mailbox, company: 'JUSS', roles: 'booker,admin', active: 'TRUE', created_at: nowStr(), aliases: '' };
+        appendRow('Users', christie);
+        log(null, 'user_save', '', 'Christie Zammit booker,admin active=TRUE (her own record; the shared mailbox moved from Fiza Iqbal)');
+      }
+      usersChanged();
+      note = nowStr() + ' · ' + n;
+    }
+    p.setProperty('FIZA_RECORD_RESTORED', note);
+  });
+  if (christie) sendSetupEmail(christie);
 }
 
 function normName(s) { return String(s || '').toLowerCase().replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim(); }
@@ -2342,6 +2384,7 @@ function keepWarm() {
   try { brandFollowsPlacement(); } catch (e) { console.error(e); }  // once
   try { companyFollowsBooker(); } catch (e) { console.error(e); }  // once
   try { brandTapUndone(); } catch (e) { console.error(e); }  // once
+  try { fizaRecordRestored(); } catch (e) { console.error(e); }  // once
   try { maybeAvailReminder(); } catch (e) { console.error(e); }
   try { maybeDay1Results(); } catch (e) { console.error(e); }
   try { maybeDailyDigest(); } catch (e) { console.error(e); }  // each on its own: one failing never stops the rest

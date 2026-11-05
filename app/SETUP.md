@@ -227,6 +227,7 @@ Someone stuck later (email slow, in Spam, or "too many codes")? Same thing: Team
   - any other check-in from the last 14 days where the candidate typed their name is credited to them automatically.
 - **Later:** Team → tap them → add their email. They get the setup email, log in, and every candidate is already theirs.
 - **Team → ＋ Add person:** works the same way. Leave the email blank for "not in the app yet".
+- **Someone new on a leaver's email** (a shared mailbox like recruitment@…): just **Add a person** with that email. It moves across from the person who left (they're switched off, so they can't log in anyway) and the new person gets the setup email. **Never rename a leaver's record into the new person:** the app refuses it, because their past weeks must keep their name.
 - **Same person twice?** If they're already on the team (the same name, or nearly: a typo like "Ali Abass" for "Ali Abbas", or the same name inside a longer one like "Ramis - Ali Abbas"), **Add a person** shows who's on file (company · access · email, or *no email*) and what saving would change ("email a → b", "+ Availability"), with **✏️ Update <name>**: the same record, so their check-ins and pay stay theirs. Renaming someone to a name that's already on the team is refused for the same reason. Only add a new person if they really are someone else, because two entries split their incentive and bulletin credit.
 - **Renaming someone** (Team → tap them → name) updates "booked by" on all their candidates.
 
