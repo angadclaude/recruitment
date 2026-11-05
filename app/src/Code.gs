@@ -1625,6 +1625,7 @@ function fizaRecordRestored(id) {
     if (p.getProperty('FIZA_RECORD_RESTORED')) return;
     delete MEMO.Users;
     const all = readTable('Users'), rec = all.filter(o => o.id === (id || '337e543add4e'))[0];
+    if (!rec) return;  // not this database (the test one): the once-only key stays unset until the record is here
     let note = 'nothing to do';
     if (rec && normName(rec.name) === 'christie zammit') {
       const mailbox = normEmail(rec.email);
