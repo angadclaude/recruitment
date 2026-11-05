@@ -1,4 +1,4 @@
-window.APP_VERSION = '5212c899';
+window.APP_VERSION = 'a28d1e40';
 
 (function () {
 'use strict';
@@ -3711,15 +3711,14 @@ function showupCard(s) {
 //       Databyte is done by hand, in Databyte; the welcome email can go any time (Angad, 27 Oct: no buttons, no lock). ─────
 /** The server's rule: booked by a booker → Personal; booked by the office (Jess, Rubal) or nobody → Office. */
 function recruitSource(c) { return c.recruit_source || 'Office Recruitment'; }
-const FIELDIQ_URL = 'https://www.tfo.group/fieldiqdownload';  // same as ONBOARD.FIELDIQ_URL in Code.gs
-const FIELDIQ_IOS = 'https://apps.apple.com/us/app/field-iq/id6756894507';  // unlisted on the App Store: only this link finds it (ONBOARD.FIELDIQ_IOS)
+const FIELDIQ_URL = 'https://www.tfo.group/fieldiqdownload';  // same as ONBOARD.FIELDIQ_URL in Code.gs: the first download goes through TFO's page
 /** After the email: a WhatsApp nudge so they find it (spam / Promotions) and reply GOT IT. The FieldIQ link is in it too: the one
  *  thing they must do before Day 1 never depends on the email getting through (Angad, 20 Oct: "it lands in the spam"). */
 function msgWelcomeHeadsUp(c, fr) {
   const co = brandCo(c);
   return 'Hi ' + c.first_name + ' 👋 It\'s ' + S.me.user.name.split(' ')[0] + ' from ' + brandOf(c) + '.\n\n' +
     'I\'ve just emailed your starter pack to ' + c.email + ' 📧\n' +
-    '📲 FieldIQ (before Day 1): your FieldIQ login is your Databyte login. We set you up and send you the details (allow a working day), then download FieldIQ and sign in with them. Android: Google Play. iPhone (unlisted, use this link): ' + FIELDIQ_IOS + '\n' +
+    '📲 FieldIQ (before Day 1): your FieldIQ login is your Databyte login. We set you up and send you the details (allow a working day), then get FieldIQ through TFO\'s page (not the App Store search) and sign in with them: ' + FIELDIQ_URL + '\n' +
     // The one FieldIQ error starters hit (Angad, 29 Oct: Arifah): what it means and the fix, so they sort it themselves
     '⚠️ FieldIQ says *"Your account isn\'t activated yet"*? Your Databyte account isn\'t set up yet: wait for your login details. Nothing by the next working day? Reply here.\n' + (co === 'LINK' ? '📝 Your Pre-Coaching Module\n' : '') +
     '📘 Your ' + (co === 'JUSS' ? 'JUSS' : 'Link Org') + ' Playbook\n🗓️ Your Week 1 plan\n\n' +
