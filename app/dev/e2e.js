@@ -1310,7 +1310,7 @@ async function fillEval(p) {
     /Read your <b>JUSS Playbook<\/b>/.test(prevHtml) && /href="https:\/\/juss-playbook\.vercel\.app\/"[^>]*>📘 (<span[^>]*>)*Open my JUSS Playbook/.test(prevHtml),
     'preview: Rubal\'s JUSS email in the congratulations-page look ("You\'re in, Adham 🎉", JUSS logo, Day 1 / Day 2 cards, FieldIQ, JUSS Playbook, Week 1 plan + CONFIRM, Hello Fresh, JUSS number, signed Rubal: it\'s from her address)');
   ok(/<b>FieldIQ, your app in the field:<\/b> your FieldIQ login is your <b>Databyte<\/b> login\. Our team sets you up on Databyte after you're booked in and sends you your login details \(allow a working day; check Junk \/ Spam\)\. <b>Once you have them<\/b>, download FieldIQ and sign in with those Databyte details/.test(prevHtml) &&
-    /iPhone: it's unlisted on the App Store, so use the link below\./.test(prevHtml) &&
+    /iPhone: it's unlisted on the App Store, so use the link below \(TFO's own <a href="https:\/\/www\.tfo\.group\/fieldiqdownload"[^>]*>how-to-download page<\/a> explains both\)\./.test(prevHtml) &&
     /⚠️ <b>FieldIQ says “Your account isn't activated yet”\?<\/b> Your Databyte account isn't set up yet: please wait for your login details\. Nothing by the next working day\? Reply to this email and we'll chase it\./.test(prevHtml) &&
     />FieldIQ for iPhone \(unlisted: use this link\)</.test(prevHtml) && /href="https:\/\/apps\.apple\.com\/us\/app\/field-iq\/id6756894507"/.test(prevHtml) &&
     />FieldIQ for Android \(Google Play\)</.test(prevHtml) && /href="https:\/\/play\.google\.com\/store\/apps\/details\?id=com\.fieldiq"/.test(prevHtml) && !/invitation|invite/i.test(prevHtml),
