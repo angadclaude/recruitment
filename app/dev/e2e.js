@@ -1404,6 +1404,8 @@ async function fillEval(p) {
     /⚠️ FieldIQ says \*?"Your account isn't activated yet"\*?\? You haven't tapped that invitation link yet\. Can't find it\? Reply here and we'll send it again\./.test(hu),
     'once sent: a one-tap heads-up (by text: Adham isn\'t on WhatsApp) "just emailed your starter pack… from rubal@… check Spam / Promotions, tap Not spam… reply GOT IT"');
   ok(!/not set up yet/i.test(await ap.innerText('#onb')), 'after a send the card no longer says "not set up yet"');
+  ok(/⚠️ Onboarded before 5 Nov, when Copy put a space in the phone number \(07700 900300\)\. FieldIQ says "not activated"\? First make sure Databyte has 07700900300, no space, then they try again\./.test(await ap.innerText('#onb')),
+    'onboarded before the copy-box fix (5 Nov 09:05): the card says to put the spaced number right in Databyte first if FieldIQ says "not activated"');
   await ap.locator('#onb').screenshot({ path: SHOTS + '/36-onboarded.png' });
   const lp = await api(admin, 'onboardPreview', { id: jasId });
   ok(lp.from === 'Jess Grace <jess@linkmarketing.org.uk>' && !lp.notReady && /<b>Jess Grace<\/b>/.test(lp.html) && /Read your <b>Link Org Playbook<\/b>/.test(lp.html) &&

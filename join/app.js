@@ -1,4 +1,4 @@
-window.APP_VERSION = '834eecd8';
+window.APP_VERSION = '91e793eb';
 
 (function () {
 'use strict';
@@ -3733,6 +3733,7 @@ function welcomeFrom(c) {
 }
 /** Exactly what Databyte should get: the stored value, no invisible characters, no stray spaces (Angad, 5 Nov: the Copy button's
  *  "07555 083217" with a space broke FieldIQ activation after Databyte; highlighting the stored "07555083217" worked). */
+const COPY_FIX_AT = '2026-11-05 09:05';  // when the copy boxes stopped formatting the phone (PR #184 live)
 function dbValue(v) { return String(v == null ? '' : v).replace(/[\u200B-\u200D\u2060\uFEFF\u00AD]/g, '').replace(/\u00A0/g, ' ').replace(/\s+/g, ' ').trim(); }
 function copyText(v, label) {
   const done = () => toast('📋 Copied ' + label);
@@ -3756,6 +3757,9 @@ function onboardCard(c) {
     '<div class="onb-step"><div class="onb-t"><b>1 · Their details for Databyte</b></div>' +
       '<p class="small muted">Add them on Databyte yourself and copy each box across:</p>' +
       '<div class="cplist">' + row('First name', first) + row('Last name', last) + row('Email', String(c.email || '').toLowerCase()) + row('Phone number', c.mobile) + row('Recruitment source', src) + '</div>' +
+      // Until 5 Nov 09:05 the Copy button put a space in the phone ("07438 338549"); FieldIQ then couldn't match them to Databyte ("not activated")
+      (sent && c.onboard_email_at < COPY_FIX_AT && c.mobile ? '<div class="flag amber">⚠️ Onboarded before 5 Nov, when Copy put a space in the phone number (' + h(dbValue(c.mobile).slice(0, 5) + ' ' + dbValue(c.mobile).slice(5)) +
+        '). FieldIQ says "not activated"? First make sure Databyte has <b>' + h(dbValue(c.mobile)) + '</b>, no space, then they try again.</div>' : '') +
       '<p class="small muted" style="margin:8px 0 0">' + (c.booker_name ? 'Booked by <b>' + h(c.booker_name) + '</b> ' + (src === 'Personal Recruitment' ? '(a booker)' : '(the office)') : 'No booker') + ' → ' + h(src) + '</p></div>' +
     '<div class="onb-step' + (sent ? ' done' : '') + '"><div class="onb-t"><b>2 · Send the welcome email</b>' + (sent ? '<span class="pill green">✓ Sent ' + by(c.onboard_email_by, c.onboard_email_at) + '</span>' : '') + '</div>' +
       '<p class="small muted">"' + brand + ' - Your Brand Ambassador Journey Begins!" with FieldIQ and their Playbook, to <b>' + h(c.email) + '</b>. FieldIQ sends them its own invite (once they\'re on Databyte): they tap its link before they can log in.</p>' +
