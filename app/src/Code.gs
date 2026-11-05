@@ -1589,7 +1589,7 @@ function saveUser(req, u) {
     const renamed = rec && rec.name !== cleanName(x.name), oldCo = rec ? rec.company : '';
     // A leaver's record is never turned into someone else's (5 Nov: Fiza's switched-off record was renamed to the new recruiter, which
     // put her name on every appointment Fiza booked, and the record stayed switched off). A typo fix (a near spelling) is fine.
-    if (rec && renamed && !truthy(rec.active) && !nameNear(rec.name, x.name) && readTable('Candidates').some(c => c.booker_id === rec.id))
+    if (rec && renamed && !truthy(rec.active) && !nameNear(rec.name, x.name) && !closeSpelling(rec.name, x.name) && readTable('Candidates').some(c => c.booker_id === rec.id))
       throw new Error(rec.name + ' has left: their past weeks keep their name. To add someone new, use Add a person (an email they share with ' + rec.name.split(' ')[0] + ' moves across by itself).');
     if (rec && rec.id === u.id && (roles.indexOf('admin') < 0 || !x.active)) throw new Error("You can't remove your own admin access.");
     if (!rec) rec = { id: uid(), created_at: nowStr() };
@@ -2766,6 +2766,17 @@ function bookingFor(mobile, today, name) {
 /** The same person, as Hyrre's caller or the booker heard their name: the same letters, or the same surname with the first
  *  names equal to a letter or two ("Sitar Iqbal" / "Sitara Iqbal", "Beni" / "Benie"; not "Priya" / "Priyanka"). 30 Oct: Sitara
  *  came, picked Megan, and her booking stayed "didn't come" because Hyrre had her as Sitar under another mobile. */
+/** A typo fix, not a different person: the two names are within two letters of each other ("Fiza Iqbal" / "Fiza Iqbaal"). */
+function closeSpelling(a, b) {
+  const s = normName(a), t = normName(b);
+  if (!s || !t) return false;
+  if (Math.abs(s.length - t.length) > 2) return false;
+  const d = [];
+  for (let i = 0; i <= s.length; i++) { d[i] = [i]; }
+  for (let j = 1; j <= t.length; j++) d[0][j] = j;
+  for (let i = 1; i <= s.length; i++) for (let j = 1; j <= t.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (s[i - 1] === t[j - 1] ? 0 : 1));
+  return d[s.length][t.length] <= 2;
+}
 function nameNear(a, b) {
   const key = s => String(s || '').toLowerCase().replace(/[^a-z\s]/g, '').replace(/\s+/g, ' ').trim();
   const ka = key(a), kb = key(b);
