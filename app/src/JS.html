@@ -3728,7 +3728,9 @@ function welcomeFrom(c) {
   if (W.mine) return W.mine;
   return W[mine || brandCo(c)] || null;
 }
-function fmtPhone(m) { const d = String(m || '').replace(/\D/g, ''); return /^07\d{9}$/.test(d) ? d.slice(0, 5) + ' ' + d.slice(5) : String(m || ''); }
+/** Exactly what Databyte should get: the stored value, no invisible characters, no stray spaces (Angad, 5 Nov: the Copy button's
+ *  "07555 083217" with a space broke FieldIQ activation after Databyte; highlighting the stored "07555083217" worked). */
+function dbValue(v) { return String(v == null ? '' : v).replace(/[\u200B-\u200D\u2060\uFEFF\u00AD]/g, '').replace(/\u00A0/g, ' ').replace(/\s+/g, ' ').trim(); }
 function copyText(v, label) {
   const done = () => toast('📋 Copied ' + label);
   const fallback = () => {
@@ -3741,7 +3743,8 @@ function copyText(v, label) {
 }
 function onboardCard(c) {
   const parts = String(c.full_name).trim().split(/\s+/), first = parts[0], last = parts.slice(1).join(' ');
-  const row = (k, v) => '<div class="cprow"><span>' + h(k) + '</span><b>' + h(v || '—') + '</b>' + (v ? '<button type="button" class="btn ghost sm" data-copy="' + h(v) + '" data-label="' + h(k.toLowerCase()) + '">Copy</button>' : '') + '</div>';
+  // What's shown is what's copied, character for character (dbValue): the phone as stored, 07… with no space
+  const row = (k, v) => { v = dbValue(v); return '<div class="cprow"><span>' + h(k) + '</span><b>' + h(v || '—') + '</b>' + (v ? '<button type="button" class="btn ghost sm" data-copy="' + h(v) + '" data-label="' + h(k.toLowerCase()) + '">Copy</button>' : '') + '</div>'; };
   const sent = !!c.onboard_email_at, brand = brandCo(c) === 'JUSS' ? 'JUSS Marketing' : 'Link Marketing';
   const src = recruitSource(c), fr = welcomeFrom(c);
   const by = (who, at) => h(String(who || '').split(' ')[0]) + ' ' + h(fmtTs(at));
@@ -3749,7 +3752,7 @@ function onboardCard(c) {
       (sent ? '<span class="pill green">✅ Onboarded</span>' : '<span class="pill">admins only</span>') + '</div>' +
     '<div class="onb-step"><div class="onb-t"><b>1 · Their details for Databyte</b></div>' +
       '<p class="small muted">Add them on Databyte yourself and copy each box across:</p>' +
-      '<div class="cplist">' + row('First name', first) + row('Last name', last) + row('Email', c.email) + row('Phone number', fmtPhone(c.mobile)) + row('Recruitment source', src) + '</div>' +
+      '<div class="cplist">' + row('First name', first) + row('Last name', last) + row('Email', String(c.email || '').toLowerCase()) + row('Phone number', c.mobile) + row('Recruitment source', src) + '</div>' +
       '<p class="small muted" style="margin:8px 0 0">' + (c.booker_name ? 'Booked by <b>' + h(c.booker_name) + '</b> ' + (src === 'Personal Recruitment' ? '(a booker)' : '(the office)') : 'No booker') + ' → ' + h(src) + '</p></div>' +
     '<div class="onb-step' + (sent ? ' done' : '') + '"><div class="onb-t"><b>2 · Send the welcome email</b>' + (sent ? '<span class="pill green">✓ Sent ' + by(c.onboard_email_by, c.onboard_email_at) + '</span>' : '') + '</div>' +
       '<p class="small muted">"' + brand + ' - Your Brand Ambassador Journey Begins!" with FieldIQ and their Playbook, to <b>' + h(c.email) + '</b>. FieldIQ sends them its own invite (once they\'re on Databyte): they tap its link before they can log in.</p>' +
