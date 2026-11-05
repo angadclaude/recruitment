@@ -1,4 +1,4 @@
-window.APP_VERSION = 'a28d1e40';
+window.APP_VERSION = '41763b42';
 
 (function () {
 'use strict';
@@ -3153,7 +3153,7 @@ function drawAcademy(r, quiet) {
   const page = paint(d1Title(),
     (pend.length ? '<div class="card needs"><b>⚖️ Waiting on your decision · ' + pend.length + '</b><p class="small muted" style="margin:4px 0 2px">Booked onto the Academy, but marked RED or not suitable before. Tap a name to approve or decline.</p>' +
       pend.map(c => '<button class="nm" data-cand="' + h(c.id) + '">' + h(c.first_name) + ' · ' + h(fmt(c.academy_date)) + '</button>').join('') + '</div>' : '') +
-    (toOnb.length ? '<div class="card needs onbq"><b>🚀 To onboard · ' + toOnb.length + '</b><p class="small muted" style="margin:4px 0 2px">The welcome email with FieldIQ, and their details to copy into Databyte. Tap a name.</p>' +
+    (toOnb.length ? '<div class="card needs onbq"><b>🚀 To onboard · ' + toOnb.length + '</b><p class="small muted" style="margin:4px 0 2px">Add them on Databyte, send Databyte\'s welcome email (it activates their FieldIQ login), then send ours. Tap a name.</p>' +
       toOnb.map(c => '<button class="nm" data-cand="' + h(c.id) + '">' + h(c.first_name) + '</button>').join('') + '</div>' : '') +
     (behind.length ? '<div class="card needs d1behind"><b>↩️ Still to sort from an earlier week · ' + behind.length + '</b><p class="small muted" style="margin:4px 0 2px">A no-show to rebook, or nobody ticked Arrived / No-show. Tap a name to go to that week.</p>' +
       behind.map(c => '<button class="nm" data-wk="' + weekEndingOf(c.academy_date) + '">' + h(c.first_name) + ' · ' + (c.day1_status === 'no_show' ? 'no-show' : 'not ticked') + '</button>').join('') + '</div>' : '') +
@@ -3718,9 +3718,12 @@ function msgWelcomeHeadsUp(c, fr) {
   const co = brandCo(c);
   return 'Hi ' + c.first_name + ' 👋 It\'s ' + S.me.user.name.split(' ')[0] + ' from ' + brandOf(c) + '.\n\n' +
     'I\'ve just emailed your starter pack to ' + c.email + ' 📧\n' +
-    '📲 FieldIQ (before Day 1): your FieldIQ login is your Databyte login. We set you up and send you the details (allow a working day), then get FieldIQ through TFO\'s page (not the App Store search) and sign in with them: ' + FIELDIQ_URL + '\n' +
+    '📲 *FieldIQ, before Day 1:*\n' +
+    '1. Tap the link in the email from *DataByte* (check Junk) to activate your account\n' +
+    '2. Get FieldIQ through TFO\'s page (iPhone: use the link on that page, the App Store search won\'t find it): ' + FIELDIQ_URL + '\n' +
+    '3. Sign in with that same email and your DataByte password\n' +
     // The one FieldIQ error starters hit (Angad, 29 Oct: Arifah): what it means and the fix, so they sort it themselves
-    '⚠️ FieldIQ says *"Your account isn\'t activated yet"*? Your Databyte account isn\'t set up yet: wait for your login details. Nothing by the next working day? Reply here.\n' + (co === 'LINK' ? '📝 Your Pre-Coaching Module\n' : '') +
+    '⚠️ FieldIQ says *"Your account isn\'t activated yet"*? You haven\'t tapped the link in DataByte\'s email yet. Can\'t find that email, or forgotten your password? Reply here and we\'ll sort it.\n' + (co === 'LINK' ? '📝 Your Pre-Coaching Module\n' : '') +
     '📘 Your ' + (co === 'JUSS' ? 'JUSS' : 'Link Org') + ' Playbook\n🗓️ Your Week 1 plan\n\n' +
     'It\'s from ' + (fr ? fr.email : 'us') + '. Can\'t see it? Check *Spam* or *Promotions* and tap *Not spam*, so nothing else goes missing.\n\n' +
     'Please reply *GOT IT* once you have it ✅';
@@ -3757,8 +3760,11 @@ function onboardCard(c) {
       '<p class="small muted">Add them on Databyte yourself and copy each box across:</p>' +
       '<div class="cplist">' + row('First name', first) + row('Last name', last) + row('Email', String(c.email || '').toLowerCase()) + row('Phone number', c.mobile) + row('Recruitment source', src) + '</div>' +
       '<p class="small muted" style="margin:8px 0 0">' + (c.booker_name ? 'Booked by <b>' + h(c.booker_name) + '</b> ' + (src === 'Personal Recruitment' ? '(a booker)' : '(the office)') : 'No booker') + ' → ' + h(src) + '</p></div>' +
-    '<div class="onb-step' + (sent ? ' done' : '') + '"><div class="onb-t"><b>2 · Send the welcome email</b>' + (sent ? '<span class="pill green">✓ Sent ' + by(c.onboard_email_by, c.onboard_email_at) + '</span>' : '') + '</div>' +
-      '<p class="small muted">"' + brand + ' - Your Brand Ambassador Journey Begins!" with FieldIQ and their Playbook, to <b>' + h(c.email) + '</b>. FieldIQ sends them its own invite (once they\'re on Databyte): they tap its link before they can log in.</p>' +
+    // The step that got lost (found 5 Nov): adding someone on Databyte sends nothing; Databyte's own welcome email activates the login FieldIQ uses
+    '<div class="onb-step"><div class="onb-t"><b>2 · Send Databyte\'s welcome email</b></div>' +
+      '<p class="small muted">On Databyte: <b>On-Boarding</b> → tick ' + h(first) + ' → <b>⋮</b> → <b>Send Welcome Email</b>. Adding them doesn\'t send it, and its link is what activates the login FieldIQ uses. Until they\'ve tapped it, FieldIQ says "Your account isn\'t activated yet".</p></div>' +
+    '<div class="onb-step' + (sent ? ' done' : '') + '"><div class="onb-t"><b>3 · Send our welcome email</b>' + (sent ? '<span class="pill green">✓ Sent ' + by(c.onboard_email_by, c.onboard_email_at) + '</span>' : '') + '</div>' +
+      '<p class="small muted">"' + brand + ' - Your Brand Ambassador Journey Begins!" with the FieldIQ steps and their Playbook, to <b>' + h(c.email) + '</b>.</p>' +
       (fr ? '<p class="small obfrom">📤 From <b>' + h(fr.name || fr.email) + '</b> · ' + h(fr.email) + (fr.ready ? '' : ' <span class="pill amber">not set up yet</span>') + '</p>' : '') +
       (sent && c.mobile ? '<a class="btn ' + (c.no_whatsapp ? 'sms' : 'wa') + ' block" id="obwa" target="_blank" rel="noopener" href="' + h(msgUrl(c, msgWelcomeHeadsUp(c, fr))) + '">' +
         (c.no_whatsapp ? '📱' : '💬') + ' Heads-up: "check your email, reply GOT IT"</a>' : '') +

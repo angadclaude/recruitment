@@ -1264,7 +1264,7 @@ async function fillEval(p) {
   const allP = await getJson('/dev/pushes');
   const nsJ = allP.find(p => p.body.headings.en === '🚀 New starter to onboard: Jasraj Bhuller'), nsA = allP.find(p => p.body.headings.en === '🚀 New starter to onboard: Adham Soliman');
   ok(nsJ && nsJ.body.include_aliases.external_id.join() === jessId && nsA && nsA.body.include_aliases.external_id.join() === rubalId &&
-    /^Booked by Abdullahi Ahmed for Monday 19th October\. Tap: copy their details into Databyte and send the welcome email\.$/.test(nsA.body.contents.en) && nsA.body.web_url.endsWith('?c=' + adham.id),
+    /^Booked by Abdullahi Ahmed for Monday 19th October\. Tap: add them on Databyte, send Databyte's welcome email, then send ours\.$/.test(nsA.body.contents.en) && nsA.body.web_url.endsWith('?c=' + adham.id),
     'booked → straight to Jess (LINK: Jasraj) / Rubal (JUSS: Adham): "🚀 New starter to onboard: Adham Soliman · ' + (nsA ? nsA.body.contents.en : '') + '"');
   ok(!allP.some(p => /New starter to onboard: Ishita/.test(p.body.headings.en)), 'not for a booking waiting on an admin (Ishita was rejected)');
   const denied = async (a, x) => { try { await api(fizaTok, a, x); return ''; } catch (e) { return e.message; } };
@@ -1293,6 +1293,8 @@ async function fillEval(p) {
     'step 2 says who it comes from (Angad onboarding a JUSS starter → Rubal\'s address), flagged until Gmail can send as it');
   ok(/1 · Their details for Databyte/.test(onbTxt) && !(await ap.$('#onb a[href*="databyte"]')) && !(await ap.$('#dbdone')) && !/Added to Databyte|Unlocks once/.test(onbTxt) && await ap.$('#obsend:not([disabled])'),
     'no Databyte buttons (it\'s done by hand): just the boxes to copy, and "📧 Preview & send welcome email" is open straight away');
+  ok(/2 · Send Databyte's welcome email/.test(onbTxt) && /On-Boarding → tick Adham → ⋮ → Send Welcome Email/.test(onbTxt) && /Adding them doesn't send it/.test(onbTxt) && /3 · Send our welcome email/.test(onbTxt) && !/sends them its own invite/.test(onbTxt),
+    'the card names the step that got lost: Databyte\'s own Send Welcome Email, which activates the login FieldIQ uses, before ours (found 5 Nov: Arifah was never sent it)');
   await ap.locator('#onb').screenshot({ path: SHOTS + '/33-onboard.png' });
   await ap.click('#obsend'); await ap.waitForSelector('.obframe'); await ap.waitForSelector('#oberr .err');
   ok(/Can't send as rubal@jussmarketing\.co\.uk yet/.test(await ap.innerText('#oberr')) && await ap.$('#obgo[disabled]') && /From Rubal Oshan <rubal@jussmarketing\.co\.uk>/.test(await ap.innerText('#obfrom')),
@@ -1309,10 +1311,10 @@ async function fillEval(p) {
     /1:30pm – 6:00pm/.test(prevHtml) && /1:00pm – 6:00pm/.test(prevHtml) && /img\/logo-juss\.png/.test(prevHtml) && /See my Week 1 plan \+ CONFIRM/.test(prevHtml) && /<b>Rubal Oshan<\/b>/.test(prevHtml) &&
     /Read your <b>JUSS Playbook<\/b>/.test(prevHtml) && /href="https:\/\/juss-playbook\.vercel\.app\/"[^>]*>📘 (<span[^>]*>)*Open my JUSS Playbook/.test(prevHtml),
     'preview: Rubal\'s JUSS email in the congratulations-page look ("You\'re in, Adham 🎉", JUSS logo, Day 1 / Day 2 cards, FieldIQ, JUSS Playbook, Week 1 plan + CONFIRM, Hello Fresh, JUSS number, signed Rubal: it\'s from her address)');
-  ok(/<b>FieldIQ, your app in the field:<\/b> your FieldIQ login is your <b>Databyte<\/b> login\. Our team sets you up on Databyte after you're booked in and sends you your login details \(allow a working day; check Junk \/ Spam\)\. <b>Once you have them<\/b>, get FieldIQ through TFO's download page below \(it isn't in the App Store search: iPhone users must use the link on that page\), sign in with those Databyte details/.test(prevHtml) &&
-    /⚠️ <b>FieldIQ says “Your account isn't activated yet”\?<\/b> Your Databyte account isn't set up yet: please wait for your login details\. Nothing by the next working day\? Reply to this email and we'll chase it\./.test(prevHtml) &&
+  ok(/<b>Activate your login first:<\/b> look for the email from <b>DataByte<\/b> \(check Junk \/ Spam\) and tap its link to activate your account\. <b>Then<\/b> get FieldIQ through TFO's download page below \(it isn't in the App Store search: iPhone users must use the link on that page\), sign in with that same email and your DataByte password/.test(prevHtml) &&
+    /⚠️ <b>FieldIQ says “Your account isn't activated yet”\?<\/b> You haven't tapped the link in DataByte's email yet\. Can't find that email, or forgotten your password\? Reply to this email and we'll sort it\./.test(prevHtml) &&
     />Get FieldIQ \(TFO's download page\)</.test(prevHtml) && /href="https:\/\/www\.tfo\.group\/fieldiqdownload"/.test(prevHtml) && !/apps\.apple\.com|play\.google\.com/.test(prevHtml) && !/invitation|invite/i.test(prevHtml),
-    'FieldIQ step 1 (5 Nov): the login is the Databyte login the team sets up and sends; the one button is TFO\'s download page (Angad: the first download goes through it, the App Store search finds nothing); "not activated" = Databyte not set up yet, wait, then chase; no talk of an invitation');
+    'FieldIQ step 1 (5 Nov): activate the login from DataByte\'s email first (FieldIQ has no invite of its own), then TFO\'s download page (the one button: the first download goes through it, the App Store search finds nothing), sign in with the same email and DataByte password; the error with what it means and the fix; no talk of a FieldIQ invitation');
   ok(/reply <b>GOT IT<\/b> to this email so we know it reached you/.test(prevHtml), 'the email asks them to reply GOT IT (the strongest "not spam" signal, and Rubal knows it arrived)');
   // The whole email as the candidate sees it (images from this dev server instead of the live site)
   fs.writeFileSync(`${SHOTS}/welcome-email-juss.html`, prevHtml);
@@ -1393,15 +1395,15 @@ async function fillEval(p) {
   ok(wm && wm.via === 'gmail' && wm.subject === 'JUSS Marketing - Your Brand Ambassador Journey Begins!' && wm.from === 'rubal@jussmarketing.co.uk' && wm.name === 'Rubal Oshan | JUSS Marketing' &&
     !wm.bcc && !wm.replyTo && /FieldIQ/.test(wm.body) && /juss-playbook\.vercel\.app/.test(wm.body) && /reply GOT IT/.test(wm.body) &&
     /YOUR WEEK 1\nDay 1 · Monday 19th October: Induction Day, 1:30pm – 6:00pm/.test(wm.body) &&
-    /1\. FieldIQ, your app in the field: your FieldIQ login is your Databyte login\. Our team sets you up on Databyte after you're booked in and sends you your login details \(allow a working day; check Junk \/ Spam\)\. Once you have them, get FieldIQ through TFO's download page \(https:\/\/www\.tfo\.group\/fieldiqdownload; it isn't in the App Store search, use the link on that page\) and sign in with those Databyte details/.test(wm.body) &&
-    /FieldIQ says "Your account isn't activated yet"\? Your Databyte account isn't set up yet: please wait for your login details\. Nothing by the next working day\? Reply to this email and we'll chase it\./.test(wm.body),
+    /1\. FieldIQ, your app in the field: your FieldIQ login is your Databyte login\. Our team sets you up on Databyte after you're booked in and sends you your login details \(allow a working day; check Junk \/ Spam\)\.     /1\. Activate your login first: look for the email from DataByte \(check Junk \/ Spam\) and tap its link to activate your account\. Then get FieldIQ through TFO's download page \(https:\/\/www\.tfo\.group\/fieldiqdownload; it isn't in the App Store search, use the link on that page\), sign in with that same email and your DataByte password/.test(wm.body) &&
+    /FieldIQ says "Your account isn't activated yet"\? You haven't tapped the link in DataByte's email yet\. Can't find that email, or forgotten your password\? Reply to this email and we'll sort it\./.test(wm.body),
     'sent from rubal@jussmarketing.co.uk as "Rubal Oshan | JUSS Marketing" (replies go to Rubal; no BCC copy back, Angad 22 Oct), even though Angad pressed Send');
   ok((await api(admin, 'getCandidate', { id: adham.id })).onboard_email_by === 'Angad Oshan', 'saved: welcome email sent (who, when)');
   const huHref = await ap.getAttribute('#obwa', 'href'), hu = decodeURIComponent(huHref.split(/\?text=|[?&]body=/)[1] || '');
   ok(/^sms:\+447700900300/.test(huHref) && /^Hi Adham 👋 It's Angad from JUSS Marketing\./.test(hu) && /emailed your starter pack to adham@example\.com/.test(hu) && /JUSS Playbook/.test(hu) &&
     /It's from rubal@jussmarketing\.co\.uk\. Can't see it\? Check Spam or Promotions and tap Not spam/.test(hu) && /reply GOT IT/.test(hu) &&
-    /FieldIQ \(before Day 1\): your FieldIQ login is your Databyte login\. We set you up and send you the details \(allow a working day\), then get FieldIQ through TFO's page \(not the App Store search\) and sign in with them: https:\/\/www\.tfo\.group\/fieldiqdownload/.test(hu) &&
-    /⚠️ FieldIQ says \*?"Your account isn't activated yet"\*?\? Your Databyte account isn't set up yet: wait for your login details\. Nothing by the next working day\? Reply here\./.test(hu),
+    /1\. Tap the link in the email from \*?DataByte\*? \(check Junk\) to activate your account\n2\. Get FieldIQ through TFO's page \(iPhone: use the link on that page, the App Store search won't find it\): https:\/\/www\.tfo\.group\/fieldiqdownload\n3\. Sign in with that same email and your DataByte password/.test(hu) &&
+    /⚠️ FieldIQ says \*?"Your account isn't activated yet"\*?\? You haven't tapped the link in DataByte's email yet\. Can't find that email, or forgotten your password\? Reply here and we'll sort it\./.test(hu),
     'once sent: a one-tap heads-up (by text: Adham isn\'t on WhatsApp) "just emailed your starter pack… from rubal@… check Spam / Promotions, tap Not spam… reply GOT IT"');
   ok(!/not set up yet/i.test(await ap.innerText('#onb')), 'after a send the card no longer says "not set up yet"');
   await ap.locator('#onb').screenshot({ path: SHOTS + '/36-onboarded.png' });
