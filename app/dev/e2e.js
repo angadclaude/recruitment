@@ -3157,7 +3157,7 @@ async function fillEval(p) {
   const fizaRec = (await api(admin, 'listUsers')).users.find(u => u.id === fiza.id);
   const fizaN = async () => (await post('/dev/eval', { js: `readTable('Candidates').filter(c => c.booker_id === '${fiza.id}' && c.booker_name === 'Fiza Iqbal').length` })).out;
   const nFiza = await fizaN();
-  ok(fizaRec && !fizaRec.active && nFiza > 0 && /^Fiza Iqbal has left: their past weeks keep their name\. To add someone new, use Add a person \(an email they share with Fiza moves across by itself\)\.$/.test(await refused(admin, 'saveUser', { user: Object.assign({}, fizaRec, { name: 'Christie Zammit', company: 'JUSS' }) })) && await fizaN() === nFiza,
+  ok(fizaRec && !fizaRec.active && nFiza > 0 && /Fiza Iqbal has left: their past weeks keep their name\. To add someone new, use Add a person \(an email they share with Fiza moves across by itself\)\.$/.test(await refused(admin, 'saveUser', { user: Object.assign({}, fizaRec, { name: 'Christie Zammit', company: 'JUSS' }) })) && await fizaN() === nFiza,
     'a leaver\'s record can\'t be renamed into someone else: Fiza → "Christie Zammit" refused ("has left: their past weeks keep their name… use Add a person"); her ' + nFiza + ' candidates still read Fiza Iqbal');
   const fzTypo = await api(admin, 'saveUser', { user: Object.assign({}, fizaRec, { name: 'Fiza Iqbaal' }) });
   await api(admin, 'saveUser', { user: Object.assign({}, fizaRec, { name: 'Fiza Iqbal' }) });
