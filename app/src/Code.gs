@@ -3319,7 +3319,8 @@ function onboardEmail(c, u, pick) {
       step(1, '<b>Activate your login first:</b> look for the email from <b>DataByte</b> (check Junk / Spam) and tap its link to activate your account. <b>Then</b> get FieldIQ through TFO\'s download page below (it isn\'t in the App Store search: iPhone users must use the link on that page), sign in with that same email and your DataByte password, and complete your vetting form before your first day.' +
         '<br><br>⚠️ <b>FieldIQ says “Your account isn\'t activated yet”?</b> You haven\'t tapped the link in DataByte\'s email yet. Can\'t find that email, or forgotten your password? Reply to this email and we\'ll sort it.') +
       (o.preCoaching ? step(2, 'Complete the short online <b>Pre-Coaching Module</b>: around <b>15–20 minutes</b> of short videos and quick questions. It’s important it’s done before ' + DAYS_LONG[weekday(d1)] + ', so you’re fully prepared for coaching.') : '') +
-      step(o.preCoaching ? 3 : 2, 'Read your <b>' + esc(o.playbook[0]) + '</b>, so you walk in on Day 1 already knowing how we work.') +
+      // Our email doesn't make their playbook login (5 Nov live test): they make it themselves, as the Day 1 WhatsApp already says
+      step(o.preCoaching ? 3 : 2, 'Read your <b>' + esc(o.playbook[0]) + '</b>, so you walk in on Day 1 already knowing how we work. First time? Tap <b>New BA – set up profile</b> to make your login.') +
       '</table>' + bigBtn('📲 Get FieldIQ (TFO\'s download page)', ONBOARD.FIELDIQ_URL) + (o.preCoaching ? bigBtn('📝 Open the Pre-Coaching Module', o.preCoaching[1]) : '') +
       bigBtn('📘 Open my ' + esc(o.playbook[0]), pbUrl)) +
     // Bring
@@ -3348,7 +3349,7 @@ function onboardEmail(c, u, pick) {
     '\nBEFORE DAY 1\n1. Activate your login first: look for the email from DataByte (check Junk / Spam) and tap its link to activate your account. Then get FieldIQ through TFO\'s download page (' + ONBOARD.FIELDIQ_URL + '; it isn\'t in the App Store search, use the link on that page), sign in with that same email and your DataByte password, and complete your vetting form before your first day.\n' +
     '   FieldIQ says "Your account isn\'t activated yet"? You haven\'t tapped the link in DataByte\'s email yet. Can\'t find that email, or forgotten your password? Reply to this email and we\'ll sort it.\n' +
     (o.preCoaching ? '2. Complete the Pre-Coaching Module (15-20 minutes): ' + o.preCoaching[1] + '\n' : '') +
-    (o.preCoaching ? '3' : '2') + '. Read your ' + o.playbook[0] + ': ' + pbUrl + '\n' +
+    (o.preCoaching ? '3' : '2') + '. Read your ' + o.playbook[0] + ': ' + pbUrl + ' (first time? Tap "New BA – set up profile" to make your login)\n' +
     '\nBRING: notepad and pen, photo ID, your right-to-work share code\n' +
     '\nGet ready: ' + o.client[0] + ' ' + o.client[1] + ' · ' + o.magazine[0] + ' ' + o.magazine[1] + (o.website ? ' · ' + o.website[1] : '') + '\n' +
     '\nAny questions, just reply to this email or call ' + o.phone + '.\nI’ll be in the office to meet you when you arrive. Excited to work with you!\n\nThanks,\nKind Regards,\n' + u.name + '\n' + signCo;

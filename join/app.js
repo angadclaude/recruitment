@@ -1,4 +1,4 @@
-window.APP_VERSION = '41763b42';
+window.APP_VERSION = '4ad8cc29';
 
 (function () {
 'use strict';
@@ -3757,12 +3757,12 @@ function onboardCard(c) {
   return '<div class="card onb" id="onb"><div class="onb-h"><b>🚀 Onboard ' + h(first) + '</b>' +
       (sent ? '<span class="pill green">✅ Onboarded</span>' : '<span class="pill">admins only</span>') + '</div>' +
     '<div class="onb-step"><div class="onb-t"><b>1 · Their details for Databyte</b></div>' +
-      '<p class="small muted">Add them on Databyte yourself and copy each box across:</p>' +
+      '<p class="small muted">Search Databyte for their name first: some starters already have a record, and a second one sits unactivated (5 Nov). Not there? Add them and copy each box across:</p>' +
       '<div class="cplist">' + row('First name', first) + row('Last name', last) + row('Email', String(c.email || '').toLowerCase()) + row('Phone number', c.mobile) + row('Recruitment source', src) + '</div>' +
       '<p class="small muted" style="margin:8px 0 0">' + (c.booker_name ? 'Booked by <b>' + h(c.booker_name) + '</b> ' + (src === 'Personal Recruitment' ? '(a booker)' : '(the office)') : 'No booker') + ' → ' + h(src) + '</p></div>' +
     // The step that got lost (found 5 Nov): adding someone on Databyte sends nothing; Databyte's own welcome email activates the login FieldIQ uses
     '<div class="onb-step"><div class="onb-t"><b>2 · Send Databyte\'s welcome email</b></div>' +
-      '<p class="small muted">On Databyte: <b>On-Boarding</b> → tick ' + h(first) + ' → <b>⋮</b> → <b>Send Welcome Email</b>. Adding them doesn\'t send it, and its link is what activates the login FieldIQ uses. Until they\'ve tapped it, FieldIQ says "Your account isn\'t activated yet".</p></div>' +
+      '<p class="small muted">On Databyte: <b>On-Boarding</b> → tap ' + h(first) + '\'s row → <b>⋮</b> in the panel that opens → <b>Send Welcome Email</b>. Adding them doesn\'t send it, and its link is what activates the login FieldIQ uses. Until they\'ve tapped it, FieldIQ says "Your account isn\'t activated yet".</p></div>' +
     '<div class="onb-step' + (sent ? ' done' : '') + '"><div class="onb-t"><b>3 · Send our welcome email</b>' + (sent ? '<span class="pill green">✓ Sent ' + by(c.onboard_email_by, c.onboard_email_at) + '</span>' : '') + '</div>' +
       '<p class="small muted">"' + brand + ' - Your Brand Ambassador Journey Begins!" with the FieldIQ steps and their Playbook, to <b>' + h(c.email) + '</b>.</p>' +
       (fr ? '<p class="small obfrom">📤 From <b>' + h(fr.name || fr.email) + '</b> · ' + h(fr.email) + (fr.ready ? '' : ' <span class="pill amber">not set up yet</span>') + '</p>' : '') +

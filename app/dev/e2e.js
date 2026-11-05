@@ -1293,7 +1293,8 @@ async function fillEval(p) {
     'step 2 says who it comes from (Angad onboarding a JUSS starter → Rubal\'s address), flagged until Gmail can send as it');
   ok(/1 · Their details for Databyte/.test(onbTxt) && !(await ap.$('#onb a[href*="databyte"]')) && !(await ap.$('#dbdone')) && !/Added to Databyte|Unlocks once/.test(onbTxt) && await ap.$('#obsend:not([disabled])'),
     'no Databyte buttons (it\'s done by hand): just the boxes to copy, and "📧 Preview & send welcome email" is open straight away');
-  ok(/2 · Send Databyte's welcome email/.test(onbTxt) && /On-Boarding → tick Adham → ⋮ → Send Welcome Email/.test(onbTxt) && /Adding them doesn't send it/.test(onbTxt) && /3 · Send our welcome email/.test(onbTxt) && !/sends them its own invite/.test(onbTxt),
+  ok(/2 · Send Databyte's welcome email/.test(onbTxt) && /On-Boarding → tap Adham's row → ⋮ in the panel that opens → Send Welcome Email/.test(onbTxt) && /Search Databyte for their name first/.test(onbTxt) &&
+    /First time\? Tap <b>New BA – set up profile<\/b> to make your login\./.test((await api(admin, 'onboardPreview', { id: adham.id })).html) && /Adding them doesn't send it/.test(onbTxt) && /3 · Send our welcome email/.test(onbTxt) && !/sends them its own invite/.test(onbTxt),
     'the card names the step that got lost: Databyte\'s own Send Welcome Email, which activates the login FieldIQ uses, before ours (found 5 Nov: Arifah was never sent it)');
   await ap.locator('#onb').screenshot({ path: SHOTS + '/33-onboard.png' });
   await ap.click('#obsend'); await ap.waitForSelector('.obframe'); await ap.waitForSelector('#oberr .err');
