@@ -3332,7 +3332,8 @@ function bookPage(b) {
  *  Hyrre's: whoever booked them, "Megan" for hers (Angad, 30 Oct: "she's the one booking"). */
 function bookSigner(b) {
   const n = String(b.booked_by || ''), megan = bookCfg().hyrreBy || 'Megan Hyrre';
-  if (n === megan) return megan.split(' ')[0];  // Megan's, from Hyrre or rebooked here: the same Megan they've heard from
+  // Megan's, from Hyrre or rebooked here: the same Megan they've heard from. Sent by whoever manages Megan (Christie, Angad 5 Nov): "Christie / Megan"
+  if (n === megan) return (bookCfg().hyrreManager ? S.me.user.name.split(' ')[0] + ' / ' : '') + megan.split(' ')[0];
   return bookHy(b) && n ? n : S.me.user.name;
 }
 function bookSign(b) { return 'Kind regards,\n*' + bookSigner(b) + '*\nIn association with *' + bookCo(b) + ' Marketing Ltd*'; }

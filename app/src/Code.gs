@@ -37,7 +37,7 @@ const CONFIG = {
   CHASE_DAYS: 14,                 // Chase tab: appointments and no-shows from the last 2 weeks stay on it until they're dealt with
   // Booking a presentation straight after the call (Angad, 23 Oct): these three book applicants (Teamtailor CVs) from the app,
   // which writes the confirmation, the evening-before reminder and "sorry we missed you", and check-in finds the booking.
-  BOOK_TEAM: ['angad@linkmarketing.org.uk', 'jess@linkmarketing.org.uk', 'rubal@jussmarketing.co.uk'],
+  BOOK_TEAM: ['angad@linkmarketing.org.uk', 'jess@linkmarketing.org.uk', 'rubal@jussmarketing.co.uk', 'Christie Zammit'],  // a name for someone on a shared mailbox (never a team member's email here)
   // Someone who left: until the date, a check-in that names them (or picks them from an old list) is credited to who took
   // over, as if an admin had moved it (Angad, 26 Oct: Fiza left; anyone in for her that week is Angad's). After it: no booker.
   // Their earlier appointments stay theirs (who booked an appointment never changes after the fact: Angad, 27 Oct); the alerts
@@ -55,7 +55,8 @@ const CONFIG = {
   // weekday: the booking team hears about it.
   // MARK_FROM: from this day the pulls also mark Hyrre's attended / no-show from our check-ins (Script Property HYRRE_MARK_FROM wins);
   // MARK_PULL: the first pull after the presentation (the scheduled task runs at 08:15, 11:15 and 17:15).
-  HYRRE: { PIPELINE: '403', BOOKER: 'Megan Hyrre', ALERTS_TO: ['rubal@jussmarketing.co.uk', 'jess@linkmarketing.org.uk'], LATE: '09:15', MARK_FROM: '2026-11-02', MARK_PULL: '11:15' },
+  HYRRE: { PIPELINE: '403', BOOKER: 'Megan Hyrre', ALERTS_TO: ['rubal@jussmarketing.co.uk', 'jess@linkmarketing.org.uk'], LATE: '09:15', MARK_FROM: '2026-11-02', MARK_PULL: '11:15',
+    MANAGER: 'Christie Zammit' },  // manages Megan (Angad, 5 Nov): Megan's alerts reach her too, and what she sends for Megan's bookings is signed "Christie / Megan"
   D1_RESULTS_TIME: '09:00',       // the morning after a Day 1: the results to admins (Angad's Tuesday list, 27 Oct)
   D1_RESULTS_FROM: '2026-11-02',  // the first Day 1 with FR / HF set in the app (26 Oct's were only on paper): no alert with a wrong split
   OFFICE_BOOKERS: ['Fiza Iqbal'],  // with the admins, "Office" in the results' starts by booker (bookings made from the office)
@@ -1142,6 +1143,7 @@ function me(req, u) {
     bookTeam: bookTeam(),
     book: { time: CONFIG.BOOK_TIME, co: CONFIG.BOOK_CO, missed: CONFIG.BOOK_MISSED_TIME, sources: BOOK_SOURCES,
       hyrre: canBook(u) ? hyrreInfo() : null, hyrreBy: CONFIG.HYRRE.BOOKER,  // the last pull from Hyrre (Book Appts)
+      hyrreManager: isHyrreManager(u),  // manages Megan: what they send for her bookings is signed "Christie / Megan"
       hyrreMarks: hyrreMarking(todayStr()) ? CONFIG.HYRRE.MARK_PULL : '' },  // its no-shows are marked in Hyrre by the pull at this time
   };
 }
@@ -1678,10 +1680,15 @@ function alertable(b) { return truthy(b.active) ? !!b.email : successorsOf(b).le
 function whose(b, title) { return truthy(b.active) ? title : title + ' (' + b.name.split(' ')[0] + '\'s)'; }
 /** Who takes someone's alerts once they're switched off: whoever took over from them (CONFIG.HANDOVER, any date), else nobody. */
 function successorOf(u) { return successorsOf(u)[0] || null; }
-/** Everyone who takes someone's alerts: Megan Hyrre's go to CONFIG.HYRRE.ALERTS_TO (Rubal, Jess); anyone else's to who took over. */
+/** Everyone who takes someone's alerts: Megan Hyrre's go to CONFIG.HYRRE.ALERTS_TO (Rubal, Jess) and whoever manages her (Christie);
+ *  anyone else's to who took over. */
 function successorsOf(u) {
   const by = emails => usersAll().filter(v => truthy(v.active) && emails.some(e => normEmail(e) === normEmail(v.email)));
-  if (isHyrreBooker(u)) return by(CONFIG.HYRRE.ALERTS_TO || []);
+  if (isHyrreBooker(u)) {
+    const l = by(CONFIG.HYRRE.ALERTS_TO || []);
+    usersAll().filter(v => truthy(v.active) && isHyrreManager(v) && !l.some(w => w.id === v.id)).forEach(v => l.push(v));
+    return l;
+  }
   const x = (CONFIG.HANDOVER || []).filter(h => normName(h.from) === normName(u.name))[0];
   return x ? by([x.to]).slice(0, 1) : [];
 }
@@ -2722,9 +2729,11 @@ function maybeDay1Reminder() {
 // hasn't checked in by 10:30 "didn't come" (a "sorry we missed you" + rebook). At check-in their mobile finds the booking.
 const BOOK_SOURCES = ['Teamtailor', 'Indeed', 'Referral', 'Other'];
 function bookTeam() {
-  const emails = (CONFIG.BOOK_TEAM || []).map(e => String(e).toLowerCase());
-  return usersAll().filter(x => truthy(x.active) && emails.indexOf(String(x.email).toLowerCase()) >= 0).map(x => ({ id: x.id, name: x.name }));
+  const list = (CONFIG.BOOK_TEAM || []).map(e => String(e).toLowerCase()), emails = list.filter(e => e.indexOf('@') >= 0), names = list.filter(e => e.indexOf('@') < 0).map(normName);
+  return usersAll().filter(x => truthy(x.active) && (emails.indexOf(String(x.email).toLowerCase()) >= 0 || names.indexOf(normName(x.name)) >= 0)).map(x => ({ id: x.id, name: x.name }));
 }
+/** Whoever manages Megan (CONFIG.HYRRE.MANAGER, by name: Christie Zammit since 5 Nov). */
+function isHyrreManager(u) { return !!u && !!CONFIG.HYRRE.MANAGER && normName(u.name) === normName(CONFIG.HYRRE.MANAGER); }
 function canBook(u) { return !!u && bookTeam().some(t => t.id === u.id); }
 function bookOut(b) { const o = Object.assign({}, b); delete o._row; return o; }
 function getBooking(id) {
