@@ -1274,10 +1274,10 @@ async function fillEval(p) {
   ok(!/Databyte/.test(tooSoon || ''), 'the welcome email doesn\'t wait for Databyte (the team does that by hand)');
   await ap.goto(APP + 'index.html?c=' + adham.id); await ap.waitForSelector('#onb');
   const onbTxt = await ap.innerText('#onb');
-  ok(/First name\s*Adham/.test(onbTxt) && /Last name\s*Soliman/.test(onbTxt) && /adham@example\.com/.test(onbTxt) && /Phone number\s*07700900300/.test(onbTxt) && !/07700 900300/.test(onbTxt) && /Recruitment source\s*Personal Recruitment/.test(onbTxt) && (await ap.$('#onb [data-copy]')).length === 5,
+  ok(/First name\s*Adham/.test(onbTxt) && /Last name\s*Soliman/.test(onbTxt) && /adham@example\.com/.test(onbTxt) && /Phone number\s*07700900300/.test(onbTxt) && !/07700 900300/.test(onbTxt) && /Recruitment source\s*Personal Recruitment/.test(onbTxt) && (await ap.$$('#onb [data-copy]')).length === 5,
     'candidate page (admin): "🚀 Onboard Adham": first name, last name, email, phone exactly as stored (07700900300, no space), recruitment source, each with Copy');
   // What you see is what you copy, character for character (Angad, 5 Nov: the formatted "07700 900300" pasted into Databyte broke FieldIQ activation)
-  const cpRows = await ap.$eval('#onb .cprow', rs => rs.map(r => [r.querySelector('b').textContent, (r.querySelector('[data-copy]') || {}).dataset ? r.querySelector('[data-copy]').dataset.copy : null]));
+  const cpRows = await ap.$$eval('#onb .cprow', rs => rs.map(r => [r.querySelector('b').textContent, (r.querySelector('[data-copy]') || {}).dataset ? r.querySelector('[data-copy]').dataset.copy : null]));
   await ad.grantPermissions(['clipboard-read', 'clipboard-write']);
   await ap.click('#onb .cprow:has(span:text-is("Phone number")) [data-copy]');
   await ap.waitForSelector('#toast:has-text("Copied phone number")');
