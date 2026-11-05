@@ -105,7 +105,9 @@ function wantsCallback(o) { return CALLBACK_OUTCOMES.indexOf(o) >= 0; }
 /** New starter onboarding (admins): Databyte, then the "Your Brand Ambassador Journey Begins!" email (Rubal's wording, LINK / JUSS). */
 const ONBOARD = {
   DATABYTE_URL: 'https://uk.databyte.live/onboarding/dashboard/list',
-  FIELDIQ_URL: 'https://www.tfo.group/fieldiqdownload',
+  FIELDIQ_URL: 'https://www.tfo.group/fieldiqdownload',  // TFO's "How to Download the App" page: "sign in using your usual Databyte details"
+  FIELDIQ_IOS: 'https://apps.apple.com/us/app/field-iq/id6756894507',  // unlisted on the App Store (TFO's page): searching finds nothing, only this link works
+  FIELDIQ_ANDROID: 'https://play.google.com/store/apps/details?id=com.fieldiq',
   LINK: {
     brand: 'Link Marketing', colour: '#F3901D', phone: '073110 27272 / 074789 60080', maps: 'https://maps.app.goo.gl/2wmckhXokt3KhCyE9', day3: true,
     preCoaching: ['Link Marketing BA Academy - Pre Coaching Module - Fill in form', 'https://forms.office.com/pages/responsepage.aspx?id=QT4blMNFxEuaVSUMKK6uNT5ZuU1A_UdDsSk-r6KY6olUQ0JEWFU0NDU1MEI5REZZRzY3WEc1SEVaTC4u&route=shorturl'],
@@ -3241,7 +3243,7 @@ function onboardEmail(c, u, pick) {
       (j < lit ? gradBg : fill(S.tint)) + '">&nbsp;</div></td>').join('') + '</tr></table>';
   const step = (n, t) => '<tr><td style="vertical-align:top;width:40px;padding:7px 0">' + tile(String(n), 30) + '</td><td style="padding:7px 0 7px 10px;' + TXT + 'line-height:1.45">' + dk(t) + '</td></tr>';
   const chip = (emoji, t) => '<span style="display:inline-block;margin:0 6px 8px 0;padding:9px 14px;border-radius:14px;' + fill(S.tint) + 'color:#22222B;font-weight:700;font-size:15px">' + emoji + ' ' + dk(t) + '</span>';
-  const pre = '<div style="display:none;max-height:0;overflow:hidden;opacity:0">You\'re in, ' + esc(first) + ' 🎉 Day 1: ' + esc(longDate(d1)) + ' @ 1:30 PM. Log in to FieldIQ once we send your login, and read your ' + esc(o.playbook[0]) + ' before you come in.</div>';
+  const pre = '<div style="display:none;max-height:0;overflow:hidden;opacity:0">You\'re in, ' + esc(first) + ' 🎉 Day 1: ' + esc(longDate(d1)) + ' @ 1:30 PM. Sign in to FieldIQ with your Databyte login once we send it, and read your ' + esc(o.playbook[0]) + ' before you come in.</div>';
 
   // Week 1: a card a day, stepping up to the first day on badge (framed in the brand's gradient, like Mastery on the ladder).
   // All four white: the dark Day 4 card was hard to read on iPhone Mail (Angad, 20 Oct: "do it in the same white background")
@@ -3299,13 +3301,14 @@ function onboardEmail(c, u, pick) {
     card('<table role="presentation" width="100%" cellpadding="0" cellspacing="0">' +
       // FieldIQ won't log anyone in until they've tapped the link in its own invite (Rubal, 23 Oct: "Your account isn't activated yet").
       // Angad, 29 Oct (Arifah hit it again): the order in bold, and that exact message with its fix, so they sort it themselves
-      // FieldIQ is TFO's app: logins are made by our team on its admin platform (no sign-up in the app), then the starter gets their
-      // login details. Starters who try before that see "Your account isn't activated yet" (5 Nov: Marian asked for an "invitation" nobody could send)
-      step(1, '<b>FieldIQ, your app in the field:</b> our team sets up your login after you\'re booked in and sends you your login details (allow a working day; check Junk / Spam). <b>Once you have them</b>, download the app, log in with <b>this email</b> and complete your vetting form before your first day.' +
-        '<br><br>⚠️ <b>FieldIQ says “Your account isn\'t activated yet”?</b> Your login isn\'t set up yet: please wait for your login details. Nothing by the next working day? Reply to this email and we\'ll chase it.') +
+      // FieldIQ is TFO's app. Its download page (5 Nov): "sign in using your usual Databyte details"; "unlisted on the Apple App Store… you
+      // won't find it by searching". So the login is the Databyte one the team makes; no invitation, no sign-up. Starters who try before
+      // they have it see "Your account isn't activated yet" (Marian asked for an "invitation" nobody could send).
+      step(1, '<b>FieldIQ, your app in the field:</b> your FieldIQ login is your <b>Databyte</b> login. Our team sets you up on Databyte after you\'re booked in and sends you your login details (allow a working day; check Junk / Spam). <b>Once you have them</b>, download FieldIQ and sign in with those Databyte details, then complete your vetting form before your first day. Android: search FieldIQ on Google Play. iPhone: it\'s unlisted on the App Store, so use the link below.' +
+        '<br><br>⚠️ <b>FieldIQ says “Your account isn\'t activated yet”?</b> Your Databyte account isn\'t set up yet: please wait for your login details. Nothing by the next working day? Reply to this email and we\'ll chase it.') +
       (o.preCoaching ? step(2, 'Complete the short online <b>Pre-Coaching Module</b>: around <b>15–20 minutes</b> of short videos and quick questions. It’s important it’s done before ' + DAYS_LONG[weekday(d1)] + ', so you’re fully prepared for coaching.') : '') +
       step(o.preCoaching ? 3 : 2, 'Read your <b>' + esc(o.playbook[0]) + '</b>, so you walk in on Day 1 already knowing how we work.') +
-      '</table>' + bigBtn('📲 Download FieldIQ (once you have your login)', ONBOARD.FIELDIQ_URL) + (o.preCoaching ? bigBtn('📝 Open the Pre-Coaching Module', o.preCoaching[1]) : '') +
+      '</table>' + bigBtn('📲 FieldIQ for iPhone (unlisted: use this link)', ONBOARD.FIELDIQ_IOS) + bigBtn('📲 FieldIQ for Android (Google Play)', ONBOARD.FIELDIQ_ANDROID) + (o.preCoaching ? bigBtn('📝 Open the Pre-Coaching Module', o.preCoaching[1]) : '') +
       bigBtn('📘 Open my ' + esc(o.playbook[0]), pbUrl)) +
     // Bring
     head('🎒', 'Bring with you') +
@@ -3330,8 +3333,8 @@ function onboardEmail(c, u, pick) {
     (wUrl ? 'Your Week 1 plan + CONFIRM: ' + wUrl + '\n\n' : '') +
     'YOUR WEEK 1\n' + W.map((r, i) => dayName(i) + ': ' + r[1] + ', ' + r[2] + '. ' + r[3]).join('\n') + '\n' +
     'Address: ' + CONFIG.OFFICE_ADDRESS + ' · ' + o.maps + '\n' +
-    '\nBEFORE DAY 1\n1. FieldIQ, your app in the field: our team sets up your login after you\'re booked in and sends you your login details (allow a working day; check Junk / Spam). Once you have them, download the app (' + ONBOARD.FIELDIQ_URL + '), log in with this email and complete your vetting form before your first day.\n' +
-    '   FieldIQ says "Your account isn\'t activated yet"? Your login isn\'t set up yet: please wait for your login details. Nothing by the next working day? Reply to this email and we\'ll chase it.\n' +
+    '\nBEFORE DAY 1\n1. FieldIQ, your app in the field: your FieldIQ login is your Databyte login. Our team sets you up on Databyte after you\'re booked in and sends you your login details (allow a working day; check Junk / Spam). Once you have them, download FieldIQ (Android: Google Play ' + ONBOARD.FIELDIQ_ANDROID + ' · iPhone, unlisted, use this link: ' + ONBOARD.FIELDIQ_IOS + ') and sign in with those Databyte details, then complete your vetting form before your first day.\n' +
+    '   FieldIQ says "Your account isn\'t activated yet"? Your Databyte account isn\'t set up yet: please wait for your login details. Nothing by the next working day? Reply to this email and we\'ll chase it.\n' +
     (o.preCoaching ? '2. Complete the Pre-Coaching Module (15-20 minutes): ' + o.preCoaching[1] + '\n' : '') +
     (o.preCoaching ? '3' : '2') + '. Read your ' + o.playbook[0] + ': ' + pbUrl + '\n' +
     '\nBRING: notepad and pen, photo ID, your right-to-work share code\n' +

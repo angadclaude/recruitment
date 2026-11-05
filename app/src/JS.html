@@ -3711,15 +3711,16 @@ function showupCard(s) {
 /** The server's rule: booked by a booker → Personal; booked by the office (Jess, Rubal) or nobody → Office. */
 function recruitSource(c) { return c.recruit_source || 'Office Recruitment'; }
 const FIELDIQ_URL = 'https://www.tfo.group/fieldiqdownload';  // same as ONBOARD.FIELDIQ_URL in Code.gs
+const FIELDIQ_IOS = 'https://apps.apple.com/us/app/field-iq/id6756894507';  // unlisted on the App Store: only this link finds it (ONBOARD.FIELDIQ_IOS)
 /** After the email: a WhatsApp nudge so they find it (spam / Promotions) and reply GOT IT. The FieldIQ link is in it too: the one
  *  thing they must do before Day 1 never depends on the email getting through (Angad, 20 Oct: "it lands in the spam"). */
 function msgWelcomeHeadsUp(c, fr) {
   const co = brandCo(c);
   return 'Hi ' + c.first_name + ' 👋 It\'s ' + S.me.user.name.split(' ')[0] + ' from ' + brandOf(c) + '.\n\n' +
     'I\'ve just emailed your starter pack to ' + c.email + ' 📧\n' +
-    '📲 FieldIQ (before Day 1): we set up your login and send you the details (allow a working day), then download the app and log in with this email: ' + FIELDIQ_URL + '\n' +
+    '📲 FieldIQ (before Day 1): your FieldIQ login is your Databyte login. We set you up and send you the details (allow a working day), then download FieldIQ and sign in with them. Android: Google Play. iPhone (unlisted, use this link): ' + FIELDIQ_IOS + '\n' +
     // The one FieldIQ error starters hit (Angad, 29 Oct: Arifah): what it means and the fix, so they sort it themselves
-    '⚠️ FieldIQ says *"Your account isn\'t activated yet"*? Your login isn\'t set up yet: wait for your login details. Nothing by the next working day? Reply here.\n' + (co === 'LINK' ? '📝 Your Pre-Coaching Module\n' : '') +
+    '⚠️ FieldIQ says *"Your account isn\'t activated yet"*? Your Databyte account isn\'t set up yet: wait for your login details. Nothing by the next working day? Reply here.\n' + (co === 'LINK' ? '📝 Your Pre-Coaching Module\n' : '') +
     '📘 Your ' + (co === 'JUSS' ? 'JUSS' : 'Link Org') + ' Playbook\n🗓️ Your Week 1 plan\n\n' +
     'It\'s from ' + (fr ? fr.email : 'us') + '. Can\'t see it? Check *Spam* or *Promotions* and tap *Not spam*, so nothing else goes missing.\n\n' +
     'Please reply *GOT IT* once you have it ✅';
