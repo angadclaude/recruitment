@@ -1309,10 +1309,10 @@ async function fillEval(p) {
     /1:30pm – 6:00pm/.test(prevHtml) && /1:00pm – 6:00pm/.test(prevHtml) && /img\/logo-juss\.png/.test(prevHtml) && /See my Week 1 plan \+ CONFIRM/.test(prevHtml) && /<b>Rubal Oshan<\/b>/.test(prevHtml) &&
     /Read your <b>JUSS Playbook<\/b>/.test(prevHtml) && /href="https:\/\/juss-playbook\.vercel\.app\/"[^>]*>📘 (<span[^>]*>)*Open my JUSS Playbook/.test(prevHtml),
     'preview: Rubal\'s JUSS email in the congratulations-page look ("You\'re in, Adham 🎉", JUSS logo, Day 1 / Day 2 cards, FieldIQ, JUSS Playbook, Week 1 plan + CONFIRM, Hello Fresh, JUSS number, signed Rubal: it\'s from her address)');
-  ok(/<b>Activate FieldIQ first:<\/b> find the invitation <b>from FieldIQ<\/b> \(email or text, check Junk \/ Spam\) and tap its link\. <b>Only then<\/b> download the app, log in with that same email/.test(prevHtml) &&
-    /⚠️ <b>FieldIQ says “Your account isn't activated yet”\?<\/b> You haven't tapped that invitation link yet\. Can't find the invitation\? Reply to this email and we'll send it again\./.test(prevHtml) &&
-    />Download FieldIQ \(after its invite\)</.test(prevHtml) && !/Download FieldIQ<\/b> and complete/.test(prevHtml),
-    'FieldIQ step 1: "activate from its invite first", only then download and log in; and the error starters hit ("Your account isn\'t activated yet") with what it means and the fix (Rubal 23 Oct, Angad 29 Oct)');
+  ok(/<b>FieldIQ, your app in the field:<\/b> our team sets up your login after you're booked in and sends you your login details \(allow a working day; check Junk \/ Spam\)\. <b>Once you have them<\/b>, download the app, log in with <b>this email<\/b>/.test(prevHtml) &&
+    /⚠️ <b>FieldIQ says “Your account isn't activated yet”\?<\/b> Your login isn't set up yet: please wait for your login details\. Nothing by the next working day\? Reply to this email and we'll chase it\./.test(prevHtml) &&
+    />Download FieldIQ \(once you have your login\)</.test(prevHtml) && !/invitation|invite/i.test(prevHtml),
+    'FieldIQ step 1 (5 Nov): the team sets up the login and sends the details, then download and log in; "not activated" = not set up yet, wait, then chase; no talk of an invitation (TFO makes logins on its admin platform, there is no sign-up in the app)');
   ok(/reply <b>GOT IT<\/b> to this email so we know it reached you/.test(prevHtml), 'the email asks them to reply GOT IT (the strongest "not spam" signal, and Rubal knows it arrived)');
   // The whole email as the candidate sees it (images from this dev server instead of the live site)
   fs.writeFileSync(`${SHOTS}/welcome-email-juss.html`, prevHtml);
@@ -1393,19 +1393,17 @@ async function fillEval(p) {
   ok(wm && wm.via === 'gmail' && wm.subject === 'JUSS Marketing - Your Brand Ambassador Journey Begins!' && wm.from === 'rubal@jussmarketing.co.uk' && wm.name === 'Rubal Oshan | JUSS Marketing' &&
     !wm.bcc && !wm.replyTo && /FieldIQ/.test(wm.body) && /juss-playbook\.vercel\.app/.test(wm.body) && /reply GOT IT/.test(wm.body) &&
     /YOUR WEEK 1\nDay 1 · Monday 19th October: Induction Day, 1:30pm – 6:00pm/.test(wm.body) &&
-    /1\. Activate FieldIQ first: find the invitation from FieldIQ \(email or text, check Junk \/ Spam\) and tap its link\. Only then download the app \(https:\/\/www\.tfo\.group\/fieldiqdownload\)/.test(wm.body) &&
-    /FieldIQ says "Your account isn't activated yet"\? You haven't tapped that invitation link yet\. Can't find the invitation\? Reply to this email and we'll send it again\./.test(wm.body),
+    /1\. FieldIQ, your app in the field: our team sets up your login after you're booked in and sends you your login details \(allow a working day; check Junk \/ Spam\)\. Once you have them, download the app \(https:\/\/www\.tfo\.group\/fieldiqdownload\)/.test(wm.body) &&
+    /FieldIQ says "Your account isn't activated yet"\? Your login isn't set up yet: please wait for your login details\. Nothing by the next working day\? Reply to this email and we'll chase it\./.test(wm.body),
     'sent from rubal@jussmarketing.co.uk as "Rubal Oshan | JUSS Marketing" (replies go to Rubal; no BCC copy back, Angad 22 Oct), even though Angad pressed Send');
   ok((await api(admin, 'getCandidate', { id: adham.id })).onboard_email_by === 'Angad Oshan', 'saved: welcome email sent (who, when)');
   const huHref = await ap.getAttribute('#obwa', 'href'), hu = decodeURIComponent(huHref.split(/\?text=|[?&]body=/)[1] || '');
   ok(/^sms:\+447700900300/.test(huHref) && /^Hi Adham 👋 It's Angad from JUSS Marketing\./.test(hu) && /emailed your starter pack to adham@example\.com/.test(hu) && /JUSS Playbook/.test(hu) &&
     /It's from rubal@jussmarketing\.co\.uk\. Can't see it\? Check Spam or Promotions and tap Not spam/.test(hu) && /reply GOT IT/.test(hu) &&
-    /FieldIQ \(before Day 1\): first tap the link in FieldIQ's invitation email or text \(check Junk\), then download the app and log in with that email: https:\/\/www\.tfo\.group\/fieldiqdownload/.test(hu) &&
-    /⚠️ FieldIQ says \*?"Your account isn't activated yet"\*?\? You haven't tapped that invitation link yet\. Can't find it\? Reply here and we'll send it again\./.test(hu),
+    /FieldIQ \(before Day 1\): we set up your login and send you the details \(allow a working day\), then download the app and log in with this email: https:\/\/www\.tfo\.group\/fieldiqdownload/.test(hu) &&
+    /⚠️ FieldIQ says \*?"Your account isn't activated yet"\*?\? Your login isn't set up yet: wait for your login details\. Nothing by the next working day\? Reply here\./.test(hu),
     'once sent: a one-tap heads-up (by text: Adham isn\'t on WhatsApp) "just emailed your starter pack… from rubal@… check Spam / Promotions, tap Not spam… reply GOT IT"');
   ok(!/not set up yet/i.test(await ap.innerText('#onb')), 'after a send the card no longer says "not set up yet"');
-  ok(/⚠️ Onboarded before 5 Nov, when Copy put a space in the phone number \(07700 900300\)\. FieldIQ says "not activated"\? First make sure Databyte has 07700900300, no space, then they try again\./.test(await ap.innerText('#onb')),
-    'onboarded before the copy-box fix (5 Nov 09:05): the card says to put the spaced number right in Databyte first if FieldIQ says "not activated"');
   await ap.locator('#onb').screenshot({ path: SHOTS + '/36-onboarded.png' });
   const lp = await api(admin, 'onboardPreview', { id: jasId });
   ok(lp.from === 'Jess Grace <jess@linkmarketing.org.uk>' && !lp.notReady && /<b>Jess Grace<\/b>/.test(lp.html) && /Read your <b>Link Org Playbook<\/b>/.test(lp.html) &&

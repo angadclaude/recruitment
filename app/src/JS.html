@@ -3717,9 +3717,9 @@ function msgWelcomeHeadsUp(c, fr) {
   const co = brandCo(c);
   return 'Hi ' + c.first_name + ' 👋 It\'s ' + S.me.user.name.split(' ')[0] + ' from ' + brandOf(c) + '.\n\n' +
     'I\'ve just emailed your starter pack to ' + c.email + ' 📧\n' +
-    '📲 FieldIQ (before Day 1): first tap the link in FieldIQ\'s invitation email or text (check Junk), then download the app and log in with that email: ' + FIELDIQ_URL + '\n' +
+    '📲 FieldIQ (before Day 1): we set up your login and send you the details (allow a working day), then download the app and log in with this email: ' + FIELDIQ_URL + '\n' +
     // The one FieldIQ error starters hit (Angad, 29 Oct: Arifah): what it means and the fix, so they sort it themselves
-    '⚠️ FieldIQ says *"Your account isn\'t activated yet"*? You haven\'t tapped that invitation link yet. Can\'t find it? Reply here and we\'ll send it again.\n' + (co === 'LINK' ? '📝 Your Pre-Coaching Module\n' : '') +
+    '⚠️ FieldIQ says *"Your account isn\'t activated yet"*? Your login isn\'t set up yet: wait for your login details. Nothing by the next working day? Reply here.\n' + (co === 'LINK' ? '📝 Your Pre-Coaching Module\n' : '') +
     '📘 Your ' + (co === 'JUSS' ? 'JUSS' : 'Link Org') + ' Playbook\n🗓️ Your Week 1 plan\n\n' +
     'It\'s from ' + (fr ? fr.email : 'us') + '. Can\'t see it? Check *Spam* or *Promotions* and tap *Not spam*, so nothing else goes missing.\n\n' +
     'Please reply *GOT IT* once you have it ✅';
@@ -3732,7 +3732,6 @@ function welcomeFrom(c) {
 }
 /** Exactly what Databyte should get: the stored value, no invisible characters, no stray spaces (Angad, 5 Nov: the Copy button's
  *  "07555 083217" with a space broke FieldIQ activation after Databyte; highlighting the stored "07555083217" worked). */
-const COPY_FIX_AT = '2026-11-05 09:05';  // when the copy boxes stopped formatting the phone (PR #184 live)
 function dbValue(v) { return String(v == null ? '' : v).replace(/[\u200B-\u200D\u2060\uFEFF\u00AD]/g, '').replace(/\u00A0/g, ' ').replace(/\s+/g, ' ').trim(); }
 function copyText(v, label) {
   const done = () => toast('📋 Copied ' + label);
@@ -3756,9 +3755,6 @@ function onboardCard(c) {
     '<div class="onb-step"><div class="onb-t"><b>1 · Their details for Databyte</b></div>' +
       '<p class="small muted">Add them on Databyte yourself and copy each box across:</p>' +
       '<div class="cplist">' + row('First name', first) + row('Last name', last) + row('Email', String(c.email || '').toLowerCase()) + row('Phone number', c.mobile) + row('Recruitment source', src) + '</div>' +
-      // Until 5 Nov 09:05 the Copy button put a space in the phone ("07438 338549"); FieldIQ then couldn't match them to Databyte ("not activated")
-      (sent && c.onboard_email_at < COPY_FIX_AT && c.mobile ? '<div class="flag amber">⚠️ Onboarded before 5 Nov, when Copy put a space in the phone number (' + h(dbValue(c.mobile).slice(0, 5) + ' ' + dbValue(c.mobile).slice(5)) +
-        '). FieldIQ says "not activated"? First make sure Databyte has <b>' + h(dbValue(c.mobile)) + '</b>, no space, then they try again.</div>' : '') +
       '<p class="small muted" style="margin:8px 0 0">' + (c.booker_name ? 'Booked by <b>' + h(c.booker_name) + '</b> ' + (src === 'Personal Recruitment' ? '(a booker)' : '(the office)') : 'No booker') + ' → ' + h(src) + '</p></div>' +
     '<div class="onb-step' + (sent ? ' done' : '') + '"><div class="onb-t"><b>2 · Send the welcome email</b>' + (sent ? '<span class="pill green">✓ Sent ' + by(c.onboard_email_by, c.onboard_email_at) + '</span>' : '') + '</div>' +
       '<p class="small muted">"' + brand + ' - Your Brand Ambassador Journey Begins!" with FieldIQ and their Playbook, to <b>' + h(c.email) + '</b>. FieldIQ sends them its own invite (once they\'re on Databyte): they tap its link before they can log in.</p>' +

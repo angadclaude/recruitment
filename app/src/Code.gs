@@ -3241,7 +3241,7 @@ function onboardEmail(c, u, pick) {
       (j < lit ? gradBg : fill(S.tint)) + '">&nbsp;</div></td>').join('') + '</tr></table>';
   const step = (n, t) => '<tr><td style="vertical-align:top;width:40px;padding:7px 0">' + tile(String(n), 30) + '</td><td style="padding:7px 0 7px 10px;' + TXT + 'line-height:1.45">' + dk(t) + '</td></tr>';
   const chip = (emoji, t) => '<span style="display:inline-block;margin:0 6px 8px 0;padding:9px 14px;border-radius:14px;' + fill(S.tint) + 'color:#22222B;font-weight:700;font-size:15px">' + emoji + ' ' + dk(t) + '</span>';
-  const pre = '<div style="display:none;max-height:0;overflow:hidden;opacity:0">You\'re in, ' + esc(first) + ' 🎉 Day 1: ' + esc(longDate(d1)) + ' @ 1:30 PM. Activate FieldIQ from its invite and read your ' + esc(o.playbook[0]) + ' before you come in.</div>';
+  const pre = '<div style="display:none;max-height:0;overflow:hidden;opacity:0">You\'re in, ' + esc(first) + ' 🎉 Day 1: ' + esc(longDate(d1)) + ' @ 1:30 PM. Log in to FieldIQ once we send your login, and read your ' + esc(o.playbook[0]) + ' before you come in.</div>';
 
   // Week 1: a card a day, stepping up to the first day on badge (framed in the brand's gradient, like Mastery on the ladder).
   // All four white: the dark Day 4 card was hard to read on iPhone Mail (Angad, 20 Oct: "do it in the same white background")
@@ -3299,11 +3299,13 @@ function onboardEmail(c, u, pick) {
     card('<table role="presentation" width="100%" cellpadding="0" cellspacing="0">' +
       // FieldIQ won't log anyone in until they've tapped the link in its own invite (Rubal, 23 Oct: "Your account isn't activated yet").
       // Angad, 29 Oct (Arifah hit it again): the order in bold, and that exact message with its fix, so they sort it themselves
-      step(1, '<b>Activate FieldIQ first:</b> find the invitation <b>from FieldIQ</b> (email or text, check Junk / Spam) and tap its link. <b>Only then</b> download the app, log in with that same email and complete your vetting form before your first day.' +
-        '<br><br>⚠️ <b>FieldIQ says “Your account isn\'t activated yet”?</b> You haven\'t tapped that invitation link yet. Can\'t find the invitation? Reply to this email and we\'ll send it again.') +
+      // FieldIQ is TFO's app: logins are made by our team on its admin platform (no sign-up in the app), then the starter gets their
+      // login details. Starters who try before that see "Your account isn't activated yet" (5 Nov: Marian asked for an "invitation" nobody could send)
+      step(1, '<b>FieldIQ, your app in the field:</b> our team sets up your login after you\'re booked in and sends you your login details (allow a working day; check Junk / Spam). <b>Once you have them</b>, download the app, log in with <b>this email</b> and complete your vetting form before your first day.' +
+        '<br><br>⚠️ <b>FieldIQ says “Your account isn\'t activated yet”?</b> Your login isn\'t set up yet: please wait for your login details. Nothing by the next working day? Reply to this email and we\'ll chase it.') +
       (o.preCoaching ? step(2, 'Complete the short online <b>Pre-Coaching Module</b>: around <b>15–20 minutes</b> of short videos and quick questions. It’s important it’s done before ' + DAYS_LONG[weekday(d1)] + ', so you’re fully prepared for coaching.') : '') +
       step(o.preCoaching ? 3 : 2, 'Read your <b>' + esc(o.playbook[0]) + '</b>, so you walk in on Day 1 already knowing how we work.') +
-      '</table>' + bigBtn('📲 Download FieldIQ (after its invite)', ONBOARD.FIELDIQ_URL) + (o.preCoaching ? bigBtn('📝 Open the Pre-Coaching Module', o.preCoaching[1]) : '') +
+      '</table>' + bigBtn('📲 Download FieldIQ (once you have your login)', ONBOARD.FIELDIQ_URL) + (o.preCoaching ? bigBtn('📝 Open the Pre-Coaching Module', o.preCoaching[1]) : '') +
       bigBtn('📘 Open my ' + esc(o.playbook[0]), pbUrl)) +
     // Bring
     head('🎒', 'Bring with you') +
@@ -3328,8 +3330,8 @@ function onboardEmail(c, u, pick) {
     (wUrl ? 'Your Week 1 plan + CONFIRM: ' + wUrl + '\n\n' : '') +
     'YOUR WEEK 1\n' + W.map((r, i) => dayName(i) + ': ' + r[1] + ', ' + r[2] + '. ' + r[3]).join('\n') + '\n' +
     'Address: ' + CONFIG.OFFICE_ADDRESS + ' · ' + o.maps + '\n' +
-    '\nBEFORE DAY 1\n1. Activate FieldIQ first: find the invitation from FieldIQ (email or text, check Junk / Spam) and tap its link. Only then download the app (' + ONBOARD.FIELDIQ_URL + '), log in with that same email and complete your vetting form before your first day.\n' +
-    '   FieldIQ says "Your account isn\'t activated yet"? You haven\'t tapped that invitation link yet. Can\'t find the invitation? Reply to this email and we\'ll send it again.\n' +
+    '\nBEFORE DAY 1\n1. FieldIQ, your app in the field: our team sets up your login after you\'re booked in and sends you your login details (allow a working day; check Junk / Spam). Once you have them, download the app (' + ONBOARD.FIELDIQ_URL + '), log in with this email and complete your vetting form before your first day.\n' +
+    '   FieldIQ says "Your account isn\'t activated yet"? Your login isn\'t set up yet: please wait for your login details. Nothing by the next working day? Reply to this email and we\'ll chase it.\n' +
     (o.preCoaching ? '2. Complete the Pre-Coaching Module (15-20 minutes): ' + o.preCoaching[1] + '\n' : '') +
     (o.preCoaching ? '3' : '2') + '. Read your ' + o.playbook[0] + ': ' + pbUrl + '\n' +
     '\nBRING: notepad and pen, photo ID, your right-to-work share code\n' +
