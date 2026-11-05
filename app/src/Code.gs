@@ -37,7 +37,7 @@ const CONFIG = {
   CHASE_DAYS: 14,                 // Chase tab: appointments and no-shows from the last 2 weeks stay on it until they're dealt with
   // Booking a presentation straight after the call (Angad, 23 Oct): these three book applicants (Teamtailor CVs) from the app,
   // which writes the confirmation, the evening-before reminder and "sorry we missed you", and check-in finds the booking.
-  BOOK_TEAM: ['angad@linkmarketing.org.uk', 'jess@linkmarketing.org.uk', 'rubal@jussmarketing.co.uk'],
+  BOOK_TEAM: ['angad@linkmarketing.org.uk', 'jess@linkmarketing.org.uk', 'rubal@jussmarketing.co.uk', 'Christie Zammit'],  // a name for someone on a shared mailbox (never a team member's email here)
   // Someone who left: until the date, a check-in that names them (or picks them from an old list) is credited to who took
   // over, as if an admin had moved it (Angad, 26 Oct: Fiza left; anyone in for her that week is Angad's). After it: no booker.
   // Their earlier appointments stay theirs (who booked an appointment never changes after the fact: Angad, 27 Oct); the alerts
@@ -55,7 +55,8 @@ const CONFIG = {
   // weekday: the booking team hears about it.
   // MARK_FROM: from this day the pulls also mark Hyrre's attended / no-show from our check-ins (Script Property HYRRE_MARK_FROM wins);
   // MARK_PULL: the first pull after the presentation (the scheduled task runs at 08:15, 11:15 and 17:15).
-  HYRRE: { PIPELINE: '403', BOOKER: 'Megan Hyrre', ALERTS_TO: ['rubal@jussmarketing.co.uk', 'jess@linkmarketing.org.uk'], LATE: '09:15', MARK_FROM: '2026-11-02', MARK_PULL: '11:15' },
+  HYRRE: { PIPELINE: '403', BOOKER: 'Megan Hyrre', ALERTS_TO: ['rubal@jussmarketing.co.uk', 'jess@linkmarketing.org.uk'], LATE: '09:15', MARK_FROM: '2026-11-02', MARK_PULL: '11:15',
+    MANAGER: 'Christie Zammit' },  // manages Megan (Angad, 5 Nov): Megan's alerts reach her too, and what she sends for Megan's bookings is signed "Christie / Megan"
   D1_RESULTS_TIME: '09:00',       // the morning after a Day 1: the results to admins (Angad's Tuesday list, 27 Oct)
   D1_RESULTS_FROM: '2026-11-02',  // the first Day 1 with FR / HF set in the app (26 Oct's were only on paper): no alert with a wrong split
   OFFICE_BOOKERS: ['Fiza Iqbal'],  // with the admins, "Office" in the results' starts by booker (bookings made from the office)
@@ -104,7 +105,7 @@ function wantsCallback(o) { return CALLBACK_OUTCOMES.indexOf(o) >= 0; }
 /** New starter onboarding (admins): Databyte, then the "Your Brand Ambassador Journey Begins!" email (Rubal's wording, LINK / JUSS). */
 const ONBOARD = {
   DATABYTE_URL: 'https://uk.databyte.live/onboarding/dashboard/list',
-  FIELDIQ_URL: 'https://www.tfo.group/fieldiqdownload',
+  FIELDIQ_URL: 'https://www.tfo.group/fieldiqdownload',  // TFO's "How to Download the App" page: the first download goes through it (Angad, 5 Nov: the app can't be found in the App Store); "sign in using your usual Databyte details"
   LINK: {
     brand: 'Link Marketing', colour: '#F3901D', phone: '073110 27272 / 074789 60080', maps: 'https://maps.app.goo.gl/2wmckhXokt3KhCyE9', day3: true,
     preCoaching: ['Link Marketing BA Academy - Pre Coaching Module - Fill in form', 'https://forms.office.com/pages/responsepage.aspx?id=QT4blMNFxEuaVSUMKK6uNT5ZuU1A_UdDsSk-r6KY6olUQ0JEWFU0NDU1MEI5REZZRzY3WEc1SEVaTC4u&route=shorturl'],
@@ -1142,6 +1143,7 @@ function me(req, u) {
     bookTeam: bookTeam(),
     book: { time: CONFIG.BOOK_TIME, co: CONFIG.BOOK_CO, missed: CONFIG.BOOK_MISSED_TIME, sources: BOOK_SOURCES,
       hyrre: canBook(u) ? hyrreInfo() : null, hyrreBy: CONFIG.HYRRE.BOOKER,  // the last pull from Hyrre (Book Appts)
+      hyrreManager: isHyrreManager(u),  // manages Megan: what they send for her bookings is signed "Christie / Megan"
       hyrreMarks: hyrreMarking(todayStr()) ? CONFIG.HYRRE.MARK_PULL : '' },  // its no-shows are marked in Hyrre by the pull at this time
   };
 }
@@ -1569,10 +1571,13 @@ function saveUser(req, u) {
   if (!roles.length) throw new Error('Pick at least one role');
   if (!email && roles.indexOf('booker') < 0) throw new Error('Add their email: only bookers can be added by name alone.');
   const isNew = !x.id;
-  let oldEmail = '', moved = 0;
+  let oldEmail = '', moved = 0, tookFrom = '';
   const saved = withLock(() => {
     const all = readTable('Users');
-    if (email && all.some(o => o.email.toLowerCase() === email && o.id !== x.id)) throw new Error('That email is already used.');
+    // Someone who left still holding the email (5 Nov: the shared recruitment mailbox was Fiza's; Christie took it over, and "Add a
+    // person" said "already used"): it moves to the new person. Someone with access keeps theirs.
+    const holder = email ? all.filter(o => o.email.toLowerCase() === email && o.id !== x.id)[0] : null;
+    if (holder && truthy(holder.active)) throw new Error('That email is already used.');
     if (all.some(o => o.id !== x.id && normName(o.name) === normName(x.name)))
       throw new Error(cleanName(x.name) + ' is already on the team.' + (isNew ? ' Tap their name to edit them.' : ' Two people with the same name would split the check-ins typed as it.'));
     // "Ali Abass" when "Ali Abbas" (or "Ramis - Ali Abbas") is already there = the same person twice, splitting their credit
@@ -1582,12 +1587,17 @@ function saveUser(req, u) {
     if (x.id && !rec) throw new Error('User not found');
     oldEmail = rec ? normEmail(rec.email) : '';
     const renamed = rec && rec.name !== cleanName(x.name), oldCo = rec ? rec.company : '';
+    // A leaver's record is never turned into someone else's (5 Nov: Fiza's switched-off record was renamed to the new recruiter, which
+    // put her name on every appointment Fiza booked, and the record stayed switched off). A typo fix (a near spelling) is fine.
+    if (rec && renamed && !truthy(rec.active) && !nameNear(rec.name, x.name) && !closeSpelling(rec.name, x.name) && readTable('Candidates').some(c => c.booker_id === rec.id))
+      throw new Error(rec.name + ' has left: their past weeks keep their name. To add someone new, use Add a person (an email they share with ' + rec.name.split(' ')[0] + ' moves across by itself).');
     if (rec && rec.id === u.id && (roles.indexOf('admin') < 0 || !x.active)) throw new Error("You can't remove your own admin access.");
     if (!rec) rec = { id: uid(), created_at: nowStr() };
     if (x.aliases !== undefined) rec.aliases = checkAliases(x.aliases, rec, x.name, all);
     else rec.aliases = rec.aliases || '';
     rec.name = cleanName(x.name); rec.email = email; rec.company = x.company;
     rec.roles = roles.join(','); rec.active = x.active ? 'TRUE' : '';
+    if (holder) { holder.email = ''; writeRow('Users', holder); tookFrom = holder.name; log(u, 'user_save', '', holder.name + ': email moved to ' + rec.name + ' (switched off)'); }
     rec._row ? writeRow('Users', rec) : appendRow('Users', rec);
     usersChanged();
     // Renamed: their candidates show the new name too
@@ -1599,7 +1609,42 @@ function saveUser(req, u) {
   // New person, email just added, or email corrected: the setup steps land in the (new) inbox
   if (saved.active && saved.email && normEmail(saved.email) !== oldEmail) sendSetupEmail(saved);
   const linked = saved.active && rolesOf(saved).indexOf('booker') >= 0 ? linkTypedBookings(saved, u) : 0;
-  return Object.assign(saved, { linked: linked, moved: moved });
+  return Object.assign(saved, { linked: linked, moved: moved, took_email_from: tookFrom });
+}
+
+/** Once (Angad, 5 Nov): on 4 Nov Fiza's switched-off record (the shared recruitment mailbox) was renamed to Christie Zammit, the new
+ *  recruiter, instead of adding her: the rename put Christie's name on every appointment Fiza ever booked, the record stayed switched
+ *  off, so Christie couldn't log in, and "Add a person" refused her email as already used. Fiza's record gets her name back (and so do
+ *  her candidates), her email is cleared, and the mailbox moves to a new record for Christie (JUSS · booker + admin · access on), who
+ *  gets the setup email. saveUser now refuses such a rename and moves a leaver's email by itself. */
+function fizaRecordRestored(id) {
+  const p = PropertiesService.getScriptProperties();
+  if (p.getProperty('FIZA_RECORD_RESTORED')) return;
+  let christie = null;
+  withLock(() => {
+    if (p.getProperty('FIZA_RECORD_RESTORED')) return;
+    delete MEMO.Users;
+    const all = readTable('Users'), rec = all.filter(o => o.id === (id || '337e543add4e'))[0];
+    if (!rec) return;  // not this database (the test one): the once-only key stays unset until the record is here
+    let note = 'nothing to do';
+    if (rec && normName(rec.name) === 'christie zammit') {
+      const mailbox = normEmail(rec.email);
+      rec.name = 'Fiza Iqbal'; rec.company = 'LINK'; rec.roles = 'booker,admin'; rec.active = ''; rec.email = '';
+      writeRow('Users', rec);
+      let n = 0;
+      readTable('Candidates').filter(c => c.booker_id === rec.id && c.booker_name !== rec.name).forEach(c => { c.booker_name = rec.name; writeRow('Candidates', c); n++; });
+      log(null, 'user_save', '', 'Fiza Iqbal restored (her record was renamed to Christie Zammit by mistake on 4 Nov): ' + n + ' of her candidates read Fiza Iqbal again; her email cleared');
+      if (mailbox && !all.some(o => o.id !== rec.id && normName(o.name) === 'christie zammit')) {
+        christie = { id: uid(), name: 'Christie Zammit', email: mailbox, company: 'JUSS', roles: 'booker,admin', active: 'TRUE', created_at: nowStr(), aliases: '' };
+        appendRow('Users', christie);
+        log(null, 'user_save', '', 'Christie Zammit booker,admin active=TRUE (her own record; the shared mailbox moved from Fiza Iqbal)');
+      }
+      usersChanged();
+      note = nowStr() + ' · ' + n;
+    }
+    p.setProperty('FIZA_RECORD_RESTORED', note);
+  });
+  if (christie) sendSetupEmail(christie);
 }
 
 function normName(s) { return String(s || '').toLowerCase().replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim(); }
@@ -1636,10 +1681,15 @@ function alertable(b) { return truthy(b.active) ? !!b.email : successorsOf(b).le
 function whose(b, title) { return truthy(b.active) ? title : title + ' (' + b.name.split(' ')[0] + '\'s)'; }
 /** Who takes someone's alerts once they're switched off: whoever took over from them (CONFIG.HANDOVER, any date), else nobody. */
 function successorOf(u) { return successorsOf(u)[0] || null; }
-/** Everyone who takes someone's alerts: Megan Hyrre's go to CONFIG.HYRRE.ALERTS_TO (Rubal, Jess); anyone else's to who took over. */
+/** Everyone who takes someone's alerts: Megan Hyrre's go to CONFIG.HYRRE.ALERTS_TO (Rubal, Jess) and whoever manages her (Christie);
+ *  anyone else's to who took over. */
 function successorsOf(u) {
   const by = emails => usersAll().filter(v => truthy(v.active) && emails.some(e => normEmail(e) === normEmail(v.email)));
-  if (isHyrreBooker(u)) return by(CONFIG.HYRRE.ALERTS_TO || []);
+  if (isHyrreBooker(u)) {
+    const l = by(CONFIG.HYRRE.ALERTS_TO || []);
+    usersAll().filter(v => truthy(v.active) && isHyrreManager(v) && !l.some(w => w.id === v.id)).forEach(v => l.push(v));
+    return l;
+  }
   const x = (CONFIG.HANDOVER || []).filter(h => normName(h.from) === normName(u.name))[0];
   return x ? by([x.to]).slice(0, 1) : [];
 }
@@ -2342,6 +2392,7 @@ function keepWarm() {
   try { brandFollowsPlacement(); } catch (e) { console.error(e); }  // once
   try { companyFollowsBooker(); } catch (e) { console.error(e); }  // once
   try { brandTapUndone(); } catch (e) { console.error(e); }  // once
+  try { fizaRecordRestored(); } catch (e) { console.error(e); }  // once
   try { maybeAvailReminder(); } catch (e) { console.error(e); }
   try { maybeDay1Results(); } catch (e) { console.error(e); }
   try { maybeDailyDigest(); } catch (e) { console.error(e); }  // each on its own: one failing never stops the rest
@@ -2679,9 +2730,11 @@ function maybeDay1Reminder() {
 // hasn't checked in by 10:30 "didn't come" (a "sorry we missed you" + rebook). At check-in their mobile finds the booking.
 const BOOK_SOURCES = ['Teamtailor', 'Indeed', 'Referral', 'Other'];
 function bookTeam() {
-  const emails = (CONFIG.BOOK_TEAM || []).map(e => String(e).toLowerCase());
-  return usersAll().filter(x => truthy(x.active) && emails.indexOf(String(x.email).toLowerCase()) >= 0).map(x => ({ id: x.id, name: x.name }));
+  const list = (CONFIG.BOOK_TEAM || []).map(e => String(e).toLowerCase()), emails = list.filter(e => e.indexOf('@') >= 0), names = list.filter(e => e.indexOf('@') < 0).map(normName);
+  return usersAll().filter(x => truthy(x.active) && (emails.indexOf(String(x.email).toLowerCase()) >= 0 || names.indexOf(normName(x.name)) >= 0)).map(x => ({ id: x.id, name: x.name }));
 }
+/** Whoever manages Megan (CONFIG.HYRRE.MANAGER, by name: Christie Zammit since 5 Nov). */
+function isHyrreManager(u) { return !!u && !!CONFIG.HYRRE.MANAGER && normName(u.name) === normName(CONFIG.HYRRE.MANAGER); }
 function canBook(u) { return !!u && bookTeam().some(t => t.id === u.id); }
 function bookOut(b) { const o = Object.assign({}, b); delete o._row; return o; }
 function getBooking(id) {
@@ -2714,6 +2767,17 @@ function bookingFor(mobile, today, name) {
 /** The same person, as Hyrre's caller or the booker heard their name: the same letters, or the same surname with the first
  *  names equal to a letter or two ("Sitar Iqbal" / "Sitara Iqbal", "Beni" / "Benie"; not "Priya" / "Priyanka"). 30 Oct: Sitara
  *  came, picked Megan, and her booking stayed "didn't come" because Hyrre had her as Sitar under another mobile. */
+/** A typo fix, not a different person: the two names are within two letters of each other ("Fiza Iqbal" / "Fiza Iqbaal"). */
+function closeSpelling(a, b) {
+  const s = normName(a), t = normName(b);
+  if (!s || !t) return false;
+  if (Math.abs(s.length - t.length) > 2) return false;
+  const d = [];
+  for (let i = 0; i <= s.length; i++) { d[i] = [i]; }
+  for (let j = 1; j <= t.length; j++) d[0][j] = j;
+  for (let i = 1; i <= s.length; i++) for (let j = 1; j <= t.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (s[i - 1] === t[j - 1] ? 0 : 1));
+  return d[s.length][t.length] <= 2;
+}
 function nameNear(a, b) {
   const key = s => String(s || '').toLowerCase().replace(/[^a-z\s]/g, '').replace(/\s+/g, ' ').trim();
   const ka = key(a), kb = key(b);
@@ -3087,7 +3151,7 @@ function maybeHyrreLate() {
 /** Someone's just been booked onto the Academy: Jess (LINK) / Rubal (JUSS) onboard them straight away. */
 function newStarterAlert(c) {
   const t = thanksTeam()[c.company === 'JUSS' ? 'JUSS' : 'LINK'], u = t.id ? userById(t.id) : null;
-  if (u) notify([u], '🚀 New starter to onboard: ' + c.full_name, 'Booked by ' + (c.booker_name || 'their booker') + ' for ' + longDate(c.academy_date) + '. Tap: copy their details into Databyte and send the welcome email.', c.id);
+  if (u) notify([u], '🚀 New starter to onboard: ' + c.full_name, 'Booked by ' + (c.booker_name || 'their booker') + ' for ' + longDate(c.academy_date) + '. Tap: add them on Databyte, send Databyte\'s welcome email, then send ours.', c.id);
 }
 const DAYS_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -3189,7 +3253,7 @@ function onboardEmail(c, u, pick) {
       (j < lit ? gradBg : fill(S.tint)) + '">&nbsp;</div></td>').join('') + '</tr></table>';
   const step = (n, t) => '<tr><td style="vertical-align:top;width:40px;padding:7px 0">' + tile(String(n), 30) + '</td><td style="padding:7px 0 7px 10px;' + TXT + 'line-height:1.45">' + dk(t) + '</td></tr>';
   const chip = (emoji, t) => '<span style="display:inline-block;margin:0 6px 8px 0;padding:9px 14px;border-radius:14px;' + fill(S.tint) + 'color:#22222B;font-weight:700;font-size:15px">' + emoji + ' ' + dk(t) + '</span>';
-  const pre = '<div style="display:none;max-height:0;overflow:hidden;opacity:0">You\'re in, ' + esc(first) + ' 🎉 Day 1: ' + esc(longDate(d1)) + ' @ 1:30 PM. Activate FieldIQ from its invite and read your ' + esc(o.playbook[0]) + ' before you come in.</div>';
+  const pre = '<div style="display:none;max-height:0;overflow:hidden;opacity:0">You\'re in, ' + esc(first) + ' 🎉 Day 1: ' + esc(longDate(d1)) + ' @ 1:30 PM. Activate your login from DataByte\'s email, download FieldIQ and read your ' + esc(o.playbook[0]) + ' before you come in.</div>';
 
   // Week 1: a card a day, stepping up to the first day on badge (framed in the brand's gradient, like Mastery on the ladder).
   // All four white: the dark Day 4 card was hard to read on iPhone Mail (Angad, 20 Oct: "do it in the same white background")
@@ -3247,11 +3311,15 @@ function onboardEmail(c, u, pick) {
     card('<table role="presentation" width="100%" cellpadding="0" cellspacing="0">' +
       // FieldIQ won't log anyone in until they've tapped the link in its own invite (Rubal, 23 Oct: "Your account isn't activated yet").
       // Angad, 29 Oct (Arifah hit it again): the order in bold, and that exact message with its fix, so they sort it themselves
-      step(1, '<b>Activate FieldIQ first:</b> find the invitation <b>from FieldIQ</b> (email or text, check Junk / Spam) and tap its link. <b>Only then</b> download the app, log in with that same email and complete your vetting form before your first day.' +
-        '<br><br>⚠️ <b>FieldIQ says “Your account isn\'t activated yet”?</b> You haven\'t tapped that invitation link yet. Can\'t find the invitation? Reply to this email and we\'ll send it again.') +
+      // FieldIQ has no invite of its own (found 5 Nov in Databyte): it signs in with their Databyte login, which the link in Databyte's own
+      // welcome email activates (On-Boarding → tick them → ⋮ → Send Welcome Email; adding someone sends nothing). Arifah, who hit "Your
+      // account isn't activated yet" on 29 Oct, was still "Ready To Send Welcome Message" on 5 Nov. TFO's download page: "sign in using
+      // your usual Databyte details"; the app is unlisted on the App Store, so the first download goes through that page (Angad, 5 Nov).
+      step(1, '<b>Activate your login first:</b> look for the email from <b>DataByte</b> (check Junk / Spam) and tap its link to activate your account. <b>Then</b> get FieldIQ through TFO\'s download page below (it isn\'t in the App Store search: iPhone users must use the link on that page), sign in with that same email and your DataByte password, and complete your vetting form before your first day.' +
+        '<br><br>⚠️ <b>FieldIQ says “Your account isn\'t activated yet”?</b> You haven\'t tapped the link in DataByte\'s email yet. Can\'t find that email, or forgotten your password? Reply to this email and we\'ll sort it.') +
       (o.preCoaching ? step(2, 'Complete the short online <b>Pre-Coaching Module</b>: around <b>15–20 minutes</b> of short videos and quick questions. It’s important it’s done before ' + DAYS_LONG[weekday(d1)] + ', so you’re fully prepared for coaching.') : '') +
       step(o.preCoaching ? 3 : 2, 'Read your <b>' + esc(o.playbook[0]) + '</b>, so you walk in on Day 1 already knowing how we work.') +
-      '</table>' + bigBtn('📲 Download FieldIQ (after its invite)', ONBOARD.FIELDIQ_URL) + (o.preCoaching ? bigBtn('📝 Open the Pre-Coaching Module', o.preCoaching[1]) : '') +
+      '</table>' + bigBtn('📲 Get FieldIQ (TFO\'s download page)', ONBOARD.FIELDIQ_URL) + (o.preCoaching ? bigBtn('📝 Open the Pre-Coaching Module', o.preCoaching[1]) : '') +
       bigBtn('📘 Open my ' + esc(o.playbook[0]), pbUrl)) +
     // Bring
     head('🎒', 'Bring with you') +
@@ -3276,8 +3344,8 @@ function onboardEmail(c, u, pick) {
     (wUrl ? 'Your Week 1 plan + CONFIRM: ' + wUrl + '\n\n' : '') +
     'YOUR WEEK 1\n' + W.map((r, i) => dayName(i) + ': ' + r[1] + ', ' + r[2] + '. ' + r[3]).join('\n') + '\n' +
     'Address: ' + CONFIG.OFFICE_ADDRESS + ' · ' + o.maps + '\n' +
-    '\nBEFORE DAY 1\n1. Activate FieldIQ first: find the invitation from FieldIQ (email or text, check Junk / Spam) and tap its link. Only then download the app (' + ONBOARD.FIELDIQ_URL + '), log in with that same email and complete your vetting form before your first day.\n' +
-    '   FieldIQ says "Your account isn\'t activated yet"? You haven\'t tapped that invitation link yet. Can\'t find the invitation? Reply to this email and we\'ll send it again.\n' +
+    '\nBEFORE DAY 1\n1. Activate your login first: look for the email from DataByte (check Junk / Spam) and tap its link to activate your account. Then get FieldIQ through TFO\'s download page (' + ONBOARD.FIELDIQ_URL + '; it isn\'t in the App Store search, use the link on that page), sign in with that same email and your DataByte password, and complete your vetting form before your first day.\n' +
+    '   FieldIQ says "Your account isn\'t activated yet"? You haven\'t tapped the link in DataByte\'s email yet. Can\'t find that email, or forgotten your password? Reply to this email and we\'ll sort it.\n' +
     (o.preCoaching ? '2. Complete the Pre-Coaching Module (15-20 minutes): ' + o.preCoaching[1] + '\n' : '') +
     (o.preCoaching ? '3' : '2') + '. Read your ' + o.playbook[0] + ': ' + pbUrl + '\n' +
     '\nBRING: notepad and pen, photo ID, your right-to-work share code\n' +

@@ -1264,7 +1264,7 @@ async function fillEval(p) {
   const allP = await getJson('/dev/pushes');
   const nsJ = allP.find(p => p.body.headings.en === '🚀 New starter to onboard: Jasraj Bhuller'), nsA = allP.find(p => p.body.headings.en === '🚀 New starter to onboard: Adham Soliman');
   ok(nsJ && nsJ.body.include_aliases.external_id.join() === jessId && nsA && nsA.body.include_aliases.external_id.join() === rubalId &&
-    /^Booked by Abdullahi Ahmed for Monday 19th October\. Tap: copy their details into Databyte and send the welcome email\.$/.test(nsA.body.contents.en) && nsA.body.web_url.endsWith('?c=' + adham.id),
+    /^Booked by Abdullahi Ahmed for Monday 19th October\. Tap: add them on Databyte, send Databyte's welcome email, then send ours\.$/.test(nsA.body.contents.en) && nsA.body.web_url.endsWith('?c=' + adham.id),
     'booked → straight to Jess (LINK: Jasraj) / Rubal (JUSS: Adham): "🚀 New starter to onboard: Adham Soliman · ' + (nsA ? nsA.body.contents.en : '') + '"');
   ok(!allP.some(p => /New starter to onboard: Ishita/.test(p.body.headings.en)), 'not for a booking waiting on an admin (Ishita was rejected)');
   const denied = async (a, x) => { try { await api(fizaTok, a, x); return ''; } catch (e) { return e.message; } };
@@ -1293,6 +1293,8 @@ async function fillEval(p) {
     'step 2 says who it comes from (Angad onboarding a JUSS starter → Rubal\'s address), flagged until Gmail can send as it');
   ok(/1 · Their details for Databyte/.test(onbTxt) && !(await ap.$('#onb a[href*="databyte"]')) && !(await ap.$('#dbdone')) && !/Added to Databyte|Unlocks once/.test(onbTxt) && await ap.$('#obsend:not([disabled])'),
     'no Databyte buttons (it\'s done by hand): just the boxes to copy, and "📧 Preview & send welcome email" is open straight away');
+  ok(/2 · Send Databyte's welcome email/.test(onbTxt) && /On-Boarding → tick Adham → ⋮ → Send Welcome Email/.test(onbTxt) && /Adding them doesn't send it/.test(onbTxt) && /3 · Send our welcome email/.test(onbTxt) && !/sends them its own invite/.test(onbTxt),
+    'the card names the step that got lost: Databyte\'s own Send Welcome Email, which activates the login FieldIQ uses, before ours (found 5 Nov: Arifah was never sent it)');
   await ap.locator('#onb').screenshot({ path: SHOTS + '/33-onboard.png' });
   await ap.click('#obsend'); await ap.waitForSelector('.obframe'); await ap.waitForSelector('#oberr .err');
   ok(/Can't send as rubal@jussmarketing\.co\.uk yet/.test(await ap.innerText('#oberr')) && await ap.$('#obgo[disabled]') && /From Rubal Oshan <rubal@jussmarketing\.co\.uk>/.test(await ap.innerText('#obfrom')),
@@ -1309,10 +1311,10 @@ async function fillEval(p) {
     /1:30pm – 6:00pm/.test(prevHtml) && /1:00pm – 6:00pm/.test(prevHtml) && /img\/logo-juss\.png/.test(prevHtml) && /See my Week 1 plan \+ CONFIRM/.test(prevHtml) && /<b>Rubal Oshan<\/b>/.test(prevHtml) &&
     /Read your <b>JUSS Playbook<\/b>/.test(prevHtml) && /href="https:\/\/juss-playbook\.vercel\.app\/"[^>]*>📘 (<span[^>]*>)*Open my JUSS Playbook/.test(prevHtml),
     'preview: Rubal\'s JUSS email in the congratulations-page look ("You\'re in, Adham 🎉", JUSS logo, Day 1 / Day 2 cards, FieldIQ, JUSS Playbook, Week 1 plan + CONFIRM, Hello Fresh, JUSS number, signed Rubal: it\'s from her address)');
-  ok(/<b>Activate FieldIQ first:<\/b> find the invitation <b>from FieldIQ<\/b> \(email or text, check Junk \/ Spam\) and tap its link\. <b>Only then<\/b> download the app, log in with that same email/.test(prevHtml) &&
-    /⚠️ <b>FieldIQ says “Your account isn't activated yet”\?<\/b> You haven't tapped that invitation link yet\. Can't find the invitation\? Reply to this email and we'll send it again\./.test(prevHtml) &&
-    />Download FieldIQ \(after its invite\)</.test(prevHtml) && !/Download FieldIQ<\/b> and complete/.test(prevHtml),
-    'FieldIQ step 1: "activate from its invite first", only then download and log in; and the error starters hit ("Your account isn\'t activated yet") with what it means and the fix (Rubal 23 Oct, Angad 29 Oct)');
+  ok(/<b>Activate your login first:<\/b> look for the email from <b>DataByte<\/b> \(check Junk \/ Spam\) and tap its link to activate your account\. <b>Then<\/b> get FieldIQ through TFO's download page below \(it isn't in the App Store search: iPhone users must use the link on that page\), sign in with that same email and your DataByte password/.test(prevHtml) &&
+    /⚠️ <b>FieldIQ says “Your account isn't activated yet”\?<\/b> You haven't tapped the link in DataByte's email yet\. Can't find that email, or forgotten your password\? Reply to this email and we'll sort it\./.test(prevHtml) &&
+    />Get FieldIQ \(TFO's download page\)</.test(prevHtml) && /href="https:\/\/www\.tfo\.group\/fieldiqdownload"/.test(prevHtml) && !/apps\.apple\.com|play\.google\.com/.test(prevHtml) && !/invitation|invite/i.test(prevHtml),
+    'FieldIQ step 1 (5 Nov): activate the login from DataByte\'s email first (FieldIQ has no invite of its own), then TFO\'s download page (the one button: the first download goes through it, the App Store search finds nothing), sign in with the same email and DataByte password; the error with what it means and the fix; no talk of a FieldIQ invitation');
   ok(/reply <b>GOT IT<\/b> to this email so we know it reached you/.test(prevHtml), 'the email asks them to reply GOT IT (the strongest "not spam" signal, and Rubal knows it arrived)');
   // The whole email as the candidate sees it (images from this dev server instead of the live site)
   fs.writeFileSync(`${SHOTS}/welcome-email-juss.html`, prevHtml);
@@ -1393,15 +1395,15 @@ async function fillEval(p) {
   ok(wm && wm.via === 'gmail' && wm.subject === 'JUSS Marketing - Your Brand Ambassador Journey Begins!' && wm.from === 'rubal@jussmarketing.co.uk' && wm.name === 'Rubal Oshan | JUSS Marketing' &&
     !wm.bcc && !wm.replyTo && /FieldIQ/.test(wm.body) && /juss-playbook\.vercel\.app/.test(wm.body) && /reply GOT IT/.test(wm.body) &&
     /YOUR WEEK 1\nDay 1 · Monday 19th October: Induction Day, 1:30pm – 6:00pm/.test(wm.body) &&
-    /1\. Activate FieldIQ first: find the invitation from FieldIQ \(email or text, check Junk \/ Spam\) and tap its link\. Only then download the app \(https:\/\/www\.tfo\.group\/fieldiqdownload\)/.test(wm.body) &&
-    /FieldIQ says "Your account isn't activated yet"\? You haven't tapped that invitation link yet\. Can't find the invitation\? Reply to this email and we'll send it again\./.test(wm.body),
+    /1\. Activate your login first: look for the email from DataByte \(check Junk \/ Spam\) and tap its link to activate your account\. Then get FieldIQ through TFO's download page \(https:\/\/www\.tfo\.group\/fieldiqdownload; it isn't in the App Store search, use the link on that page\), sign in with that same email and your DataByte password/.test(wm.body) &&
+    /FieldIQ says "Your account isn't activated yet"\? You haven't tapped the link in DataByte's email yet\. Can't find that email, or forgotten your password\? Reply to this email and we'll sort it\./.test(wm.body),
     'sent from rubal@jussmarketing.co.uk as "Rubal Oshan | JUSS Marketing" (replies go to Rubal; no BCC copy back, Angad 22 Oct), even though Angad pressed Send');
   ok((await api(admin, 'getCandidate', { id: adham.id })).onboard_email_by === 'Angad Oshan', 'saved: welcome email sent (who, when)');
   const huHref = await ap.getAttribute('#obwa', 'href'), hu = decodeURIComponent(huHref.split(/\?text=|[?&]body=/)[1] || '');
   ok(/^sms:\+447700900300/.test(huHref) && /^Hi Adham 👋 It's Angad from JUSS Marketing\./.test(hu) && /emailed your starter pack to adham@example\.com/.test(hu) && /JUSS Playbook/.test(hu) &&
     /It's from rubal@jussmarketing\.co\.uk\. Can't see it\? Check Spam or Promotions and tap Not spam/.test(hu) && /reply GOT IT/.test(hu) &&
-    /FieldIQ \(before Day 1\): first tap the link in FieldIQ's invitation email or text \(check Junk\), then download the app and log in with that email: https:\/\/www\.tfo\.group\/fieldiqdownload/.test(hu) &&
-    /⚠️ FieldIQ says \*?"Your account isn't activated yet"\*?\? You haven't tapped that invitation link yet\. Can't find it\? Reply here and we'll send it again\./.test(hu),
+    /1\. Tap the link in the email from \*?DataByte\*? \(check Junk\) to activate your account\n2\. Get FieldIQ through TFO's page \(iPhone: use the link on that page, the App Store search won't find it\): https:\/\/www\.tfo\.group\/fieldiqdownload\n3\. Sign in with that same email and your DataByte password/.test(hu) &&
+    /⚠️ FieldIQ says \*?"Your account isn't activated yet"\*?\? You haven't tapped the link in DataByte's email yet\. Can't find that email, or forgotten your password\? Reply here and we'll sort it\./.test(hu),
     'once sent: a one-tap heads-up (by text: Adham isn\'t on WhatsApp) "just emailed your starter pack… from rubal@… check Spam / Promotions, tap Not spam… reply GOT IT"');
   ok(!/not set up yet/i.test(await ap.innerText('#onb')), 'after a send the card no longer says "not set up yet"');
   await ap.locator('#onb').screenshot({ path: SHOTS + '/36-onboarded.png' });
@@ -3151,6 +3153,37 @@ async function fillEval(p) {
   ok(/work email/.test(await refused('', 'requestCode', { email: '' })) && /work email/.test(await refused('', 'verifyCode', { email: ' ', code: '123456' })), 'no login code for an empty email (someone on the team by name only can\'t be signed in as)');
   const nathanRec = (await api(admin, 'listUsers')).users.find(u => u.id === nathanId);
   ok(/already on the team/.test(await refused(admin, 'saveUser', { user: Object.assign({}, nathanRec, { name: 'Abdullahi Ahmed' }) })), 'renaming someone to a name already on the team is refused (two records would split their check-ins)');
+  // A leaver's record is never turned into someone else's (5 Nov: Fiza's switched-off record was renamed to the new recruiter, Christie)
+  const fizaRec = (await api(admin, 'listUsers')).users.find(u => u.id === fiza.id);
+  const fizaN = async () => (await post('/dev/eval', { js: `readTable('Candidates').filter(c => c.booker_id === '${fiza.id}' && c.booker_name === 'Fiza Iqbal').length` })).out;
+  const nFiza = await fizaN();
+  ok(fizaRec && !fizaRec.active && nFiza > 0 && /Fiza Iqbal has left: their past weeks keep their name\. To add someone new, use Add a person \(an email they share with Fiza moves across by itself\)\.$/.test(await refused(admin, 'saveUser', { user: Object.assign({}, fizaRec, { name: 'Christie Zammit', company: 'JUSS' }) })) && await fizaN() === nFiza,
+    'a leaver\'s record can\'t be renamed into someone else: Fiza → "Christie Zammit" refused ("has left: their past weeks keep their name… use Add a person"); her ' + nFiza + ' candidates still read Fiza Iqbal');
+  const fzTypo = await api(admin, 'saveUser', { user: Object.assign({}, fizaRec, { name: 'Fiza Iqbaal' }) });
+  await api(admin, 'saveUser', { user: Object.assign({}, fizaRec, { name: 'Fiza Iqbal' }) });
+  ok(fzTypo.name === 'Fiza Iqbaal' && await fizaN() === nFiza, 'a typo fix to a leaver\'s name (Fiza Iqbaal) still goes through, and back');
+  // The live repair (fizaRecordRestored): the record renamed by mistake is Fiza's again, so are her candidates, and Christie gets her own
+  const setupTo = async e => (await getJson('/dev/mail')).filter(m => m.to === e && /Set up the/.test(m.subject)).length;
+  await post('/dev/eval', { js: `(() => { const r = readTable('Users').filter(o => o.id === '${fiza.id}')[0]; r.name = 'Christie Zammit'; r.company = 'JUSS'; writeRow('Users', r); readTable('Candidates').filter(c => c.booker_id === r.id).forEach(c => { c.booker_name = 'Christie Zammit'; writeRow('Candidates', c); }); usersChanged(); return 1; })()` });
+  const setupWas = await setupTo('fiza@example.com');
+  ok(await fizaN() === 0 && (await api(admin, 'listUsers')).users.find(u => u.id === fiza.id).name === 'Christie Zammit', 'the live mess, replayed: Fiza\'s record and every candidate of hers read "Christie Zammit"');
+  await post('/dev/eval', { js: `fizaRecordRestored('${fiza.id}')` });
+  const usersNow = (await api(admin, 'listUsers')).users, fzR = usersNow.find(u => u.id === fiza.id), chR = usersNow.find(u => u.name === 'Christie Zammit');
+  ok(fzR && fzR.name === 'Fiza Iqbal' && fzR.company === 'LINK' && !fzR.active && !fzR.email && await fizaN() === nFiza &&
+    chR && chR.id !== fiza.id && chR.email === 'fiza@example.com' && chR.company === 'JUSS' && chR.active && chR.roles.indexOf('admin') >= 0 && chR.roles.indexOf('booker') >= 0 &&
+    await setupTo('fiza@example.com') === setupWas + 1 && (await post('/dev/eval', { js: "PropertiesService.getScriptProperties().getProperty('FIZA_RECORD_RESTORED')" })).out,
+    'fizaRecordRestored (once): Fiza Iqbal again (LINK · off · no email), her ' + nFiza + ' candidates read Fiza Iqbal, and Christie Zammit gets her own record (JUSS · booker + admin · on) with the mailbox and the setup email');
+  const logRows = await getJson('/dev/sheet?name=Log');
+  ok(logRows.some(r => r[2] === 'user_save' && /^Fiza Iqbal restored .*: \d+ of her candidates read Fiza Iqbal again; her email cleared$/.test(r[4])) && logRows.some(r => r[2] === 'user_save' && /^Christie Zammit booker,admin active=TRUE/.test(r[4])) && !logRows.some(r => r[2] === 'user_save' && /@/.test(r[4])),
+    'the Log says what was put right, never the email address');
+  // Someone new on a leaver's shared mailbox: Add a person just works, the email moves across (Mo is switched off, with candidates)
+  const setupMo = await setupTo('mo@example.com');
+  const mona = await api(admin, 'saveUser', { user: { name: 'Mona Newperson', email: 'mo@example.com', company: 'JUSS', roles: ['booker', 'admin'], active: true } });
+  const moRec = (await api(admin, 'listUsers')).users.find(u => u.id === mo.id);
+  ok(mona.took_email_from === 'Mo Aden' && mona.email === 'mo@example.com' && mona.active && moRec && !moRec.email && moRec.name === 'Mo Aden' && await setupTo('mo@example.com') === setupMo + 1 &&
+    (await getJson('/dev/sheet?name=Log')).some(r => r[2] === 'user_save' && r[4] === 'Mo Aden: email moved to Mona Newperson (switched off)') &&
+    /already used/.test(await refused(admin, 'saveUser', { user: { name: 'Another Nathan', email: 'nathan@example.com', company: 'LINK', roles: ['booker'], active: true } })),
+    'Add a person with a leaver\'s email (Mo\'s): it moves to the new person (took_email_from "Mo Aden", Mo keeps his name and candidates, setup email sent, logged without the address); an email someone with access holds is still "already used"');
   const abdRec = (await api(admin, 'listUsers')).users.find(u => u.id === abd.id), adhamWe = (await api(admin, 'getCandidate', { id: adham.id })).week_ending;
   await api(admin, 'saveUser', { user: Object.assign({}, abdRec, { roles: ['presenter'] }) });
   const prFormer = await api(admin, 'payReport', { weekEnding: adhamWe });

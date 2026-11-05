@@ -73,6 +73,12 @@ const FIRST = [
   const rubal = await loginApi('rubal@jussmarketing.co.uk'), satpal = await loginApi('satpal@jussmarketing.co.uk');
   const users = (await api(angad, 'listUsers')).users, idOf = re => users.find(u => re.test(u.email)).id;
   const angadId = idOf(/angad/), jessId = idOf(/jess/), rubalId = idOf(/rubal/), satpalId = idOf(/satpal/);
+  // Christie Zammit manages Megan (Angad, 5 Nov): on the booking team by name, Megan's alerts reach her, her messages are signed "Christie / Megan"
+  const christie = await api(angad, 'saveUser', { user: { name: 'Christie Zammit', email: 'christie@example.com', company: 'JUSS', roles: ['booker', 'admin'], active: true } });
+  const chrisTok = await loginApi('christie@example.com');
+  const meC = await api(chrisTok, 'me', {}), meR = await api(rubal, 'me', {});
+  ok(meC.bookTeam.some(t => t.id === christie.id) && meC.book.hyrreManager === true && meR.book.hyrreManager === false && meR.bookTeam.some(t => t.id === rubalId),
+    'Christie Zammit manages Megan: on the booking team by name (no email in the repo) and flagged as Megan\'s manager; Rubal is on the team but not her manager');
 
   console.log('the key and the one-time ticket');
   let n0 = (await getJson('/dev/pushes')).length;
@@ -135,6 +141,7 @@ const FIRST = [
   const rp18 = await pushesSince(n0);
   const megRem = (l, id, when) => to(l, id).find(p => new RegExp('^📲 \\d+ of Megan\'s to remind for ' + when + '$').test(p.body.headings.en));
   const mr18 = megRem(rp18, rubalId, 'tomorrow');
+  ok(!!megRem(rp18, christie.id, 'tomorrow') && !megRem(rp18, satpalId, 'tomorrow'), '…and Christie, who manages Megan (not Satpal)');
   ok(mr18 && mr18.body.headings.en === '📲 2 of Megan\'s to remind for tomorrow' && mr18.body.contents.en === 'Tuesday\'s 10:00 presentation: Hana ⏳, Ian ⏳. Tap to send the reminders, signed Megan.' &&
     /\?c=bookrem$/.test(mr18.body.web_url) && megRem(rp18, jessId, 'tomorrow'), 'Megan\'s two for Tuesday (Hana, Ian) → Rubal and Jess: "📲 2 of Megan\'s to remind for tomorrow… signed Megan"');
   ok(to(rp18, rubalId).some(p => p.body.headings.en === '📲 1 to remind for tomorrow' && /: Ben ⏳\. Tap to send the reminders, signed by you\.$/.test(p.body.contents.en)) &&
@@ -274,6 +281,18 @@ const FIRST = [
   ok(/^Hey Aisha! 👋\n\n\*Today’s the day!\* 🙌/.test(aMsg) && /👇 Still coming\? Tap \*CONFIRM\* ✅\nhttp[^\n]*booked\.html\?t=[0-9a-f]{24}&n=Aisha&d=2026-10-29\n/.test(aMsg) &&
     /Kind regards,\n\*Megan\*\nIn association with \*JUSS Marketing Ltd\*$/.test(aMsg), 'Aisha\'s reminder: "Today\'s the day!", her CONFIRM link, signed *Megan*');
   ok(/Kind regards,\n\*Rubal Oshan\*\nIn association with \*JUSS Marketing Ltd\*$/.test(lMsg), 'Leah\'s (booked in the app) is still signed by whoever sends it (Rubal)');
+  // The same list on Christie's phone: Megan's are signed "Christie / Megan" (Angad, 5 Nov), Leah's by Christie
+  const cctx = await browser.newContext(PHONE);
+  await cctx.addInitScript(t => { try { localStorage.setItem('lr_tok', JSON.stringify(t)); } catch (e) {} }, chrisTok);
+  const chp = await cctx.newPage(); await chp.goto(APP + 'index.html'); await chp.waitForSelector('.tabbar button');
+  await chp.click('.tabbar button[data-tab=book]'); await chp.waitForSelector('#bookNew');
+  await chp.waitForFunction(() => /Thursday 29 October/.test(document.querySelector('.bknav') && document.querySelector('.bknav').textContent));
+  await chp.click('[data-bkrem="2026-10-29"]'); await chp.waitForSelector('.bksheet [data-bks]');
+  const cWa = async who => decodeURIComponent((await chp.getAttribute('.bksheet .trow:has-text("' + who + '") a.btn[data-kind=remind]', 'href')).split('?text=')[1]);
+  ok(/Kind regards,\n\*Christie \/ Megan\*\nIn association with \*JUSS Marketing Ltd\*$/.test(await cWa('Aisha Khan')) && /signed Christie \/ Megan/.test(await chp.innerText('.bksheet .trow:has-text("Aisha Khan")')) &&
+    /Kind regards,\n\*Christie Zammit\*\n/.test(await cWa('Leah Brown')),
+    'on Christie\'s phone: Aisha\'s reminder (Megan\'s) is signed *Christie / Megan* and the row says so; Leah\'s (the team\'s own) is signed Christie Zammit');
+  await cctx.close();
   await rp.click('.bksheet .trow:has-text("Aisha Khan") a.btn[data-kind=remind]');
   await rp.waitForFunction(() => /1 of 2 sent/.test(document.getElementById('bkprog').textContent));
   await rp.waitForTimeout(800);
