@@ -48,13 +48,13 @@ const CONFIG = {
   BOOK_REMIND_TIME: '18:00',      // the evening before (Sunday for Monday's): whoever booked them gets "N to remind for tomorrow"
   BOOK_MISSED_TIME: '10:30',      // on the day: anyone booked who hasn't checked in by now "didn't come" (and their booker is told)
   // Hyrre (Angad, 27 Oct): its AI caller "Megan" screens Slough's CVs and pencils them into the 10:00; Rubal approves them in Hyrre.
-  // At 08:15 and 17:15 a scheduled task on Angad's computer reads the approved ones from Hyrre (Rubal's login, look-only) and sends
+  // At 08:45 and 17:15 a scheduled task on Angad's computer reads the approved ones from Hyrre (Rubal's login, look-only) and sends
   // them here (hyrreImport). They show on Book Appts as booked by Megan Hyrre (Office Recruitment, no incentive), or by Rubal / Jess when
   // Hyrre's note says they booked them by hand. Hyrre sends their confirmation and its reminders; since 30 Oct the team also sends our
-  // reminder (signed Megan, 18:00 the evening before or after the 08:15 pull). Megan's alerts go to ALERTS_TO. No pull by LATE on a
+  // reminder (signed Megan, 18:00 the evening before or after the 08:45 pull). Megan's alerts go to ALERTS_TO. No pull by LATE on a
   // weekday: the booking team hears about it.
   // MARK_FROM: from this day the pulls also mark Hyrre's attended / no-show from our check-ins (Script Property HYRRE_MARK_FROM wins);
-  // MARK_PULL: the first pull after the presentation (the scheduled task runs at 08:15, 11:15 and 17:15).
+  // MARK_PULL: the first pull after the presentation (the scheduled task runs at 08:45, 11:15 and 17:15).
   HYRRE: { PIPELINE: '403', BOOKER: 'Megan Hyrre', ALERTS_TO: ['rubal@jussmarketing.co.uk', 'jess@linkmarketing.org.uk'], LATE: '09:15', MARK_FROM: '2026-11-02', MARK_PULL: '11:15',
     MANAGER: 'Christie Zammit' },  // manages Megan (Angad, 5 Nov): Megan's alerts reach her too, and what she sends for Megan's bookings is signed "Christie / Megan"
   D1_RESULTS_TIME: '09:00',       // the morning after a Day 1: the results to admins (Angad's Tuesday list, 27 Oct)
@@ -1885,7 +1885,7 @@ const PUBLIC_ACTIONS = {
   resumeByMobile: resumeByMobile, submitEval: submitEval, myEval: myEval, requestCode: requestCode, verifyCode: verifyCode,
   hubLogin: hubLogin, loginInfo: loginInfo, bookingByMobile: bookingByMobile, bookingInfo: bookingInfo, confirmBooking: confirmBooking,
   welcomeInfo: welcomeInfo, confirmAcademy: confirmAcademy,
-  hyrreTicket: hyrreTicket, hyrreImport: hyrreImport,  // the 08:15 / 17:15 pull from Hyrre: key → one-time ticket → Slough's appointments
+  hyrreTicket: hyrreTicket, hyrreImport: hyrreImport,  // the 08:45 / 17:15 pull from Hyrre: key → one-time ticket → Slough's appointments
 };
 const STAFF_ACTIONS = {
   me: me, bundle: bundle, listDay: listDay, listWeek: listWeek, search: search, getCandidate: getCandidate,
@@ -2979,7 +2979,7 @@ function trimOldBookings(before) {
 
 // ───────────────────────── HYRRE: Megan's bookings, pulled every morning (Angad, 27 Oct) ─────────────────────────
 // Hyrre's AI caller ("Megan") screens Slough's CVs and pencils people into the 10:00; Rubal approves them in Hyrre, which sends their
-// confirmation and its own reminders. At 08:15 and 17:15 a scheduled task on Angad's computer gets a one-time ticket (hyrreTicket: the
+// confirmation and its own reminders. At 08:45 and 17:15 a scheduled task on Angad's computer gets a one-time ticket (hyrreTicket: the
 // key lives in .env.hyrre on that computer, only its SHA-256 here) and runs scripts/hyrre-pull.js in a Hyrre tab logged in as Rubal,
 // which reads Slough's appointments (look-only) and sends them here. Approved ones become bookings; one Hyrre no longer has approved
 // for a day still to come is cancelled. Who booked them: Megan Hyrre, or Rubal / Jess when Hyrre's note says "Booked by Rubal".
@@ -3121,7 +3121,7 @@ function hyrreMarks(items) {
   const ins = readTable('Candidates').filter(c => days[c.attended_date]);
   return due.map(b => ({ id: b.hyrre_id, status: b.status === 'came' || ins.some(c => c.attended_date === b.slot_date && (c.mobile === b.mobile || nameNear(c.full_name, bookingName(b)))) ? 'attended' : 'no_show' }));
 }
-/** A pull before the presentation (the 08:15 one): today's Hyrre bookings nobody has reminded since the evening before →
+/** A pull before the presentation (the 08:45 one): today's Hyrre bookings nobody has reminded since the evening before →
  *  "📲 N of Megan's to remind for today", once a morning (approved after the evening pull, or not sent last night). */
 function hyrreMorningReminders() {
   const now = nowStr(), today = now.slice(0, 10), wd = weekday(today);
@@ -3143,7 +3143,7 @@ function maybeHyrreLate() {
   if (!last || String(last.at).slice(0, 10) === today) return;  // not set up yet, or it ran
   if (!claim('HYRRE_LATE', today)) return;  // claimed (and saved) before anything goes out
   notify(usersAll().filter(canBook), '🤖 Hyrre\'s bookings didn\'t come in this morning',
-    'The 08:15 pull from Hyrre hasn\'t run today (last one: ' + String(last.at).slice(0, 16) + '). It runs on Angad\'s computer: it needs to be on, ' +
+    'The 08:45 pull from Hyrre hasn\'t run today (last one: ' + String(last.at).slice(0, 16) + '). It runs on Angad\'s computer: it needs to be on, ' +
     'with Chrome open and Hyrre logged in. Then ask Claude to "pull Hyrre now". Until then, today\'s list is in Hyrre.', 'book');
 }
 

@@ -1,6 +1,6 @@
-// Megan's bookings from Hyrre (Angad, 27 Oct): the 08:15 / 17:15 pull hands J&L Slough's approved appointments with a one-time ticket;
+// Megan's bookings from Hyrre (Angad, 27 Oct): the 08:45 / 17:15 pull hands J&L Slough's approved appointments with a one-time ticket;
 // they show on Book Appts as booked by Megan Hyrre (or by Rubal / Jess when Hyrre's note says so), Hyrre sends their confirmation,
-// our reminder goes to them too, signed Megan (30 Oct: 18:00 the evening before, or the morning alert after the 08:15 pull),
+// our reminder goes to them too, signed Megan (30 Oct: 18:00 the evening before, or the morning alert after the 08:45 pull),
 // check-in finds them, Megan's alerts go to Rubal and Jess, and a weekday with no pull by 09:15 tells the booking team.
 // Usage: node app/build.js && node app/dev/hyrre.js <screenshot-dir>   (JL_BACKEND=pg: on the Supabase back end)
 'use strict';
@@ -150,13 +150,13 @@ const FIRST = [
   const ianR = await api(rubal, 'bookingAction', { id: ian.id, act: 'sent', kind: 'remind', via: 'whatsapp' });
   ok(/^2026-10-26 18:05/.test(ianR.remind_at) && ianR.remind_by === 'Rubal Oshan' && ianR.remind_via === 'whatsapp', 'Rubal sends Ian\'s reminder: saved (who, when, WhatsApp)');
 
-  console.log('08:15: the morning pull, then today\'s reminders');
+  console.log('08:45: the morning pull, then today\'s reminders');
   n0 = (await getJson('/dev/pushes')).length;
-  await setTime('2026-10-27T08:16:00+00:00');
+  await setTime('2026-10-27T08:46:00+00:00');
   await api('', 'hyrreImport', { ticket: await ticket(), pipeline: '403', window: WINDOW, items: second });
   const rp8 = await pushesSince(n0), mr8 = megRem(rp8, rubalId, 'today');
   ok(mr8 && mr8.body.headings.en === '📲 1 of Megan\'s to remind for today' && mr8.body.contents.en === 'Tuesday\'s 10:00 presentation: Hana ⏳. Tap to send the reminders, signed Megan.' && megRem(rp8, jessId, 'today'),
-    'after the 08:15 pull → Rubal and Jess: "📲 1 of Megan\'s to remind for today" (Hana; Ian had his last night)');
+    'after the 08:45 pull → Rubal and Jess: "📲 1 of Megan\'s to remind for today" (Hana; Ian had his last night)');
   ok(to(rp8, rubalId).some(p => p.body.headings.en === '📲 1 to remind for today' && /: Ben ⏳/.test(p.body.contents.en)), 'and Rubal\'s own (Ben), not reminded last night');
   n0 = (await getJson('/dev/pushes')).length;
   await setTime('2026-10-27T08:40:00+00:00');
