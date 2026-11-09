@@ -1144,6 +1144,7 @@ function me(req, u) {
     book: { time: CONFIG.BOOK_TIME, co: CONFIG.BOOK_CO, missed: CONFIG.BOOK_MISSED_TIME, sources: BOOK_SOURCES,
       hyrre: canBook(u) ? hyrreInfo() : null, hyrreBy: CONFIG.HYRRE.BOOKER,  // the last pull from Hyrre (Book Appts)
       hyrreManager: isHyrreManager(u),  // manages Megan: what they send for her bookings is signed "Christie / Megan"
+      hyrreSender: (hyrreSender() || {}).name || '',  // set: only that person sends Megan's (the office phone); everyone else sees who does
       hyrreMarks: hyrreMarking(todayStr()) ? CONFIG.HYRRE.MARK_PULL : '' },  // its no-shows are marked in Hyrre by the pull at this time
   };
 }
@@ -2736,6 +2737,9 @@ function bookTeam() {
 }
 /** Whoever manages Megan (CONFIG.HYRRE.MANAGER, by name: Christie Zammit since 5 Nov). */
 function isHyrreManager(u) { return !!u && !!CONFIG.HYRRE.MANAGER && normName(u.name) === normName(CONFIG.HYRRE.MANAGER); }
+/** Whoever manages Megan, while they're switched on. Only they send Megan's messages, from the office phone (Angad, 9 Nov: Rubal sent
+ *  one signed Megan from her own phone, "it confuses somebody"). Nobody on: everyone on the booking team sends them, as before. */
+function hyrreSender() { return usersAll().filter(u => truthy(u.active) && isHyrreManager(u))[0] || null; }
 function canBook(u) { return !!u && bookTeam().some(t => t.id === u.id); }
 function bookOut(b) { const o = Object.assign({}, b); delete o._row; return o; }
 function getBooking(id) {
@@ -2929,9 +2933,10 @@ function remindAlerts(rows, when, day) {
   const by = {}, megan = CONFIG.HYRRE.BOOKER.split(' ')[0];
   rows.forEach(b => { (by[b.booked_by_id] = by[b.booked_by_id] || []).push(b); });
   Object.keys(by).forEach(id => {
-    const list = by[id], hy = id === HYRRE_BOOKER_ID;
-    notify([userById(id)], '📲 ' + list.length + (hy ? ' of ' + megan + '\'s' : '') + ' to remind for ' + when, DAYS_LONG[weekday(day)] + '\'s ' + CONFIG.BOOK_TIME + ' presentation: ' +
-      list.map(b => b.first_name + (b.confirmed_at ? ' ✅' : ' ⏳')).join(', ') + '. Tap to send the reminders, signed ' + (hy ? megan : 'by you') + '.', 'bookrem');
+    const list = by[id], hy = id === HYRRE_BOOKER_ID, mgr = hy ? hyrreSender() : null;
+    // Megan's go to whoever sends them (the office phone, Christie); with nobody managing Megan, to Rubal and Jess as before
+    notify([mgr || userById(id)], '📲 ' + list.length + (hy ? ' of ' + megan + '\'s' : '') + ' to remind for ' + when, DAYS_LONG[weekday(day)] + '\'s ' + CONFIG.BOOK_TIME + ' presentation: ' +
+      list.map(b => b.first_name + (b.confirmed_at ? ' ✅' : ' ⏳')).join(', ') + '. Tap to send the reminders, signed ' + (hy ? (mgr ? mgr.name.split(' ')[0] + ' / ' : '') + megan : 'by you') + '.', 'bookrem');
   });
 }
 /** BOOK_MISSED_TIME on the day: whoever booked them hears who didn't come, with a "sorry we missed you" to send. */
@@ -2949,7 +2954,8 @@ function maybeMissedBookings() {
     // Hyrre's too (Angad, 30 Oct): our WhatsApp (signed Megan for hers) and rebook here, on top of what Hyrre does. They're marked
     // absent in Hyrre by the next pull (hyrreMarks) and Hyrre sends its rebook link as usual; or by hand before that went live
     const names = hy.length === list.length ? 'them' : firstNames(hy.map(b => ({ full_name: b.first_name })), 6);
-    notify([userById(id)], '😕 ' + list.length + ' didn\'t come today', firstNames(list.map(b => ({ full_name: b.first_name })), 6) +
+    // Megan's: to whoever sends them (the office phone, Christie); with nobody managing Megan, to Rubal and Jess as before
+    notify([(id === HYRRE_BOOKER_ID && hyrreSender()) || userById(id)], '😕 ' + list.length + ' didn\'t come today', firstNames(list.map(b => ({ full_name: b.first_name })), 6) +
       ' didn\'t check in for the ' + CONFIG.BOOK_TIME + ' presentation. Tap to send "sorry we missed you" and rebook them.' +
       (hy.length ? (auto ? ' The ' + CONFIG.HYRRE.MARK_PULL + ' pull marks ' + names + ' absent in Hyrre, and Hyrre sends its rebook link as usual.'
         : ' Mark ' + names + ' absent in Hyrre too (Shift + click their appointment).') : ''), 'bookmiss');

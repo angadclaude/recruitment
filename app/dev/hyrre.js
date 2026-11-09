@@ -73,12 +73,9 @@ const FIRST = [
   const rubal = await loginApi('rubal@jussmarketing.co.uk'), satpal = await loginApi('satpal@jussmarketing.co.uk');
   const users = (await api(angad, 'listUsers')).users, idOf = re => users.find(u => re.test(u.email)).id;
   const angadId = idOf(/angad/), jessId = idOf(/jess/), rubalId = idOf(/rubal/), satpalId = idOf(/satpal/);
-  // Christie Zammit manages Megan (Angad, 5 Nov): on the booking team by name, Megan's alerts reach her, her messages are signed "Christie / Megan"
-  const christie = await api(angad, 'saveUser', { user: { name: 'Christie Zammit', email: 'christie@example.com', company: 'JUSS', roles: ['booker', 'admin'], active: true } });
-  const chrisTok = await loginApi('christie@example.com');
-  const meC = await api(chrisTok, 'me', {}), meR = await api(rubal, 'me', {});
-  ok(meC.bookTeam.some(t => t.id === christie.id) && meC.book.hyrreManager === true && meR.book.hyrreManager === false && meR.bookTeam.some(t => t.id === rubalId),
-    'Christie Zammit manages Megan: on the booking team by name (no email in the repo) and flagged as Megan\'s manager; Rubal is on the team but not her manager');
+  // Until "the screens" nobody manages Megan (Christie isn't on yet): the booking team sends Megan's, signed Megan, and gets her alerts.
+  // That's the fallback if Megan's manager is ever switched off; from "the screens" on, Christie (the office phone) is the only one who sends them.
+  ok(!(await api(rubal, 'me', {})).book.hyrreSender, 'nobody manages Megan yet: no office-phone sender');
 
   console.log('the key and the one-time ticket');
   let n0 = (await getJson('/dev/pushes')).length;
@@ -141,7 +138,7 @@ const FIRST = [
   const rp18 = await pushesSince(n0);
   const megRem = (l, id, when) => to(l, id).find(p => new RegExp('^📲 \\d+ of Megan\'s to remind for ' + when + '$').test(p.body.headings.en));
   const mr18 = megRem(rp18, rubalId, 'tomorrow');
-  ok(!!megRem(rp18, christie.id, 'tomorrow') && !megRem(rp18, satpalId, 'tomorrow'), '…and Christie, who manages Megan (not Satpal)');
+  ok(!megRem(rp18, satpalId, 'tomorrow'), '…not Satpal');
   ok(mr18 && mr18.body.headings.en === '📲 2 of Megan\'s to remind for tomorrow' && mr18.body.contents.en === 'Tuesday\'s 10:00 presentation: Hana ⏳, Ian ⏳. Tap to send the reminders, signed Megan.' &&
     /\?c=bookrem$/.test(mr18.body.web_url) && megRem(rp18, jessId, 'tomorrow'), 'Megan\'s two for Tuesday (Hana, Ian) → Rubal and Jess: "📲 2 of Megan\'s to remind for tomorrow… signed Megan"');
   ok(to(rp18, rubalId).some(p => p.body.headings.en === '📲 1 to remind for tomorrow' && /: Ben ⏳\. Tap to send the reminders, signed by you\.$/.test(p.body.contents.en)) &&
@@ -252,8 +249,19 @@ const FIRST = [
   await setTime('2026-10-28T08:35:00+00:00');
   const m4 = await api('', 'hyrreImport', { ticket: await ticket(), pipeline: '403', window: WINDOW, items: second });
   ok(!m4.marks.some(m => m.id === 'h5') && m4.marks.some(m => m.id === 'h9'), 'Wed 08:35: Eva\'s (today, 10:00) waits until the presentation is over; Tuesday\'s still unmarked in Hyrre are asked again');
+  // Christie Zammit manages Megan (Angad, 5 Nov) and is the office phone (Angad, 9 Nov: "only the office phone should be Megan/Christy")
+  const christie = await api(angad, 'saveUser', { user: { name: 'Christie Zammit', email: 'christie@example.com', company: 'JUSS', roles: ['booker', 'admin'], active: true } });
+  const chrisTok = await loginApi('christie@example.com');
+  const meC = await api(chrisTok, 'me', {}), meR = await api(rubal, 'me', {});
+  ok(meC.bookTeam.some(t => t.id === christie.id) && meC.book.hyrreManager === true && meR.book.hyrreManager === false && meR.bookTeam.some(t => t.id === rubalId) &&
+    meC.book.hyrreSender === 'Christie Zammit' && meR.book.hyrreSender === 'Christie Zammit',
+    'Christie Zammit manages Megan: on the booking team by name (no email in the repo), Megan\'s manager, and the one who sends Megan\'s (everyone\'s app knows it)');
   await setTime('2026-10-29T08:40:00+00:00');  // Thursday: Aisha's day
+  n0 = (await getJson('/dev/pushes')).length;
   await api('', 'hyrreImport', { ticket: await ticket(), pipeline: '403', window: WINDOW, items: second });
+  const rpT = await pushesSince(n0), mrC = megRem(rpT, christie.id, 'today');
+  ok(mrC && mrC.body.contents.en === 'Thursday\'s 10:00 presentation: Aisha ⏳. Tap to send the reminders, signed Christie / Megan.' && !megRem(rpT, rubalId, 'today') && !megRem(rpT, jessId, 'today'),
+    'Thursday\'s morning pull: "📲 1 of Megan\'s to remind for today" goes to Christie only, "signed Christie / Megan"; not Rubal or Jess (Angad, 9 Nov)');
   await api(jess, 'saveBooking', { booking: { first_name: 'Leah', last_name: 'Brown', mobile: '07700900126', slot_date: '2026-10-29', source: 'Teamtailor' } });
   const browser = await chromium.launch();
   const newContext = browser.newContext.bind(browser);
@@ -272,70 +280,85 @@ const FIRST = [
   ok(/booked by Jess · Teamtailor/.test(lRow) && /Not confirmed/.test(lRow), 'Leah (booked in the app by Jess) still works as before');
   const kp = JSON.stringify(await rp.$$eval('.kpis .kpi', l => l.map(k => [k.querySelector('b').dataset.n, k.querySelector('span').textContent])));  // the final numbers (they count up)
   ok(kp === '[["2","Booked"],["1","Confirmed"],["1","Not confirmed"],["1","Not sent"]]', 'today\'s numbers count Aisha as confirmed (approved in Hyrre), and only Leah as not sent: ' + kp);
+  // Rubal's own phone (Angad, 9 Nov: she sent one signed Megan from it): Megan's aren't hers to send
   await rp.click('[data-bkrem="2026-10-29"]'); await rp.waitForSelector('.bksheet [data-bks]');
   const remList = await rp.innerText('.bksheet');
-  ok(/0 of 2 sent/.test(remList) && /Leah Brown/.test(remList) && /Aisha Khan/.test(remList) && /Megan's: Megan/.test(remList) &&
-    /🤖 signed Megan/.test(await rp.innerText('.bksheet .trow:has-text("Aisha Khan")')), 'today\'s reminders: Aisha (Megan\'s, "🤖 signed Megan") and Leah, "0 of 2 sent"');
-  const waText = async who => decodeURIComponent((await rp.getAttribute('.bksheet .trow:has-text("' + who + '") a.btn[data-kind=remind]', 'href')).split('?text=')[1]);
-  const aMsg = await waText('Aisha Khan'), lMsg = await waText('Leah Brown');
-  ok(/^Hey Aisha! 👋\n\n\*Today’s the day!\* 🙌/.test(aMsg) && /👇 Still coming\? Tap \*CONFIRM\* ✅\nhttp[^\n]*booked\.html\?t=[0-9a-f]{24}&n=Aisha&d=2026-10-29\n/.test(aMsg) &&
-    /Kind regards,\n\*Megan\*\nIn association with \*JUSS Marketing Ltd\*$/.test(aMsg), 'Aisha\'s reminder: "Today\'s the day!", her CONFIRM link, signed *Megan*');
+  ok(/0 of 1 sent/.test(remList) && /Leah Brown/.test(remList) && !/Aisha Khan/.test(remList) && /📱 Christie sends Megan's from the office phone \(1\)\./.test(remList),
+    'Rubal\'s phone: today\'s reminders are Leah\'s only ("0 of 1 sent"); Aisha (Megan\'s) isn\'t there: "📱 Christie sends Megan\'s from the office phone (1)"');
+  const lMsg = decodeURIComponent((await rp.getAttribute('.bksheet .trow:has-text("Leah Brown") a.btn[data-kind=remind]', 'href')).split('?text=')[1]);
   ok(/Kind regards,\n\*Rubal Oshan\*\nIn association with \*JUSS Marketing Ltd\*$/.test(lMsg), 'Leah\'s (booked in the app) is still signed by whoever sends it (Rubal)');
-  // The same list on Christie's phone: Megan's are signed "Christie / Megan" (Angad, 5 Nov), Leah's by Christie
+  await rp.click('#bkdone');
+  await rp.click('.bkrow:has-text("Aisha Khan") [data-bk]'); await rp.waitForSelector('.bksheet');
+  const shR = await rp.innerText('.bksheet');
+  ok(/our 📲 reminder is sent from the office phone/.test(shR) && /📱 Christie sends Megan's from the office phone, signed Christie \/ Megan\. Nothing to send from this phone\./.test(shR) &&
+    !(await rp.$('.bksheet #bkr')) && await rp.$('.bksheet #bky') && !(await rp.$('.bksheet a[data-bks]')),
+    'Aisha\'s booking on Rubal\'s phone: no reminder button, "📱 Christie sends Megan\'s from the office phone, signed Christie / Megan. Nothing to send from this phone."; Mark as confirmed stays');
+  await shot(rp, 'h2b-office-phone-note');
+  await rp.click('#bkdone');
+  // The office phone, logged in as Christie: Megan's are hers, signed "Christie / Megan"; the team's own by her name
   const cctx = await browser.newContext(PHONE);
-  await cctx.addInitScript(t => { try { localStorage.setItem('lr_tok', JSON.stringify(t)); } catch (e) {} }, chrisTok);
+  await cctx.addInitScript(t => { try { if (!localStorage.getItem('lr_tok')) localStorage.setItem('lr_tok', JSON.stringify(t)); } catch (e) {} }, chrisTok);
   const chp = await cctx.newPage(); await chp.goto(APP + 'index.html'); await chp.waitForSelector('.tabbar button');
   await chp.click('.tabbar button[data-tab=book]'); await chp.waitForSelector('#bookNew');
   await chp.waitForFunction(() => /Thursday 29 October/.test(document.querySelector('.bknav') && document.querySelector('.bknav').textContent));
   await chp.click('[data-bkrem="2026-10-29"]'); await chp.waitForSelector('.bksheet [data-bks]');
   const cWa = async who => decodeURIComponent((await chp.getAttribute('.bksheet .trow:has-text("' + who + '") a.btn[data-kind=remind]', 'href')).split('?text=')[1]);
-  ok(/Kind regards,\n\*Christie \/ Megan\*\nIn association with \*JUSS Marketing Ltd\*$/.test(await cWa('Aisha Khan')) && /signed Christie \/ Megan/.test(await chp.innerText('.bksheet .trow:has-text("Aisha Khan")')) &&
+  const aMsg = await cWa('Aisha Khan');
+  ok(/0 of 2 sent/.test(await chp.innerText('.bksheet')) && /Megan's: Christie \/ Megan/.test(await chp.innerText('.bksheet')) &&
+    /^Hey Aisha! 👋\n\n\*Today’s the day!\* 🙌/.test(aMsg) && /👇 Still coming\? Tap \*CONFIRM\* ✅\nhttp[^\n]*booked\.html\?t=[0-9a-f]{24}&n=Aisha&d=2026-10-29\n/.test(aMsg) &&
+    /Kind regards,\n\*Christie \/ Megan\*\nIn association with \*JUSS Marketing Ltd\*$/.test(aMsg) && /signed Christie \/ Megan/.test(await chp.innerText('.bksheet .trow:has-text("Aisha Khan")')) &&
     /Kind regards,\n\*Christie Zammit\*\n/.test(await cWa('Leah Brown')),
-    'on Christie\'s phone: Aisha\'s reminder (Megan\'s) is signed *Christie / Megan* and the row says so; Leah\'s (the team\'s own) is signed Christie Zammit');
-  await cctx.close();
-  await rp.click('.bksheet .trow:has-text("Aisha Khan") a.btn[data-kind=remind]');
-  await rp.waitForFunction(() => /1 of 2 sent/.test(document.getElementById('bkprog').textContent));
-  await rp.waitForTimeout(800);
-  const aSent = (await api(rubal, 'bookingList', {})).items.find(b => b.hyrre_id === 'h1' && b.slot_date === '2026-10-29');
-  ok(/^2026-10-29 08:4/.test(aSent.remind_at) && aSent.remind_by === 'Rubal Oshan', 'tapping Send ticks her off ("1 of 2 sent") and saves it');
-  await rp.click('#bkdone');
-  ok(/Reminded/.test(await rp.innerText('.bkrow:has-text("Aisha Khan")')), 'her row: 📲 Reminded');
-  await shot(rp, 'h1-book-appts', true);
-  await rp.click('.bkrow:has-text("Aisha Khan") [data-bk]'); await rp.waitForSelector('.bksheet');
-  const sh = await rp.innerText('.bksheet');
-  ok(/🤖 From Hyrre, approved there/.test(sh) && /Hyrre sends their confirmation and texts; our 📲 reminder is signed Megan/.test(sh) && /Booked by Megan Hyrre/.test(sh) &&
-    await rp.$('.bksheet #bkr') && await rp.$('.bksheet #bky') && !(await rp.$('.bksheet #bkc')) && !(await rp.$('.bksheet #bke')) && !(await rp.$('.bksheet #bkx')),
-    'her booking: "📲 Send a reminder · signed Megan" and "Mark as confirmed"; no confirmation, change or cancel (Hyrre\'s)');
-  await shot(rp, 'h2-booking-sheet');
-  await rp.click('#bkdone');
+    'the office phone (Christie): both, "0 of 2 sent"; Aisha\'s reminder ("Today\'s the day!", her CONFIRM link) signed *Christie / Megan*; Leah\'s signed Christie Zammit');
+  await chp.click('.bksheet .trow:has-text("Aisha Khan") a.btn[data-kind=remind]');
+  await chp.waitForFunction(() => /1 of 2 sent/.test(document.getElementById('bkprog').textContent));
+  await chp.waitForTimeout(800);
+  const aSent = (await api(chrisTok, 'bookingList', {})).items.find(b => b.hyrre_id === 'h1' && b.slot_date === '2026-10-29');
+  ok(/^2026-10-29 08:4/.test(aSent.remind_at) && aSent.remind_by === 'Christie Zammit', 'tapping Send on the office phone ticks her off ("1 of 2 sent") and saves it (Christie)');
+  await chp.click('#bkdone');
+  ok(/Reminded/.test(await chp.innerText('.bkrow:has-text("Aisha Khan")')), 'her row: 📲 Reminded');
+  await shot(chp, 'h1-book-appts', true);
+  await chp.click('.bkrow:has-text("Aisha Khan") [data-bk]'); await chp.waitForSelector('.bksheet');
+  const sh = await chp.innerText('.bksheet');
+  ok(/🤖 From Hyrre, approved there/.test(sh) && /Hyrre sends their confirmation and texts; our 📲 reminder is signed Christie \/ Megan/.test(sh) && /Booked by Megan Hyrre/.test(sh) &&
+    await chp.$('.bksheet #bkr') && await chp.$('.bksheet #bky') && !(await chp.$('.bksheet #bkc')) && !(await chp.$('.bksheet #bke')) && !(await chp.$('.bksheet #bkx')) && !(await chp.$('.bksheet .bkoffice')),
+    'her booking on the office phone: "📲 Send a reminder · signed Christie / Megan" and "Mark as confirmed"; no confirmation, change or cancel (Hyrre\'s)');
+  await shot(chp, 'h2-booking-sheet');
+  await chp.click('#bkdone');
   await setTime('2026-10-29T10:40:00+00:00');
   n0 = (await getJson('/dev/pushes')).length; await post('/dev/run', { fn: 'keepWarm' });
-  const ma = to(await pushesSince(n0), rubalId).find(p => /^Aisha didn't check in/.test(p.body.contents.en));
-  ok(ma && /Tap to send "sorry we missed you" and rebook them\. The 11:15 pull marks them absent in Hyrre, and Hyrre sends its rebook link as usual\.$/.test(ma.body.contents.en) && !/Shift \+ click/.test(ma.body.contents.en),
-    'Thu 10:40, marking on: "Aisha didn\'t check in… Tap to send \"sorry we missed you\" and rebook them. The 11:15 pull marks them absent in Hyrre, and Hyrre sends its rebook link as usual."');
+  const pm = await pushesSince(n0), ma = to(pm, christie.id).find(p => /^Aisha didn't check in/.test(p.body.contents.en));
+  ok(ma && /Tap to send "sorry we missed you" and rebook them\. The 11:15 pull marks them absent in Hyrre, and Hyrre sends its rebook link as usual\.$/.test(ma.body.contents.en) && !/Shift \+ click/.test(ma.body.contents.en) &&
+    !to(pm, rubalId).some(p => /^Aisha didn't check in/.test(p.body.contents.en)) && !to(pm, jessId).some(p => /^Aisha didn't check in/.test(p.body.contents.en)),
+    'Thu 10:40, marking on: Megan\'s no-show (Aisha) → Christie only: "Tap to send \"sorry we missed you\" and rebook them. The 11:15 pull marks them absent in Hyrre…"');
   await rp.reload(); await rp.waitForSelector('.tabbar button');
   await rp.click('.tabbar button[data-tab=book]'); await rp.waitForSelector('.bkrow');
-  const after = await rp.$eval('.bkrow:has-text("Aisha Khan")', el => el.innerText);
+  const afterR = await rp.$eval('.bkrow:has-text("Aisha Khan")', el => el.innerText);
+  ok(/Didn't come/.test(afterR) && /📱 Christie sends Megan's from the office phone: the "sorry we missed you" and the rebook\./.test(afterR) &&
+    !(await rp.$('.bkrow:has-text("Aisha Khan") a[data-kind=missed]')) && !(await rp.$('.bkrow:has-text("Aisha Khan") [data-bkre]')),
+    'after 10:30 on Rubal\'s phone: Aisha "didn\'t come", and "Christie sends Megan\'s from the office phone: the sorry we missed you and the rebook" (no buttons)');
+  await chp.reload(); await chp.waitForSelector('.tabbar button');
+  await chp.click('.tabbar button[data-tab=book]'); await chp.waitForSelector('.bkrow');
+  const after = await chp.$eval('.bkrow:has-text("Aisha Khan")', el => el.innerText);
   ok(/Didn't come/.test(after) && /The 11:15 pull marks them absent in Hyrre, and Hyrre sends its rebook link as usual\./.test(after) &&
-    await rp.$('.bkrow:has-text("Aisha Khan") a[data-kind=missed]') && await rp.$('.bkrow:has-text("Aisha Khan") [data-bkre]'),
-    'after 10:30: Aisha "didn\'t come" with 💬 Sorry we missed you and 📅 Rebook (Angad, 30 Oct: Rubal "can\'t do anything for Megan\'s"), and what Hyrre does');
-  await shot(rp, 'h3-didnt-come', true);
+    await chp.$('.bkrow:has-text("Aisha Khan") a[data-kind=missed]') && await chp.$('.bkrow:has-text("Aisha Khan") [data-bkre]'),
+    'on the office phone: Aisha "didn\'t come" with 💬 Sorry we missed you and 📅 Rebook (Angad, 30 Oct), and what Hyrre does');
+  await shot(chp, 'h3-didnt-come', true);
 
-  console.log('Megan\'s no-show: our "sorry we missed you" and rebook (Angad, 30 Oct)');
-  const missMsg = decodeURIComponent((await rp.getAttribute('.bkrow:has-text("Aisha Khan") a.btn[data-kind=missed]', 'href')).split('?text=')[1]);
+  console.log('Megan\'s no-show: our "sorry we missed you" and rebook, from the office phone (Angad, 30 Oct + 9 Nov)');
+  const missMsg = decodeURIComponent((await chp.getAttribute('.bkrow:has-text("Aisha Khan") a.btn[data-kind=missed]', 'href')).split('?text=')[1]);
   ok(/^Hey Aisha! 👋\n\nWe missed you at your \*Appointment Presentation\* today 😕/.test(missMsg) && /Which day suits you\? Just reply here/.test(missMsg) &&
-    /Kind regards,\n\*Megan\*\nIn association with \*JUSS Marketing Ltd\*$/.test(missMsg), 'Aisha\'s "sorry we missed you": rebook by replying, signed *Megan*');
-  await rp.click('.bkrow:has-text("Aisha Khan") a.btn[data-kind=missed]'); await rp.waitForTimeout(800);
-  let aNow = (await api(rubal, 'bookingList', {})).items.find(b => b.id === aSent.id);
-  ok(/^2026-10-29 10:4/.test(aNow.missed_at) && aNow.missed_by === 'Rubal Oshan', 'Rubal taps it: saved (✓ Messaged)');
-  await rp.click('.bkrow:has-text("Aisha Khan") [data-bkre]'); await rp.waitForSelector('#bksave');
-  const form = await rp.innerText('.bksheet');
-  ok(/Rebook · they didn't come/i.test(form) && /🤖 Still Megan's \(from Hyrre · Hirematic\), booked for JUSS Marketing, signed Megan\. Ours from now on/.test(form) && !(await rp.$('.bksheet .chips[data-name=bksrc]')),
-    'Rebook: "🤖 Still Megan\'s (from Hyrre · Hirematic)… signed Megan. Ours from now on", no "where did they apply"');
-  await shot(rp, 'h4-rebook-megan');
-  await rp.click('.bksheet [data-day="2026-10-30"]'); await rp.click('#bksave'); await rp.waitForSelector('.bksheet a[data-kind=confirm]');
-  const confMsg = decodeURIComponent((await rp.getAttribute('.bksheet a.btn.wa[data-kind=confirm]', 'href')).split('?text=')[1]);
-  ok(/booked in/.test(confMsg) && /30th October/.test(confMsg) && /Kind regards,\n\*Megan\*\n/.test(confMsg), 'then the confirmation for Fri 30th, signed *Megan* (the same Megan she\'s heard from)');
+    /Kind regards,\n\*Christie \/ Megan\*\nIn association with \*JUSS Marketing Ltd\*$/.test(missMsg), 'Aisha\'s "sorry we missed you": rebook by replying, signed *Christie / Megan*');
+  await chp.click('.bkrow:has-text("Aisha Khan") a.btn[data-kind=missed]'); await chp.waitForTimeout(800);
+  let aNow = (await api(chrisTok, 'bookingList', {})).items.find(b => b.id === aSent.id);
+  ok(/^2026-10-29 10:4/.test(aNow.missed_at) && aNow.missed_by === 'Christie Zammit', 'Christie taps it on the office phone: saved (✓ Messaged)');
+  await chp.click('.bkrow:has-text("Aisha Khan") [data-bkre]'); await chp.waitForSelector('#bksave');
+  const form = await chp.innerText('.bksheet');
+  ok(/Rebook · they didn't come/i.test(form) && /🤖 Still Megan's \(from Hyrre · Hirematic\), booked for JUSS Marketing, signed Christie \/ Megan\. Ours from now on/.test(form) && !(await chp.$('.bksheet .chips[data-name=bksrc]')),
+    'Rebook: "🤖 Still Megan\'s (from Hyrre · Hirematic)… signed Christie / Megan. Ours from now on", no "where did they apply"');
+  await shot(chp, 'h4-rebook-megan');
+  await chp.click('.bksheet [data-day="2026-10-30"]'); await chp.click('#bksave'); await chp.waitForSelector('.bksheet a[data-kind=confirm]');
+  const confMsg = decodeURIComponent((await chp.getAttribute('.bksheet a.btn.wa[data-kind=confirm]', 'href')).split('?text=')[1]);
+  ok(/booked in/.test(confMsg) && /30th October/.test(confMsg) && /Kind regards,\n\*Christie \/ Megan\*\n/.test(confMsg), 'then the confirmation for Fri 30th, signed *Christie / Megan*');
   let all = (await api(rubal, 'bookingList', {})).items;
   const re = all.find(b => b.rebook_of === aSent.id);
   ok(re && re.booked_by === 'Megan Hyrre' && re.booked_by_id === meganId && re.source === 'Hirematic' && !re.hyrre_id && re.slot_date === '2026-10-30' && re.status === 'booked' &&

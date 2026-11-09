@@ -3337,6 +3337,12 @@ function bookSigner(b) {
   return bookHy(b) && n ? n : S.me.user.name;
 }
 function bookSign(b) { return 'Kind regards,\n*' + bookSigner(b) + '*\nIn association with *' + bookCo(b) + ' Marketing Ltd*'; }
+/** Megan's messages go from the office phone only, logged in as whoever manages Megan (Christie, signed "Christie / Megan"). On anyone
+ *  else's phone her bookings say who sends them instead of offering a send (Angad, 9 Nov: Rubal sent one signed Megan from her own phone,
+ *  "it confuses somebody"). Nobody managing Megan: everyone sends them, signed Megan, as before. */
+function meganOf(b) { return String(b.booked_by || '') === (bookCfg().hyrreBy || 'Megan Hyrre'); }
+function bookCanSend(b) { return !meganOf(b) || !bookCfg().hyrreSender || !!bookCfg().hyrreManager; }
+function officeNote() { return '📱 ' + String(bookCfg().hyrreSender).split(' ')[0] + ' sends Megan\'s from the office phone'; }
 /** "Signed by you" / "Signed Megan", for the send screens. */
 function bookSignedBy(b) { return bookSigner(b) === S.me.user.name ? 'signed by you' : 'signed ' + bookSigner(b); }
 /** The booking confirmation (Angad, 23 Oct): the thank-you's style, no hearts. */
@@ -3427,7 +3433,8 @@ function viewBook(quiet) {
     (d || S.bookings ? (p.mode === 'week' ? bookWeekHtml(p.we) : bookDayHtml(p.day)) : skeleton(3)) +
     '<p class="hint">⏳ Not confirmed yet turns ✅ Confirmed by itself when they tap CONFIRM in your message. Said yes on WhatsApp instead? Tap "Mark as confirmed". ' +
       'Booked here = the confirmation, the 18:00 reminder the evening before, "didn\'t come" at ' + h(bookCfg().missed) + ', and check-in knows who booked them. ' +
-      '🤖 Hyrre\'s come in at 08:45, 11:15 and 17:15: Hyrre sends their confirmation and texts, and 📲 our reminder goes to them too, signed Megan ' +
+      '🤖 Hyrre\'s come in at 08:45, 11:15 and 17:15: Hyrre sends their confirmation and texts, and 📲 our reminder goes to them too, signed ' +
+        h(bookSigner({ booked_by: bookCfg().hyrreBy || 'Megan Hyrre' })) + (bookCfg().hyrreSender && !bookCfg().hyrreManager ? ' from the office phone' : '') + ' ' +
       '(18:00 the evening before, or after the 08:45 pull). Tap a name for their booking.</p>', quiet);
   bindBookings(page);
 }
@@ -3462,7 +3469,7 @@ function bookOrder(l) {
 /** That day's presentation has happened (its "didn't come" time has passed). */
 function bookAfter(day) { return day < S.me.today || (day === S.me.today && londonNow().slice(11, 16) >= bookCfg().missed); }
 function bookRemBtn(day, o, small) {
-  const due = o.due, n = bookDaysTo(day), sent = due.filter(bookReminded).length;  // Hyrre's too (Angad, 30 Oct)
+  const due = o.due.filter(bookCanSend), n = bookDaysTo(day), sent = due.filter(bookReminded).length;  // Hyrre's too (Angad, 30 Oct); Megan's only on the office phone
   return day >= S.me.today && due.length ? '<button type="button" class="btn ghost ' + (small ? 'sm' : 'block bkremd') + '" data-bkrem="' + day + '">📲 ' +
     (small ? 'Remind' : 'Send ' + (n === 0 ? 'today\'s' : n === 1 ? 'tomorrow\'s' : DAYS_LONG[D(day).getUTCDay()] + '\'s') + ' reminders') + (sent ? ' · ' + sent + '/' + due.length : '') + '</button>' : '';
 }
@@ -3518,7 +3525,8 @@ function bookPills(b, yes) {
 }
 function bookRow(b) {
   const missed = bookMissed(b);
-  const act = missed && b.status === 'booked' ? '<div class="bkbtns">' + bookSend(b, 'missed', 'Sorry we missed you') + '<button class="btn ghost sm" data-bkre="' + h(b.id) + '">📅 Rebook</button></div>' +
+  const act = missed && b.status === 'booked' ? (bookCanSend(b) ? '<div class="bkbtns">' + bookSend(b, 'missed', 'Sorry we missed you') + '<button class="btn ghost sm" data-bkre="' + h(b.id) + '">📅 Rebook</button></div>'
+      : '<p class="hint bkoffice">' + officeNote() + ': the "sorry we missed you" and the rebook.</p>') +
     (bookHy(b) ? '<p class="hint bkhyact">' + bookHyAbsent() + '</p>' : '') : '';
   return '<div class="trow bkrow' + (b.status === 'came' ? ' arrived' : '') + '"><span class="av co-' + bookCo(b) + '">' + h(initials(bookName(b))) + '</span>' +
     '<div class="main" data-bk="' + h(b.id) + '"><div class="name">' + h(bookName(b)) + ' <span class="co ' + bookCo(b) + '">' + bookCo(b) + '</span></div>' +
@@ -3633,15 +3641,16 @@ function bookSendSheet(b, kind) {
 /** Reminders for one day, one after another: tap send, WhatsApp opens with it ready (signed by you), come back, next one. */
 function bookRemindSheet(date) {
   // Hyrre's too (Angad, 30 Oct), signed by whoever booked them: Megan for hers
-  const items = bookings().filter(b => b.slot_date === date && b.status === 'booked').sort((a, b) => bookName(a).localeCompare(bookName(b)));
-  if (!items.length) return toast('Nobody to remind for ' + fmtLong(date));
+  const day = bookings().filter(b => b.slot_date === date && b.status === 'booked').sort((a, b) => bookName(a).localeCompare(bookName(b)));
+  const items = day.filter(bookCanSend), office = day.length - items.length;  // Megan's: the office phone's (Angad, 9 Nov)
+  if (!items.length) return toast(office ? officeNote() : 'Nobody to remind for ' + fmtLong(date));
   const n = bookDaysTo(date), reminded = bookReminded, hy = items.some(b => bookHy(b) || bookSigner(b) !== S.me.user.name);  // Megan's rebooked here too
   const sent = b => '<span class="pill green">✓ Sent ' + h(String(b.remind_at).slice(11, 16)) + (b.remind_by && b.remind_by !== S.me.user.name ? ' · ' + h(String(b.remind_by).split(' ')[0]) : '') + '</span>';
   const prog = () => items.filter(reminded).length + ' of ' + items.length + ' sent';
   const back = bookSheetOpen('Presentation reminders',
     '<div class="sheet-h"><div><div class="label muted">' + (n === 0 ? 'TODAY · ' : n === 1 ? 'TOMORROW · ' : '') + h(fmtLong(date)) + ' · ' + h(bookCfg().time) + '</div><div class="display">📲 Reminders</div></div></div>' +
-    '<p class="hint" style="margin-top:-6px"><b id="bkprog">' + prog() + '</b>. ' + (hy ? 'Signed by you, and 🤖 Hyrre\'s by whoever booked them (Megan\'s: Megan).' : 'Signed by you.') +
-      ' Tap send, come back, next one.</p>' + deskPasteNote() +
+    '<p class="hint" style="margin-top:-6px"><b id="bkprog">' + prog() + '</b>. ' + (hy ? 'Signed by you, and 🤖 Hyrre\'s by whoever booked them (Megan\'s: ' + h(bookSigner({ booked_by: bookCfg().hyrreBy || 'Megan Hyrre' })) + ').' : 'Signed by you.') +
+      ' Tap send, come back, next one.' + (office ? ' <b>' + h(officeNote()) + ' (' + office + ').</b>' : '') + '</p>' + deskPasteNote() +
     '<div class="list">' + items.map(b => '<div class="trow"><span class="av co-' + bookCo(b) + '">' + h(initials(bookName(b))) + '</span><div class="main"><div class="name">' + h(bookName(b)) + '</div>' +
       '<div class="sub"><span class="co ' + bookCo(b) + '">' + bookCo(b) + '</span> ' + (bookHy(b) ? '🤖 ' + h(bookSignedBy(b)) : b.confirmed_at ? '✅ confirmed' : '⏳ not confirmed') + ' · ' + h(b.source) + '</div></div>' +
       (reminded(b) ? sent(b) : bookSend(b, 'remind')) + '</div>').join('') + '</div>' +
@@ -3655,7 +3664,7 @@ function bookRemindSheet(date) {
 function bookSheet(id) {
   const b = bookById(id); if (!b) return;
   // Hyrre's: changed in Hyrre, which sends their confirmation; ours is the reminder (signed Megan for hers) and "Mark as confirmed"
-  const hy = bookHy(b), missed = bookMissed(b), open = b.status === 'booked' && !missed && !hy, hyOpen = b.status === 'booked' && !missed && hy;
+  const hy = bookHy(b), missed = bookMissed(b), open = b.status === 'booked' && !missed && !hy, hyOpen = b.status === 'booked' && !missed && hy, can = bookCanSend(b);
   const sentLine = k => b[k + '_at'] ? '<div>📨 ' + BOOK_SENT[k] + ': ' + h(fmtTs(b[k + '_at'])) + ' · ' + h(String(b[k + '_by']).split(' ')[0]) + ' · ' + h(VIA_LABEL[b[k + '_via']] || 'WhatsApp') + '</div>' : '';
   const back = bookSheetOpen('Booking',
     '<div class="sheet-h"><span class="av co-' + bookCo(b) + '">' + h(initials(bookName(b))) + '</span><div style="min-width:0"><div class="label muted">📅 ' + h(fmtLong(b.slot_date)) + ' · ' + h(fmt12(b.slot_time || bookCfg().time)) + '</div>' +
@@ -3666,15 +3675,18 @@ function bookSheet(id) {
       (b.notes ? '<div>📝 ' + h(b.notes) + '</div>' : '') +
       sentLine('confirm') + sentLine('remind') + sentLine('missed') +
       (b.confirmed_at ? '<div>✅ ' + (b.confirmed_by === 'CONFIRM' ? 'Tapped CONFIRM · ' + h(fmtTs(b.confirmed_at)) : 'Replied YES · ' + h(fmtTs(b.confirmed_at)) + (b.confirmed_by ? ' · ' + h(String(b.confirmed_by).split(' ')[0]) : '')) + '</div>' : '') +
-      (hy ? '<div>🤖 From Hyrre, approved there' + (b.hyrre_at ? ' · seen ' + h(fmtTs(b.hyrre_at)) : '') + '. Hyrre sends their confirmation and texts; our 📲 reminder is ' + h(bookSignedBy(b)) + '. ' +
+      (hy ? '<div>🤖 From Hyrre, approved there' + (b.hyrre_at ? ' · seen ' + h(fmtTs(b.hyrre_at)) : '') + '. Hyrre sends their confirmation and texts; our 📲 reminder is ' +
+        (can ? h(bookSignedBy(b)) : 'sent from the office phone') + '. ' +
         (missed && b.status === 'booked' ? ' Didn\'t come? Send "sorry we missed you" and rebook them here. ' + bookHyAbsent() : 'To change the day or cancel, do it in Hyrre: the next pull brings it here.') + '</div>' : '') + '</div>' +
-    (hyOpen ? '<button class="btn wa block" id="bkr">📲 Send a reminder · ' + h(bookSignedBy(b)) + '</button>' +
+    (can ? '' : '<p class="flag amber bkoffice">' + h(officeNote()) + ', signed ' + h(String(bookCfg().hyrreSender).split(' ')[0]) + ' / Megan. Nothing to send from this phone.</p>') +
+    (hyOpen ? (can ? '<button class="btn wa block" id="bkr">📲 Send a reminder · ' + h(bookSignedBy(b)) + '</button>' : '') +
       (b.confirmed_at ? '' : '<button class="btn ghost block" id="bky" style="margin-top:8px">✅ Mark as confirmed (they said yes)</button>') : '') +
-    (open ? '<button class="btn wa block" id="bkc">💬 ' + (b.confirm_at ? 'Send the confirmation again' : 'Send the confirmation') + ' · WhatsApp or 📱 Text</button>' +
+    (open && can ? '<button class="btn wa block" id="bkc">💬 ' + (b.confirm_at ? 'Send the confirmation again' : 'Send the confirmation') + ' · WhatsApp or 📱 Text</button>' +
       '<button class="btn ghost block" id="bkr" style="margin-top:8px">📲 Send a reminder</button>' +
       (b.confirmed_at ? '' : '<button class="btn ghost block" id="bky" style="margin-top:8px">✅ Mark as confirmed (they said yes)</button>') +
       '<button class="btn ghost block" id="bke" style="margin-top:8px">📅 Change the day</button>' : '') +
-    (missed && b.status === 'booked' ? '<button class="btn wa block" id="bkm">💬 Sorry we missed you' + (hy ? ' · ' + h(bookSignedBy(b)) : '') + '</button><button class="btn ghost block" id="bkre" style="margin-top:8px">📅 Rebook</button>' : '') +
+    (open && !can && !b.confirmed_at ? '<button class="btn ghost block" id="bky">✅ Mark as confirmed (they said yes)</button>' : '') +
+    (missed && b.status === 'booked' && can ? '<button class="btn wa block" id="bkm">💬 Sorry we missed you' + (hy ? ' · ' + h(bookSignedBy(b)) : '') + '</button><button class="btn ghost block" id="bkre" style="margin-top:8px">📅 Rebook</button>' : '') +
     (b.status === 'came' && b.candidate_id ? '<button class="btn block" id="bko">🎓 Open their check-in</button>' : '') +
     (b.status === 'booked' && !hy ? '<button class="linkbtn block center" id="bkx" style="margin-top:12px">Cancel this booking</button>' : '') +
     '<button class="btn ghost block" id="bkdone" style="margin-top:10px">Done</button>');
