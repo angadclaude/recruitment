@@ -3308,8 +3308,9 @@ function bookHyAbsent() {
 }
 /** Reminded the evening before or on the day (so the morning list doesn't send them a second one). */
 function bookReminded(b) { return !!b.remind_at && String(b.remind_at).slice(0, 10) >= addDays(b.slot_date, -1); }
-/** Confirmed, or approved in Hyrre (Hyrre's people don't tap our CONFIRM). */
-function bookOk(b) { return !!b.confirmed_at || bookHy(b); }
+/** Confirmed = they said yes: tapped CONFIRM, or someone tapped "Mark as confirmed". Approved in Hyrre isn't confirmed: it means Rubal
+ *  accepted Megan's booking, not that the candidate said yes (Angad, 10 Nov: "11 booked, 11 confirmed" with 2 who'd tapped CONFIRM). */
+function bookOk(b) { return !!b.confirmed_at; }
 /** Who booked them, short: "Jess", or "Megan Hyrre" in full (she isn't on the team). */
 function bookBy(b) { const n = String(b.booked_by || ''); return n === (bookCfg().hyrreBy || 'Megan Hyrre') ? n : n.split(' ')[0]; }
 function bookDaysTo(ymd) { return Math.round((D(ymd) - D(S.me.today)) / 86400000); }
@@ -3518,7 +3519,8 @@ function bookPills(b, yes) {
     : b.status === 'no_show' ? '<span class="pill red">❌ Didn\'t come</span><span class="pill blue">📅 Rebooked</span>'
     : missed ? '<span class="pill red">❌ Didn\'t come</span>' + (b.missed_at ? '<span class="pill green">✓ Messaged ' + t(b.missed_at) + '</span>' : '')
     // Hyrre sends their confirmation; they may tap CONFIRM in our reminder
-    : bookHy(b) ? '<span class="pill green">✅ Approved in Hyrre</span>' + (b.confirmed_at ? '<span class="pill green">✅ Confirmed</span>' : '') + reminded
+    : bookHy(b) ? '<span class="pill">🤖 Approved in Hyrre</span>' + (b.confirmed_at ? '<span class="pill green">✅ Confirmed</span>' : '<span class="pill amber">⏳ Not confirmed yet</span>' +
+        (yes ? '<button type="button" class="btn ghost sm markyes" data-bkyes="' + h(b.id) + '">✅ Mark as confirmed</button>' : '')) + reminded
     : (b.confirmed_at ?'<span class="pill green">✅ Confirmed</span>' : '<span class="pill amber">⏳ Not confirmed yet</span>' + (yes ? '<button type="button" class="btn ghost sm markyes" data-bkyes="' + h(b.id) + '">✅ Mark as confirmed</button>' : '')) +
       (b.confirm_at || b.confirmed_at ? '' : '<span class="pill red">Confirmation not sent</span>') +  // confirmed = they had it, however it reached them
       reminded;
@@ -3652,7 +3654,7 @@ function bookRemindSheet(date) {
     '<p class="hint" style="margin-top:-6px"><b id="bkprog">' + prog() + '</b>. ' + (hy ? 'Signed by you, and 🤖 Hyrre\'s by whoever booked them (Megan\'s: ' + h(bookSigner({ booked_by: bookCfg().hyrreBy || 'Megan Hyrre' })) + ').' : 'Signed by you.') +
       ' Tap send, come back, next one.' + (office ? ' <b>' + h(officeNote()) + ' (' + office + ').</b>' : '') + '</p>' + deskPasteNote() +
     '<div class="list">' + items.map(b => '<div class="trow"><span class="av co-' + bookCo(b) + '">' + h(initials(bookName(b))) + '</span><div class="main"><div class="name">' + h(bookName(b)) + '</div>' +
-      '<div class="sub"><span class="co ' + bookCo(b) + '">' + bookCo(b) + '</span> ' + (bookHy(b) ? '🤖 ' + h(bookSignedBy(b)) : b.confirmed_at ? '✅ confirmed' : '⏳ not confirmed') + ' · ' + h(b.source) + '</div></div>' +
+      '<div class="sub"><span class="co ' + bookCo(b) + '">' + bookCo(b) + '</span> ' + (bookHy(b) ? '🤖 ' + h(bookSignedBy(b)) + ' · ' : '') + (b.confirmed_at ? '✅ confirmed' : '⏳ not confirmed') + ' · ' + h(b.source) + '</div></div>' +
       (reminded(b) ? sent(b) : bookSend(b, 'remind')) + '</div>').join('') + '</div>' +
     '<button class="btn ghost block" id="bkdone" style="margin-top:14px">Done</button>');
   back.querySelectorAll('[data-bks]').forEach(a => a.addEventListener('click', () => {
@@ -4181,7 +4183,7 @@ function bookPdfName(we) { return 'Booked Appointments w-e ' + we.slice(8, 10) +
 function bookPdf(we) {
   const mon = addDays(we, -6), l = bookings().filter(b => b.slot_date >= mon && b.slot_date <= we), all = bookOrder(l), first = n => String(n || '').split(' ')[0];
   const conf = l.filter(bookOk).length, happened = all.came.length + all.missed.length;
-  const confirmed = b => b.confirmed_at ? [b.confirmed_by === 'CONFIRM' ? 'Tapped CONFIRM' : 'Replied YES', 'green'] : bookHy(b) ? ['Approved in Hyrre', 'green']
+  const confirmed = b => b.confirmed_at ? [b.confirmed_by === 'CONFIRM' ? 'Tapped CONFIRM' : 'Replied YES', 'green'] : bookHy(b) ? ['No (approved in Hyrre)', 'amber', true]
     : b.confirm_at ? ['No', 'amber', true] : ['Not sent', 'red', true];
   const came = b => b.status === 'came' ? ['Came ' + String(b.came_at || '').slice(11, 16), 'green', true] : b.status === 'no_show' ? ['Didn\'t come (rebooked)', 'red', true]
     : bookMissed(b) ? ['Didn\'t come', 'red', true] : [b.slot_date === S.me.today ? 'Expected today' : 'Expected', 'grey'];
