@@ -134,6 +134,7 @@ const ok = (cond, msg) => { assert.ok(cond, msg); passed++; console.log('  ✓ '
   await p.waitForSelector('.bdrow');
   let txt = await p.innerText('#page');
   ok(/The badge artwork isn't in yet/.test(txt) && (await p.$$('[data-bdprint][disabled]')).length === 3, 'no artwork yet: it says so, and Print waits for it');
+  ok(await p.$eval('#bdartf', el => !el.hasAttribute('accept')), 'the artwork picker lists every file (an iPhone greys out .json files in Files when the picker asks for JSON)');
   await p.setInputFiles('#bdartf', artFile);
   await p.waitForFunction(() => !/badge artwork isn't in yet/.test(document.querySelector('#page').innerText));
   L = await api(angad, 'badgeList', {});

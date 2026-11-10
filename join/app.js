@@ -1,4 +1,4 @@
-window.APP_VERSION = '65d91fcc';
+window.APP_VERSION = '48e5540a';
 
 (function () {
 'use strict';
@@ -2348,7 +2348,7 @@ function viewAvail(quiet) {
   const tools = !edit ? (rows.length ? '<div class="bullbtns avtools"><button class="btn ghost" id="avpdfw1">📄 Week 1 PDF</button><button class="btn ghost" id="avpdfw2">📄 Week 2 PDF</button></div>' : '') :
     '<div class="bullbtns avtools">' + (rows.length ? '<button class="btn ghost" id="avposter">📸 Poster</button><button class="btn ghost" id="avpdf">📄 PDF</button>' : '') +
     (edit ? '<button class="btn ghost" id="avadd">＋ Add someone</button>' : '') + '</div>' +
-    (edit ? '<label class="linkbtn avimp">📥 Add photos from a file<input type="file" id="avimpf" accept=".json,application/json" hidden></label>' : '');
+    (edit ? '<label class="linkbtn avimp">📥 Add photos from a file<input type="file" id="avimpf" hidden></label>' : '');
   // A booker's card: their picture, name, coach, and Week 1 / Week 2 days
   const chips = (w, before) => '<div class="avchips">' + w.split('').map((x, i) => '<span class="avc ' + (before(i) ? 'pre' : x === 'I' ? 'in' : x === 'O' ? 'out' : 'na') + '">' + AV_DAY[i].slice(0, 2) + '</span>').join('') + '</div>';
   const view = r => { const ph = (S.avPh || {})[r.id], mon1 = addDays(we, -6);
@@ -4435,11 +4435,11 @@ function viewBadges(quiet) {
   };
   const page = paint('Badges',
     (artOk ? '' : '<div class="card needs"><b>🎨 The badge artwork isn\'t in yet</b><p class="small muted" style="margin:4px 0 8px">Once only: open the badge artwork file you were sent. It\'s your Canva badge with the photo, name and numbers left blank.</p>' +
-      '<label class="btn ghost block">📥 Add the badge artwork<input type="file" id="bdartf" accept=".json,application/json" hidden></label></div>') +
+      '<label class="btn ghost block">📥 Add the badge artwork<input type="file" id="bdartf" hidden></label></div>') +
     '<p class="hint" style="margin:0 2px 10px">Type each starter\'s number' + ' as the client sends it, tick who to print, then 📄 Print. Starters from the last ' + d.weeks + ' weeks, newest first. ' +
       '<b>Print at 100% (Actual size)</b> so they fit the holders. HelloFresh: <b>double-sided, flip on the long edge</b> (page 2 is the backs).</p>' +
     sec('ndcs') + sec('hf') + sec('tmm') +
-    (artOk ? '<label class="linkbtn" style="display:block;margin:14px auto 0;text-align:center">🎨 Change the badge artwork<input type="file" id="bdartf" accept=".json,application/json" hidden></label>' : ''), quiet, true);
+    (artOk ? '<label class="linkbtn" style="display:block;margin:14px auto 0;text-align:center">🎨 Change the badge artwork<input type="file" id="bdartf" hidden></label>' : ''), quiet, true);
   bindBadges(page);
   fillThumbs(page);
 }
@@ -4477,7 +4477,8 @@ function bindBadges(page) {
   });
   page.querySelectorAll('[data-bdprint]').forEach(b => { b.onclick = () => badgePdf(b.dataset.bdprint); });
 }
-/** The artwork file ({ kind: 'jl-badge-art', ndcs, hf, hfBack }, sent to them privately): put in once. */
+/** The artwork file ({ kind: 'jl-badge-art', ndcs, hf, hfBack, tmm }, sent to them privately): put in once. Its picker (and the photos
+ *  file's) lists every file: with accept=".json" an iPhone greyed the file out in Files (Angad, 10 Nov), so the contents are checked here. */
 function badgeArtFile(file) {
   const rd = new FileReader();
   rd.onload = () => {
