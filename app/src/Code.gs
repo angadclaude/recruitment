@@ -60,6 +60,8 @@ const CONFIG = {
   D1_RESULTS_TIME: '09:00',       // the morning after a Day 1: the results to admins (Angad's Tuesday list, 27 Oct)
   D1_RESULTS_FROM: '2026-11-02',  // the first Day 1 with FR / HF set in the app (26 Oct's were only on paper): no alert with a wrong split
   OFFICE_BOOKERS: ['Fiza Iqbal', 'Christie Zammit'],  // with the admins, "Office" in the results' starts by booker (bookings made from the office)
+  // Badges (Angad, 10 Nov: printed from the app, not Canva): NDCS's expiry unless one is typed for them. HelloFresh's is on its artwork.
+  BADGE_EXPIRY: { FR: '2027-03-31' },
   AVAIL_REMIND_TIME: '18:00',     // after Tuesday's 2-3pm one-to-ones: done vs missing → admins (all starters) and each coach (their own)
   EMAIL_ALERTS: false,            // true = also email every alert. Push is used when OneSignal keys are set.
   SESSION_DAYS: 30,               // staff stay logged in for this long
@@ -177,7 +179,9 @@ const SHEETS = {
   // starter, kept for good (his call): name and mobile are copied in, so the 6-month clear-out of Candidates doesn't touch it.
   // w1 / w2: Monday to Sunday, one letter a day: I = in, O = out, - = not said yet.
   Availability: ['id', 'created_at', 'week_ending', 'candidate_id', 'day1_date', 'full_name', 'mobile', 'company', 'coach_id', 'coach_name',
-    'driver', 'w1', 'w2', 'notes', 'has_photo', 'updated_at', 'updated_by', 'campaign', 'removed_at', 'removed_by', 'grade', 'grade_by', 'grade_at'],
+    'driver', 'w1', 'w2', 'notes', 'has_photo', 'updated_at', 'updated_by', 'campaign', 'removed_at', 'removed_by', 'grade', 'grade_by', 'grade_at',
+    // their ID badge (Angad, 10 Nov): the number(s) the client gives (NDCS one, HelloFresh three, one a line), NDCS's expiry if not the usual
+    'badge_no', 'badge_expiry', 'badge_by', 'badge_at', 'badge_printed_at', 'badge_printed_by'],
   StarterPhotos: ['id', 'data', 'updated_at'],  // one photo per Availability row (same id), a small JPEG as a data: URL
 };
 
@@ -1900,6 +1904,7 @@ const STAFF_ACTIONS = {
   setCampaign: setCampaign, fixName: fixName, fixContact: fixContact, day1Photo: day1Photo,
   availWeek: availWeek, saveAvail: saveAvail, addStarter: addStarter, removeStarter: removeStarter, restoreStarter: restoreStarter, gradeStarter: gradeStarter, saveStarterPhoto: saveStarterPhoto, availPhotos: availPhotos,
   setBellSheets: setBellSheets,
+  badgeList: badgeList, saveBadge: saveBadge, badgesPrinted: badgesPrinted, badgeArt: badgeArt, saveBadgeArt: saveBadgeArt,
 };
 
 // ───────────────────────── NEW STARTERS' AVAILABILITY (Angad, 27 Oct) ─────────────────────────
@@ -2019,6 +2024,84 @@ function restoreStarter(req, u) {
   log(u, 'availability_restore', r.candidate_id || '', r.full_name);
   return availRows(r.week_ending).filter(x => x.id === r.id)[0] || null;
 }
+// ───── Badges (Angad, 10 Nov 2026: "the team uses Canva right now. I don't want that to happen") ─────
+// Each new starter's ID badge, printed on A4 from Day 1 → 🪪 Badges: NDCS for Fundraising (FR: Link Marketing through Acwyre)
+// and HelloFresh (HF, front and back). The numbers come from the client separately and are typed in there by an admin. The
+// artwork (the team's own badge with the photo, name and numbers left blank, cut from their Canva files) goes in once from a
+// file and lives in the app's settings, admins only: never in this repo, which is public (it carries a signature and logos).
+const BADGE_WEEKS = 6;  // Day 1 weeks on the list: the client's numbers can take a few weeks to come through
+const BADGE_ART = { ndcs: 'BADGE_ART_NDCS', hf: 'BADGE_ART_HF', hfBack: 'BADGE_ART_HF_BACK' };
+function badgeArtInfo() {
+  const p = PropertiesService.getScriptProperties(), out = {};
+  Object.keys(BADGE_ART).forEach(k => { out[k] = !!p.getProperty(BADGE_ART[k]); });
+  out.at = p.getProperty('BADGE_ART_AT') || '';
+  return out;
+}
+/** Their badge lines: one for NDCS (the ID number), up to three for HelloFresh, upper case, one a line. */
+function badgeLines(v) { return String(v || '').split(/[\n,;]+/).map(x => x.trim().toUpperCase().replace(/\s+/g, '')).filter(Boolean); }
+function badgeRow(r, a) {
+  return { id: r.id, week_ending: r.week_ending, day1_date: r.day1_date, full_name: r.full_name, campaign: r.campaign, coach_name: r.coach_name, has_photo: r.has_photo,
+    badge_no: a.badge_no || '', badge_expiry: a.badge_expiry || '', badge_at: a.badge_at || '', badge_by: a.badge_by || '',
+    badge_printed_at: a.badge_printed_at || '', badge_printed_by: a.badge_printed_by || '' };
+}
+/** Everyone who started in the last BADGE_WEEKS Day 1 weeks and is still with us, newest first, with their badge numbers. */
+function badgeList(req, u) {
+  if (!isAdmin(u)) throw new Error('Only admins make badges.');
+  const thisWe = weekEnding(todayStr()), rows = [];
+  for (let i = 0; i < BADGE_WEEKS; i++) availRows(addDays(thisWe, -7 * i)).filter(r => !r.no_longer).forEach(r => rows.push(r));
+  const raw = {}; readTable('Availability').forEach(a => { raw[a.id] = a; });
+  return { today: todayStr(), weeks: BADGE_WEEKS, rows: rows.map(r => badgeRow(r, raw[r.id] || {})), art: badgeArtInfo(), expiry: CONFIG.BADGE_EXPIRY };
+}
+function saveBadge(req, u) {
+  if (!isAdmin(u)) throw new Error('Only admins make badges.');
+  const lines = badgeLines(req.badge_no), exp = String(req.badge_expiry || '');
+  if (lines.some(x => !/^[A-Z0-9][A-Z0-9\-\/]{0,19}$/.test(x))) throw new Error('Badge numbers: letters and numbers only.');
+  if (exp && !/^\d{4}-\d\d-\d\d$/.test(exp)) throw new Error('Pick the expiry date.');
+  const a0 = availRecord(req.id), cur = availRows(a0.week_ending).filter(x => x.id === a0.id)[0];
+  const hf = (cur ? cur.campaign : a0.campaign || (a0.company === 'JUSS' ? 'HF' : 'FR')) === 'HF';  // where they're placed now
+  const r = withLock(() => {
+    const a = availRecord(req.id);
+    if (lines.length > (hf ? 3 : 1)) throw new Error(hf ? 'HelloFresh badges have three numbers.' : 'NDCS badges have one ID number.');
+    a.badge_no = lines.join('\n'); a.badge_expiry = hf ? '' : exp; a.badge_by = u.name; a.badge_at = nowStr();
+    writeRow('Availability', a);
+    return a;
+  });
+  log(u, 'badge', r.candidate_id || '', r.full_name + ': ' + (r.badge_no ? 'number saved' : 'number cleared'));  // not the number itself
+  const row = availRows(r.week_ending).filter(x => x.id === r.id)[0] || r;
+  return badgeRow(row, r);
+}
+/** The badges just printed (the PDF was shared or saved): ticked off, so next time only the new ones are picked. */
+function badgesPrinted(req, u) {
+  if (!isAdmin(u)) throw new Error('Only admins make badges.');
+  const ids = (Array.isArray(req.ids) ? req.ids : []).map(String).slice(0, 200);
+  if (!ids.length) return { ok: true, n: 0 };
+  const done = withLock(() => readTable('Availability').filter(a => ids.indexOf(a.id) >= 0).map(a => { a.badge_printed_at = nowStr(); a.badge_printed_by = u.name; writeRow('Availability', a); return a; }));
+  log(u, 'badges_printed', '', done.length + ' ' + (req.kind === 'hf' ? 'HelloFresh' : 'NDCS'));
+  return { ok: true, n: done.length, at: nowStr(), by: u.name };
+}
+/** The badge artwork for the PDF (admins), as data: URLs. */
+function badgeArt(req, u) {
+  if (!isAdmin(u)) throw new Error('Only admins make badges.');
+  const p = PropertiesService.getScriptProperties(), out = {};
+  Object.keys(BADGE_ART).forEach(k => { out[k] = p.getProperty(BADGE_ART[k]) || ''; });
+  return out;
+}
+/** Puts the artwork in from the file the team was sent: the badge from their Canva design, the photo, name and numbers blank. */
+function saveBadgeArt(req, u) {
+  if (!isAdmin(u)) throw new Error('Only admins make badges.');
+  const p = PropertiesService.getScriptProperties(), put = [];
+  Object.keys(BADGE_ART).forEach(k => {
+    const v = String((req.art || {})[k] || '');
+    if (!v) return;
+    if (!/^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(v) || v.length > 3000000) throw new Error('That isn\'t a badge artwork file.');
+    p.setProperty(BADGE_ART[k], v); put.push(k);
+  });
+  if (!put.length) throw new Error('That isn\'t a badge artwork file.');
+  p.setProperty('BADGE_ART_AT', nowStr() + ' · ' + u.name);
+  log(u, 'badge_art', '', put.join(', '));
+  return badgeArtInfo();
+}
+
 /** The photo taken in the app: a small JPEG (the phone shrinks it first), or '' to take it off. */
 function saveStarterPhoto(req, u) {
   if (!canAvail(u)) throw new Error('Not allowed');
