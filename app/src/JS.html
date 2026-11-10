@@ -1922,7 +1922,7 @@ function presenterOf(c) { return c.presented_by && c.presented_by !== 'Not sure'
 function joinLine(c) {
   const co = brandCo(c);
   if (co === (c.company === 'JUSS' ? 'JUSS' : 'LINK')) return '';
-  return '<div class="small" id="joinco">🏢 Joining <span class="co ' + co + '">' + co + '</span>' + (CAMPS.indexOf(c.campaign) >= 0 ? ' · ' + c.campaign : '') +
+  return '<div class="small" id="joinco">🏢 Joining <span class="co ' + co + '">' + co + '</span>' + (['FR', 'HF', 'TMM'].indexOf(c.campaign) >= 0 ? ' · ' + c.campaign : '') +
     ' · messages and welcome email from ' + brandOf(c) + '</div>';
 }
 /** "🎤 Presentation by Nathan Mcgrath" under "booked by", with the room rater if that's someone else. */
@@ -2991,7 +2991,7 @@ function d1Order(list) {
 /** Whose group a starter is in on the Day 1 list: the Office (admins and the office team), their booker, or no booker. */
 function d1Grp(c) { return !c.booker_name ? 'No booker' : c.office ? 'Office' : String(c.booker_name); }
 /** FR or HF: where a starter is placed, picked on Day 1 (Angad's 26 Oct list put JUSS starters in FR), else their company's: JUSS = HF, LINK = FR. */
-function campaignOf(c) { return CAMPS.indexOf(c.campaign) >= 0 ? c.campaign : c.company === 'JUSS' ? 'HF' : 'FR'; }
+function campaignOf(c) { return ['FR', 'HF', 'TMM'].indexOf(c.campaign) >= 0 ? c.campaign : c.company === 'JUSS' ? 'HF' : 'FR'; }
 /** The three campaigns (Angad, 10 Nov 2026): Fundraising (NDCS), HelloFresh and The Modern Milkman (JUSS). */
 const CAMPS = ['FR', 'HF', 'TMM'], CAMP_NAME = { FR: 'Fundraising', HF: 'HelloFresh', TMM: 'Modern Milkman' };
 /** A Day 1's results, as the team used to mark up the printed list for Angad on Tuesday morning (27 Oct): started of everyone

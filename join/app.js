@@ -1,4 +1,4 @@
-window.APP_VERSION = '1096a884';
+window.APP_VERSION = '65d91fcc';
 
 (function () {
 'use strict';
@@ -1923,7 +1923,7 @@ function presenterOf(c) { return c.presented_by && c.presented_by !== 'Not sure'
 function joinLine(c) {
   const co = brandCo(c);
   if (co === (c.company === 'JUSS' ? 'JUSS' : 'LINK')) return '';
-  return '<div class="small" id="joinco">🏢 Joining <span class="co ' + co + '">' + co + '</span>' + (CAMPS.indexOf(c.campaign) >= 0 ? ' · ' + c.campaign : '') +
+  return '<div class="small" id="joinco">🏢 Joining <span class="co ' + co + '">' + co + '</span>' + (['FR', 'HF', 'TMM'].indexOf(c.campaign) >= 0 ? ' · ' + c.campaign : '') +
     ' · messages and welcome email from ' + brandOf(c) + '</div>';
 }
 /** "🎤 Presentation by Nathan Mcgrath" under "booked by", with the room rater if that's someone else. */
@@ -2992,7 +2992,7 @@ function d1Order(list) {
 /** Whose group a starter is in on the Day 1 list: the Office (admins and the office team), their booker, or no booker. */
 function d1Grp(c) { return !c.booker_name ? 'No booker' : c.office ? 'Office' : String(c.booker_name); }
 /** FR or HF: where a starter is placed, picked on Day 1 (Angad's 26 Oct list put JUSS starters in FR), else their company's: JUSS = HF, LINK = FR. */
-function campaignOf(c) { return CAMPS.indexOf(c.campaign) >= 0 ? c.campaign : c.company === 'JUSS' ? 'HF' : 'FR'; }
+function campaignOf(c) { return ['FR', 'HF', 'TMM'].indexOf(c.campaign) >= 0 ? c.campaign : c.company === 'JUSS' ? 'HF' : 'FR'; }
 /** The three campaigns (Angad, 10 Nov 2026): Fundraising (NDCS), HelloFresh and The Modern Milkman (JUSS). */
 const CAMPS = ['FR', 'HF', 'TMM'], CAMP_NAME = { FR: 'Fundraising', HF: 'HelloFresh', TMM: 'Modern Milkman' };
 /** A Day 1's results, as the team used to mark up the printed list for Angad on Tuesday morning (27 Oct): started of everyone
@@ -3153,7 +3153,8 @@ function drawAcademy(r, quiet) {
   const fchip = (attr, v, on, label) => '<button type="button" class="chip' + (on ? ' on' : '') + '" ' + attr + '="' + v + '">' + label + '</button>';
   const filt = items.length ? '<div class="search d1search"><input type="search" id="d1q" placeholder="Search name or mobile" value="' + h(S.d1Q || '') + '"></div>' +
     '<div class="chips d1chips"><span class="d1lbl">Sort</span>' + fchip('data-d1sort', '', S.d1Sort !== 'az', 'By booker') + fchip('data-d1sort', 'az', S.d1Sort === 'az', 'Name A–Z') + '</div>' +
-    '<div class="chips d1chips"><span class="d1lbl">Campaign</span>' + fchip('data-d1camp', '', !S.d1Camp, 'All <b>' + live.length + '</b>') + fchip('data-d1camp', 'FR', S.d1Camp === 'FR', 'FR <b>' + nCamp('FR') + '</b>') + fchip('data-d1camp', 'HF', S.d1Camp === 'HF', 'HF <b>' + nCamp('HF') + '</b>') + '</div>' : '';
+    '<div class="chips d1chips"><span class="d1lbl">Campaign</span>' + fchip('data-d1camp', '', !S.d1Camp, 'All <b>' + live.length + '</b>') + fchip('data-d1camp', 'FR', S.d1Camp === 'FR', 'FR <b>' + nCamp('FR') + '</b>') + fchip('data-d1camp', 'HF', S.d1Camp === 'HF', 'HF <b>' + nCamp('HF') + '</b>') +
+      (nCamp('TMM') || S.d1Camp === 'TMM' ? fchip('data-d1camp', 'TMM', S.d1Camp === 'TMM', 'TMM <b>' + nCamp('TMM') + '</b>') : '') + '</div>' : '';  // the Modern Milkman, when anyone's placed there
   const page = paint(d1Title(),
     (pend.length ? '<div class="card needs"><b>⚖️ Waiting on your decision · ' + pend.length + '</b><p class="small muted" style="margin:4px 0 2px">Booked onto the Academy, but marked RED or not suitable before. Tap a name to approve or decline.</p>' +
       pend.map(c => '<button class="nm" data-cand="' + h(c.id) + '">' + h(c.first_name) + ' · ' + h(fmt(c.academy_date)) + '</button>').join('') + '</div>' : '') +
