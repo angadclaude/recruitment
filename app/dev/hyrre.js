@@ -274,12 +274,12 @@ const FIRST = [
   const txt = await rp.innerText('#page');
   ok(/🤖 Hyrre · pulled today at 08:40: 6 approved bookings/.test(txt), 'Book Appts: "🤖 Hyrre · pulled today at 08:40: 6 approved bookings"');
   const aRow = await rp.$eval('.bkrow:has-text("Aisha Khan")', el => el.innerText);
-  ok(/booked by Megan Hyrre · Hirematic · 🤖 Hyrre/.test(aRow) && /Approved in Hyrre/.test(aRow) && !/Not confirmed|Confirmation not sent|Mark as confirmed/.test(aRow),
-    'Aisha\'s row: booked by Megan Hyrre · Hirematic · 🤖 Hyrre, ✅ Approved in Hyrre (no "not confirmed", nothing to send)');
+  ok(/booked by Megan Hyrre · Hirematic · 🤖 Hyrre/.test(aRow) && /Approved in Hyrre/.test(aRow) && /Not confirmed yet/.test(aRow) && /Mark as confirmed/.test(aRow) && !/Confirmation not sent/.test(aRow),
+    'Aisha\'s row: booked by Megan Hyrre · Hirematic · 🤖 Hyrre, 🤖 Approved in Hyrre but ⏳ Not confirmed yet (approved isn\'t confirmed, Angad 10 Nov), Mark as confirmed; no "confirmation not sent" (Hyrre sends it)');
   const lRow = await rp.$eval('.bkrow:has-text("Leah Brown")', el => el.innerText);
   ok(/booked by Jess · Teamtailor/.test(lRow) && /Not confirmed/.test(lRow), 'Leah (booked in the app by Jess) still works as before');
   const kp = JSON.stringify(await rp.$$eval('.kpis .kpi', l => l.map(k => [k.querySelector('b').dataset.n, k.querySelector('span').textContent])));  // the final numbers (they count up)
-  ok(kp === '[["2","Booked"],["1","Confirmed"],["1","Not confirmed"],["1","Not sent"]]', 'today\'s numbers count Aisha as confirmed (approved in Hyrre), and only Leah as not sent: ' + kp);
+  ok(kp === '[["2","Booked"],["0","Confirmed"],["2","Not confirmed"],["1","Not sent"]]', 'today\'s numbers: approved in Hyrre isn\'t confirmed (Aisha hasn\'t tapped CONFIRM), only Leah not sent: ' + kp);
   // Rubal's own phone (Angad, 9 Nov: she sent one signed Megan from it): Megan's aren't hers to send
   await rp.click('[data-bkrem="2026-10-29"]'); await rp.waitForSelector('.bksheet [data-bks]');
   const remList = await rp.innerText('.bksheet');
