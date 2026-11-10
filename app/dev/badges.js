@@ -126,6 +126,18 @@ const ok = (cond, msg) => { assert.ok(cond, msg); passed++; console.log('  ✓ '
     });
     artFile = path.join(SHOTS, 'test-badge-artwork.json'); fs.writeFileSync(artFile, JSON.stringify(fake));
   }
+  // The same artwork as one picture (BADGE_SHEET: the four badges and a colour key), as an iPhone hands it over from Photos:
+  // shrunk to 80% and turned into a JPEG
+  const art0 = JSON.parse(fs.readFileSync(artFile, 'utf8'));
+  const sheetB64 = await p.evaluate(async a => {
+    const im = src => new Promise(r => { const i = new Image(); i.onload = () => r(i); i.src = src; });
+    const c = document.createElement('canvas'); c.width = 2402; c.height = 2185; const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, 2402, 2185);
+    g.drawImage(await im(a.ndcs), 0, 0); g.drawImage(await im(a.tmm), 0, 725); g.drawImage(await im(a.hf), 1366, 725); g.drawImage(await im(a.hfBack), 1366, 1455);
+    [[30, '#FF00FF'], [210, '#00C8FF'], [390, '#FFDC00'], [570, '#000000']].forEach(k => { g.fillStyle = k[1]; g.fillRect(2290, k[0], 100, 120); });
+    const s = document.createElement('canvas'); s.width = Math.round(2402 * 0.8); s.height = Math.round(2185 * 0.8); s.getContext('2d').drawImage(c, 0, 0, s.width, s.height);
+    return s.toDataURL('image/jpeg', 0.85).split(',')[1];
+  }, art0);
+  const holiday = await p.evaluate(() => { const c = document.createElement('canvas'); c.width = 1200; c.height = 900; const g = c.getContext('2d'); g.fillStyle = '#4A90D9'; g.fillRect(0, 0, 1200, 900); return c.toDataURL('image/png').split(',')[1]; });
 
   console.log('the Badges screen');
   await p.click('.tabbar button[data-tab=academy]');
@@ -135,10 +147,19 @@ const ok = (cond, msg) => { assert.ok(cond, msg); passed++; console.log('  ✓ '
   let txt = await p.innerText('#page');
   ok(/The badge artwork isn't in yet/.test(txt) && (await p.$$('[data-bdprint][disabled]')).length === 3, 'no artwork yet: it says so, and Print waits for it');
   ok(await p.$eval('#bdartf', el => !el.hasAttribute('accept')), 'the artwork picker lists every file (an iPhone greys out .json files in Files when the picker asks for JSON)');
-  await p.setInputFiles('#bdartf', artFile);
-  await p.waitForFunction(() => !/badge artwork isn't in yet/.test(document.querySelector('#page').innerText));
+  const toastIs = re => p.waitForFunction(r => new RegExp(r).test((document.getElementById('toast') || {}).textContent || ''), re.source, { timeout: 8000 }).then(() => true, () => false);
+  await p.setInputFiles('#bdartf', { name: 'IMG_0420.PNG', mimeType: 'image/png', buffer: Buffer.from(holiday, 'base64') });
+  ok(await toastIs(/"IMG_0420\.PNG" isn't the badge artwork\. Pick the "JL badge artwork" picture/) && !(await api(angad, 'badgeList', {})).art.ndcs,
+    'a picture that isn\'t the artwork: it says which one it got and what to pick, and puts nothing in');
+  if (process.env.BADGE_ART) await p.setInputFiles('#bdartf', artFile);  // a look at the real thing: the file
+  else await p.setInputFiles('#bdartf', { name: 'IMG_0421.JPG', mimeType: 'image/jpeg', buffer: Buffer.from(sheetB64, 'base64') });
+  await p.waitForFunction(() => !/badge artwork isn't in yet/.test(document.querySelector('#page').innerText), null, { timeout: 15000 });
   L = await api(angad, 'badgeList', {});
-  ok(L.art.ndcs && L.art.hf && L.art.hfBack && L.art.tmm, 'the artwork file opened on the phone puts it in (admins), once: NDCS, HelloFresh front and back, the Modern Milkman');
+  ok(L.art.ndcs && L.art.hf && L.art.hfBack && L.art.tmm, 'the artwork picture from Photos (shrunk and made a JPEG by the phone) puts it in (admins), once: NDCS, HelloFresh front and back, the Modern Milkman');
+  if (!process.env.BADGE_ART) {
+    const parts = await post('/dev/eval', { js: "JSON.stringify(['BADGE_ART_NDCS', 'BADGE_ART_TMM'].map(k => { const v = PropertiesService.getScriptProperties().getProperty(k) || ''; return v.slice(0, 23); }))" });
+    ok(/data:image\/jpeg;base64/.test(parts.out), 'cut into the four badges, each kept at its own size');
+  }
   await p.waitForFunction(() => document.querySelectorAll('.bdrow img.avph').length >= 9);
   txt = await p.innerText('#page');
   const heads = await p.$$eval('.section-h', l => l.map(x => x.textContent.replace(/\s+/g, ' ').trim()));
@@ -239,6 +260,12 @@ const ok = (cond, msg) => { assert.ok(cond, msg); passed++; console.log('  ✓ '
   const cr = JSON.parse(camp.out);
   ok(cr[0] === 'TMM' && cr[1] === 'JUSS' && cr[2] === 'TMM' && cr[3] === 'HF' && cr[4] === 1 && /FR, HF or TMM/.test(cr[5]),
     'Day 1: FR, HF or TMM; placed in TMM = joins JUSS (their messages come from JUSS); still nobody starts in TMM until it\'s picked; the morning-after results count TMM');
+
+  console.log('the artwork as a file, however the phone saved it');
+  await p.click('.sheet-back', { position: { x: 5, y: 5 } }).catch(() => {});
+  await p.waitForSelector('#bdartf', { state: 'attached' });
+  await p.setInputFiles('#bdartf', { name: 'JL badge artwork - add once in the app.json.txt', mimeType: 'text/plain', buffer: Buffer.from('\uFEFF' + fs.readFileSync(artFile, 'utf8')) });
+  ok(await toastIs(/Badge artwork in ✓/), 'the artwork file still goes in, saved as .txt with a byte-order mark (as phones sometimes do)');
 
   await browser.close();
   console.log('\nALL ' + passed + ' BADGE CHECKS PASSED (' + (process.env.JL_BACKEND === 'pg' ? 'Supabase back end' : 'Google back end') + ')');
