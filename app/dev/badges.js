@@ -66,12 +66,13 @@ const ok = (cond, msg) => { assert.ok(cond, msg); passed++; console.log('  ✓ '
     ['Dina Shah', 'LINK', '2026-11-02', '2026-11-08'], ['Lakshmi Venkata Priya Arul Murugan', 'LINK', '2026-11-09', '2026-11-15'],
     ['Eric Hale', 'JUSS', '2026-11-09', '2026-11-15'], ['Hana Begum', 'JUSS', '2026-11-09', '2026-11-15'], ['Jade Jones', 'JUSS', '2026-11-02', '2026-11-08'],
     ['Kira Fong-Sullivan', 'JUSS', '2026-11-02', '2026-11-08'], ['Ştefan Ionescu', 'JUSS', '2026-11-09', '2026-11-15'],
+    ['Mira Milkman', 'JUSS', '2026-11-09', '2026-11-15', 'TMM'],  // the Modern Milkman (Angad, 10 Nov: "three campaigns now")
     ['Old Starter', 'LINK', '2026-09-21', '2026-09-27'],  // 7 weeks ago: off the list
   ];
   const S = {};
   for (let i = 0; i < START.length; i++) {
-    const [name, co, day1, we] = START[i];
-    const r = await api(angad, 'addStarter', { weekEnding: we, full_name: name, company: co, day1_date: day1 });
+    const [name, co, day1, we, camp] = START[i];
+    const r = await api(angad, 'addStarter', { weekEnding: we, full_name: name, company: co, day1_date: day1, campaign: camp || '' });
     if (name !== 'Ivan Ilic') await api(angad, 'saveStarterPhoto', { id: r.id, data: realPhoto(name) || await fakePhoto(i * 33) });  // Ivan: no photo yet
     S[name.split(' ')[0]] = r;
   }
@@ -83,20 +84,23 @@ const ok = (cond, msg) => { assert.ok(cond, msg); passed++; console.log('  ✓ '
   console.log('the list');
   let L = await api(angad, 'badgeList', {});
   const names = L.rows.map(r => r.full_name);
-  ok(L.rows.length === 10 && !names.includes('Old Starter') && L.weeks === 6, 'everyone who started in the last 6 Day 1 weeks (10), not one from 7 weeks ago');
-  ok(L.rows.filter(r => r.campaign === 'FR').length === 5 && L.rows.filter(r => r.campaign === 'HF').length === 5, 'NDCS = Fundraising (5), HelloFresh = HF (5): where they were placed');
-  ok(!L.art.ndcs && !L.art.hf && !L.art.hfBack && L.expiry.FR === '2027-03-31', 'no artwork yet; NDCS expiry 31/03/2027 unless typed');
+  ok(L.rows.length === 11 && !names.includes('Old Starter') && L.weeks === 6, 'everyone who started in the last 6 Day 1 weeks (11), not one from 7 weeks ago');
+  ok(L.rows.filter(r => r.campaign === 'FR').length === 5 && L.rows.filter(r => r.campaign === 'HF').length === 5 && L.rows.filter(r => r.campaign === 'TMM').length === 1,
+    'NDCS = Fundraising (5), HelloFresh = HF (5), the Modern Milkman = TMM (1): where they were placed');
+  ok(!L.art.ndcs && !L.art.hf && !L.art.hfBack && !L.art.tmm && L.expiry.FR === '2027-03-31', 'no artwork yet; NDCS expiry 31/03/2027 unless typed');
   const bookerAvail = await api(booker, 'availWeek', { weekEnding: '2026-11-15' });
   ok(bookerAvail.rows.every(r => !('badge_no' in r)), 'badge numbers aren\'t sent to bookers with the availability');
 
   console.log('numbers');
   ok(/one ID number/.test(await refused(angad, 'saveBadge', { id: S.Sara.id, badge_no: '90145\n90146' })), 'NDCS: one ID number');
   ok(/three numbers/.test(await refused(angad, 'saveBadge', { id: S.Eric.id, badge_no: 'JU0145\nR0145\nGD2D014\nX1' })), 'HelloFresh: three numbers at most');
+  ok(/one number \(MMC…\)/.test(await refused(angad, 'saveBadge', { id: S.Mira.id, badge_no: 'MMC10001\nMMC10002' })), 'Modern Milkman: one MMC number');
   ok(/letters and numbers only/.test(await refused(angad, 'saveBadge', { id: S.Eric.id, badge_no: 'JU0145\n<b>' })), 'letters and numbers only');
   ok(/Pick the expiry/.test(await refused(angad, 'saveBadge', { id: S.Sara.id, badge_no: '90145', badge_expiry: '07/04/2027' })), 'an expiry is a date');
   const su = await api(angad, 'saveBadge', { id: S.Sara.id, badge_no: ' 90145 ' });
   const dh = await api(angad, 'saveBadge', { id: S.Dina.id, badge_no: '90136', badge_expiry: '2027-04-07' });
   await api(angad, 'saveBadge', { id: S.Harvey.id, badge_no: '90133' });
+  const mm = await api(angad, 'saveBadge', { id: S.Mira.id, badge_no: 'mmc 90001', badge_expiry: '2027-04-07' });
   await api(angad, 'saveBadge', { id: S.Ivan.id, badge_no: '90134' });
   await api(angad, 'saveBadge', { id: S.Lakshmi.id, badge_no: '90140' });
   const er = await api(angad, 'saveBadge', { id: S.Eric.id, badge_no: 'ju0145, r0145, gd2d014' });
@@ -104,7 +108,7 @@ const ok = (cond, msg) => { assert.ok(cond, msg); passed++; console.log('  ✓ '
   await api(angad, 'saveBadge', { id: S.Jade.id, badge_no: 'JU0149\nR0149\nGD2D019' });
   await api(angad, 'saveBadge', { id: S['Ştefan'].id, badge_no: 'JU0151\nR0151\nGD2D021' });
   ok(su.badge_no === '90145' && !su.badge_expiry && dh.badge_expiry === '2027-04-07' && er.badge_no === 'JU0145\nR0145\nGD2D014' && er.badge_by === 'Angad Oshan',
-    'saved, tidied (upper case, a line each), with who typed them; Dina\'s own expiry 07/04/2027 (one on the Canva file had its own)');
+    'saved, tidied (upper case, a line each), with who typed them; Mira\'s MMC90001 (no expiry on a Modern Milkman badge: ' + (mm.badge_no === 'MMC90001' && !mm.badge_expiry) + '); Dina\'s own expiry 07/04/2027 (one on the Canva file had its own)');
   const logs = await post('/dev/eval', { js: "JSON.stringify(readTable('Log').filter(l => l.action === 'badge').map(l => l.detail))" });
   ok(!/90145|JU0145/.test(logs.out) && /Sara Adeyemi: number saved/.test(logs.out), 'the Log says a number was saved, never the number');
 
@@ -117,7 +121,8 @@ const ok = (cond, msg) => { assert.ok(cond, msg); passed++; console.log('  ✓ '
       return { kind: 'jl-badge-art',
         ndcs: mk(2270, 725, g => { g.fillStyle = '#6B1FAD'; g.fillRect(0, 0, 988, 284); g.fillRect(1010, 0, 1260, 284); g.fillStyle = '#fff'; g.font = 'bold 90px sans-serif'; g.fillText('PAID', 395, 110); g.fillStyle = '#6B1FAD'; g.font = 'bold 40px sans-serif'; g.fillText('NAME :', 418, 350); g.fillText('ID NUMBER:', 418, 441); g.fillText('EXPIRY DATE :', 418, 541); }),
         hf: mk(1036, 730, g => { g.lineWidth = 7; g.strokeRect(4, 4, 1028, 722); g.fillStyle = '#8CC63F'; g.beginPath(); g.arc(600, 150, 80, 0, 7); g.fill(); g.strokeRect(490, 296, 516, 78); }),
-        hfBack: mk(1036, 730, g => { g.fillStyle = '#000'; g.font = '40px sans-serif'; g.textAlign = 'center'; g.fillText('To verify our agents', 518, 140); g.fillRect(400, 370, 240, 240); }) };
+        hfBack: mk(1036, 730, g => { g.fillStyle = '#000'; g.font = '40px sans-serif'; g.textAlign = 'center'; g.fillText('To verify our agents', 518, 140); g.fillRect(400, 370, 240, 240); }),
+        tmm: mk(1365, 1072, g => { g.fillStyle = '#6CC8EF'; g.fillRect(0, 0, 1365, 280); g.lineWidth = 6; g.strokeRect(98, 688, 486, 144); g.fillStyle = '#000'; g.font = '40px sans-serif'; g.fillText('modern milkman', 860, 900); }) };
     });
     artFile = path.join(SHOTS, 'test-badge-artwork.json'); fs.writeFileSync(artFile, JSON.stringify(fake));
   }
@@ -128,21 +133,21 @@ const ok = (cond, msg) => { assert.ok(cond, msg); passed++; console.log('  ✓ '
   await p.click('#goBadges');
   await p.waitForSelector('.bdrow');
   let txt = await p.innerText('#page');
-  ok(/The badge artwork isn't in yet/.test(txt) && (await p.$$('[data-bdprint][disabled]')).length === 2, 'no artwork yet: it says so, and Print waits for it');
+  ok(/The badge artwork isn't in yet/.test(txt) && (await p.$$('[data-bdprint][disabled]')).length === 3, 'no artwork yet: it says so, and Print waits for it');
   await p.setInputFiles('#bdartf', artFile);
   await p.waitForFunction(() => !/badge artwork isn't in yet/.test(document.querySelector('#page').innerText));
   L = await api(angad, 'badgeList', {});
-  ok(L.art.ndcs && L.art.hf && L.art.hfBack, 'the artwork file opened on the phone puts it in (admins), once');
+  ok(L.art.ndcs && L.art.hf && L.art.hfBack && L.art.tmm, 'the artwork file opened on the phone puts it in (admins), once: NDCS, HelloFresh front and back, the Modern Milkman');
   await p.waitForFunction(() => document.querySelectorAll('.bdrow img.avph').length >= 9);
   txt = await p.innerText('#page');
   const heads = await p.$$eval('.section-h', l => l.map(x => x.textContent.replace(/\s+/g, ' ').trim()));
-  ok(heads.join('|') === '🟣 NDCS · Fundraising 5|🍋 HelloFresh 5', 'two lists: ' + heads.join(', '));
+  ok(heads.join('|') === '🟣 NDCS · Fundraising 5|🍋 HelloFresh 5|🥛 The Modern Milkman 1', 'three lists: ' + heads.join(', '));
   ok(/Print at 100% \(Actual size\)/.test(txt) && /double-sided, flip on the long edge/.test(txt), 'how to print: 100%, HelloFresh double-sided on the long edge');
   const rowTxt = n => p.$eval('.bdrow:has-text("' + n + '")', el => el.innerText);
   ok(/No photo yet/.test(await rowTxt('Ivan Ilic')) && !/Ready to print/.test(await rowTxt('Ivan Ilic')) && await p.$eval('.bdrow:has-text("Ivan Ilic") .bdpick', el => el.disabled), 'Ivan: his number\'s in but no photo yet, so not "ready" and he can\'t be ticked');
   ok(/Waiting for numbers/.test(await rowTxt('Kira Fong-Sullivan')) && /1 waiting for their numbers/.test(txt), 'Kira: waiting for her HelloFresh numbers');
   const picked = await p.$$eval('.bdrow .bdpick:checked', l => l.length);
-  ok(picked === 8, 'ticked by themselves: everyone with their numbers and a photo, not printed yet (' + picked + ': 4 NDCS, 4 HelloFresh)');
+  ok(picked === 9, 'ticked by themselves: everyone with their numbers and a photo, not printed yet (' + picked + ': 4 NDCS, 4 HelloFresh, 1 Modern Milkman)');
   await p.screenshot({ path: SHOTS + '/b1-badges.png', fullPage: true });
 
   console.log('typing them in on the phone');
@@ -206,6 +211,33 @@ const ok = (cond, msg) => { assert.ok(cond, msg); passed++; console.log('  ✓ '
     'HelloFresh fronts: 5 badges, each name in its box and the three numbers in theirs; the 6th place empty');
   const back = await look(hj[1], [0, 1, 2, 3, 4, 5].map(j => [2480 - slot(j)[0] - H.w, slot(j)[1], H.w, H.h]));
   ok(back.dark.slice(0, 5).every(n => n > 1000) && back.dark[5] === 0, 'HelloFresh backs: behind each of the 5, mirrored across the page (double-sided, flip on the long edge); none behind the empty place');
+
+  console.log('the Modern Milkman: print');
+  await p.click('[data-bdprint=tmm]');
+  await p.waitForSelector('.pdfprev canvas');
+  ok(/Preview · 1 page\b/i.test(await p.innerText('.pdfprev')) && /TMM badges 10\.11\.2026/i.test(await p.innerText('.pdfprev')), 'Modern Milkman: 1 page, "TMM badges 10.11.2026"');
+  const [dl3] = await Promise.all([p.waitForEvent('download'), p.click('#pdfgo')]);
+  const pdf3 = fs.readFileSync(await dl3.path());
+  fs.writeFileSync(SHOTS + '/TMM-badges.pdf', pdf3);
+  const T = { x: 557, y: 118, dy: 1104, photo: [96, 76, 478, 571], name: [340.5, 741.4], code: [340.5, 794.5] };  // as BADGE.tmm
+  const tl = await look(jpegs(pdf3)[0], [[T.x + T.photo[0] + 150, T.y + T.photo[1] + 150, 150, 150], [T.x + T.name[0] - 150, T.y + T.name[1] - 36, 300, 44], [T.x + T.code[0] - 120, T.y + T.code[1] - 36, 240, 44], [T.x, T.y + T.dy, 1365, 1072]]);
+  ok(tl.dark[0] > 1000 && tl.dark[1] > 150 && tl.dark[2] > 150 && tl.dark[3] === 0, 'Modern Milkman: her photo, name and MMC number on the card (the shape of the Canva one), the next place empty');
+
+  console.log('three campaigns on Day 1');
+  const camp = await post('/dev/eval', { js: `(() => {
+    const a = usersAll().filter(u => u.email === 'angad@linkmarketing.org.uk')[0];
+    appendRow('Candidates', { id: 'tmm1', created_at: nowStr(), attended_date: '2026-11-02', week_ending: '2026-11-08', full_name: 'Tom Milk', mobile: '07700900991', company: 'LINK', in_room: 'TRUE', rag: 'G',
+      outcome: 'Academy booked', academy_date: '2026-11-09', day1_status: 'arrived' });
+    delete MEMO.Candidates;
+    const c = setCampaign({ id: 'tmm1', campaign: 'TMM' }, a), x = day1Results('2026-11-09');
+    let bad = ''; try { setCampaign({ id: 'tmm1', campaign: 'MILK' }, a); } catch (e) { bad = e.message; }
+    const r = [c.campaign, getC('tmm1').brand, campaignOf({ company: 'LINK', campaign: 'TMM' }), campaignOf({ company: 'JUSS', campaign: '' }), x.tmm, bad];
+    sheet('Candidates').deleteRow(rowOfId('Candidates', 'tmm1')); delete MEMO.Candidates;
+    return JSON.stringify(r);
+  })()` });
+  const cr = JSON.parse(camp.out);
+  ok(cr[0] === 'TMM' && cr[1] === 'JUSS' && cr[2] === 'TMM' && cr[3] === 'HF' && cr[4] === 1 && /FR, HF or TMM/.test(cr[5]),
+    'Day 1: FR, HF or TMM; placed in TMM = joins JUSS (their messages come from JUSS); still nobody starts in TMM until it\'s picked; the morning-after results count TMM');
 
   await browser.close();
   console.log('\nALL ' + passed + ' BADGE CHECKS PASSED (' + (process.env.JL_BACKEND === 'pg' ? 'Supabase back end' : 'Google back end') + ')');

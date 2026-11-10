@@ -233,13 +233,16 @@ Someone stuck later (email slow, in Spam, or "too many codes")? Same thing: Team
 - **Same person twice?** If they're already on the team (the same name, or nearly: a typo like "Ali Abass" for "Ali Abbas", or the same name inside a longer one like "Ramis - Ali Abbas"), **Add a person** shows who's on file (company · access · email, or *no email*) and what saving would change ("email a → b", "+ Availability"), with **✏️ Update <name>**: the same record, so their check-ins and pay stay theirs. Renaming someone to a name that's already on the team is refused for the same reason. Only add a new person if they really are someone else, because two entries split their incentive and bulletin credit.
 - **Renaming someone** (Team → tap them → name) updates "booked by" on all their candidates.
 
+## Three campaigns: Fundraising, HelloFresh and TMM
+On the Day 1 list each starter has **FR | HF | TMM**: tap where they're placed. TMM (The Modern Milkman) is a JUSS campaign, so their welcome email and messages come from JUSS. Availability, the poster and the morning-after results show TMM as its own group. TMM starters don't go on the FR or HF bell sheet.
+
 ## 🪪 Badges: printed from the app (admins)
-No more Canva. **Day 1 tab → 🪪 Badges · NDCS & HelloFresh.**
+No more Canva. **Day 1 tab → 🪪 Badges · NDCS, HelloFresh & TMM.**
 1. **First time only:** tap **📥 Add the badge artwork** and pick the badge artwork file Angad sent you. It's your Canva badge with the photo, name and numbers left blank. It stays in the app.
-2. Everyone who started in the last 6 weeks is listed, in **NDCS · Fundraising** and **HelloFresh** (by where they were placed on Day 1), with their Day 1 photo.
-3. **Type their number(s)** when the client sends them: NDCS one ID number; HelloFresh three (JU…, R…, GD2D…). They save when you leave the box. NDCS expiry is 31/03/2027 unless you change it for that person.
+2. Everyone who started in the last 6 weeks is listed, in **NDCS · Fundraising**, **HelloFresh** and **The Modern Milkman** (by where they were placed on Day 1), with their Day 1 photo.
+3. **Type their number(s)** when the client sends them: NDCS one ID number; HelloFresh three (JU…, R…, GD2D…); Modern Milkman one (MMC…). They save when you leave the box. NDCS expiry is 31/03/2027 unless you change it for that person.
 4. Everyone with their numbers and a photo is **ticked**. Untick anyone you don't want, then tap **📄 Print … badges** → **Share / Save**.
-5. **Print at 100% (Actual size)**, never "fit to page", so they fit the holders. **HelloFresh: double-sided, flip on the long edge** (page 2 is the backs). NDCS: one side, cut out and fold in the middle.
+5. **Print at 100% (Actual size)**, never "fit to page", so they fit the holders. **HelloFresh: double-sided, flip on the long edge** (page 2 is the backs). NDCS and Modern Milkman: one side, cut out and fold in the middle.
 6. Once shared or saved they show **✓ Printed** and aren't ticked next time. Tick them again to reprint.
 - **No photo?** Take it on the Day 1 list (📷 Photo on their row) first.
 

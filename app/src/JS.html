@@ -1922,7 +1922,7 @@ function presenterOf(c) { return c.presented_by && c.presented_by !== 'Not sure'
 function joinLine(c) {
   const co = brandCo(c);
   if (co === (c.company === 'JUSS' ? 'JUSS' : 'LINK')) return '';
-  return '<div class="small" id="joinco">🏢 Joining <span class="co ' + co + '">' + co + '</span>' + (c.campaign === 'HF' || c.campaign === 'FR' ? ' · ' + c.campaign : '') +
+  return '<div class="small" id="joinco">🏢 Joining <span class="co ' + co + '">' + co + '</span>' + (CAMPS.indexOf(c.campaign) >= 0 ? ' · ' + c.campaign : '') +
     ' · messages and welcome email from ' + brandOf(c) + '</div>';
 }
 /** "🎤 Presentation by Nathan Mcgrath" under "booked by", with the room rater if that's someone else. */
@@ -2304,8 +2304,9 @@ function avIn(w) { return String(w || '').split('').filter(x => x === 'I').lengt
 /** "5 days" → 5 (their evaluation answer), so someone ticked in for fewer days than they said stands out. */
 function saidDays(s) { const m = /^(\d)/.exec(String(s || '')); return m ? Number(m[1]) : 0; }
 /** HF or FR: where they were placed on Day 1 (the server sends it), else their company's. */
-function avCamp(r) { return r.campaign === 'HF' || r.campaign === 'FR' ? r.campaign : r.company === 'JUSS' ? 'HF' : 'FR'; }
-function avOrder(rows) { return rows.slice().sort((a, b) => (avCamp(a) === 'HF' ? 0 : 1) - (avCamp(b) === 'HF' ? 0 : 1) || a.day1_date.localeCompare(b.day1_date) || a.full_name.localeCompare(b.full_name)); }
+function avCamp(r) { return ['FR', 'HF', 'TMM'].indexOf(r.campaign) >= 0 ? r.campaign : r.company === 'JUSS' ? 'HF' : 'FR'; }
+const AV_CAMPS = ['HF', 'FR', 'TMM'];  // HelloFresh, Fundraising, then the Modern Milkman (Angad, 10 Nov)
+function avOrder(rows) { return rows.slice().sort((a, b) => AV_CAMPS.indexOf(avCamp(a)) - AV_CAMPS.indexOf(avCamp(b)) || a.day1_date.localeCompare(b.day1_date) || a.full_name.localeCompare(b.full_name)); }
 function avName(we, wk) { return 'NS Availability W' + wk + ' w-e ' + we.slice(8, 10) + '.' + we.slice(5, 7) + '.' + we.slice(0, 4); }
 function loadAvail(we) {
   return call('availWeek', { weekEnding: we }).then(r => {
@@ -2351,7 +2352,7 @@ function viewAvail(quiet) {
   const chips = (w, before) => '<div class="avchips">' + w.split('').map((x, i) => '<span class="avc ' + (before(i) ? 'pre' : x === 'I' ? 'in' : x === 'O' ? 'out' : 'na') + '">' + AV_DAY[i].slice(0, 2) + '</span>').join('') + '</div>';
   const view = r => { const ph = (S.avPh || {})[r.id], mon1 = addDays(we, -6);
     return '<div class="item avrow avview">' +
-      (ph ? '<img class="av avph avpic" src="' + (thumbNow(r.id) || ph) + '" data-thumb="' + h(r.id) + '" alt="">' : '<span class="av avpic co-' + (avCamp(r) === 'HF' ? 'JUSS' : 'LINK') + '">' + h(initials(r.full_name)) + '</span>') +
+      (ph ? '<img class="av avph avpic" src="' + (thumbNow(r.id) || ph) + '" data-thumb="' + h(r.id) + '" alt="">' : '<span class="av avpic co-' + (avCamp(r) === 'FR' ? 'LINK' : 'JUSS') + '">' + h(initials(r.full_name)) + '</span>') +
       '<div class="main"><div class="name">' + h(r.full_name) + '</div><div class="sub">' + (r.coach_name ? 'Coach ' + h(r.coach_name.split(' ')[0]) + ' · ' : '') + 'Day 1 ' + h(fmt(r.day1_date)) + '</div>' +
       '<div class="avwk2"><b>W1</b>' + chips(r.w1, i => addDays(mon1, i) < r.day1_date) + '</div>' +  // days before their Day 1: blank
       '<div class="avwk2"><b>W2</b>' + chips(r.w2, () => false) + '</div>' +
@@ -2361,7 +2362,7 @@ function viewAvail(quiet) {
     const w = r[key], ph = (S.avPh || {})[r.id], said = saidDays(r.said_days), short = wk === 1 && said && /[IO]/.test(w) && avIn(w) < said;
     const tag = edit ? 'button type="button"' : 'div';
     return '<' + tag + ' class="item avrow" data-av="' + h(r.id) + '">' +
-      (ph ? '<img class="av avph avpic" src="' + (thumbNow(r.id) || ph) + '" data-thumb="' + h(r.id) + '" alt="">' : '<span class="av avpic co-' + (avCamp(r) === 'HF' ? 'JUSS' : 'LINK') + '">' + h(initials(r.full_name)) + '</span>') +
+      (ph ? '<img class="av avph avpic" src="' + (thumbNow(r.id) || ph) + '" data-thumb="' + h(r.id) + '" alt="">' : '<span class="av avpic co-' + (avCamp(r) === 'FR' ? 'LINK' : 'JUSS') + '">' + h(initials(r.full_name)) + '</span>') +
       '<div class="main"><div class="name">' + h(r.full_name) + '</div>' +
       '<div class="sub">' + (r.coach_name ? 'Coach ' + h(r.coach_name.split(' ')[0]) + ' · ' : '') + (r.mobile ? (edit ? h(r.mobile) : '<a href="tel:' + h(r.mobile) + '">' + h(r.mobile) + '</a>') + ' · ' : '') + 'Day 1 ' + h(fmt(r.day1_date)) + '</div>' +
       '<div class="avchips">' + w.split('').map((x, i) => '<span class="avc ' + (pre(r, i) ? 'pre' : x === 'I' ? 'in' : x === 'O' ? 'out' : 'na') + '">' + AV_DAY[i].slice(0, 2) + '</span>').join('') + '</div>' +
@@ -2373,7 +2374,7 @@ function viewAvail(quiet) {
   const cell = r => isAdmin() && edit ? '<div class="avcell">' + card(r) + '<button type="button" class="avA' + (r.grade === 'A' ? ' on' : '') + '" data-ava="' + h(r.id) + '" aria-pressed="' +
     (r.grade === 'A') + '" aria-label="A: one of the best new starts">A</button></div>' :
     r.grade === 'A' ? '<div class="avcell">' + card(r) + '<span class="avA on ro" role="img" aria-label="A: one of the best new starts">A</span></div>' : card(r);
-  const group = (co, label) => { const l = rows.filter(r => avCamp(r) === (co === 'JUSS' ? 'HF' : 'FR')); return l.length ? '<div class="section-h"><b>' + label + '</b><span>' + l.length + '</span></div><div class="list">' + l.map(cell).join('') + '</div>' : ''; };
+  const group = (camp, label) => { const l = rows.filter(r => avCamp(r) === camp); return l.length ? '<div class="section-h"><b>' + label + '</b><span>' + l.length + '</span></div><div class="list">' + l.map(cell).join('') + '</div>' : ''; };
   // Taken off (Angad, 27 Oct): kept, and one tap puts them back
   const gone = edit && (d.removed || []).length ? '<div class="card tight small avgone"><b>Removed this week:</b> ' + d.removed.map(x => '<span class="avback">' + h(x.full_name) +
     ' <button type="button" class="btn ghost sm" data-avback="' + h(x.id) + '">↩️ Put back</button></span>').join(' ') + '</div>' : '';
@@ -2385,7 +2386,7 @@ function viewAvail(quiet) {
       ' the day after their Day 1, once their Week 1 days are in. FR → FR bell sheet, HF → HF bell sheet. You get an alert.</p>' +
     '<button type="button" class="linkbtn" id="avbellset">🔗 ' + (bl.sheets.some(x => x.url) ? 'Change the links' : 'Add the bell sheets\' links') + '</button></div>' : '';
   const page = paint(title, top + strip + warn + tools + gone +
-    (rows.length ? group('JUSS', 'HelloFresh') + group('LINK', 'Fundraising') : empty('🗓️', we > addDays(thisWe, -7) && we >= thisWe ? 'Nobody\'s started this week yet. Starters appear here when they\'re ticked Arrived on Day 1.' : 'Nobody started that week.')) + bell +
+    (rows.length ? group('HF', 'HelloFresh') + group('FR', 'Fundraising') + group('TMM', 'The Modern Milkman') : empty('🗓️', we > addDays(thisWe, -7) && we >= thisWe ? 'Nobody\'s started this week yet. Starters appear here when they\'re ticked Arrived on Day 1.' : 'Nobody started that week.')) + bell +
     (!edit ? '<p class="hint">W1 is their Day 1 week, W2 the week after. Green = in, crossed out = out, blank = not said yet (the days are filled in at the one-to-one, Tuesday afternoon). A green <b>A</b> = one of the best new starts. Their number and notes are in the PDF. ‹ › for other weeks.</p>' :
     '<p class="hint">Tap a starter to fill in their days (tap a day: in → out → not said), driver, notes and photo, or to remove them. ' +
       'Week 1 is their Day 1 week, Week 2 the week after. Everyone who started is here as soon as they\'re ticked Arrived on Day 1, with the photo taken there (📷 on the Day 1 list); their coach is whoever booked them. Days stay blank until the one-to-one (Tuesday afternoon); at 18:00 you hear it\'s ready, or who\'s missing. ' +
@@ -2458,7 +2459,7 @@ function availSheet(r, we, wk) {
   back.className = 'sheet-back';
   const ph = () => st.photo ? '<img class="av lg avph avpic" src="' + (thumbNow(r.id) || st.photo) + '" data-thumb="' + h(r.id) + '" alt="">' : '<span class="av lg avpic co-' + h(r.company) + '">' + h(initials(r.full_name)) + '</span>';
   back.innerHTML = '<div class="sheet" role="dialog" aria-label="Availability"><div class="grab"></div>' +
-    '<div class="sheet-h"><span id="avph">' + ph() + '</span><div style="min-width:0"><div class="label muted">' + (avCamp(r) === 'HF' ? 'HelloFresh' : 'Fundraising') + ' · Day 1 ' + h(fmt(r.day1_date)) + '</div><div class="display">' + h(r.full_name) + '</div></div></div>' +
+    '<div class="sheet-h"><span id="avph">' + ph() + '</span><div style="min-width:0"><div class="label muted">' + (avCamp(r) === 'TMM' ? 'The Modern Milkman' : avCamp(r) === 'HF' ? 'HelloFresh' : 'Fundraising') + ' · Day 1 ' + h(fmt(r.day1_date)) + '</div><div class="display">' + h(r.full_name) + '</div></div></div>' +
     '<div id="avf"><div class="row" style="gap:8px;margin:2px 0 6px"><label class="btn ghost sm" style="margin:0">📷 ' + (st.photo ? 'New photo' : 'Add photo') + '<input type="file" id="avcam" accept="image/*" hidden></label>' +
       '<button type="button" class="btn ghost sm" id="avphadj"' + (st.photo ? '' : ' hidden') + '>✂️ Adjust</button>' +
       '<button type="button" class="btn ghost sm" id="avphx"' + (st.photo ? '' : ' hidden') + '>Remove</button></div>' +
@@ -2650,7 +2651,7 @@ function addStarterSheet(we, coaches) {
     '<div id="asf"><p class="small muted" style="margin:0 0 6px">Only for someone who didn\'t come through the app. Everyone ticked Arrived on Day 1 is on the list already.</p>' +
     '<label class="q">Full name</label><input type="text" id="asname" autocomplete="off" placeholder="First and last name">' +
     '<label class="q">Mobile</label><input type="tel" id="asmob" placeholder="07…">' +
-    '<label class="q">Campaign</label>' + chips('co', ['HelloFresh', 'Fundraising'], 'HelloFresh') +
+    '<label class="q">Campaign</label>' + chips('co', ['HelloFresh', 'Fundraising', 'Modern Milkman'], 'HelloFresh') +
     '<label class="q">Day 1</label>' + chips('day1', [fmt(mon), fmt(addDays(mon, 1))], fmt(mon)) +
     '<label class="q">Coach</label><select id="ascoach"><option value="">—</option>' + (coaches || []).map(c => '<option value="' + h(c.id) + '">' + h(c.name) + '</option>').join('') + '</select>' +
     '<div id="aserr"></div><button class="btn block" id="assave" style="margin-top:14px">Add</button><button class="btn ghost block" id="ascancel" style="margin-top:8px">Cancel</button></div></div>';
@@ -2662,7 +2663,7 @@ function addStarterSheet(we, coaches) {
   back.querySelector('#assave').onclick = e => {
     const btn = e.currentTarget; busy(btn, true, 'Adding…');
     call('addStarter', { weekEnding: we, full_name: back.querySelector('#asname').value, mobile: back.querySelector('#asmob').value,
-      company: chipVal(f, 'co') === 'Fundraising' ? 'LINK' : 'JUSS', day1_date: chipVal(f, 'day1') === fmt(addDays(mon, 1)) ? addDays(mon, 1) : mon, coach_id: back.querySelector('#ascoach').value })
+      company: chipVal(f, 'co') === 'Fundraising' ? 'LINK' : 'JUSS', campaign: chipVal(f, 'co') === 'Modern Milkman' ? 'TMM' : '', day1_date: chipVal(f, 'day1') === fmt(addDays(mon, 1)) ? addDays(mon, 1) : mon, coach_id: back.querySelector('#ascoach').value })
       .then(nr => { S.avail[we].rows.push(nr); closeSheet(); render(true); toast('Added ✓ Tap them to fill in their days'); })
       .catch(x => { busy(btn, false); showErr(back.querySelector('#aserr'), x.message); });
   };
@@ -2673,13 +2674,13 @@ function availPdf(we, wk, rows) {
   // A = one of the best new starts (Angad, 27 Oct): their name highlighted in HelloFresh green
   const row = r => ({ fill: /[IO]/.test(r[key]) ? '' : 'amber', mark: r.grade === 'A' ? 'hf' : '', note: r.notes || '', cells: [r.full_name, r.mobile || '', (r.coach_name || '').split(' ')[0], r.driver || ''].concat(
     r[key].split('').map((x, i) => wk === 1 && addDays(mon, i) < r.day1_date ? ['-', 'grey'] : x === 'I' ? ['IN', 'green', true] : x === 'O' ? ['OUT', 'grey'] : '')) });
-  const g = (co, head) => { const l = rows.filter(r => avCamp(r) === (co === 'JUSS' ? 'HF' : 'FR')); return { head: head + ' · ' + l.length, rows: l.map(row) }; };
+  const g = (camp, head) => { const l = rows.filter(r => avCamp(r) === camp); return { head: head + ' · ' + l.length, rows: l.map(row) }; };
   return listPdf({
     name: avName(we, wk), heading: 'NS Availability · Week ' + wk, sub: 'Started week ending ' + fmtLong(we) + ' ' + we.slice(0, 4) + '  ·  Week ' + wk + ': ' + fmt(mon) + ' – ' + fmt(addDays(mon, 6)) + '  ·  LINK Marketing & JUSS Marketing',
     boxes: [[rows.length, 'Starters'], [rows.filter(r => r.driver === 'Yes').length, 'Drivers', 'green'], [rows.filter(r => !/[IO]/.test(r[key])).length, 'No days yet', rows.some(r => !/[IO]/.test(r[key])) ? 'amber' : '']],
     line: 'In each day: ' + AV_DAY.map((d, i) => d + ' ' + inN(i)).join(' · ') + (rows.some(r => r.grade === 'A') ? '   ·   Name in green = A, one of the best new starts' : ''),
     cols: [['#', 16], ['Name', 133], ['Contact', 68], ['Coach', 70], ['Driver', 40]].concat(AV_DAY.map(d => [d, 28])),  // notes in full under each row
-    groups: [g('JUSS', 'HelloFresh'), g('LINK', 'Fundraising')], empty: 'Nobody started that week.',
+    groups: [g('HF', 'HelloFresh'), g('FR', 'Fundraising')].concat(rows.some(r => avCamp(r) === 'TMM') ? [g('TMM', 'The Modern Milkman')] : []), empty: 'Nobody started that week.',
   });
 }
 /** ⬇️ Save on a poster. iPhone: the Share sheet, whose "Save Image" puts it in Photos (a download there only lands in Files,
@@ -2704,7 +2705,7 @@ function availPoster(we, wk, rows) {
     Promise.all(pics.map(p => (p ? JLBulletin.autoFrame(p, '') : null))).then(frames => {
       const coach = r => (r.office ? '' : (r.coach_name || '').split(' ')[0]);
       const n = {}; rows.forEach(r => { n[coach(r)] = (n[coach(r)] || 0) + 1; });
-      const groups = [['JUSS', 'HELLO FRESH', 'HF'], ['LINK', 'FUNDRAISING', 'FR']].map(g => {
+      const groups = [['JUSS', 'HELLO FRESH', 'HF'], ['LINK', 'FUNDRAISING', 'FR'], ['JUSS', 'THE MODERN MILKMAN', 'TMM']].map(g => {
         const mine = rows.map((r, i) => ({ r: r, i: i })).filter(x => avCamp(x.r) === g[2]).sort((a, b) => {
           const ca = coach(a.r), cb = coach(b.r);
           return (ca ? 1 : 0) - (cb ? 1 : 0) || n[cb] - n[ca] || ca.localeCompare(cb) || a.r.full_name.localeCompare(b.r.full_name);
@@ -2990,21 +2991,23 @@ function d1Order(list) {
 /** Whose group a starter is in on the Day 1 list: the Office (admins and the office team), their booker, or no booker. */
 function d1Grp(c) { return !c.booker_name ? 'No booker' : c.office ? 'Office' : String(c.booker_name); }
 /** FR or HF: where a starter is placed, picked on Day 1 (Angad's 26 Oct list put JUSS starters in FR), else their company's: JUSS = HF, LINK = FR. */
-function campaignOf(c) { return c.campaign === 'HF' || c.campaign === 'FR' ? c.campaign : c.company === 'JUSS' ? 'HF' : 'FR'; }
+function campaignOf(c) { return CAMPS.indexOf(c.campaign) >= 0 ? c.campaign : c.company === 'JUSS' ? 'HF' : 'FR'; }
+/** The three campaigns (Angad, 10 Nov 2026): Fundraising (NDCS), HelloFresh and The Modern Milkman (JUSS). */
+const CAMPS = ['FR', 'HF', 'TMM'], CAMP_NAME = { FR: 'Fundraising', HF: 'HelloFresh', TMM: 'Modern Milkman' };
 /** A Day 1's results, as the team used to mark up the printed list for Angad on Tuesday morning (27 Oct): started of everyone
  *  booked, FR / HF, didn't continue after the day, starts by booker ("Office" for admins and the office team), and why the
  *  rest didn't start. Counted the same way as the 09:00 alert (day1Results in Code.gs). */
 function d1Results(l) {
   const started = l.filter(c => c.day1_status === 'arrived'), by = {}, rest = l.filter(c => c.day1_status !== 'arrived' && c.day1_status !== 'dropped');
   started.forEach(c => { const k = !c.booker_name ? 'No booker' : c.office ? 'Office' : String(c.booker_name).split(' ')[0]; by[k] = (by[k] || 0) + 1; });
-  return { booked: l.length, started: started.length, fr: started.filter(c => campaignOf(c) === 'FR').length, hf: started.filter(c => campaignOf(c) === 'HF').length,
+  return { booked: l.length, started: started.length, fr: started.filter(c => campaignOf(c) === 'FR').length, hf: started.filter(c => campaignOf(c) === 'HF').length, tmm: started.filter(c => campaignOf(c) === 'TMM').length,
     left: started.filter(c => c.day1_left_at).length, dropped: l.filter(c => c.day1_status === 'dropped').length,
     noShow: rest.filter(c => c.day1_status === 'no_show' || c.academy_confirmed_at).length, notConfirmed: rest.filter(c => c.day1_status !== 'no_show' && !c.academy_confirmed_at).length,
     byBooker: Object.keys(by).map(k => [k, by[k]]).sort((a, b) => b[1] - a[1] || (a[0] === 'Office' ? -1 : b[0] === 'Office' ? 1 : a[0].localeCompare(b[0]))) };
 }
 function d1ResultsLines(x) {
   const not = [x.dropped ? x.dropped + ' dropped out' : '', x.notConfirmed ? x.notConfirmed + ' didn\'t confirm' : '', x.noShow ? x.noShow + ' no-show' + (x.noShow > 1 ? 's' : '') : ''].filter(String);
-  return [x.started + ' of ' + x.booked + ' started', 'FR ' + x.fr + ' · HF ' + x.hf + (x.left ? ' · ' + x.left + ' didn\'t continue' : ''),
+  return [x.started + ' of ' + x.booked + ' started', 'FR ' + x.fr + ' · HF ' + x.hf + (x.tmm ? ' · TMM ' + x.tmm : '') + (x.left ? ' · ' + x.left + ' didn\'t continue' : ''),
     x.byBooker.map(b => b[0] + ' ' + b[1]).join(' · '), not.length ? 'Didn\'t start: ' + not.join(', ') : ''];
 }
 /** The Day 1 list as chosen on the tab (Angad, 26 Oct): only FR or HF (or both), By booker (JUSS then LINK, d1Order, the default) or names
@@ -3068,8 +3071,8 @@ function drawAcademy(r, quiet) {
     const started = c.academy_date <= today, dropped = c.day1_status === 'dropped';
     // Dropped out (Angad, 26 Oct): just that, and Undo; no reminders, Day 1 details or onboarding for them
     const dq = ' data-q="' + h((c.full_name + ' ' + (c.mobile || '')).toLowerCase()) + '"', cp = campaignOf(c);
-    // Where they go, FR or HF, picked on Day 1 (Angad, 27 Oct): FR in the NDCS purple, HF in HelloFresh green
-    const camp = admin ? '<span class="campsw" data-campsw="' + h(c.id) + '">' + ['FR', 'HF'].map(k => '<button type="button" class="' + k + (cp === k ? ' on' : '') + '" data-camp="' + k + '">' + k + '</button>').join('') + '</span>'
+    // Where they go, FR, HF or TMM, picked on Day 1 (Angad, 27 Oct; TMM 10 Nov): FR in the NDCS purple, HF in HelloFresh green, TMM in Modern Milkman blue
+    const camp = admin ? '<span class="campsw" data-campsw="' + h(c.id) + '">' + CAMPS.map(k => '<button type="button" class="' + k + (cp === k ? ' on' : '') + '" data-camp="' + k + '">' + k + '</button>').join('') + '</span>'
       : '<span class="pill camp ' + cp + '">' + cp + '</span>';
     const left = c.day1_status === 'arrived' && c.day1_left_at;
     // Their photo, taken here on Day 1 by Jess / Rubal (Angad, 27 Oct): it's their availability photo, and it shows as their picture
@@ -3149,7 +3152,8 @@ function drawAcademy(r, quiet) {
   const fchip = (attr, v, on, label) => '<button type="button" class="chip' + (on ? ' on' : '') + '" ' + attr + '="' + v + '">' + label + '</button>';
   const filt = items.length ? '<div class="search d1search"><input type="search" id="d1q" placeholder="Search name or mobile" value="' + h(S.d1Q || '') + '"></div>' +
     '<div class="chips d1chips"><span class="d1lbl">Sort</span>' + fchip('data-d1sort', '', S.d1Sort !== 'az', 'By booker') + fchip('data-d1sort', 'az', S.d1Sort === 'az', 'Name A–Z') + '</div>' +
-    '<div class="chips d1chips"><span class="d1lbl">Campaign</span>' + fchip('data-d1camp', '', !S.d1Camp, 'All <b>' + live.length + '</b>') + fchip('data-d1camp', 'FR', S.d1Camp === 'FR', 'FR <b>' + nCamp('FR') + '</b>') + fchip('data-d1camp', 'HF', S.d1Camp === 'HF', 'HF <b>' + nCamp('HF') + '</b>') + '</div>' : '';
+    '<div class="chips d1chips"><span class="d1lbl">Campaign</span>' + fchip('data-d1camp', '', !S.d1Camp, 'All <b>' + live.length + '</b>') + fchip('data-d1camp', 'FR', S.d1Camp === 'FR', 'FR <b>' + nCamp('FR') + '</b>') + fchip('data-d1camp', 'HF', S.d1Camp === 'HF', 'HF <b>' + nCamp('HF') + '</b>') +
+      (nCamp('TMM') || S.d1Camp === 'TMM' ? fchip('data-d1camp', 'TMM', S.d1Camp === 'TMM', 'TMM <b>' + nCamp('TMM') + '</b>') : '') + '</div>' : '';  // the Modern Milkman, when anyone's placed there
   const page = paint(d1Title(),
     (pend.length ? '<div class="card needs"><b>⚖️ Waiting on your decision · ' + pend.length + '</b><p class="small muted" style="margin:4px 0 2px">Booked onto the Academy, but marked RED or not suitable before. Tap a name to approve or decline.</p>' +
       pend.map(c => '<button class="nm" data-cand="' + h(c.id) + '">' + h(c.first_name) + ' · ' + h(fmt(c.academy_date)) + '</button>').join('') + '</div>' : '') +
@@ -3159,7 +3163,7 @@ function drawAcademy(r, quiet) {
       behind.map(c => '<button class="nm" data-wk="' + weekEndingOf(c.academy_date) + '">' + h(c.first_name) + ' · ' + (c.day1_status === 'no_show' ? 'no-show' : 'not ticked') + '</button>').join('') + '</div>' : '') +
     (pend.length || toOnb.length || behind.length ? '<div style="height:14px"></div>' : '') +
     (admin ? '<button class="btn ghost block" id="goAvail" style="margin:0 0 8px">🗓️ Availability · Week 1 &amp; Week 2</button>' +  // bookers: their NS Availability tab
-      '<button class="btn ghost block" id="goBadges" style="margin:0 0 12px">🪪 Badges · NDCS &amp; HelloFresh</button>' : '') +  // printed from the app, not Canva (Angad, 10 Nov)
+      '<button class="btn ghost block" id="goBadges" style="margin:0 0 12px">🪪 Badges · NDCS, HelloFresh &amp; TMM</button>' : '') +  // printed from the app, not Canva (Angad, 10 Nov)
     weekNav1 + weekTools + filt +
     (!wk ? skeleton(3) : dates.length ? dates.map(block).join('')
       : empty('🎓', we === thisWe ? 'Nobody booked to start this week.' : we > thisWe ? 'Nobody booked to start that week yet.' : 'Nobody started that week.')) +
@@ -3866,7 +3870,7 @@ function day1Pdf(mon, list, opts) {
       const t = top - 20 - i * RH, b = t - RH, y = t - 15;
       const at = k => { let v = M; for (let j = 0; j < k; j++) v += cols[j][1]; return v + 4; };
       const left = c.day1_status === 'arrived' && c.day1_left_at;
-      if (done && c.day1_status === 'arrived') o.push((campaignOf(c) === 'HF' ? '0.89 0.94 0.79' : '0.89 0.81 0.89') + ' rg ' + M + ' ' + b.toFixed(2) + ' 523 ' + RH + ' re f');  // HF HelloFresh green, FR NDCS purple
+      if (done && c.day1_status === 'arrived') o.push(({ HF: '0.89 0.94 0.79', TMM: '0.85 0.93 0.98' }[campaignOf(c)] || '0.89 0.81 0.89') + ' rg ' + M + ' ' + b.toFixed(2) + ' 523 ' + RH + ' re f');  // HF HelloFresh green, FR NDCS purple
       else if (c.day1_status === 'arrived') o.push('0.88 0.96 0.9 rg ' + M + ' ' + b.toFixed(2) + ' 523 ' + RH + ' re f');  // light green, like the app
       else if (c.day1_status === 'dropped') o.push('0.94 0.94 0.94 rg ' + M + ' ' + b.toFixed(2) + ' 523 ' + RH + ' re f');  // light grey: dropped out
       const prev = rows[p * PER + i - 1];  // JUSS on top, LINK below: a dark line where LINK starts
@@ -4389,9 +4393,13 @@ const BADGE = {
   // HelloFresh: 8 fronts to a page, then their backs on the next page, mirrored, for double-sided (flip on the long edge)
   hf: { w: 1036, h: 730, x: 175, dx: 1070, y: 191, dy: 787, cols: 2, rows: 4, photo: [52, 48, 396, 48],
     name: [747.5, 348.9, 480, 45.5], codes: [539.8, 611.5, 676.9], codeX: 239, codeW: 280, codeSize: 41.4 },
+  // The Modern Milkman (10 Nov): a portrait card that folds (front with photo, name and MMC number; back with how to check), 3 to a page
+  tmm: { w: 1365, h: 1072, x: 557, y: 118, dy: 1104, per: 3, photo: [96, 76, 478, 571, 10], name: [340.5, 741.4, 460, 44.5], code: [340.5, 794.5] },
 };
-const BADGE_HINT = { ndcs: ['ID number'], hf: ['JU…', 'R…', 'GD2D…'] };
-function bdKind(r) { return avCamp(r) === 'HF' ? 'hf' : 'ndcs'; }
+const BADGE_HINT = { ndcs: ['ID number'], hf: ['JU…', 'R…', 'GD2D…'], tmm: ['MMC…'] }, BADGE_LABEL = { ndcs: 'NDCS', hf: 'HelloFresh', tmm: 'Modern Milkman' };
+function bdKind(r) { return { HF: 'hf', TMM: 'tmm' }[avCamp(r)] || 'ndcs'; }
+/** This kind's artwork is in (HelloFresh needs its back too). */
+function bdArtOk(kind) { const a = (S.badges || {}).art || {}; return kind === 'hf' ? !!(a.hf && a.hfBack) : !!a[kind]; }
 function bdLines(r) { return String(r.badge_no || '').split('\n').filter(Boolean); }
 function bdFilled(r) { return bdLines(r).length >= (bdKind(r) === 'hf' ? 3 : 1); }
 function bdPhoto(r) { return !!(S.avPh || {})[r.id]; }
@@ -4414,22 +4422,22 @@ function viewBadges(quiet) {
   if (!d || Date.now() - d.at > STALE_MS) loadBadges().then(() => { if (S.viewId === id && !document.querySelector('.sheet-back')) render(true); })
     .catch(e => { if (S.viewId === id && !S.badges) paint('Badges', '<div class="err">' + h(e.message) + '</div>', false, true); });
   if (!d) return paint('Badges', skeleton(4), quiet, true);
-  const art = d.art || {}, artOk = art.ndcs && art.hf && art.hfBack;
+  const artOk = ['ndcs', 'hf', 'tmm'].every(bdArtOk);
   const rows = d.rows.slice().sort((a, b) => b.day1_date.localeCompare(a.day1_date) || a.full_name.localeCompare(b.full_name));
   const sec = kind => {
     const l = rows.filter(r => bdKind(r) === kind), n = l.filter(bdPicked).length, waiting = l.filter(r => !bdFilled(r)).length;
-    const title = kind === 'hf' ? '🍋 HelloFresh' : '🟣 NDCS · Fundraising';
+    const title = { hf: '🍋 HelloFresh', tmm: '🥛 The Modern Milkman', ndcs: '🟣 NDCS · Fundraising' }[kind];
     return '<div class="section-h">' + title + ' <span>' + l.length + '</span></div>' +
-      (l.length ? '<div class="list">' + l.map(bdRow).join('') + '</div>' : empty('🪪', 'Nobody placed ' + (kind === 'hf' ? 'on HelloFresh' : 'on Fundraising') + ' in the last ' + d.weeks + ' weeks.')) +
-      (l.length ? '<button class="btn block bdprint" data-bdprint="' + kind + '"' + (n && artOk ? '' : ' disabled') + '>📄 Print ' + (n || '') + ' ' + (kind === 'hf' ? 'HelloFresh' : 'NDCS') + ' badge' + (n === 1 ? '' : 's') + '</button>' : '') +
-      (waiting ? '<p class="hint" style="margin-top:6px">' + waiting + ' waiting for ' + (kind === 'hf' ? 'their numbers' : 'an ID number') + ' from the client.</p>' : '');
+      (l.length ? '<div class="list">' + l.map(bdRow).join('') + '</div>' : empty('🪪', 'Nobody placed on ' + { hf: 'HelloFresh', tmm: 'the Modern Milkman', ndcs: 'Fundraising' }[kind] + ' in the last ' + d.weeks + ' weeks.')) +
+      (l.length ? '<button class="btn block bdprint" data-bdprint="' + kind + '"' + (n && bdArtOk(kind) ? '' : ' disabled') + '>📄 Print ' + (n || '') + ' ' + BADGE_LABEL[kind] + ' badge' + (n === 1 ? '' : 's') + '</button>' : '') +
+      (waiting ? '<p class="hint" style="margin-top:6px">' + waiting + ' waiting for ' + { hf: 'their numbers', tmm: 'an MMC number', ndcs: 'an ID number' }[kind] + ' from the client.</p>' : '');
   };
   const page = paint('Badges',
     (artOk ? '' : '<div class="card needs"><b>🎨 The badge artwork isn\'t in yet</b><p class="small muted" style="margin:4px 0 8px">Once only: open the badge artwork file you were sent. It\'s your Canva badge with the photo, name and numbers left blank.</p>' +
       '<label class="btn ghost block">📥 Add the badge artwork<input type="file" id="bdartf" accept=".json,application/json" hidden></label></div>') +
     '<p class="hint" style="margin:0 2px 10px">Type each starter\'s number' + ' as the client sends it, tick who to print, then 📄 Print. Starters from the last ' + d.weeks + ' weeks, newest first. ' +
       '<b>Print at 100% (Actual size)</b> so they fit the holders. HelloFresh: <b>double-sided, flip on the long edge</b> (page 2 is the backs).</p>' +
-    sec('ndcs') + sec('hf') +
+    sec('ndcs') + sec('hf') + sec('tmm') +
     (artOk ? '<label class="linkbtn" style="display:block;margin:14px auto 0;text-align:center">🎨 Change the badge artwork<input type="file" id="bdartf" accept=".json,application/json" hidden></label>' : ''), quiet, true);
   bindBadges(page);
   fillThumbs(page);
@@ -4437,13 +4445,13 @@ function viewBadges(quiet) {
 function bdRow(r) {
   const kind = bdKind(r), lines = bdLines(r), ph = (S.avPh || {})[r.id], pick = bdPicked(r);
   const st = r.badge_printed_at ? '<span class="pill green">✓ Printed ' + h(fmt(String(r.badge_printed_at).slice(0, 10))) + (r.badge_printed_by ? ' · ' + h(String(r.badge_printed_by).split(' ')[0]) : '') + '</span>'
-    : !bdFilled(r) ? '<span class="pill amber">⏳ Waiting for ' + (kind === 'hf' ? 'numbers' : 'ID number') + '</span>' : !ph && !r.has_photo ? '' : '<span class="pill blue">Ready to print</span>';
+    : !bdFilled(r) ? '<span class="pill amber">⏳ Waiting for ' + { hf: 'numbers', tmm: 'MMC number', ndcs: 'ID number' }[kind] + '</span>' : !ph && !r.has_photo ? '' : '<span class="pill blue">Ready to print</span>';
   const noPh = !ph && !r.has_photo ? '<span class="pill red">📷 No photo yet: take it on the Day 1 list</span>' : '';
   const ins = BADGE_HINT[kind].map((p, i) => '<input class="bdno" data-i="' + i + '" value="' + h(lines[i] || '') + '" placeholder="' + h(p) + '" autocapitalize="characters" autocomplete="off" spellcheck="false"' +
-    (kind === 'ndcs' ? ' inputmode="numeric"' : '') + ' aria-label="' + (kind === 'hf' ? 'Number ' + (i + 1) : 'ID number') + '">').join('') +
+    (kind === 'ndcs' ? ' inputmode="numeric"' : '') + ' aria-label="' + (kind === 'hf' ? 'Number ' + (i + 1) : kind === 'tmm' ? 'MMC number' : 'ID number') + '">').join('') +
     (kind === 'ndcs' ? '<label class="bdexpl">Expiry <input type="date" class="bdexp" value="' + h(bdExpiry(r)) + '" aria-label="Expiry date"></label>' : '');
   return '<div class="trow bdrow" data-bd="' + h(r.id) + '"><label class="bdtick"><input type="checkbox" class="bdpick"' + (pick ? ' checked' : '') + (bdReady(r) ? '' : ' disabled') + ' aria-label="Print ' + h(r.full_name) + '"></label>' +
-    (ph ? '<img class="av avph" src="' + (thumbNow(r.id) || ph) + '" data-thumb="' + h(r.id) + '" alt="">' : '<span class="av co-' + (kind === 'hf' ? 'JUSS' : 'LINK') + '">' + h(initials(r.full_name)) + '</span>') +
+    (ph ? '<img class="av avph" src="' + (thumbNow(r.id) || ph) + '" data-thumb="' + h(r.id) + '" alt="">' : '<span class="av co-' + (kind === 'ndcs' ? 'LINK' : 'JUSS') + '">' + h(initials(r.full_name)) + '</span>') +
     '<div class="main"><div class="name">' + h(r.full_name) + '</div><div class="sub">Day 1 ' + h(fmt(r.day1_date)) + (r.coach_name ? ' · ' + h(String(r.coach_name).split(' ')[0]) : '') + '</div>' +
     '<div class="pills">' + st + noPh + '</div><div class="bdin">' + ins + '</div></div></div>';
 }
@@ -4474,9 +4482,9 @@ function badgeArtFile(file) {
   rd.onload = () => {
     let pk = null;
     try { pk = JSON.parse(rd.result); } catch (e) { /* not JSON */ }
-    if (!pk || pk.kind !== 'jl-badge-art' || !pk.ndcs || !pk.hf || !pk.hfBack) return toast('That isn\'t the badge artwork file.');
+    if (!pk || pk.kind !== 'jl-badge-art' || !(pk.ndcs || pk.hf || pk.hfBack || pk.tmm)) return toast('That isn\'t the badge artwork file.');
     toast('Putting the artwork in…');
-    call('saveBadgeArt', { art: { ndcs: pk.ndcs, hf: pk.hf, hfBack: pk.hfBack } }).then(a => {
+    call('saveBadgeArt', { art: { ndcs: pk.ndcs || '', hf: pk.hf || '', hfBack: pk.hfBack || '', tmm: pk.tmm || '' } }).then(a => {
       S.bdArt = null; if (S.badges) S.badges.art = a;
       toast('🎨 Badge artwork in ✓'); render(true);
     }).catch(e => toast(e.message));
@@ -4491,25 +4499,28 @@ function badgeAssets() {
   const fonts = !window.FontFace ? Promise.resolve() : Promise.all([['Arimo', 'arimo-latin-400-normal.woff2', '400'], ['Arimo', 'arimo-latin-700-normal.woff2', '700'],
     ['ArimoX', 'arimo-latin-ext-400-normal.woff2', '400'], ['ArimoX', 'arimo-latin-ext-700-normal.woff2', '700']]
     .map(f => new FontFace(f[0], 'url(fonts/' + f[1] + ')', { weight: f[2] }).load().then(ff => document.fonts.add(ff)).catch(() => {})));
-  S.bdArt = Promise.all([call('badgeArt'), fonts]).then(r => Promise.all([bdImg(r[0].ndcs), bdImg(r[0].hf), bdImg(r[0].hfBack)]))
-    .then(i => { if (!i[0] || !i[1] || !i[2]) throw new Error('The badge artwork isn\'t in yet. Add it from the file first.'); return { ndcs: i[0], hf: i[1], hfBack: i[2] }; });
+  S.bdArt = Promise.all([call('badgeArt'), fonts]).then(r => Promise.all([bdImg(r[0].ndcs), bdImg(r[0].hf), bdImg(r[0].hfBack), bdImg(r[0].tmm)]))
+    .then(i => ({ ndcs: i[0], hf: i[1], hfBack: i[2], tmm: i[3] }));
   S.bdArt.catch(() => { S.bdArt = null; });
   return S.bdArt;
 }
-/** Their photo for the badge: a square of the head and shoulders, cut from their availability photo around the face. */
-function bdFace(r) {
+/** Their photo for the badge, cut from their availability photo around the face: a square (NDCS, HelloFresh), or the photo's own
+ *  head and shoulders shape (the Modern Milkman's portrait card). */
+function bdFace(r, tall) {
   return bdImg((S.avPh || {})[r.id]).then(img => !img ? null : (window.JLBulletin ? JLBulletin.autoFrame(img, '') : Promise.resolve(null)).then(f => {
     const w = img.naturalWidth, hh = img.naturalHeight;
     f = f || { x: 0, y: 0, w: w, h: hh };
+    if (tall) return { img: img, x: f.x, y: f.y, s: f.w, t: f.h };
     const s = Math.min(f.w, f.h), x = f.x + (f.w - s) / 2, y = Math.max(0, Math.min(hh - s, f.y + (f.h - s) * 0.3));
     return { img: img, x: x, y: y, s: s };
   }).catch(() => ({ img: img, x: 0, y: 0, s: Math.min(img.naturalWidth, img.naturalHeight) })));
 }
 function bdRound(g, x, y, w, hh, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + hh, r); g.arcTo(x + w, y + hh, x, y + hh, r); g.arcTo(x, y + hh, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
 function bdPhotoDraw(g, face, ox, oy, p) {
-  g.save(); bdRound(g, ox + p[0], oy + p[1], p[2], p[2], p[3]); g.clip();
-  if (face) g.drawImage(face.img, face.x, face.y, face.s, face.s, ox + p[0], oy + p[1], p[2], p[2]);
-  else { g.fillStyle = '#E7E3DE'; g.fillRect(ox + p[0], oy + p[1], p[2], p[2]); }
+  const ph = p.length > 4 ? p[3] : p[2], r = p.length > 4 ? p[4] : p[3];  // [x, y, w, r] square or [x, y, w, h, r]
+  g.save(); bdRound(g, ox + p[0], oy + p[1], p[2], ph, r); g.clip();
+  if (face) g.drawImage(face.img, face.x, face.y, face.s, face.t || face.s, ox + p[0], oy + p[1], p[2], ph);
+  else { g.fillStyle = '#E7E3DE'; g.fillRect(ox + p[0], oy + p[1], p[2], ph); }
   g.restore();
 }
 /** Text that fits: the Canva size, smaller for a long name, never wider than its line. */
@@ -4536,11 +4547,27 @@ function bdDrawHf(g, a, r, face, ox, oy) {
   bdText(g, r.full_name, ox + B.name[0], oy + B.name[1], B.name[2], B.name[3], '700', 'center');
   B.codes.forEach((y, i) => bdText(g, lines[i] || '', ox + B.codeX, oy + y, B.codeW, B.codeSize, '400', 'center'));
 }
+function bdDrawTmm(g, a, r, face, ox, oy) {
+  const B = BADGE.tmm, lines = bdLines(r);
+  g.drawImage(a.tmm, ox, oy, B.w, B.h);
+  bdPhotoDraw(g, face, ox, oy, B.photo);
+  g.fillStyle = '#000';
+  bdText(g, r.full_name, ox + B.name[0], oy + B.name[1], B.name[2], B.name[3], '700', 'center');
+  bdText(g, lines[0] || '', ox + B.code[0], oy + B.code[1], B.name[2], B.name[3], '700', 'center');
+}
 function bdPage() { const cv = document.createElement('canvas'); cv.width = BADGE.W; cv.height = BADGE.H; const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height); return { cv: cv, g: g }; }
 function bdJpeg(cv) { const u = cv.toDataURL('image/jpeg', 0.92), b = atob(u.split(',')[1]), out = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) out[i] = b.charCodeAt(i); return { url: u, bytes: out, w: cv.width, h: cv.height }; }
 /** The ticked badges as A4 pages (pictures at 300 dpi), in the Canva files' layout. */
 function badgePages(kind, a, list, faces) {
   const pages = [];
+  if (kind === 'tmm') {
+    for (let i = 0; i < list.length; i += BADGE.tmm.per) {
+      const p = bdPage();
+      list.slice(i, i + BADGE.tmm.per).forEach((r, j) => bdDrawTmm(p.g, a, r, faces[i + j], BADGE.tmm.x, BADGE.tmm.y + j * BADGE.tmm.dy));
+      pages.push(bdJpeg(p.cv));
+    }
+    return pages;
+  }
   if (kind === 'ndcs') {
     for (let i = 0; i < list.length; i += BADGE.ndcs.per) {
       const p = bdPage();
@@ -4595,8 +4622,10 @@ function badgePdf(kind) {
   const bad = list.filter(r => !bdFilled(r) || !bdPhoto(r));
   if (bad.length) return toast(firstNamesOf(bad) + ': ' + (bad.some(r => !bdFilled(r)) ? 'numbers missing' : 'photo still loading or missing') + '.');
   toast('Making the badges…');
-  const label = kind === 'hf' ? 'HelloFresh' : 'NDCS', t = S.me.today, name = label + ' badges ' + t.slice(8, 10) + '.' + t.slice(5, 7) + '.' + t.slice(0, 4);
-  Promise.all([badgeAssets(), Promise.all(list.map(bdFace))]).then(r => {
+  const label = { hf: 'HelloFresh', tmm: 'TMM', ndcs: 'NDCS' }[kind], t = S.me.today, name = label + ' badges ' + t.slice(8, 10) + '.' + t.slice(5, 7) + '.' + t.slice(0, 4);
+  Promise.all([badgeAssets(), Promise.all(list.map(r => bdFace(r, kind === 'tmm')))]).then(r => {
+    const art = r[0];
+    if (!(kind === 'hf' ? art.hf && art.hfBack : art[kind])) throw new Error('The ' + BADGE_LABEL[kind] + ' badge artwork isn\'t in yet. Add it from the file first.');
     const bytes = pdfImageFile(badgePages(kind, r[0], list, r[1]), name);
     bytes.onShare = () => call('badgesPrinted', { ids: list.map(x => x.id), kind: kind }).then(x => {
       list.forEach(row => { row.badge_printed_at = x.at; row.badge_printed_by = x.by; if (S.bdPick) delete S.bdPick[row.id]; });

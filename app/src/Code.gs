@@ -1369,11 +1369,12 @@ function fixConviction(req, u) {
   return shape(res.c, u);
 }
 
-/** Where a starter goes, HF or FR, set on Day 1 (Angad, 27 Oct: his list had JUSS starters placed in FR). '' = their company's.
+/** Where a starter goes, FR, HF or TMM, set on Day 1 (Angad, 27 Oct: his list had JUSS starters placed in FR; 10 Nov: "we've got three
+ *  campaigns now, fundraising, HelloFresh, and TMM"). '' = their company's.
  *  It moves the company they're joining too (Angad, 28 Oct): their messages, welcome page and welcome email come from it. */
 function setCampaign(req, u) {
   if (!isAdmin(u)) throw new Error('Admin only');
-  if (['HF', 'FR', ''].indexOf(req.campaign) < 0) throw new Error('HF or FR');
+  if (CAMPAIGNS.concat(['']).indexOf(req.campaign) < 0) throw new Error('FR, HF or TMM');
   const c = withLock(() => {
     const c = getC(req.id);
     c.campaign = req.campaign; c.brand = campBrand(c.campaign);  // '' = their booker's company again
@@ -1384,10 +1385,12 @@ function setCampaign(req, u) {
   log(u, 'campaign', c.id, campaignOf(c));
   return shape(c, u);
 }
-/** HF or FR: the one picked on Day 1, else their company's (JUSS = HF, LINK = FR). */
-function campaignOf(c) { return c.campaign === 'HF' || c.campaign === 'FR' ? c.campaign : c.company === 'JUSS' ? 'HF' : 'FR'; }
-/** The company someone placed in HF or FR joins: HF = JUSS, FR = LINK ('' when not placed). */
-function campBrand(k) { return k === 'HF' ? 'JUSS' : k === 'FR' ? 'LINK' : ''; }
+/** The campaigns a starter can be placed in (Angad, 10 Nov 2026): Fundraising (NDCS), HelloFresh and The Modern Milkman. */
+const CAMPAIGNS = ['FR', 'HF', 'TMM'];
+/** FR, HF or TMM: the one picked on Day 1, else their company's (JUSS = HF, LINK = FR; nobody starts in TMM until it's picked). */
+function campaignOf(c) { return CAMPAIGNS.indexOf(c.campaign) >= 0 ? c.campaign : c.company === 'JUSS' ? 'HF' : 'FR'; }
+/** The company someone placed in a campaign joins: HF and TMM = JUSS (the Modern Milkman badges were JUSS starters), FR = LINK ('' when not placed). */
+function campBrand(k) { return k === 'HF' || k === 'TMM' ? 'JUSS' : k === 'FR' ? 'LINK' : ''; }
 /** Their booker's company is now co (a booker corrected, or their booker moved company in Team). The company they join follows
  *  it, unless they're placed in HF / FR (then the placement's). A booking's company that wasn't the old one stays. */
 function followCompany(c, co) {
@@ -1995,11 +1998,11 @@ function addStarter(req, u) {
   const name = cleanName(req.full_name), mobile = normMobile(req.mobile);
   if (name.split(' ').length < 2) throw new Error('First and last name, please.');
   if (req.mobile && !mobile) throw new Error('That mobile doesn\'t look right (07…).');
-  if (['LINK', 'JUSS'].indexOf(req.company) < 0) throw new Error('HelloFresh or Fundraising?');
+  if (['LINK', 'JUSS'].indexOf(req.company) < 0 || (req.campaign === 'TMM' && req.company !== 'JUSS')) throw new Error('HelloFresh, Fundraising or Modern Milkman?');
   const we = weekEnding(/^\d{4}-\d\d-\d\d$/.test(req.weekEnding || '') ? req.weekEnding : todayStr()), coach = req.coach_id ? userById(req.coach_id) : null;
   const day1 = /^\d{4}-\d\d-\d\d$/.test(req.day1_date || '') && weekEnding(req.day1_date) === we ? req.day1_date : addDays(we, -6);
   const r = withLock(() => appendRow('Availability', { id: uid(), created_at: nowStr(), week_ending: we, candidate_id: '', day1_date: day1, full_name: name, mobile: mobile,
-    company: req.company, campaign: req.company === 'JUSS' ? 'HF' : 'FR', coach_id: coach ? coach.id : '', coach_name: coach ? coach.name : '', driver: '', w1: AV_BLANK, w2: AV_BLANK, notes: '', updated_at: nowStr(), updated_by: u.name }));
+    company: req.company, campaign: req.campaign === 'TMM' ? 'TMM' : req.company === 'JUSS' ? 'HF' : 'FR', coach_id: coach ? coach.id : '', coach_name: coach ? coach.name : '', driver: '', w1: AV_BLANK, w2: AV_BLANK, notes: '', updated_at: nowStr(), updated_by: u.name }));
   log(u, 'availability_add', '', name + ' (w/e ' + we + ')');
   return availRows(we).filter(x => x.id === r.id)[0];
 }
@@ -2030,14 +2033,14 @@ function restoreStarter(req, u) {
 // artwork (the team's own badge with the photo, name and numbers left blank, cut from their Canva files) goes in once from a
 // file and lives in the app's settings, admins only: never in this repo, which is public (it carries a signature and logos).
 const BADGE_WEEKS = 6;  // Day 1 weeks on the list: the client's numbers can take a few weeks to come through
-const BADGE_ART = { ndcs: 'BADGE_ART_NDCS', hf: 'BADGE_ART_HF', hfBack: 'BADGE_ART_HF_BACK' };
+const BADGE_ART = { ndcs: 'BADGE_ART_NDCS', hf: 'BADGE_ART_HF', hfBack: 'BADGE_ART_HF_BACK', tmm: 'BADGE_ART_TMM' };
 function badgeArtInfo() {
   const p = PropertiesService.getScriptProperties(), out = {};
   Object.keys(BADGE_ART).forEach(k => { out[k] = !!p.getProperty(BADGE_ART[k]); });
   out.at = p.getProperty('BADGE_ART_AT') || '';
   return out;
 }
-/** Their badge lines: one for NDCS (the ID number), up to three for HelloFresh, upper case, one a line. */
+/** Their badge lines: one for NDCS (the ID number) and the Modern Milkman (MMC…), three for HelloFresh, upper case, one a line. */
 function badgeLines(v) { return String(v || '').split(/[\n,;]+/).map(x => x.trim().toUpperCase().replace(/\s+/g, '')).filter(Boolean); }
 function badgeRow(r, a) {
   return { id: r.id, week_ending: r.week_ending, day1_date: r.day1_date, full_name: r.full_name, campaign: r.campaign, coach_name: r.coach_name, has_photo: r.has_photo,
@@ -2058,11 +2061,11 @@ function saveBadge(req, u) {
   if (lines.some(x => !/^[A-Z0-9][A-Z0-9\-\/]{0,19}$/.test(x))) throw new Error('Badge numbers: letters and numbers only.');
   if (exp && !/^\d{4}-\d\d-\d\d$/.test(exp)) throw new Error('Pick the expiry date.');
   const a0 = availRecord(req.id), cur = availRows(a0.week_ending).filter(x => x.id === a0.id)[0];
-  const hf = (cur ? cur.campaign : a0.campaign || (a0.company === 'JUSS' ? 'HF' : 'FR')) === 'HF';  // where they're placed now
+  const camp = cur ? cur.campaign : a0.campaign || (a0.company === 'JUSS' ? 'HF' : 'FR'), hf = camp === 'HF';  // where they're placed now
   const r = withLock(() => {
     const a = availRecord(req.id);
-    if (lines.length > (hf ? 3 : 1)) throw new Error(hf ? 'HelloFresh badges have three numbers.' : 'NDCS badges have one ID number.');
-    a.badge_no = lines.join('\n'); a.badge_expiry = hf ? '' : exp; a.badge_by = u.name; a.badge_at = nowStr();
+    if (lines.length > (hf ? 3 : 1)) throw new Error(hf ? 'HelloFresh badges have three numbers.' : camp === 'TMM' ? 'Modern Milkman badges have one number (MMC…).' : 'NDCS badges have one ID number.');
+    a.badge_no = lines.join('\n'); a.badge_expiry = camp === 'FR' ? exp : ''; a.badge_by = u.name; a.badge_at = nowStr();
     writeRow('Availability', a);
     return a;
   });
@@ -2741,7 +2744,7 @@ function day1Results(date) {
   const started = l.filter(c => c.day1_status === 'arrived'), by = {};
   started.forEach(c => { const k = !c.booker_name ? 'No booker' : isOffice(c.booker_name, c.booker_id) ? 'Office' : String(c.booker_name).split(' ')[0]; by[k] = (by[k] || 0) + 1; });
   const rest = l.filter(c => c.day1_status !== 'arrived' && c.day1_status !== 'dropped');
-  return { date: date, booked: l.length, started: started.length, fr: started.filter(c => campaignOf(c) === 'FR').length, hf: started.filter(c => campaignOf(c) === 'HF').length,
+  return { date: date, booked: l.length, started: started.length, fr: started.filter(c => campaignOf(c) === 'FR').length, hf: started.filter(c => campaignOf(c) === 'HF').length, tmm: started.filter(c => campaignOf(c) === 'TMM').length,
     left: started.filter(c => c.day1_left_at).length, dropped: l.filter(c => c.day1_status === 'dropped').length,
     noShow: rest.filter(c => c.day1_status === 'no_show' || c.academy_confirmed_at).length, notConfirmed: rest.filter(c => c.day1_status !== 'no_show' && !c.academy_confirmed_at).length,
     byBooker: Object.keys(by).map(k => [k, by[k]]).sort((a, b) => b[1] - a[1] || (a[0] === 'Office' ? -1 : b[0] === 'Office' ? 1 : a[0].localeCompare(b[0]))) };
@@ -2749,7 +2752,7 @@ function day1Results(date) {
 function day1ResultsText(x) {
   const not = [x.dropped ? x.dropped + ' dropped out' : '', x.notConfirmed ? x.notConfirmed + ' didn\'t confirm' : '', x.noShow ? plural(x.noShow, 'no-show') : ''].filter(String);
   return { title: '🎓 Day 1 ' + longDate(x.date).split(' ').slice(0, 3).join(' ') + ': ' + x.started + ' of ' + x.booked + ' started',
-    body: 'FR ' + x.fr + ' · HF ' + x.hf + (x.left ? ' · ' + x.left + ' didn\'t continue' : '') + '\n' + x.byBooker.map(b => b[0] + ' ' + b[1]).join(' · ') + (not.length ? '\nDidn\'t start: ' + not.join(', ') : '') };
+    body: 'FR ' + x.fr + ' · HF ' + x.hf + (x.tmm ? ' · TMM ' + x.tmm : '') + (x.left ? ' · ' + x.left + ' didn\'t continue' : '') + '\n' + x.byBooker.map(b => b[0] + ' ' + b[1]).join(' · ') + (not.length ? '\nDidn\'t start: ' + not.join(', ') : '') };
 }
 /** The morning after a Day 1 (CONFIG.D1_RESULTS_TIME): the results to the admins, once. Tap → the Day 1 tab. */
 function maybeDay1Results() {
