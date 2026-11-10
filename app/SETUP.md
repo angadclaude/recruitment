@@ -236,8 +236,8 @@ Someone stuck later (email slow, in Spam, or "too many codes")? Same thing: Team
 ## Three campaigns: Fundraising, HelloFresh and TMM
 On the Day 1 list each starter has **FR | HF | TMM**: tap where they're placed. TMM (The Modern Milkman) is a JUSS campaign, so their welcome email and messages come from JUSS. Availability, the poster and the morning-after results show TMM as its own group. TMM starters don't go on the FR or HF bell sheet.
 
-## 🪪 Badges: printed from the app (admins)
-No more Canva. **Day 1 tab → 🪪 Badges · NDCS, HelloFresh & TMM.**
+## 🪪 Badges: printed from the app (Jess, Rubal and Christie only)
+No more Canva. **Day 1 tab → 🪪 Badges · NDCS, HelloFresh & TMM.** Only Jess, Rubal and Christie see it and can make badges, from their own logins.
 1. **First time only:** save the **JL badge artwork** picture Angad sent you to your phone (Photos or Files), tap **📥 Add the badge artwork** and pick it. It's your Canva badges with the photo, name and numbers left blank, and coloured squares in the corner. It stays in the app.
 2. Everyone who started in the last 6 weeks is listed, in **NDCS · Fundraising**, **HelloFresh** and **The Modern Milkman** (by where they were placed on Day 1), with their Day 1 photo.
 3. **Type their number(s)** when the client sends them: NDCS one ID number; HelloFresh three (JU…, R…, GD2D…); Modern Milkman one (MMC…). They save when you leave the box. NDCS expiry is 31/03/2027 unless you change it for that person.
@@ -245,6 +245,9 @@ No more Canva. **Day 1 tab → 🪪 Badges · NDCS, HelloFresh & TMM.**
 5. **Print at 100% (Actual size)**, never "fit to page", so they fit the holders. **HelloFresh: double-sided, flip on the long edge** (page 2 is the backs). NDCS and Modern Milkman: one side, cut out and fold in the middle.
 6. Once shared or saved they show **✓ Printed** and aren't ticked next time. Tick them again to reprint.
 - **No photo?** Take it on the Day 1 list (📷 Photo on their row) first.
+- **Red "same number as …"**: two people have the same number. Fix the wrong one; neither is ticked until then. **Amber "check this number"**: it doesn't look like the client's usual (HelloFresh JU…, R…, GD2D… in that order; NDCS 5 digits; Modern Milkman MMC…). Check it against the client's email before printing.
+- **Lost badge?** Tap **Show starters from the last 6 months**, tick them, print.
+- Each page's bottom margin says how to print it (100%, which side, which page).
 
 ## 🚀 New starter onboarding (Jess / Rubal, admins only)
 When a booker books someone onto the Academy (or an admin approves a 🔴 booking), Jess (LINK) or Rubal (JUSS) gets **"🚀 New starter to onboard: Adham Soliman · Booked by Abdullahi for Monday 19th October"**. Tap it to open their page, which has the **🚀 Onboard** card at the top:

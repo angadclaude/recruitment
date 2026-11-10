@@ -1,4 +1,4 @@
-window.APP_VERSION = 'cb3f64ee';
+window.APP_VERSION = '344175f6';
 
 (function () {
 'use strict';
@@ -3163,8 +3163,8 @@ function drawAcademy(r, quiet) {
     (behind.length ? '<div class="card needs d1behind"><b>↩️ Still to sort from an earlier week · ' + behind.length + '</b><p class="small muted" style="margin:4px 0 2px">A no-show to rebook, or nobody ticked Arrived / No-show. Tap a name to go to that week.</p>' +
       behind.map(c => '<button class="nm" data-wk="' + weekEndingOf(c.academy_date) + '">' + h(c.first_name) + ' · ' + (c.day1_status === 'no_show' ? 'no-show' : 'not ticked') + '</button>').join('') + '</div>' : '') +
     (pend.length || toOnb.length || behind.length ? '<div style="height:14px"></div>' : '') +
-    (admin ? '<button class="btn ghost block" id="goAvail" style="margin:0 0 8px">🗓️ Availability · Week 1 &amp; Week 2</button>' +  // bookers: their NS Availability tab
-      '<button class="btn ghost block" id="goBadges" style="margin:0 0 12px">🪪 Badges · NDCS, HelloFresh &amp; TMM</button>' : '') +  // printed from the app, not Canva (Angad, 10 Nov)
+    (admin ? '<button class="btn ghost block" id="goAvail" style="margin:0 0 ' + (S.me.badges ? 8 : 12) + 'px">🗓️ Availability · Week 1 &amp; Week 2</button>' : '') +  // bookers: their NS Availability tab
+    (S.me.badges ? '<button class="btn ghost block" id="goBadges" style="margin:0 0 12px">🪪 Badges · NDCS, HelloFresh &amp; TMM</button>' : '') +  // Jess, Rubal and Christie only (Angad, 10 Nov)
     weekNav1 + weekTools + filt +
     (!wk ? skeleton(3) : dates.length ? dates.map(block).join('')
       : empty('🎓', we === thisWe ? 'Nobody booked to start this week.' : we > thisWe ? 'Nobody booked to start that week yet.' : 'Nobody started that week.')) +
@@ -4389,13 +4389,13 @@ function sharePdf(bytes, name) {
 const BADGE = {
   W: 2480, H: 3508,  // A4 at 300 dpi
   // the NDCS badge folds in the middle (photo half, details half): 4 to a page, as on the Canva file
-  ndcs: { w: 2270, h: 725, x: 105, y: 164, dy: 790, per: 4, photo: [33, 38, 396, 52], ink: '#6B1FAD', size: 41.7,
+  ndcs: { w: 2270, h: 725, x: 105, y: 164, dy: 790, per: 4, photo: [33, 38, 396, 52], ink: '#6B1FAD', size: 41.5,
     name: [633, 350, 471], id: [735, 441.6, 369], exp: [782, 540.8, 322] },
   // HelloFresh: 8 fronts to a page, then their backs on the next page, mirrored, for double-sided (flip on the long edge)
   hf: { w: 1036, h: 730, x: 175, dx: 1070, y: 191, dy: 787, cols: 2, rows: 4, photo: [52, 48, 396, 48],
-    name: [747.5, 348.9, 480, 45.5], codes: [539.8, 611.5, 676.9], codeX: 239, codeW: 280, codeSize: 41.4 },
+    name: [737.3, 349.1, 480, 45.8], codes: [539.8, 611.5, 676.9], codeX: 239, codeW: 280, codeSize: 41.5 },
   // The Modern Milkman (10 Nov): a portrait card that folds (front with photo, name and MMC number; back with how to check), 3 to a page
-  tmm: { w: 1365, h: 1072, x: 557, y: 118, dy: 1104, per: 3, photo: [96, 76, 478, 571, 10], name: [340.5, 741.4, 460, 44.5], code: [340.5, 794.5] },
+  tmm: { w: 1365, h: 1072, x: 557, y: 118, dy: 1104, per: 3, photo: [96, 76, 478, 571, 10], name: [341.8, 740.4, 460, 42.4], code: [341.8, 793.6], font: 'Roboto' },  // Roboto Bold, as on the Canva card
 };
 const BADGE_HINT = { ndcs: ['ID number'], hf: ['JU…', 'R…', 'GD2D…'], tmm: ['MMC…'] }, BADGE_LABEL = { ndcs: 'NDCS', hf: 'HelloFresh', tmm: 'Modern Milkman' };
 function bdKind(r) { return { HF: 'hf', TMM: 'tmm' }[avCamp(r)] || 'ndcs'; }
@@ -4404,12 +4404,27 @@ function bdArtOk(kind) { const a = (S.badges || {}).art || {}; return kind === '
 function bdLines(r) { return String(r.badge_no || '').split('\n').filter(Boolean); }
 function bdFilled(r) { return bdLines(r).length >= (bdKind(r) === 'hf' ? 3 : 1); }
 function bdPhoto(r) { return !!(S.avPh || {})[r.id]; }
-function bdReady(r) { return bdFilled(r) && (bdPhoto(r) || r.has_photo); }
+function bdReady(r) { return bdFilled(r) && (bdPhoto(r) || r.has_photo) && !bdDupOf(r); }
+/** Someone else on the list with one of the same numbers (a typo, or the client's slip): neither prints until it's put right. */
+function bdDupOf(r) {
+  const mine = bdLines(r); if (!mine.length) return null;
+  return ((S.badges || {}).rows || []).filter(x => x.id !== r.id && bdLines(x).some(l => mine.indexOf(l) >= 0))[0] || null;
+}
+/** Numbers that don't look like the client's (HelloFresh JU…, R…, then GD2D… / GU…; the Modern Milkman MMC…; NDCS 5 digits): flagged, still printable. */
+function bdOdd(r) {
+  const k = bdKind(r), l = bdLines(r);
+  if (k === 'hf' && l.length === 3 && !(/^JU/.test(l[0]) && /^R/.test(l[1]) && /^G/.test(l[2]))) return 'Check the order: JU…, then R…, then GD2D…';
+  if (k === 'tmm' && l.length && !/^MMC/.test(l[0])) return 'Modern Milkman numbers start MMC: check it';
+  if (k === 'ndcs' && l.length && !/^\d{5}$/.test(l[0])) return 'NDCS ID numbers have 5 digits: check it';
+  return '';
+}
+/** The same person on the list twice (two Day 1 weeks). */
+function bdTwice(r) { const n = normName(r.full_name); return ((S.badges || {}).rows || []).filter(x => x.id !== r.id && normName(x.full_name) === n)[0] || null; }
 /** Ticked to print: what they ticked, else everyone ready and not printed yet. */
 function bdPicked(r) { const t = (S.bdPick || {})[r.id]; return t === undefined ? bdReady(r) && !r.badge_printed_at : t; }
 function bdExpiry(r) { return r.badge_expiry || ((S.badges || {}).expiry || {}).FR || ''; }
 function loadBadges() {
-  return call('badgeList').then(r => {
+  return call('badgeList', { weeks: S.bdWeeks || 6 }).then(r => {
     S.badges = Object.assign(r, { at: Date.now() });
     const weeks = r.rows.filter(x => x.has_photo && !(S.avPh || {})[x.id]).map(x => x.week_ending).filter((w, i, a) => a.indexOf(w) === i);
     weeks.reduce((ch, we) => ch.then(() => call('availPhotos', { weekEnding: we }).then(p => { S.avPh = Object.assign(S.avPh || {}, p.photos); })), Promise.resolve())
@@ -4419,7 +4434,7 @@ function loadBadges() {
 }
 function viewBadges(quiet) {
   const id = S.viewId, d = S.badges;
-  if (!isAdmin()) return paint('Badges', '<div class="err">Only admins make badges.</div>', quiet, true);
+  if (!S.me.badges) return paint('Badges', '<div class="err">Only Jess, Rubal and Christie make badges.</div>', quiet, true);
   if (!d || Date.now() - d.at > STALE_MS) loadBadges().then(() => { if (S.viewId === id && !document.querySelector('.sheet-back')) render(true); })
     .catch(e => { if (S.viewId === id && !S.badges) paint('Badges', '<div class="err">' + h(e.message) + '</div>', false, true); });
   if (!d) return paint('Badges', skeleton(4), quiet, true);
@@ -4439,6 +4454,7 @@ function viewBadges(quiet) {
     '<p class="hint" style="margin:0 2px 10px">Type each starter\'s number' + ' as the client sends it, tick who to print, then 📄 Print. Starters from the last ' + d.weeks + ' weeks, newest first. ' +
       '<b>Print at 100% (Actual size)</b> so they fit the holders. HelloFresh: <b>double-sided, flip on the long edge</b> (page 2 is the backs).</p>' +
     sec('ndcs') + sec('hf') + sec('tmm') +
+    (d.weeks < 26 ? '<button type="button" class="linkbtn" id="bdolder" style="display:block;margin:14px auto 0">Show starters from the last 6 months (to reprint a lost badge)</button>' : '<p class="hint" style="text-align:center">Showing everyone from the last 6 months.</p>') +
     (artOk ? '<label class="linkbtn" style="display:block;margin:14px auto 0;text-align:center">🎨 Change the badge artwork<input type="file" id="bdartf" hidden></label>' : ''), quiet, true);
   bindBadges(page);
   fillThumbs(page);
@@ -4448,34 +4464,48 @@ function bdRow(r) {
   const st = r.badge_printed_at ? '<span class="pill green">✓ Printed ' + h(fmt(String(r.badge_printed_at).slice(0, 10))) + (r.badge_printed_by ? ' · ' + h(String(r.badge_printed_by).split(' ')[0]) : '') + '</span>'
     : !bdFilled(r) ? '<span class="pill amber">⏳ Waiting for ' + { hf: 'numbers', tmm: 'MMC number', ndcs: 'ID number' }[kind] + '</span>' : !ph && !r.has_photo ? '' : '<span class="pill blue">Ready to print</span>';
   const noPh = !ph && !r.has_photo ? '<span class="pill red">📷 No photo yet: take it on the Day 1 list</span>' : '';
+  const dup = bdDupOf(r), odd = bdOdd(r), twice = bdTwice(r);
+  const warn = (dup ? '<span class="pill red">⚠️ Same number as ' + h(dup.full_name) + ': check it</span>' : '') + (odd ? '<span class="pill amber">⚠️ ' + h(odd) + '</span>' : '') +
+    (twice ? '<span class="pill amber">Also on the list for Day 1 ' + h(fmt(twice.day1_date)) + '</span>' : '');
   const ins = BADGE_HINT[kind].map((p, i) => '<input class="bdno" data-i="' + i + '" value="' + h(lines[i] || '') + '" placeholder="' + h(p) + '" autocapitalize="characters" autocomplete="off" spellcheck="false"' +
     (kind === 'ndcs' ? ' inputmode="numeric"' : '') + ' aria-label="' + (kind === 'hf' ? 'Number ' + (i + 1) : kind === 'tmm' ? 'MMC number' : 'ID number') + '">').join('') +
     (kind === 'ndcs' ? '<label class="bdexpl">Expiry <input type="date" class="bdexp" value="' + h(bdExpiry(r)) + '" aria-label="Expiry date"></label>' : '');
   return '<div class="trow bdrow" data-bd="' + h(r.id) + '"><label class="bdtick"><input type="checkbox" class="bdpick"' + (pick ? ' checked' : '') + (bdReady(r) ? '' : ' disabled') + ' aria-label="Print ' + h(r.full_name) + '"></label>' +
     (ph ? '<img class="av avph" src="' + (thumbNow(r.id) || ph) + '" data-thumb="' + h(r.id) + '" alt="">' : '<span class="av co-' + (kind === 'ndcs' ? 'LINK' : 'JUSS') + '">' + h(initials(r.full_name)) + '</span>') +
     '<div class="main"><div class="name">' + h(r.full_name) + '</div><div class="sub">Day 1 ' + h(fmt(r.day1_date)) + (r.coach_name ? ' · ' + h(String(r.coach_name).split(' ')[0]) : '') + '</div>' +
-    '<div class="pills">' + st + noPh + '</div><div class="bdin">' + ins + '</div></div></div>';
+    '<div class="pills">' + (dup ? '' : st) + noPh + warn + '</div><div class="bdin">' + ins + '</div></div></div>';
 }
 function bindBadges(page) {
   const art = page.querySelector('#bdartf'); if (art) art.onchange = () => { const f = art.files && art.files[0]; art.value = ''; if (f) badgeArtFile(f); };
   page.querySelectorAll('.bdrow').forEach(el => {
-    const id = el.dataset.bd, row = () => ((S.badges || {}).rows || []).filter(x => x.id === id)[0];
-    const save = () => {
-      const r = row(); if (!r) return;
-      const no = Array.from(el.querySelectorAll('.bdno')).map(i => i.value.trim().toUpperCase().replace(/\s+/g, '')).filter(Boolean).join('\n'), ex = el.querySelector('.bdexp');
-      const exp = ex ? (ex.value === ((S.badges || {}).expiry || {}).FR ? '' : ex.value) : '';
-      if (no === (r.badge_no || '') && exp === (r.badge_expiry || '')) return;
-      call('saveBadge', { id: id, badge_no: no, badge_expiry: exp }).then(x => {
-        Object.assign(r, x);
-        if (S.bdPick) delete S.bdPick[id];
-        toast('✓ ' + r.full_name.split(' ')[0] + '\'s badge ' + (x.badge_no ? 'saved' : 'cleared'));
-        if (S.view === 'badges' && !el.contains(document.activeElement)) render(true);
-      }).catch(e => toast(e.message));
-    };
+    const id = el.dataset.bd;
+    const save = () => bdSave(el).then(r => {
+      if (!r) return;
+      toast('✓ ' + r.full_name.split(' ')[0] + '\'s badge ' + (r.badge_no ? 'saved' : 'cleared'));
+      if (S.view === 'badges' && !el.contains(document.activeElement)) render(true);
+    }).catch(e => toast(e.message));
     el.querySelectorAll('.bdno, .bdexp').forEach(i => { i.onchange = save; });
     const pk = el.querySelector('.bdpick'); if (pk) pk.onchange = () => { (S.bdPick = S.bdPick || {})[id] = pk.checked; render(true); };
   });
   page.querySelectorAll('[data-bdprint]').forEach(b => { b.onclick = () => badgePdf(b.dataset.bdprint); });
+  const old = page.querySelector('#bdolder'); if (old) old.onclick = () => { S.bdWeeks = 26; S.badges = null; render(); };
+}
+/** A row's boxes, tidied as the server keeps them (upper case, no spaces, a line each). */
+function bdTyped(el) {
+  const ex = el.querySelector('.bdexp');
+  return { no: Array.from(el.querySelectorAll('.bdno')).map(i => i.value.trim().toUpperCase().replace(/\s+/g, '')).filter(Boolean).join('\n'),
+    exp: ex ? (ex.value === ((S.badges || {}).expiry || {}).FR ? '' : ex.value) : '' };
+}
+/** Saves a row's boxes when they changed: resolves with the row when it saved, null when nothing changed. A save already on its way
+ *  is shared (leaving the box and tapping Print at once save once). */
+function bdSave(el) {
+  const id = el.dataset.bd, r = ((S.badges || {}).rows || []).filter(x => x.id === id)[0], t = bdTyped(el), key = t.no + '|' + t.exp;
+  if (!r || (t.no === (r.badge_no || '') && t.exp === (r.badge_expiry || ''))) return Promise.resolve(null);
+  if (el._bdSave && el._bdSave.key === key) return el._bdSave.p;
+  const p = call('saveBadge', { id: id, badge_no: t.no, badge_expiry: t.exp }).then(x => { Object.assign(r, x); if (S.bdPick) delete S.bdPick[id]; return r; });
+  el._bdSave = { key: key, p: p };
+  p.catch(() => { el._bdSave = null; });
+  return p;
 }
 /** The artwork goes in once (admins), as a picture or as a file.
  *  - The picture (Angad, 10 Nov: the .json file wouldn't go in from his iPhone): the four blank badges on one sheet, laid out as
@@ -4538,7 +4568,7 @@ function bdImg(src) { return new Promise(res => { if (!src) return res(null); co
 function badgeAssets() {
   if (S.bdArt) return S.bdArt;
   const fonts = !window.FontFace ? Promise.resolve() : Promise.all([['Arimo', 'arimo-latin-400-normal.woff2', '400'], ['Arimo', 'arimo-latin-700-normal.woff2', '700'],
-    ['ArimoX', 'arimo-latin-ext-400-normal.woff2', '400'], ['ArimoX', 'arimo-latin-ext-700-normal.woff2', '700']]
+    ['ArimoX', 'arimo-latin-ext-400-normal.woff2', '400'], ['ArimoX', 'arimo-latin-ext-700-normal.woff2', '700'], ['Roboto', 'roboto-latin-700-normal.woff2', '700']]
     .map(f => new FontFace(f[0], 'url(fonts/' + f[1] + ')', { weight: f[2] }).load().then(ff => document.fonts.add(ff)).catch(() => {})));
   S.bdArt = Promise.all([call('badgeArt'), fonts]).then(r => Promise.all([bdImg(r[0].ndcs), bdImg(r[0].hf), bdImg(r[0].hfBack), bdImg(r[0].tmm)]))
     .then(i => ({ ndcs: i[0], hf: i[1], hfBack: i[2], tmm: i[3] }));
@@ -4565,11 +4595,17 @@ function bdPhotoDraw(g, face, ox, oy, p) {
   g.restore();
 }
 /** Text that fits: the Canva size, smaller for a long name, never wider than its line. */
-function bdText(g, t, x, y, maxW, size, weight, align) {
+function bdText(g, t, x, y, maxW, size, weight, align, fam) {
   let sz = size;
-  const set = () => { g.font = weight + ' ' + sz + 'px Arimo, ArimoX, Arial, Helvetica, sans-serif'; };
-  set(); while (g.measureText(t).width > maxW && sz > size * 0.55) { sz -= 1; set(); }
-  g.textAlign = align || 'left'; g.textBaseline = 'alphabetic'; g.fillText(t, x, y);
+  const set = () => { g.font = weight + ' ' + sz + 'px ' + (fam ? fam + ', ' : '') + 'Arimo, ArimoX, Arial, Helvetica, sans-serif'; };
+  // a long name: smaller first (to 72%), then narrower (to 70% wide), and only smaller again past that, so it stays readable on the doorstep
+  set(); while (g.measureText(t).width > maxW && sz > size * 0.72) { sz -= 1; set(); }
+  while (g.measureText(t).width * 0.7 > maxW && sz > size * 0.4) { sz -= 1; set(); }
+  g.textAlign = align || 'left'; g.textBaseline = 'alphabetic';
+  const w = g.measureText(t).width;
+  if (w <= maxW) return g.fillText(t, x, y);
+  // squeeze it into its line, so it never runs past the underline or out of its box
+  g.save(); g.translate(x, y); g.scale(maxW / w, 1); g.fillText(t, 0, 0); g.restore();
 }
 function bdDrawNdcs(g, a, r, face, ox, oy) {
   const B = BADGE.ndcs, lines = bdLines(r), e = bdExpiry(r);
@@ -4593,18 +4629,21 @@ function bdDrawTmm(g, a, r, face, ox, oy) {
   g.drawImage(a.tmm, ox, oy, B.w, B.h);
   bdPhotoDraw(g, face, ox, oy, B.photo);
   g.fillStyle = '#000';
-  bdText(g, r.full_name, ox + B.name[0], oy + B.name[1], B.name[2], B.name[3], '700', 'center');
-  bdText(g, lines[0] || '', ox + B.code[0], oy + B.code[1], B.name[2], B.name[3], '700', 'center');
+  bdText(g, r.full_name, ox + B.name[0], oy + B.name[1], B.name[2], B.name[3], '700', 'center', B.font);
+  bdText(g, lines[0] || '', ox + B.code[0], oy + B.code[1], B.name[2], B.name[3], '700', 'center', B.font);
 }
 function bdPage() { const cv = document.createElement('canvas'); cv.width = BADGE.W; cv.height = BADGE.H; const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height); return { cv: cv, g: g }; }
 function bdJpeg(cv) { const u = cv.toDataURL('image/jpeg', 0.92), b = atob(u.split(',')[1]), out = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) out[i] = b.charCodeAt(i); return { url: u, bytes: out, w: cv.width, h: cv.height }; }
 /** The ticked badges as A4 pages (pictures at 300 dpi), in the Canva files' layout. */
+/** A small grey line under the badges (the margin, cut off anyway): what it is and how to print it. */
+function bdFoot(g, t) { g.save(); g.fillStyle = '#8a8a8a'; g.font = '400 26px Arimo, Arial, Helvetica, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'alphabetic'; g.fillText(t, BADGE.W / 2, BADGE.H - 52); g.restore(); }
 function badgePages(kind, a, list, faces) {
-  const pages = [];
+  const pages = [], of = (i, per) => ' · page ' + (Math.floor(i / per) + 1) + ' of ' + Math.ceil(list.length / per);
   if (kind === 'tmm') {
     for (let i = 0; i < list.length; i += BADGE.tmm.per) {
       const p = bdPage();
       list.slice(i, i + BADGE.tmm.per).forEach((r, j) => bdDrawTmm(p.g, a, r, faces[i + j], BADGE.tmm.x, BADGE.tmm.y + j * BADGE.tmm.dy));
+      bdFoot(p.g, 'Modern Milkman badges · print on A4 at 100% (Actual size) · cut out and fold in the middle' + of(i, BADGE.tmm.per));
       pages.push(bdJpeg(p.cv));
     }
     return pages;
@@ -4613,6 +4652,7 @@ function badgePages(kind, a, list, faces) {
     for (let i = 0; i < list.length; i += BADGE.ndcs.per) {
       const p = bdPage();
       list.slice(i, i + BADGE.ndcs.per).forEach((r, j) => bdDrawNdcs(p.g, a, r, faces[i + j], BADGE.ndcs.x, BADGE.ndcs.y + j * BADGE.ndcs.dy));
+      bdFoot(p.g, 'NDCS badges · print on A4 at 100% (Actual size) · cut out and fold in the middle' + of(i, BADGE.ndcs.per));
       pages.push(bdJpeg(p.cv));
     }
     return pages;
@@ -4625,6 +4665,8 @@ function badgePages(kind, a, list, faces) {
       bdDrawHf(fr.g, a, r, faces[i + j], x, y);
       bk.g.drawImage(a.hfBack, BADGE.W - x - B.w, y, B.w, B.h);  // its back, mirrored across the page: double-sided, long edge
     });
+    bdFoot(fr.g, 'HelloFresh badges: FRONTS · print double-sided on A4, flip on the long edge, at 100% (Actual size)' + of(i, per));
+    bdFoot(bk.g, 'HelloFresh badges: BACKS (this side goes behind the fronts)' + of(i, per));
     pages.push(bdJpeg(fr.cv), bdJpeg(bk.cv));
   }
   return pages;
@@ -4656,7 +4698,12 @@ function pdfImageFile(imgs, title) {
   out.pages = imgs.map(im => ({ img: im.url }));  // savePdf's preview
   return out;
 }
+/** Print: anything typed but not saved yet (typed, then Print straight away) is saved first, so it's on the badge. */
 function badgePdf(kind) {
+  const page = document.getElementById('page'), els = page ? Array.from(page.querySelectorAll('.bdrow')) : [];
+  Promise.all(els.map(bdSave)).then(saved => { if (saved.some(Boolean)) render(true); badgePdfNow(kind); }).catch(e => toast(e.message));
+}
+function badgePdfNow(kind) {
   const d = S.badges; if (!d) return;
   const list = d.rows.filter(r => bdKind(r) === kind && bdPicked(r)).sort((a, b) => a.day1_date.localeCompare(b.day1_date) || a.full_name.localeCompare(b.full_name));
   if (!list.length) return toast('Tick who to print first.');
