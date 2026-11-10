@@ -62,6 +62,8 @@ const CONFIG = {
   OFFICE_BOOKERS: ['Fiza Iqbal', 'Christie Zammit'],  // with the admins, "Office" in the results' starts by booker (bookings made from the office)
   // Badges (Angad, 10 Nov: printed from the app, not Canva): NDCS's expiry unless one is typed for them. HelloFresh's is on its artwork.
   BADGE_EXPIRY: { FR: '2027-03-31' },
+  // Who makes them (Angad, 10 Nov: "Jess and Rubal and Christy should be able to do it from their accounts, these three people only"), by name
+  BADGE_TEAM: ['Jess Grace', 'Rubal Oshan', 'Christie Zammit'],
   AVAIL_REMIND_TIME: '18:00',     // after Tuesday's 2-3pm one-to-ones: done vs missing → admins (all starters) and each coach (their own)
   EMAIL_ALERTS: false,            // true = also email every alert. Push is used when OneSignal keys are set.
   SESSION_DAYS: 30,               // staff stay logged in for this long
@@ -1145,6 +1147,7 @@ function me(req, u) {
     recruitTeam: recruitTeam(),
     welcomeFrom: isAdmin(u) ? welcomeFromInfo(u) : null,
     bookTeam: bookTeam(),
+    badges: canBadge(u),  // Day 1 → 🪪 Badges: Jess, Rubal and Christie only
     book: { time: CONFIG.BOOK_TIME, co: CONFIG.BOOK_CO, missed: CONFIG.BOOK_MISSED_TIME, sources: BOOK_SOURCES,
       hyrre: canBook(u) ? hyrreInfo() : null, hyrreBy: CONFIG.HYRRE.BOOKER,  // the last pull from Hyrre (Book Appts)
       hyrreManager: isHyrreManager(u),  // manages Megan: what they send for her bookings is signed "Christie / Megan"
@@ -2032,7 +2035,10 @@ function restoreStarter(req, u) {
 // and HelloFresh (HF, front and back). The numbers come from the client separately and are typed in there by an admin. The
 // artwork (the team's own badge with the photo, name and numbers left blank, cut from their Canva files) goes in once from a
 // file and lives in the app's settings, admins only: never in this repo, which is public (it carries a signature and logos).
-const BADGE_WEEKS = 6;  // Day 1 weeks on the list: the client's numbers can take a few weeks to come through
+const BADGE_WEEKS = 6, BADGE_WEEKS_MAX = 26;  // Day 1 weeks on the list (the client's numbers can take a few weeks); 6 months for a reprint
+/** Jess, Rubal and Christie (CONFIG.BADGE_TEAM), switched on: nobody else, admins included. */
+function canBadge(u) { return !!u && truthy(u.active) && CONFIG.BADGE_TEAM.some(n => normName(n) === normName(u.name)); }
+function badgeTeamOnly() { const f = CONFIG.BADGE_TEAM.map(n => n.split(' ')[0]); return 'Only ' + f.slice(0, -1).join(', ') + (f.length > 1 ? ' and ' : '') + f[f.length - 1] + ' make badges.'; }
 const BADGE_ART = { ndcs: 'BADGE_ART_NDCS', hf: 'BADGE_ART_HF', hfBack: 'BADGE_ART_HF_BACK', tmm: 'BADGE_ART_TMM' };
 function badgeArtInfo() {
   const p = PropertiesService.getScriptProperties(), out = {};
@@ -2049,14 +2055,14 @@ function badgeRow(r, a) {
 }
 /** Everyone who started in the last BADGE_WEEKS Day 1 weeks and is still with us, newest first, with their badge numbers. */
 function badgeList(req, u) {
-  if (!isAdmin(u)) throw new Error('Only admins make badges.');
-  const thisWe = weekEnding(todayStr()), rows = [];
-  for (let i = 0; i < BADGE_WEEKS; i++) availRows(addDays(thisWe, -7 * i)).filter(r => !r.no_longer).forEach(r => rows.push(r));
+  if (!canBadge(u)) throw new Error(badgeTeamOnly());
+  const thisWe = weekEnding(todayStr()), rows = [], weeks = Math.min(BADGE_WEEKS_MAX, Math.max(BADGE_WEEKS, Math.round(Number(req.weeks) || 0)));
+  for (let i = 0; i < weeks; i++) availRows(addDays(thisWe, -7 * i)).filter(r => !r.no_longer).forEach(r => rows.push(r));
   const raw = {}; readTable('Availability').forEach(a => { raw[a.id] = a; });
-  return { today: todayStr(), weeks: BADGE_WEEKS, rows: rows.map(r => badgeRow(r, raw[r.id] || {})), art: badgeArtInfo(), expiry: CONFIG.BADGE_EXPIRY };
+  return { today: todayStr(), weeks: weeks, rows: rows.map(r => badgeRow(r, raw[r.id] || {})), art: badgeArtInfo(), expiry: CONFIG.BADGE_EXPIRY };
 }
 function saveBadge(req, u) {
-  if (!isAdmin(u)) throw new Error('Only admins make badges.');
+  if (!canBadge(u)) throw new Error(badgeTeamOnly());
   const lines = badgeLines(req.badge_no), exp = String(req.badge_expiry || '');
   if (lines.some(x => !/^[A-Z0-9][A-Z0-9\-\/]{0,19}$/.test(x))) throw new Error('Badge numbers: letters and numbers only.');
   if (exp && !/^\d{4}-\d\d-\d\d$/.test(exp)) throw new Error('Pick the expiry date.');
@@ -2064,6 +2070,7 @@ function saveBadge(req, u) {
   const camp = cur ? cur.campaign : a0.campaign || (a0.company === 'JUSS' ? 'HF' : 'FR'), hf = camp === 'HF';  // where they're placed now
   const r = withLock(() => {
     const a = availRecord(req.id);
+    if (camp === 'FR' && lines.some(x => !/^\d{3,8}$/.test(x))) throw new Error('NDCS ID numbers are numbers only (like 27545).');  // an O for a 0 never gets printed
     if (lines.length > (hf ? 3 : 1)) throw new Error(hf ? 'HelloFresh badges have three numbers.' : camp === 'TMM' ? 'Modern Milkman badges have one number (MMC…).' : 'NDCS badges have one ID number.');
     a.badge_no = lines.join('\n'); a.badge_expiry = camp === 'FR' ? exp : ''; a.badge_by = u.name; a.badge_at = nowStr();
     writeRow('Availability', a);
@@ -2075,7 +2082,7 @@ function saveBadge(req, u) {
 }
 /** The badges just printed (the PDF was shared or saved): ticked off, so next time only the new ones are picked. */
 function badgesPrinted(req, u) {
-  if (!isAdmin(u)) throw new Error('Only admins make badges.');
+  if (!canBadge(u)) throw new Error(badgeTeamOnly());
   const ids = (Array.isArray(req.ids) ? req.ids : []).map(String).slice(0, 200);
   if (!ids.length) return { ok: true, n: 0 };
   const done = withLock(() => readTable('Availability').filter(a => ids.indexOf(a.id) >= 0).map(a => { a.badge_printed_at = nowStr(); a.badge_printed_by = u.name; writeRow('Availability', a); return a; }));
@@ -2084,14 +2091,14 @@ function badgesPrinted(req, u) {
 }
 /** The badge artwork for the PDF (admins), as data: URLs. */
 function badgeArt(req, u) {
-  if (!isAdmin(u)) throw new Error('Only admins make badges.');
+  if (!canBadge(u)) throw new Error(badgeTeamOnly());
   const p = PropertiesService.getScriptProperties(), out = {};
   Object.keys(BADGE_ART).forEach(k => { out[k] = p.getProperty(BADGE_ART[k]) || ''; });
   return out;
 }
 /** Puts the artwork in from the file the team was sent: the badge from their Canva design, the photo, name and numbers blank. */
 function saveBadgeArt(req, u) {
-  if (!isAdmin(u)) throw new Error('Only admins make badges.');
+  if (!canBadge(u)) throw new Error(badgeTeamOnly());
   const p = PropertiesService.getScriptProperties(), put = [];
   Object.keys(BADGE_ART).forEach(k => {
     const v = String((req.art || {})[k] || '');
