@@ -1,4 +1,4 @@
-window.APP_VERSION = '03ff00ba';
+window.APP_VERSION = '8772286f';
 
 (function () {
 'use strict';
@@ -1280,9 +1280,9 @@ function nav(view, params, push) {
   render();
 }
 function hist(kind, st) { try { kind === 'push' ? history.pushState(st, '') : history.replaceState(st, ''); S.hist = kind === 'push' ? (S.hist || 0) + 1 : (S.hist || 0); } catch (e) { /* not allowed in this frame */ } }
-function back() { if (S.hist > 0 && history.state && ['cand', 'user', 'slideqr', 'bulletin', 'alerts', 'academy', 'avail'].indexOf(history.state.v) >= 0) { S.hist--; history.back(); } else nav(S.tab); }
+function back() { if (S.hist > 0 && history.state && ['cand', 'user', 'slideqr', 'bulletin', 'alerts', 'academy', 'avail', 'badges'].indexOf(history.state.v) >= 0) { S.hist--; history.back(); } else nav(S.tab); }
 function go(tab) { nav(tab, {}, false); }
-function titleOf(v) { return { today: 'Today', mine: 'My candidates', all: 'All candidates', pay: 'Appts Attended', team: 'Team', slideqr: 'Slide QR codes', user: 'Team', bulletin: 'Bulletin', alerts: 'Alerts check', chase: 'Chase', academy: 'Day 1', book: 'Book Appts', avail: 'Availability' }[v] || ''; }
+function titleOf(v) { return { today: 'Today', mine: 'My candidates', all: 'All candidates', pay: 'Appts Attended', team: 'Team', slideqr: 'Slide QR codes', user: 'Team', bulletin: 'Bulletin', alerts: 'Alerts check', chase: 'Chase', academy: 'Day 1', book: 'Book Appts', avail: 'Availability', badges: 'Badges' }[v] || ''; }
 
 function render(quiet) {
   const v = S.view;
@@ -1295,6 +1295,7 @@ function render(quiet) {
   if (v === 'book') return viewBook(quiet);
   if (v === 'bulletin') return viewBulletin();
   if (v === 'avail') return viewAvail(quiet);
+  if (v === 'badges') return viewBadges(quiet);
   ({ today: viewToday, mine: viewMine, all: viewAll, pay: viewPay, team: viewTeam }[v] || viewToday)(quiet);
 }
 
@@ -3158,7 +3159,8 @@ function drawAcademy(r, quiet) {
     (behind.length ? '<div class="card needs d1behind"><b>↩️ Still to sort from an earlier week · ' + behind.length + '</b><p class="small muted" style="margin:4px 0 2px">A no-show to rebook, or nobody ticked Arrived / No-show. Tap a name to go to that week.</p>' +
       behind.map(c => '<button class="nm" data-wk="' + weekEndingOf(c.academy_date) + '">' + h(c.first_name) + ' · ' + (c.day1_status === 'no_show' ? 'no-show' : 'not ticked') + '</button>').join('') + '</div>' : '') +
     (pend.length || toOnb.length || behind.length ? '<div style="height:14px"></div>' : '') +
-    (admin ? '<button class="btn ghost block" id="goAvail" style="margin:0 0 12px">🗓️ Availability · Week 1 &amp; Week 2</button>' : '') +  // bookers: their NS Availability tab
+    (admin ? '<button class="btn ghost block" id="goAvail" style="margin:0 0 8px">🗓️ Availability · Week 1 &amp; Week 2</button>' +  // bookers: their NS Availability tab
+      '<button class="btn ghost block" id="goBadges" style="margin:0 0 12px">🪪 Badges · NDCS &amp; HelloFresh</button>' : '') +  // printed from the app, not Canva (Angad, 10 Nov)
     weekNav1 + weekTools + filt +
     (!wk ? skeleton(3) : dates.length ? dates.map(block).join('')
       : empty('🎓', we === thisWe ? 'Nobody booked to start this week.' : we > thisWe ? 'Nobody booked to start that week yet.' : 'Nobody started that week.')) +
@@ -3167,6 +3169,7 @@ function drawAcademy(r, quiet) {
   const go = w => { S.d1Pick = { on: today, auto: false, we: w }; drawAcademy(r, true); window.scrollTo(0, 0); };
   page.querySelector('#d1prev').onclick = () => go(addDays(we, -7));
   const gav = page.querySelector('#goAvail'); if (gav) gav.onclick = () => nav('avail', { we: we }, true);
+  const gbd = page.querySelector('#goBadges'); if (gbd) gbd.onclick = () => nav('badges', {}, true);
   page.querySelector('#d1next').onclick = () => go(addDays(we, 7));
   page.querySelectorAll('.nm[data-wk]').forEach(b => { b.onclick = () => go(b.dataset.wk); });
   page.querySelectorAll('.trow[data-cand] .main').forEach(el => { el.onclick = () => nav('cand', { id: el.parentNode.dataset.cand }, true); });
@@ -4358,11 +4361,12 @@ function savePdf(bytes, name) {
     const cv = document.createElement('canvas');
     cv.width = Math.round(wpx * dpr); cv.height = Math.round(cv.width * 841.89 / 595.28);
     box.appendChild(cv);
+    if (stream && stream.img) { const im = new Image(); im.onload = () => cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height); im.src = stream.img; return; }  // a page that's a picture (badges)
     try { drawPdfPage(cv, stream); } catch (e) { console.error('preview', e); }
   });
   back.onclick = e => { if (e.target === back) closeSheet(); };
   back.querySelector('#pdfx').onclick = back.querySelector('#pdfxt').onclick = () => closeSheet();
-  back.querySelector('#pdfgo').onclick = () => { sharePdf(bytes, name); closeSheet(); };  // the tap itself opens the Share sheet
+  back.querySelector('#pdfgo').onclick = () => { sharePdf(bytes, name); closeSheet(); if (bytes.onShare) bytes.onShare(); };  // the tap itself opens the Share sheet
 }
 /** The PDF to the phone's Share sheet (save to Files, WhatsApp, email…), or a download where there isn't one. */
 function sharePdf(bytes, name) {
@@ -4372,6 +4376,238 @@ function sharePdf(bytes, name) {
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
 }
+
+// ───── Badges (Angad, 10 Nov 2026: "the team uses Canva right now. I don't want that to happen") ─────
+// Each new starter's ID badge from Day 1 → 🪪 Badges (admins): NDCS for Fundraising (FR), HelloFresh for HF (front and back).
+// The client gives the numbers separately; the team types them in here, ticks who to print and gets an A4 PDF in the exact
+// layout of their Canva files (same sizes, so the badges fit the holders). The artwork (their badge with the photo, name and
+// numbers left blank) goes in once from a file: it's kept in the app's settings, never in this public repo.
+const BADGE = {
+  W: 2480, H: 3508,  // A4 at 300 dpi
+  // the NDCS badge folds in the middle (photo half, details half): 4 to a page, as on the Canva file
+  ndcs: { w: 2270, h: 725, x: 105, y: 164, dy: 790, per: 4, photo: [33, 38, 396, 52], ink: '#6B1FAD', size: 41.7,
+    name: [633, 350, 471], id: [735, 441.6, 369], exp: [782, 540.8, 322] },
+  // HelloFresh: 8 fronts to a page, then their backs on the next page, mirrored, for double-sided (flip on the long edge)
+  hf: { w: 1036, h: 730, x: 175, dx: 1070, y: 191, dy: 787, cols: 2, rows: 4, photo: [52, 48, 396, 48],
+    name: [747.5, 348.9, 480, 45.5], codes: [539.8, 611.5, 676.9], codeX: 239, codeW: 280, codeSize: 41.4 },
+};
+const BADGE_HINT = { ndcs: ['ID number'], hf: ['JU…', 'R…', 'GD2D…'] };
+function bdKind(r) { return avCamp(r) === 'HF' ? 'hf' : 'ndcs'; }
+function bdLines(r) { return String(r.badge_no || '').split('\n').filter(Boolean); }
+function bdFilled(r) { return bdLines(r).length >= (bdKind(r) === 'hf' ? 3 : 1); }
+function bdPhoto(r) { return !!(S.avPh || {})[r.id]; }
+function bdReady(r) { return bdFilled(r) && (bdPhoto(r) || r.has_photo); }
+/** Ticked to print: what they ticked, else everyone ready and not printed yet. */
+function bdPicked(r) { const t = (S.bdPick || {})[r.id]; return t === undefined ? bdReady(r) && !r.badge_printed_at : t; }
+function bdExpiry(r) { return r.badge_expiry || ((S.badges || {}).expiry || {}).FR || ''; }
+function loadBadges() {
+  return call('badgeList').then(r => {
+    S.badges = Object.assign(r, { at: Date.now() });
+    const weeks = r.rows.filter(x => x.has_photo && !(S.avPh || {})[x.id]).map(x => x.week_ending).filter((w, i, a) => a.indexOf(w) === i);
+    weeks.reduce((ch, we) => ch.then(() => call('availPhotos', { weekEnding: we }).then(p => { S.avPh = Object.assign(S.avPh || {}, p.photos); })), Promise.resolve())
+      .then(() => { if (weeks.length && S.view === 'badges' && !document.querySelector('.sheet-back')) render(true); }).catch(() => {});
+    return r;
+  });
+}
+function viewBadges(quiet) {
+  const id = S.viewId, d = S.badges;
+  if (!isAdmin()) return paint('Badges', '<div class="err">Only admins make badges.</div>', quiet, true);
+  if (!d || Date.now() - d.at > STALE_MS) loadBadges().then(() => { if (S.viewId === id && !document.querySelector('.sheet-back')) render(true); })
+    .catch(e => { if (S.viewId === id && !S.badges) paint('Badges', '<div class="err">' + h(e.message) + '</div>', false, true); });
+  if (!d) return paint('Badges', skeleton(4), quiet, true);
+  const art = d.art || {}, artOk = art.ndcs && art.hf && art.hfBack;
+  const rows = d.rows.slice().sort((a, b) => b.day1_date.localeCompare(a.day1_date) || a.full_name.localeCompare(b.full_name));
+  const sec = kind => {
+    const l = rows.filter(r => bdKind(r) === kind), n = l.filter(bdPicked).length, waiting = l.filter(r => !bdFilled(r)).length;
+    const title = kind === 'hf' ? '🍋 HelloFresh' : '🟣 NDCS · Fundraising';
+    return '<div class="section-h">' + title + ' <span>' + l.length + '</span></div>' +
+      (l.length ? '<div class="list">' + l.map(bdRow).join('') + '</div>' : empty('🪪', 'Nobody placed ' + (kind === 'hf' ? 'on HelloFresh' : 'on Fundraising') + ' in the last ' + d.weeks + ' weeks.')) +
+      (l.length ? '<button class="btn block bdprint" data-bdprint="' + kind + '"' + (n && artOk ? '' : ' disabled') + '>📄 Print ' + (n || '') + ' ' + (kind === 'hf' ? 'HelloFresh' : 'NDCS') + ' badge' + (n === 1 ? '' : 's') + '</button>' : '') +
+      (waiting ? '<p class="hint" style="margin-top:6px">' + waiting + ' waiting for ' + (kind === 'hf' ? 'their numbers' : 'an ID number') + ' from the client.</p>' : '');
+  };
+  const page = paint('Badges',
+    (artOk ? '' : '<div class="card needs"><b>🎨 The badge artwork isn\'t in yet</b><p class="small muted" style="margin:4px 0 8px">Once only: open the badge artwork file you were sent. It\'s your Canva badge with the photo, name and numbers left blank.</p>' +
+      '<label class="btn ghost block">📥 Add the badge artwork<input type="file" id="bdartf" accept=".json,application/json" hidden></label></div>') +
+    '<p class="hint" style="margin:0 2px 10px">Type each starter\'s number' + ' as the client sends it, tick who to print, then 📄 Print. Starters from the last ' + d.weeks + ' weeks, newest first. ' +
+      '<b>Print at 100% (Actual size)</b> so they fit the holders. HelloFresh: <b>double-sided, flip on the long edge</b> (page 2 is the backs).</p>' +
+    sec('ndcs') + sec('hf') +
+    (artOk ? '<label class="linkbtn" style="display:block;margin:14px auto 0;text-align:center">🎨 Change the badge artwork<input type="file" id="bdartf" accept=".json,application/json" hidden></label>' : ''), quiet, true);
+  bindBadges(page);
+  fillThumbs(page);
+}
+function bdRow(r) {
+  const kind = bdKind(r), lines = bdLines(r), ph = (S.avPh || {})[r.id], pick = bdPicked(r);
+  const st = r.badge_printed_at ? '<span class="pill green">✓ Printed ' + h(fmt(String(r.badge_printed_at).slice(0, 10))) + (r.badge_printed_by ? ' · ' + h(String(r.badge_printed_by).split(' ')[0]) : '') + '</span>'
+    : !bdFilled(r) ? '<span class="pill amber">⏳ Waiting for ' + (kind === 'hf' ? 'numbers' : 'ID number') + '</span>' : !ph && !r.has_photo ? '' : '<span class="pill blue">Ready to print</span>';
+  const noPh = !ph && !r.has_photo ? '<span class="pill red">📷 No photo yet: take it on the Day 1 list</span>' : '';
+  const ins = BADGE_HINT[kind].map((p, i) => '<input class="bdno" data-i="' + i + '" value="' + h(lines[i] || '') + '" placeholder="' + h(p) + '" autocapitalize="characters" autocomplete="off" spellcheck="false"' +
+    (kind === 'ndcs' ? ' inputmode="numeric"' : '') + ' aria-label="' + (kind === 'hf' ? 'Number ' + (i + 1) : 'ID number') + '">').join('') +
+    (kind === 'ndcs' ? '<label class="bdexpl">Expiry <input type="date" class="bdexp" value="' + h(bdExpiry(r)) + '" aria-label="Expiry date"></label>' : '');
+  return '<div class="trow bdrow" data-bd="' + h(r.id) + '"><label class="bdtick"><input type="checkbox" class="bdpick"' + (pick ? ' checked' : '') + (bdReady(r) ? '' : ' disabled') + ' aria-label="Print ' + h(r.full_name) + '"></label>' +
+    (ph ? '<img class="av avph" src="' + (thumbNow(r.id) || ph) + '" data-thumb="' + h(r.id) + '" alt="">' : '<span class="av co-' + (kind === 'hf' ? 'JUSS' : 'LINK') + '">' + h(initials(r.full_name)) + '</span>') +
+    '<div class="main"><div class="name">' + h(r.full_name) + '</div><div class="sub">Day 1 ' + h(fmt(r.day1_date)) + (r.coach_name ? ' · ' + h(String(r.coach_name).split(' ')[0]) : '') + '</div>' +
+    '<div class="pills">' + st + noPh + '</div><div class="bdin">' + ins + '</div></div></div>';
+}
+function bindBadges(page) {
+  const art = page.querySelector('#bdartf'); if (art) art.onchange = () => { const f = art.files && art.files[0]; art.value = ''; if (f) badgeArtFile(f); };
+  page.querySelectorAll('.bdrow').forEach(el => {
+    const id = el.dataset.bd, row = () => ((S.badges || {}).rows || []).filter(x => x.id === id)[0];
+    const save = () => {
+      const r = row(); if (!r) return;
+      const no = Array.from(el.querySelectorAll('.bdno')).map(i => i.value.trim().toUpperCase().replace(/\s+/g, '')).filter(Boolean).join('\n'), ex = el.querySelector('.bdexp');
+      const exp = ex ? (ex.value === ((S.badges || {}).expiry || {}).FR ? '' : ex.value) : '';
+      if (no === (r.badge_no || '') && exp === (r.badge_expiry || '')) return;
+      call('saveBadge', { id: id, badge_no: no, badge_expiry: exp }).then(x => {
+        Object.assign(r, x);
+        if (S.bdPick) delete S.bdPick[id];
+        toast('✓ ' + r.full_name.split(' ')[0] + '\'s badge ' + (x.badge_no ? 'saved' : 'cleared'));
+        if (S.view === 'badges' && !el.contains(document.activeElement)) render(true);
+      }).catch(e => toast(e.message));
+    };
+    el.querySelectorAll('.bdno, .bdexp').forEach(i => { i.onchange = save; });
+    const pk = el.querySelector('.bdpick'); if (pk) pk.onchange = () => { (S.bdPick = S.bdPick || {})[id] = pk.checked; render(true); };
+  });
+  page.querySelectorAll('[data-bdprint]').forEach(b => { b.onclick = () => badgePdf(b.dataset.bdprint); });
+}
+/** The artwork file ({ kind: 'jl-badge-art', ndcs, hf, hfBack }, sent to them privately): put in once. */
+function badgeArtFile(file) {
+  const rd = new FileReader();
+  rd.onload = () => {
+    let pk = null;
+    try { pk = JSON.parse(rd.result); } catch (e) { /* not JSON */ }
+    if (!pk || pk.kind !== 'jl-badge-art' || !pk.ndcs || !pk.hf || !pk.hfBack) return toast('That isn\'t the badge artwork file.');
+    toast('Putting the artwork in…');
+    call('saveBadgeArt', { art: { ndcs: pk.ndcs, hf: pk.hf, hfBack: pk.hfBack } }).then(a => {
+      S.bdArt = null; if (S.badges) S.badges.art = a;
+      toast('🎨 Badge artwork in ✓'); render(true);
+    }).catch(e => toast(e.message));
+  };
+  rd.onerror = () => toast('Couldn\'t read that file.');
+  rd.readAsText(file);
+}
+function bdImg(src) { return new Promise(res => { if (!src) return res(null); const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; }); }
+/** The artwork and the badge fonts (Arimo, the Canva files' font), once a session. */
+function badgeAssets() {
+  if (S.bdArt) return S.bdArt;
+  const fonts = !window.FontFace ? Promise.resolve() : Promise.all([['Arimo', 'arimo-latin-400-normal.woff2', '400'], ['Arimo', 'arimo-latin-700-normal.woff2', '700'],
+    ['ArimoX', 'arimo-latin-ext-400-normal.woff2', '400'], ['ArimoX', 'arimo-latin-ext-700-normal.woff2', '700']]
+    .map(f => new FontFace(f[0], 'url(fonts/' + f[1] + ')', { weight: f[2] }).load().then(ff => document.fonts.add(ff)).catch(() => {})));
+  S.bdArt = Promise.all([call('badgeArt'), fonts]).then(r => Promise.all([bdImg(r[0].ndcs), bdImg(r[0].hf), bdImg(r[0].hfBack)]))
+    .then(i => { if (!i[0] || !i[1] || !i[2]) throw new Error('The badge artwork isn\'t in yet. Add it from the file first.'); return { ndcs: i[0], hf: i[1], hfBack: i[2] }; });
+  S.bdArt.catch(() => { S.bdArt = null; });
+  return S.bdArt;
+}
+/** Their photo for the badge: a square of the head and shoulders, cut from their availability photo around the face. */
+function bdFace(r) {
+  return bdImg((S.avPh || {})[r.id]).then(img => !img ? null : (window.JLBulletin ? JLBulletin.autoFrame(img, '') : Promise.resolve(null)).then(f => {
+    const w = img.naturalWidth, hh = img.naturalHeight;
+    f = f || { x: 0, y: 0, w: w, h: hh };
+    const s = Math.min(f.w, f.h), x = f.x + (f.w - s) / 2, y = Math.max(0, Math.min(hh - s, f.y + (f.h - s) * 0.3));
+    return { img: img, x: x, y: y, s: s };
+  }).catch(() => ({ img: img, x: 0, y: 0, s: Math.min(img.naturalWidth, img.naturalHeight) })));
+}
+function bdRound(g, x, y, w, hh, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + hh, r); g.arcTo(x + w, y + hh, x, y + hh, r); g.arcTo(x, y + hh, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+function bdPhotoDraw(g, face, ox, oy, p) {
+  g.save(); bdRound(g, ox + p[0], oy + p[1], p[2], p[2], p[3]); g.clip();
+  if (face) g.drawImage(face.img, face.x, face.y, face.s, face.s, ox + p[0], oy + p[1], p[2], p[2]);
+  else { g.fillStyle = '#E7E3DE'; g.fillRect(ox + p[0], oy + p[1], p[2], p[2]); }
+  g.restore();
+}
+/** Text that fits: the Canva size, smaller for a long name, never wider than its line. */
+function bdText(g, t, x, y, maxW, size, weight, align) {
+  let sz = size;
+  const set = () => { g.font = weight + ' ' + sz + 'px Arimo, ArimoX, Arial, Helvetica, sans-serif'; };
+  set(); while (g.measureText(t).width > maxW && sz > size * 0.55) { sz -= 1; set(); }
+  g.textAlign = align || 'left'; g.textBaseline = 'alphabetic'; g.fillText(t, x, y);
+}
+function bdDrawNdcs(g, a, r, face, ox, oy) {
+  const B = BADGE.ndcs, lines = bdLines(r), e = bdExpiry(r);
+  g.drawImage(a.ndcs, ox, oy, B.w, B.h);
+  bdPhotoDraw(g, face, ox, oy, B.photo);
+  g.fillStyle = B.ink;
+  bdText(g, r.full_name.toUpperCase(), ox + B.name[0], oy + B.name[1], B.name[2], B.size, '700');
+  bdText(g, lines[0] || '', ox + B.id[0], oy + B.id[1], B.id[2], B.size, '700');
+  bdText(g, e ? e.slice(8, 10) + '/' + e.slice(5, 7) + '/' + e.slice(0, 4) : '', ox + B.exp[0], oy + B.exp[1], B.exp[2], B.size, '700');
+}
+function bdDrawHf(g, a, r, face, ox, oy) {
+  const B = BADGE.hf, lines = bdLines(r);
+  g.drawImage(a.hf, ox, oy, B.w, B.h);
+  bdPhotoDraw(g, face, ox, oy, B.photo);
+  g.fillStyle = '#000';
+  bdText(g, r.full_name, ox + B.name[0], oy + B.name[1], B.name[2], B.name[3], '700', 'center');
+  B.codes.forEach((y, i) => bdText(g, lines[i] || '', ox + B.codeX, oy + y, B.codeW, B.codeSize, '400', 'center'));
+}
+function bdPage() { const cv = document.createElement('canvas'); cv.width = BADGE.W; cv.height = BADGE.H; const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, cv.width, cv.height); return { cv: cv, g: g }; }
+function bdJpeg(cv) { const u = cv.toDataURL('image/jpeg', 0.92), b = atob(u.split(',')[1]), out = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) out[i] = b.charCodeAt(i); return { url: u, bytes: out, w: cv.width, h: cv.height }; }
+/** The ticked badges as A4 pages (pictures at 300 dpi), in the Canva files' layout. */
+function badgePages(kind, a, list, faces) {
+  const pages = [];
+  if (kind === 'ndcs') {
+    for (let i = 0; i < list.length; i += BADGE.ndcs.per) {
+      const p = bdPage();
+      list.slice(i, i + BADGE.ndcs.per).forEach((r, j) => bdDrawNdcs(p.g, a, r, faces[i + j], BADGE.ndcs.x, BADGE.ndcs.y + j * BADGE.ndcs.dy));
+      pages.push(bdJpeg(p.cv));
+    }
+    return pages;
+  }
+  const B = BADGE.hf, per = B.cols * B.rows;
+  for (let i = 0; i < list.length; i += per) {
+    const fr = bdPage(), bk = bdPage();
+    list.slice(i, i + per).forEach((r, j) => {
+      const c = j % B.cols, rr = Math.floor(j / B.cols), x = B.x + c * B.dx, y = B.y + rr * B.dy;
+      bdDrawHf(fr.g, a, r, faces[i + j], x, y);
+      bk.g.drawImage(a.hfBack, BADGE.W - x - B.w, y, B.w, B.h);  // its back, mirrored across the page: double-sided, long edge
+    });
+    pages.push(bdJpeg(fr.cv), bdJpeg(bk.cv));
+  }
+  return pages;
+}
+/** One PDF of picture pages (JPEG), the size of A4. */
+function pdfImageFile(imgs, title) {
+  const W = 595.28, H = 841.89, parts = [], offs = [];
+  let len = 0;
+  const enc = t => { const b = new Uint8Array(t.length); for (let i = 0; i < t.length; i++) b[i] = t.charCodeAt(i) & 255; return b; };
+  const put = b => { parts.push(b); len += b.length; };
+  const obj = (n, body) => { offs[n] = len; put(enc(n + ' 0 obj\n')); body.forEach(put); put(enc('\nendobj\n')); };
+  put(enc('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n'));
+  obj(1, [enc('<< /Type /Catalog /Pages 2 0 R >>')]);
+  obj(2, [enc('<< /Type /Pages /Kids [' + imgs.map((x, i) => (3 + 3 * i) + ' 0 R').join(' ') + '] /Count ' + imgs.length + ' >>')]);
+  imgs.forEach((im, i) => {
+    const p = 3 + 3 * i, cs = 'q ' + W + ' 0 0 ' + H + ' 0 0 cm /Im0 Do Q';
+    obj(p, [enc('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ' + W + ' ' + H + '] /Resources << /XObject << /Im0 ' + (p + 2) + ' 0 R >> >> /Contents ' + (p + 1) + ' 0 R >>')]);
+    obj(p + 1, [enc('<< /Length ' + cs.length + ' >>\nstream\n' + cs + '\nendstream')]);
+    obj(p + 2, [enc('<< /Type /XObject /Subtype /Image /Width ' + im.w + ' /Height ' + im.h + ' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ' + im.bytes.length + ' >>\nstream\n'), im.bytes, enc('\nendstream')]);
+  });
+  const info = 3 + 3 * imgs.length;
+  obj(info, [enc('<< /Title (' + pdfStr(title) + ') /Author (' + pdfStr(S.me.user.name) + ') >>')]);
+  const xref = len;
+  let x = 'xref\n0 ' + (info + 1) + '\n0000000000 65535 f \n';
+  for (let k = 1; k <= info; k++) x += String(offs[k]).padStart(10, '0') + ' 00000 n \n';
+  put(enc(x + 'trailer\n<< /Size ' + (info + 1) + ' /Root 1 0 R /Info ' + info + ' 0 R >>\nstartxref\n' + xref + '\n%%EOF\n'));
+  const out = new Uint8Array(len); let o = 0;
+  parts.forEach(b => { out.set(b, o); o += b.length; });
+  out.pages = imgs.map(im => ({ img: im.url }));  // savePdf's preview
+  return out;
+}
+function badgePdf(kind) {
+  const d = S.badges; if (!d) return;
+  const list = d.rows.filter(r => bdKind(r) === kind && bdPicked(r)).sort((a, b) => a.day1_date.localeCompare(b.day1_date) || a.full_name.localeCompare(b.full_name));
+  if (!list.length) return toast('Tick who to print first.');
+  const bad = list.filter(r => !bdFilled(r) || !bdPhoto(r));
+  if (bad.length) return toast(firstNamesOf(bad) + ': ' + (bad.some(r => !bdFilled(r)) ? 'numbers missing' : 'photo still loading or missing') + '.');
+  toast('Making the badges…');
+  const label = kind === 'hf' ? 'HelloFresh' : 'NDCS', t = S.me.today, name = label + ' badges ' + t.slice(8, 10) + '.' + t.slice(5, 7) + '.' + t.slice(0, 4);
+  Promise.all([badgeAssets(), Promise.all(list.map(bdFace))]).then(r => {
+    const bytes = pdfImageFile(badgePages(kind, r[0], list, r[1]), name);
+    bytes.onShare = () => call('badgesPrinted', { ids: list.map(x => x.id), kind: kind }).then(x => {
+      list.forEach(row => { row.badge_printed_at = x.at; row.badge_printed_by = x.by; if (S.bdPick) delete S.bdPick[row.id]; });
+      const again = k => { if (S.view !== 'badges') return; if (document.querySelector('.sheet-back') && k < 20) return setTimeout(() => again(k + 1), 250); render(true); };
+      again(0);  // once the preview has closed
+    }).catch(() => {});
+    savePdf(bytes, name + '.pdf');
+  }).catch(e => toast(e.message));
+}
+function firstNamesOf(l) { const n = l.map(r => r.full_name.split(' ')[0]); return n.length > 3 ? n.slice(0, 3).join(', ') + ' +' + (n.length - 3) : n.join(', '); }
 
 // ───── Alerts check (admin): is everyone actually getting their alerts? ─────
 function viewAlerts() {
