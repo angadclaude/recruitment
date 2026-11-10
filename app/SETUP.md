@@ -238,7 +238,7 @@ On the Day 1 list each starter has **FR | HF | TMM**: tap where they're placed. 
 
 ## 🪪 Badges: printed from the app (admins)
 No more Canva. **Day 1 tab → 🪪 Badges · NDCS, HelloFresh & TMM.**
-1. **First time only:** tap **📥 Add the badge artwork** and pick the badge artwork file Angad sent you. It's your Canva badge with the photo, name and numbers left blank. It stays in the app.
+1. **First time only:** save the **JL badge artwork** picture Angad sent you to your phone (Photos or Files), tap **📥 Add the badge artwork** and pick it. It's your Canva badges with the photo, name and numbers left blank, and coloured squares in the corner. It stays in the app.
 2. Everyone who started in the last 6 weeks is listed, in **NDCS · Fundraising**, **HelloFresh** and **The Modern Milkman** (by where they were placed on Day 1), with their Day 1 photo.
 3. **Type their number(s)** when the client sends them: NDCS one ID number; HelloFresh three (JU…, R…, GD2D…); Modern Milkman one (MMC…). They save when you leave the box. NDCS expiry is 31/03/2027 unless you change it for that person.
 4. Everyone with their numbers and a photo is **ticked**. Untick anyone you don't want, then tap **📄 Print … badges** → **Share / Save**.

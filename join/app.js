@@ -1,4 +1,4 @@
-window.APP_VERSION = '48e5540a';
+window.APP_VERSION = 'cb3f64ee';
 
 (function () {
 'use strict';
@@ -4434,7 +4434,7 @@ function viewBadges(quiet) {
       (waiting ? '<p class="hint" style="margin-top:6px">' + waiting + ' waiting for ' + { hf: 'their numbers', tmm: 'an MMC number', ndcs: 'an ID number' }[kind] + ' from the client.</p>' : '');
   };
   const page = paint('Badges',
-    (artOk ? '' : '<div class="card needs"><b>🎨 The badge artwork isn\'t in yet</b><p class="small muted" style="margin:4px 0 8px">Once only: open the badge artwork file you were sent. It\'s your Canva badge with the photo, name and numbers left blank.</p>' +
+    (artOk ? '' : '<div class="card needs"><b>🎨 The badge artwork isn\'t in yet</b><p class="small muted" style="margin:4px 0 8px">Once only: save the <b>JL badge artwork</b> picture you were sent to your phone (Photos or Files), then tap below and pick it. It\'s your Canva badges with the photo, name and numbers left blank.</p>' +
       '<label class="btn ghost block">📥 Add the badge artwork<input type="file" id="bdartf" hidden></label></div>') +
     '<p class="hint" style="margin:0 2px 10px">Type each starter\'s number' + ' as the client sends it, tick who to print, then 📄 Print. Starters from the last ' + d.weeks + ' weeks, newest first. ' +
       '<b>Print at 100% (Actual size)</b> so they fit the holders. HelloFresh: <b>double-sided, flip on the long edge</b> (page 2 is the backs).</p>' +
@@ -4477,22 +4477,61 @@ function bindBadges(page) {
   });
   page.querySelectorAll('[data-bdprint]').forEach(b => { b.onclick = () => badgePdf(b.dataset.bdprint); });
 }
-/** The artwork file ({ kind: 'jl-badge-art', ndcs, hf, hfBack, tmm }, sent to them privately): put in once. Its picker (and the photos
- *  file's) lists every file: with accept=".json" an iPhone greyed the file out in Files (Angad, 10 Nov), so the contents are checked here. */
+/** The artwork goes in once (admins), as a picture or as a file.
+ *  - The picture (Angad, 10 Nov: the .json file wouldn't go in from his iPhone): the four blank badges on one sheet, laid out as
+ *    BADGE_SHEET, with a colour key down its top right so no other picture goes in by mistake. Saved to Photos or Files, it's
+ *    picked like any picture; one a phone has shrunk still works (it's cut by proportion).
+ *  - The file ({ kind: 'jl-badge-art', ndcs, hf, hfBack, tmm }, PNG data: URLs), read however the phone saved it.
+ *  The pickers list every file: with accept=".json" an iPhone greyed the file out in Files. A wrong pick says what it got. */
+const BADGE_SHEET = { w: 2402, h: 2185, parts: { ndcs: [0, 0, 2270, 725], tmm: [0, 725, 1365, 1072], hf: [1366, 725, 1036, 730], hfBack: [1366, 1455, 1036, 730] },
+  key: [[2290, 30, [255, 0, 255]], [2290, 210, [0, 200, 255]], [2290, 390, [255, 220, 0]], [2290, 570, [0, 0, 0]]] };  // 100 × 120 blocks
 function badgeArtFile(file) {
+  const name = String(file.name || ''), type = String(file.type || '');
+  const wrong = () => toast('"' + (name || 'That') + '" isn\'t the badge artwork. Pick the "JL badge artwork" picture: four blank badges with coloured squares in the top corner.');
+  if (/^image\//.test(type) || /\.(png|jpe?g|heic|heif|webp|gif)$/i.test(name)) return badgeArtSheet(file, wrong);
   const rd = new FileReader();
   rd.onload = () => {
+    const t = String(rd.result || '').replace(/^﻿/, ''), a = t.indexOf('{'), b = t.lastIndexOf('}');
     let pk = null;
-    try { pk = JSON.parse(rd.result); } catch (e) { /* not JSON */ }
-    if (!pk || pk.kind !== 'jl-badge-art' || !(pk.ndcs || pk.hf || pk.hfBack || pk.tmm)) return toast('That isn\'t the badge artwork file.');
-    toast('Putting the artwork in…');
-    call('saveBadgeArt', { art: { ndcs: pk.ndcs || '', hf: pk.hf || '', hfBack: pk.hfBack || '', tmm: pk.tmm || '' } }).then(a => {
-      S.bdArt = null; if (S.badges) S.badges.art = a;
-      toast('🎨 Badge artwork in ✓'); render(true);
-    }).catch(e => toast(e.message));
+    try { pk = JSON.parse(a >= 0 && b > a ? t.slice(a, b + 1) : t); } catch (e) { /* not JSON */ }
+    if (!pk || pk.kind !== 'jl-badge-art' || !(pk.ndcs || pk.hf || pk.hfBack || pk.tmm)) return wrong();
+    badgeArtSave({ ndcs: pk.ndcs || '', hf: pk.hf || '', hfBack: pk.hfBack || '', tmm: pk.tmm || '' });
   };
-  rd.onerror = () => toast('Couldn\'t read that file.');
+  rd.onerror = () => toast('Couldn\'t read "' + name + '".');
   rd.readAsText(file);
+}
+function badgeArtSave(art) {
+  toast('Putting the artwork in…');
+  call('saveBadgeArt', { art: art }).then(a => {
+    S.bdArt = null; if (S.badges) S.badges.art = a;
+    toast('🎨 Badge artwork in ✓'); render(true);
+  }).catch(e => toast(e.message));
+}
+/** The sheet picture → the four badges, each at its own size. */
+function badgeArtSheet(file, wrong) {
+  const url = URL.createObjectURL(file);
+  bdImg(url).then(img => {
+    URL.revokeObjectURL(url);
+    const B = BADGE_SHEET;
+    if (!img || Math.abs(img.naturalHeight / img.naturalWidth - B.h / B.w) > 0.01 || img.naturalWidth < B.w * 0.4) return wrong();
+    const k = img.naturalWidth / B.w, c = document.createElement('canvas'), g = c.getContext('2d');
+    c.width = img.naturalWidth; c.height = img.naturalHeight; g.drawImage(img, 0, 0);
+    const keyOk = B.key.every(m => {
+      const d = g.getImageData(Math.round((m[0] + 30) * k), Math.round((m[1] + 30) * k), Math.max(1, Math.round(40 * k)), Math.max(1, Math.round(60 * k))).data;
+      let r = 0, gr = 0, bl = 0; const n = d.length / 4;
+      for (let i = 0; i < d.length; i += 4) { r += d[i]; gr += d[i + 1]; bl += d[i + 2]; }
+      return Math.abs(r / n - m[2][0]) + Math.abs(gr / n - m[2][1]) + Math.abs(bl / n - m[2][2]) < 90;
+    });
+    if (!keyOk) return wrong();
+    const art = {};
+    Object.keys(B.parts).forEach(p => {
+      const r = B.parts[p], o = document.createElement('canvas');
+      o.width = r[2]; o.height = r[3];
+      o.getContext('2d').drawImage(img, r[0] * k, r[1] * k, r[2] * k, r[3] * k, 0, 0, r[2], r[3]);
+      art[p] = o.toDataURL('image/jpeg', 0.95);
+    });
+    badgeArtSave(art);
+  });
 }
 function bdImg(src) { return new Promise(res => { if (!src) return res(null); const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; }); }
 /** The artwork and the badge fonts (Arimo, the Canva files' font), once a session. */
