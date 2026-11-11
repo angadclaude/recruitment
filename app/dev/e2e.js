@@ -3116,7 +3116,8 @@ async function fillEval(p) {
     'admin Chase tab, this week: "🎓 Missed Day 1: rebook: Adham" on his booker\'s card, and "stays here for 14 days from that Day 1, then drops off"');
   await shot(ap, '25c-chase-missed-day1', true);
   await ap.goto(APP + 'index.html?c=academy'); await ap.waitForSelector('.d1nav');
-  await ap.click('#d1prev');
+  // (the tab opens on the week with the next Day 1, which may be next week: ‹ until it says Last week)
+  for (let i = 0; i < 3 && !/Last week · ending/i.test(await ap.innerText('.d1nav')); i++) { await ap.click('#d1prev'); await ap.waitForTimeout(400); }
   await ap.waitForFunction(() => /Last week · ending/i.test(document.querySelector('.d1nav').innerText));
   ok(/25 Oct/.test(await ap.innerText('.d1nav')) && /Monday 19 October/i.test(await ap.innerText('#page')) && await ap.$('.trow[data-cand="' + adham.id + '"] .quick [data-out]'),
     '‹ on Day 1 → last week (ending Sun 25 Oct): Adham in that week\'s list with his Rebook buttons');
