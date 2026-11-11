@@ -890,7 +890,15 @@ function startBooked() {
     store.set(key, w);
     if (!quick || quick.first_name !== w.first_name || quick.slot_date !== w.slot_date || !!quick.booker !== !!w.booker) renderBooked(w, !!quick);
     else if (!!quick.confirmed_at !== !!w.confirmed_at && C.bkCta) C.bkCta(!!w.confirmed_at);
-  }).catch(e => { if (!quick) $app.innerHTML = logos(56) + '<div class="card center"><div class="big-emoji">🔗</div><p>' + h(e.message) + '</p></div>'; });
+    else if (!!quick.over !== !!w.over) renderBooked(w, true);
+  }).catch(e => {
+    // The server's answer (cancelled, or rebooked for another day), not a lost signal: that's what the page says now, in place of
+    // "You're booked in" for the old day (11 Nov), and this phone's copy of the old booking goes
+    // (only those two answers: a server hiccup leaves the page they already have alone)
+    const gone = !e.retry && /link has expired|been rebooked/.test(e.message);
+    if (gone) store.del(key);
+    if (!quick || gone) $app.innerHTML = logos(56) + '<div class="card center"><div class="big-emoji">🔗</div><p>' + h(e.message) + '</p></div>';
+  });
 }
 function renderBooked(w, keepScroll) {
   if (!keepScroll) scrollTop();
@@ -919,8 +927,11 @@ function renderBooked(w, keepScroll) {
     '<p class="center muted small" style="margin:18px 0 110px">Questions? Just reply to the message' + (w.booker ? ' from ' + h(w.booker) : '') + ' 💬</p>' +
     '<div class="wl-cta" id="cta"></div></div>';
   const cta = document.getElementById('cta');
+  // The day has been and gone (and they didn't come): nothing to confirm, and never "locked in" for a day that's passed
+  const gone = !w.came && (days < 0 || !!w.over);
   const drawCta = confirmed => {
-    cta.innerHTML = confirmed
+    cta.innerHTML = gone ? '<div class="wl-done">📅 ' + h(fmtLong(w.slot_date)) + ' has been and gone. Reply to the message' + (w.booker ? ' from ' + h(w.booker) : '') + ' and we\'ll book you another day.</div>'
+      : confirmed
       ? '<div class="wl-done">✅ You\'re locked in. See you ' + h(see) + ' at ' + h(fmt12(time)) + '! 🔥</div>'
       : '<button class="btn block evsubmit wl-btn" id="conf">🔒 Confirm I\'m coming</button>';
     const b = document.getElementById('conf');
@@ -1014,6 +1025,7 @@ function fetchWeek(we, extra) {
     S.data[b.weekEnding] = { items: b.items, pay: b.pay, at: Date.now() };
     if (b.users) S.users = b.users;
     if (b.bookings) S.bookings = { items: b.bookings, at: Date.now() };  // Jess, Rubal, Angad: presentations they've booked
+    if (b.hyrre && !b.me && S.me && S.me.book) S.me.book.hyrre = b.hyrre;  // Hyrre's last pull, as it is now (11 Nov: "Not today yet" stayed up after the 08:45 pull, until a reload)
     if (typeof b.chase === 'number' && (b.chase !== S.chaseN || (b.chaseCarry || 0) !== (S.chaseCarry || 0))) { S.chaseN = b.chase; S.chaseCarry = b.chaseCarry || 0; paintTabs(); }
     if (b.me) {
       const old = S.me;
@@ -1255,12 +1267,17 @@ function refreshQuiet() {
   if (!S.me) return;
   const we = S.view === 'today' ? weekEndingOf(S.day) : S.week;
   prefetchLists();
-  fetchWeek(we).then(() => whenCalm('list', () => { if (['today', 'book', 'mine', 'all', 'pay'].indexOf(S.view) >= 0) render(true); })).catch(() => {});
+  // Left open overnight (11 Nov: Monday morning's reminders still said "tomorrow"): once the day has moved on, "today", this week
+  // and everything worked out from them come again with the refresh. Once per day on this phone's clock, in case it's set wrong.
+  const lt = londonToday(), newDay = lt !== S.me.today && S.dayAsked !== lt;
+  if (newDay) S.dayAsked = lt;
+  fetchWeek(we, newDay ? { withMe: true } : undefined).then(() => whenCalm('list', () => { if (['today', 'book', 'mine', 'all', 'pay'].indexOf(S.view) >= 0) render(true); })).catch(() => {});
 }
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && S.booted) refreshQuiet(); });
 window.addEventListener('popstate', e => {
   if (BOOT.mode !== 'staff' || !S.booted) return;
   const st = e.state || { v: S.tab, p: {} };
+  bdLeave(st.v);
   S.view = st.v; S.params = st.p || {}; S.viewId++; S.navKind = 'back';
   render();
 });
@@ -1269,6 +1286,7 @@ if ('scrollRestoration' in history) history.scrollRestoration = 'manual';  // we
 /** Where you were on each page, so coming back (a tab, or ← back) lands you in the same place, like a native app. */
 function scrollKey(v, p) { return v === 'cand' || v === 'user' ? v + ':' + ((p && p.id) || '') : v; }
 function nav(view, params, push) {
+  bdLeave(view);
   S.scrollMem = S.scrollMem || {};
   if (S.view) S.scrollMem[scrollKey(S.view, S.params)] = window.scrollY;
   const isTab = tabs().some(t => t[0] === view);
@@ -1365,7 +1383,7 @@ function paint(title, html, quiet, sub) {
   // A background refresh of a list: change only the rows that changed. The rest stay exactly as they are,
   // so a finger aiming at someone still lands on them (rebuilding the whole list swallowed taps on slower phones).
   const key = S.view + '|' + JSON.stringify(S.params || {});
-  const patch = quiet && ['today', 'book', 'mine', 'all', 'pay'].indexOf(S.view) >= 0 && paint._key === key;
+  const patch = quiet && ['today', 'book', 'mine', 'all', 'pay', 'badges'].indexOf(S.view) >= 0 && paint._key === key;
   paint._key = key;
   clearTimeout(paint._t);
   if (patch) { if (paint._html !== html) { const t = document.createElement('div'); t.innerHTML = html; morph(page, t, true); } paint._html = html; return page; }
@@ -3306,6 +3324,8 @@ function bookName(b) { return (b.first_name + ' ' + (b.last_name || '')).trim();
 function bookCo(b) { return b.company === 'LINK' ? 'LINK' : 'JUSS'; }
 /** Booked in Hyrre (Megan, or by hand there): approved there, Hyrre sends their confirmation; ours is only the reminder (30 Oct). */
 function bookHy(b) { return !!b.hyrre_id; }
+/** From Hyrre, or a rebook (of a rebook…) of one that was: still Megan's, or whoever Hyrre credited (the server decides the same way). */
+function bookFromHyrre(b) { for (let x = b, i = 0; x && i < 6; x = x.rebook_of ? bookById(x.rebook_of) : null, i++) if (bookHy(x) || meganOf(x)) return true; return false; }
 /** Hyrre's who didn't come get Hyrre's rebook link once they're marked absent there: by the pull after the presentation (30 Oct). */
 /** Megan's no-shows get our "sorry we missed you" and a rebook here too (Angad, 30 Oct); what happens in Hyrre. */
 function bookHyAbsent() {
@@ -3495,7 +3515,7 @@ function bookDayHtml(day) {
   if (!l.length) return nav + bookPdfBtn(weekEndingOf(day)) + empty('📅', 'Nobody booked for ' + h(fmtLong(day)) + (after ? '.' : ' yet.'));
   const unconf = o.due.filter(b => !bookOk(b)).length, unsent = o.due.filter(b => !b.confirm_at && !bookHy(b)).length;
   return nav + bookPdfBtn(weekEndingOf(day)) + (after ? kpis([[l.length, 'Booked'], [o.came.length, 'Came'], [o.missed.length, 'Didn\'t come', o.missed.length > 0], [Math.round(o.came.length / l.length * 100) + '%', 'Show-up']])
-      : kpis([[l.length, 'Booked'], [l.length - unconf, 'Confirmed'], [unconf, 'Not confirmed', unconf > 0], [unsent, 'Not sent', unsent > 0]])) +
+      : kpis([[l.length, 'Booked'], [l.filter(bookOk).length, 'Confirmed'], [unconf, 'Not confirmed', unconf > 0], [unsent, 'Not sent', unsent > 0]])) +
     bookRemBtn(day, o) + '<div class="list alist">' + o.due.concat(o.missed, o.came).map(bookRow).join('') + '</div>';
 }
 /** The whole week in one go, a day at a time (‹ › a week at a time, like All). */
@@ -3587,7 +3607,8 @@ function bookSheetOpen(label, html) {
 function bookForm(pre, mode) {
   const cfg = bookCfg(), today = S.me.today, now = londonNow().slice(11, 16), days = [];
   for (let d = today; days.length < 5; d = addDays(d, 1)) { const w = D(d).getUTCDay(); if (w > 0 && w < 6 && (d > today || now < cfg.time)) days.push(d); }
-  const sel = mode === 'edit' ? pre.slot_date : '', later = !!sel && days.indexOf(sel) < 0, hyRe = mode === 'rebook' && bookHy(pre);
+  const sel = mode === 'edit' ? pre.slot_date : '', later = !!sel && days.indexOf(sel) < 0, hyRe = mode === 'rebook' && bookFromHyrre(pre);
+  const ownSrc = mode === 'edit' && !!pre.source && cfg.sources.indexOf(pre.source) < 0;  // "Hirematic" (Megan's): not one of the chips, so it stays as it is
   const dayChip = d => '<button type="button" class="chip' + (d === sel ? ' on' : '') + '" data-day="' + d + '">' + DAYS[D(d).getUTCDay()] + ' ' + D(d).getUTCDate() + ' ' + MONTHS[D(d).getUTCMonth()] + '</button>';
   const back = bookSheetOpen('Book a presentation',
     '<div class="sheet-h"><div><div class="label muted">' + (mode === 'edit' ? 'Change the day · ' + h(bookName(pre)) : mode === 'rebook' ? 'Rebook · they didn\'t come' : 'After the call') + '</div><div class="display">📅 Book a presentation</div></div></div>' +
@@ -3597,7 +3618,7 @@ function bookForm(pre, mode) {
     '<label class="q">Which day? <span class="muted">All at ' + h(fmt12(cfg.time)) + '</span></label><div class="chips" id="bkdays">' + days.map(dayChip).join('') +
       '<button type="button" class="chip' + (later ? ' on' : '') + '" id="bklater">Later date…</button></div>' +
     '<input type="date" id="bkdate" min="' + today + '" value="' + h(later ? sel : '') + '"' + (later ? '' : ' hidden') + ' style="margin-top:8px">' +
-    (hyRe ? '' : '<label class="q">Where did they apply?</label>' + chips('bksrc', cfg.sources, pre.source || cfg.sources[0])) +
+    (hyRe || ownSrc ? '' : '<label class="q">Where did they apply?</label>' + chips('bksrc', cfg.sources, pre.source || cfg.sources[0])) +
     '<label class="q" for="bknotes">Notes for the presenter <span class="muted">(optional)</span></label><textarea id="bknotes" class="short" maxlength="300" placeholder="e.g. driving in, has done sales before">' + h(pre.notes || '') + '</textarea>' +
     '<div class="help" style="margin-top:8px">' + (hyRe ? '🤖 Still ' + h(pre.booked_by === cfg.hyrreBy ? 'Megan' : String(pre.booked_by).split(' ')[0]) + '\'s (from Hyrre · ' + h(pre.source) + '), booked for <b>' + h(cfg.co) + ' Marketing</b>, signed ' +
       h(bookSigner(Object.assign({}, pre, { hyrre_id: '' }))) + '. Ours from now on: confirm, remind and change it here.'
@@ -3615,7 +3636,7 @@ function bookForm(pre, mode) {
   box.querySelector('#bksave').onclick = () => {
     const err = box.querySelector('#bkerr'), val = id => box.querySelector(id).value;
     const f = { id: mode === 'edit' ? pre.id : '', rebook_of: mode === 'rebook' ? pre.id : '', first_name: val('#bkfn'), last_name: val('#bksn'), mobile: val('#bkmob'),
-      slot_date: day, source: hyRe ? pre.source : chipVal(box, 'bksrc'), notes: val('#bknotes') };
+      slot_date: day, source: hyRe || ownSrc ? pre.source : chipVal(box, 'bksrc'), notes: val('#bknotes') };
     if (!f.first_name.trim()) return showErr(err, 'Add their first name.');
     if (!ukMobile(f.mobile)) return showErr(err, 'Add a valid UK mobile (07…).');
     if (!f.slot_date) return showErr(err, 'Pick the day of their presentation.');
@@ -3655,7 +3676,7 @@ function bookRemindSheet(date) {
   if (!items.length) return toast(office ? officeNote() : 'Nobody to remind for ' + fmtLong(date));
   const n = bookDaysTo(date), reminded = bookReminded, hy = items.some(b => bookHy(b) || bookSigner(b) !== S.me.user.name);  // Megan's rebooked here too
   const sent = b => '<span class="pill green">✓ Sent ' + h(String(b.remind_at).slice(11, 16)) + (b.remind_by && b.remind_by !== S.me.user.name ? ' · ' + h(String(b.remind_by).split(' ')[0]) : '') + '</span>';
-  const prog = () => items.filter(reminded).length + ' of ' + items.length + ' sent';
+  const prog = () => items.filter(x => reminded(bookById(x.id) || x)).length + ' of ' + items.length + ' sent';
   const back = bookSheetOpen('Presentation reminders',
     '<div class="sheet-h"><div><div class="label muted">' + (n === 0 ? 'TODAY · ' : n === 1 ? 'TOMORROW · ' : '') + h(fmtLong(date)) + ' · ' + h(bookCfg().time) + '</div><div class="display">📲 Reminders</div></div></div>' +
     '<p class="hint" style="margin-top:-6px"><b id="bkprog">' + prog() + '</b>. ' + (hy ? 'Signed by you, and 🤖 Hyrre\'s by whoever booked them (Megan\'s: ' + h(bookSigner({ booked_by: bookCfg().hyrreBy || 'Megan Hyrre' })) + ').' : 'Signed by you.') +
@@ -3665,8 +3686,9 @@ function bookRemindSheet(date) {
       (reminded(b) ? sent(b) : bookSend(b, 'remind')) + '</div>').join('') + '</div>' +
     '<button class="btn ghost block" id="bkdone" style="margin-top:14px">Done</button>');
   back.querySelectorAll('[data-bks]').forEach(a => a.addEventListener('click', () => {
-    const b = items.filter(x => x.id === a.dataset.bks)[0]; if (!b) return;
-    setTimeout(() => { (a.closest('.tsend') || a).outerHTML = sent(b); back.querySelector('#bkprog').textContent = prog(); }, 300);  // after WhatsApp / Messages has opened
+    if (!items.some(x => x.id === a.dataset.bks)) return;
+    // The booking as it is now: coming back from WhatsApp refreshes the list, so the one this sheet opened with is an old copy
+    setTimeout(() => { const b = bookById(a.dataset.bks); if (!b) return; (a.closest('.tsend') || a).outerHTML = sent(b); back.querySelector('#bkprog').textContent = prog(); }, 300);  // after WhatsApp / Messages has opened
   }));
 }
 /** One booking: who, when, what's been sent, and what you can do next. */
@@ -4400,35 +4422,59 @@ const BADGE_HINT = { ndcs: ['ID number'], hf: ['JU…', 'R…', 'GD2D…'], tmm:
 function bdKind(r) { return { HF: 'hf', TMM: 'tmm' }[avCamp(r)] || 'ndcs'; }
 /** This kind's artwork is in (HelloFresh needs its back too). */
 function bdArtOk(kind) { const a = (S.badges || {}).art || {}; return kind === 'hf' ? !!(a.hf && a.hfBack) : !!a[kind]; }
-function bdLines(r) { return String(r.badge_no || '').split('\n').filter(Boolean); }
-function bdFilled(r) { return bdLines(r).length >= (bdKind(r) === 'hf' ? 3 : 1); }
+/** Their numbers by box ('' = that box is empty: HelloFresh's three keep their places). */
+function bdLines(r) { return String(r.badge_no || '').split('\n'); }
+function bdNums(r) { return bdLines(r).filter(Boolean); }
+function bdFilled(r) { const l = bdLines(r); return bdKind(r) === 'hf' ? !!(l[0] && l[1] && l[2]) : !!l[0]; }
+function bdRowOf(id) { return ((S.badges || {}).rows || []).filter(x => x.id === id)[0] || null; }
+function bdElOf(id) { const pg = S.view === 'badges' && document.getElementById('page'); return (pg && Array.from(pg.querySelectorAll('.bdrow')).filter(el => el.dataset.bd === id)[0]) || null; }
 function bdPhoto(r) { return !!(S.avPh || {})[r.id]; }
 function bdReady(r) { return bdFilled(r) && (bdPhoto(r) || r.has_photo) && !bdDupOf(r); }
 /** Someone else on the list with one of the same numbers (a typo, or the client's slip): neither prints until it's put right. */
 function bdDupOf(r) {
-  const mine = bdLines(r); if (!mine.length) return null;
-  return ((S.badges || {}).rows || []).filter(x => x.id !== r.id && bdLines(x).some(l => mine.indexOf(l) >= 0))[0] || null;
+  const mine = bdNums(r); if (!mine.length) return null;
+  return ((S.badges || {}).rows || []).filter(x => x.id !== r.id && bdNums(x).some(l => mine.indexOf(l) >= 0))[0] || null;
 }
 /** Numbers that don't look like the client's (HelloFresh JU…, R…, then GD2D… / GU…; the Modern Milkman MMC…; NDCS 5 digits): flagged, still printable. */
 function bdOdd(r) {
   const k = bdKind(r), l = bdLines(r);
-  if (k === 'hf' && l.length === 3 && !(/^JU/.test(l[0]) && /^R/.test(l[1]) && /^G/.test(l[2]))) return 'Check the order: JU…, then R…, then GD2D…';
-  if (k === 'tmm' && l.length && !/^MMC/.test(l[0])) return 'Modern Milkman numbers start MMC: check it';
-  if (k === 'ndcs' && l.length && !/^\d{5}$/.test(l[0])) return 'NDCS ID numbers have 5 digits: check it';
+  if (k === 'hf' && bdFilled(r) && !(/^JU/.test(l[0]) && /^R/.test(l[1]) && /^G/.test(l[2]))) return 'Check the order: JU…, then R…, then GD2D…';
+  if (k === 'tmm' && l[0] && !/^MMC/.test(l[0])) return 'Modern Milkman numbers start MMC: check it';
+  if (k === 'ndcs' && l[0] && !/^\d{5}$/.test(l[0])) return 'NDCS ID numbers have 5 digits: check it';
   return '';
 }
 /** The same person on the list twice (two Day 1 weeks). */
 function bdTwice(r) { const n = normName(r.full_name); return ((S.badges || {}).rows || []).filter(x => x.id !== r.id && normName(x.full_name) === n)[0] || null; }
-/** Ticked to print: what they ticked, else everyone ready and not printed yet. */
-function bdPicked(r) { const t = (S.bdPick || {})[r.id]; return t === undefined ? bdReady(r) && !r.badge_printed_at : t; }
+/** Ticked to print: what they ticked, else everyone not printed yet; never someone who isn't ready (no number, no photo, a number
+ *  someone else has too), whatever was ticked before. */
+function bdPicked(r) { const t = (S.bdPick || {})[r.id]; return bdReady(r) && (t === undefined ? !r.badge_printed_at : t); }
 function bdExpiry(r) { return r.badge_expiry || ((S.badges || {}).expiry || {}).FR || ''; }
-function loadBadges() {
-  return call('badgeList', { weeks: S.bdWeeks || 6 }).then(r => {
+/** The list, one request at a time. A copy that was on its way while a number was being saved may predate the save: it's dropped
+ *  and asked for again, so a "saved" number is never put back to the old one on screen. `fresh`: ask now, whatever is on its way. */
+function loadBadges(fresh) {
+  if (S.badgesP && !fresh) return S.badgesP;
+  const epoch = S.bdEpoch || 0;
+  const p = call('badgeList', { weeks: S.bdWeeks || 6 }).then(r => {
+    if ((S.bdEpoch || 0) !== epoch || S.bdSaving) return (S.bdSaveP || Promise.resolve()).catch(() => {}).then(() => loadBadges(true));
     S.badges = Object.assign(r, { at: Date.now() });
     const weeks = r.rows.filter(x => x.has_photo && !(S.avPh || {})[x.id]).map(x => x.week_ending).filter((w, i, a) => a.indexOf(w) === i);
-    weeks.reduce((ch, we) => ch.then(() => call('availPhotos', { weekEnding: we }).then(p => { S.avPh = Object.assign(S.avPh || {}, p.photos); })), Promise.resolve())
+    weeks.reduce((ch, we) => ch.then(() => bdPhotos(we)), Promise.resolve())
       .then(() => { if (weeks.length && S.view === 'badges' && !document.querySelector('.sheet-back')) render(true); }).catch(() => {});
     return r;
+  });
+  S.badgesP = p;
+  const done = () => { if (S.badgesP === p) S.badgesP = null; };
+  p.then(done, done);
+  return p;
+}
+/** A week's photos, as they are now: a new one replaces this phone's copy, one taken off goes; each remembered with when it changed. */
+function bdPhotos(we) {
+  return call('availPhotos', { weekEnding: we }).then(p => {
+    S.avPh = S.avPh || {}; S.bdPhAt = S.bdPhAt || {};
+    ((S.badges || {}).rows || []).filter(r => r.week_ending === we).forEach(r => {
+      if (p.photos[r.id]) S.avPh[r.id] = p.photos[r.id]; else delete S.avPh[r.id];
+      S.bdPhAt[r.id] = r.photo_at || '';
+    });
   });
 }
 function viewBadges(quiet) {
@@ -4447,6 +4493,7 @@ function viewBadges(quiet) {
       (l.length ? '<button class="btn block bdprint" data-bdprint="' + kind + '"' + (n && bdArtOk(kind) ? '' : ' disabled') + '>📄 Print ' + (n || '') + ' ' + BADGE_LABEL[kind] + ' badge' + (n === 1 ? '' : 's') + '</button>' : '') +
       (waiting ? '<p class="hint" style="margin-top:6px">' + waiting + ' waiting for ' + { hf: 'their numbers', tmm: 'an MMC number', ndcs: 'an ID number' }[kind] + ' from the client.</p>' : '');
   };
+  const hold = bdHold();
   const page = paint('Badges',
     (artOk ? '' : '<div class="card needs"><b>🎨 The badge artwork isn\'t in yet</b><p class="small muted" style="margin:4px 0 8px">Once only: save the <b>JL badge artwork</b> picture you were sent to your phone (Photos or Files), then tap below and pick it. It\'s your Canva badges with the photo, name and numbers left blank.</p>' +
       '<label class="btn ghost block">📥 Add the badge artwork<input type="file" id="bdartf" hidden></label></div>') +
@@ -4456,7 +4503,37 @@ function viewBadges(quiet) {
     (d.weeks < 26 ? '<button type="button" class="linkbtn" id="bdolder" style="display:block;margin:14px auto 0">Show starters from the last 6 months (to reprint a lost badge)</button>' : '<p class="hint" style="text-align:center">Showing everyone from the last 6 months.</p>') +
     (artOk ? '<label class="linkbtn" style="display:block;margin:14px auto 0;text-align:center">🎨 Change the badge artwork<input type="file" id="bdartf" hidden></label>' : ''), quiet, true);
   bindBadges(page);
+  bdSync(page, hold);
   fillThumbs(page);
+}
+/** What's typed and not saved yet, and where the cursor is, before the list is redrawn. */
+function bdHold() {
+  const pg = S.view === 'badges' && document.getElementById('page'), a = document.activeElement, hold = { rows: {}, focus: null };
+  if (!pg) return hold;
+  pg.querySelectorAll('.bdrow').forEach(el => {
+    const id = el.dataset.bd, ex = el.querySelector('.bdexp');
+    if ((S.bdDirty || {})[id]) hold.rows[id] = { nos: Array.from(el.querySelectorAll('.bdno')).map(i => i.value), exp: ex ? ex.value : '' };
+    if (a && el.contains(a) && (a.classList.contains('bdno') || a.classList.contains('bdexp')))
+      hold.focus = { id: id, sel: a.classList.contains('bdexp') ? '.bdexp' : '.bdno[data-i="' + a.dataset.i + '"]', start: a.selectionStart, end: a.selectionEnd };
+  });
+  return hold;
+}
+/** After a redraw (a save coming back, the photos arriving, the list refreshed): every box shows what's saved, except a row being
+ *  typed in, which keeps what was typed, the cursor where it was (11 Nov: a number typed in the next row was wiped when the one
+ *  before finished saving). Ticks follow the rules, not what the box was left as. */
+function bdSync(page, hold) {
+  page.querySelectorAll('.bdrow').forEach(el => {
+    const id = el.dataset.bd, r = bdRowOf(id), nos = Array.from(el.querySelectorAll('.bdno')), ex = el.querySelector('.bdexp'), pk = el.querySelector('.bdpick');
+    if (!r) return;
+    if (pk) { pk.checked = bdPicked(r); pk.disabled = !bdReady(r); }
+    const kept = (S.bdDirty || {})[id] && hold && hold.rows[id];
+    if ((S.bdDirty || {})[id] && !kept) return;  // typed in, and its boxes are still the ones on the page
+    const l = bdLines(r);
+    nos.forEach((i, k) => { const v = kept ? kept.nos[k] || '' : l[k] || ''; if (i.value !== v) i.value = v; });
+    if (ex) { const v = kept ? kept.exp : bdExpiry(r); if (ex.value !== v) ex.value = v; }
+  });
+  const f = hold && hold.focus, el = f && bdElOf(f.id), box = el && el.querySelector(f.sel);
+  if (box && document.activeElement !== box) { try { box.focus({ preventScroll: true }); if (f.start !== null && f.start !== undefined) box.setSelectionRange(f.start, f.end); } catch (e) { /* a date box has no cursor */ } }
 }
 function bdRow(r) {
   const kind = bdKind(r), lines = bdLines(r), ph = (S.avPh || {})[r.id], pick = bdPicked(r);
@@ -4469,7 +4546,7 @@ function bdRow(r) {
   const ins = BADGE_HINT[kind].map((p, i) => '<input class="bdno" data-i="' + i + '" value="' + h(lines[i] || '') + '" placeholder="' + h(p) + '" autocapitalize="characters" autocomplete="off" spellcheck="false"' +
     (kind === 'ndcs' ? ' inputmode="numeric"' : '') + ' aria-label="' + (kind === 'hf' ? 'Number ' + (i + 1) : kind === 'tmm' ? 'MMC number' : 'ID number') + '">').join('') +
     (kind === 'ndcs' ? '<label class="bdexpl">Expiry <input type="date" class="bdexp" value="' + h(bdExpiry(r)) + '" aria-label="Expiry date"></label>' : '');
-  return '<div class="trow bdrow" data-bd="' + h(r.id) + '"><label class="bdtick"><input type="checkbox" class="bdpick"' + (pick ? ' checked' : '') + (bdReady(r) ? '' : ' disabled') + ' aria-label="Print ' + h(r.full_name) + '"></label>' +
+  return '<div class="trow bdrow" data-id="bd-' + h(r.id) + '" data-bd="' + h(r.id) + '"><label class="bdtick"><input type="checkbox" class="bdpick"' + (pick ? ' checked' : '') + (bdReady(r) ? '' : ' disabled') + ' aria-label="Print ' + h(r.full_name) + '"></label>' +
     (ph ? '<img class="av avph" src="' + (thumbNow(r.id) || ph) + '" data-thumb="' + h(r.id) + '" alt="">' : '<span class="av co-' + (kind === 'ndcs' ? 'LINK' : 'JUSS') + '">' + h(initials(r.full_name)) + '</span>') +
     '<div class="main"><div class="name">' + h(r.full_name) + '</div><div class="sub">Day 1 ' + h(fmt(r.day1_date)) + (r.coach_name ? ' · ' + h(String(r.coach_name).split(' ')[0]) : '') + '</div>' +
     '<div class="pills">' + (dup ? '' : st) + noPh + warn + '</div><div class="bdin">' + ins + '</div></div></div>';
@@ -4480,32 +4557,53 @@ function bindBadges(page) {
     const id = el.dataset.bd;
     const save = () => bdSave(el).then(r => {
       if (!r) return;
-      toast('✓ ' + r.full_name.split(' ')[0] + '\'s badge ' + (r.badge_no ? 'saved' : 'cleared'));
-      if (S.view === 'badges' && !el.contains(document.activeElement)) render(true);
+      toast('✓ ' + r.full_name.split(' ')[0] + '\'s badge ' + (bdNums(r).length ? 'saved' : 'cleared'));
+      if (S.view === 'badges') render(true);
     }).catch(e => toast(e.message));
-    el.querySelectorAll('.bdno, .bdexp').forEach(i => { i.onchange = save; });
+    el.querySelectorAll('.bdno, .bdexp').forEach(i => { i.oninput = () => { (S.bdDirty = S.bdDirty || {})[id] = true; }; i.onchange = () => { (S.bdDirty = S.bdDirty || {})[id] = true; save(); }; });
     const pk = el.querySelector('.bdpick'); if (pk) pk.onchange = () => { (S.bdPick = S.bdPick || {})[id] = pk.checked; render(true); };
   });
   page.querySelectorAll('[data-bdprint]').forEach(b => { b.onclick = () => badgePdf(b.dataset.bdprint); });
   const old = page.querySelector('#bdolder'); if (old) old.onclick = () => { S.bdWeeks = 26; S.badges = null; render(); };
 }
-/** A row's boxes, tidied as the server keeps them (upper case, no spaces, a line each). */
+/** A row's boxes, tidied as the server keeps them (upper case, no spaces, a line each, each in its box's place). */
 function bdTyped(el) {
-  const ex = el.querySelector('.bdexp');
-  return { no: Array.from(el.querySelectorAll('.bdno')).map(i => i.value.trim().toUpperCase().replace(/\s+/g, '')).filter(Boolean).join('\n'),
-    exp: ex ? (ex.value === ((S.badges || {}).expiry || {}).FR ? '' : ex.value) : '' };
+  const ex = el.querySelector('.bdexp'), nos = Array.from(el.querySelectorAll('.bdno')).map(i => i.value.trim().toUpperCase().replace(/\s+/g, ''));
+  while (nos.length && !nos[nos.length - 1]) nos.pop();
+  return { no: nos.join('\n'), exp: ex ? (ex.value === ((S.badges || {}).expiry || {}).FR ? '' : ex.value) : '' };
 }
-/** Saves a row's boxes when they changed: resolves with the row when it saved, null when nothing changed. A save already on its way
- *  is shared (leaving the box and tapping Print at once save once). */
+/** Saves a row someone typed in, when it differs from what's saved: resolves with the row when it saved, null when there was
+ *  nothing to save. Only a row typed in on this phone is ever saved (a box still showing an older number never overwrites a
+ *  correction made on another phone). A save already on its way is shared (leaving the box and tapping Print at once save once).
+ *  The answer goes onto the list as it is then, by id: the list may have been refreshed while the save was on its way. */
 function bdSave(el) {
-  const id = el.dataset.bd, r = ((S.badges || {}).rows || []).filter(x => x.id === id)[0], t = bdTyped(el), key = t.no + '|' + t.exp;
-  if (!r || (t.no === (r.badge_no || '') && t.exp === (r.badge_expiry || ''))) return Promise.resolve(null);
-  if (el._bdSave && el._bdSave.key === key) return el._bdSave.p;
-  const p = call('saveBadge', { id: id, badge_no: t.no, badge_expiry: t.exp }).then(x => { Object.assign(r, x); if (S.bdPick) delete S.bdPick[id]; return r; });
-  el._bdSave = { key: key, p: p };
-  p.catch(() => { el._bdSave = null; });
+  const id = el.dataset.bd, r = bdRowOf(id);
+  if (!r || !(S.bdDirty || {})[id]) return Promise.resolve(null);
+  const t = bdTyped(el), key = t.no + '|' + t.exp;
+  if (t.no === (r.badge_no || '') && t.exp === (r.badge_expiry || '')) { delete S.bdDirty[id]; return Promise.resolve(null); }
+  S.bdSaves = S.bdSaves || {};
+  if (S.bdSaves[id] && S.bdSaves[id].key === key) return S.bdSaves[id].p;
+  S.bdSaving = (S.bdSaving || 0) + 1;
+  const end = () => { S.bdSaving--; S.bdEpoch = (S.bdEpoch || 0) + 1; if (S.bdSaves[id] && S.bdSaves[id].p === p) delete S.bdSaves[id]; };
+  const p = call('saveBadge', { id: id, badge_no: t.no, badge_expiry: t.exp }).then(x => {
+    end();
+    const cur = bdRowOf(id) || r, now = bdElOf(id), tn = now && bdTyped(now);
+    Object.assign(cur, x);
+    if (!tn || tn.no + '|' + tn.exp === key) delete S.bdDirty[id];  // nothing typed since: the boxes show what's saved again
+    if (S.bdPick) delete S.bdPick[id];
+    return cur;
+  }, e => { end(); throw new Error(r.full_name.split(' ')[0] + '\'s badge wasn\'t saved. ' + e.message); });
+  S.bdSaves[id] = { key: key, p: p };
+  S.bdSaveP = p;
   return p;
 }
+/** Everything typed and not saved yet, saved now (before a print, and on the way out of the page). */
+function bdFlush() {
+  const pg = S.view === 'badges' && document.getElementById('page');
+  return Promise.all(pg ? Array.from(pg.querySelectorAll('.bdrow')).map(bdSave) : []);
+}
+/** Leaving Badges by a tab or ← back: on a phone that doesn't count as leaving the box, so the number typed last is saved here. */
+function bdLeave(to) { if (S.view === 'badges' && to !== 'badges' && S.bdDirty && Object.keys(S.bdDirty).length) bdFlush().catch(e => toast(e.message)); }
 /** The artwork goes in once (admins), as a picture or as a file.
  *  - The picture (Angad, 10 Nov: the .json file wouldn't go in from his iPhone): the four blank badges on one sheet, laid out as
  *    BADGE_SHEET, with a colour key down its top right so no other picture goes in by mistake. Saved to Photos or Files, it's
@@ -4565,7 +4663,9 @@ function badgeArtSheet(file, wrong) {
 function bdImg(src) { return new Promise(res => { if (!src) return res(null); const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; }); }
 /** The artwork and the badge fonts (Arimo, the Canva files' font), once a session. */
 function badgeAssets() {
-  if (S.bdArt) return S.bdArt;
+  const at = (((S.badges || {}).art || {}).at) || '';  // when the artwork last went in: new artwork from another phone is fetched again
+  if (S.bdArt && S.bdArtAt === at) return S.bdArt;
+  S.bdArtAt = at;
   const fonts = !window.FontFace ? Promise.resolve() : Promise.all([['Arimo', 'arimo-latin-400-normal.woff2', '400'], ['Arimo', 'arimo-latin-700-normal.woff2', '700'],
     ['ArimoX', 'arimo-latin-ext-400-normal.woff2', '400'], ['ArimoX', 'arimo-latin-ext-700-normal.woff2', '700'], ['Roboto', 'roboto-latin-700-normal.woff2', '700']]
     .map(f => new FontFace(f[0], 'url(fonts/' + f[1] + ')', { weight: f[2] }).load().then(ff => document.fonts.add(ff)).catch(() => {})));
@@ -4697,17 +4797,26 @@ function pdfImageFile(imgs, title) {
   out.pages = imgs.map(im => ({ img: im.url }));  // savePdf's preview
   return out;
 }
-/** Print: anything typed but not saved yet (typed, then Print straight away) is saved first, so it's on the badge. */
+/** Print. A badge is on paper for good, so it's made from what's true now, never from this screen's copy (11 Nov):
+ *  1. anything typed and not saved yet is saved (typed, then Print straight away); one that won't save stops the print, by name;
+ *  2. the list is fetched again (a number corrected, a name fixed or someone moved campaign on another phone since this page opened);
+ *  3. a photo retaken since this phone got it is fetched again, and new artwork too. */
 function badgePdf(kind) {
-  const page = document.getElementById('page'), els = page ? Array.from(page.querySelectorAll('.bdrow')) : [];
-  Promise.all(els.map(bdSave)).then(saved => { if (saved.some(Boolean)) render(true); badgePdfNow(kind); }).catch(e => toast(e.message));
+  if (S.bdPrinting) return;
+  S.bdPrinting = true;
+  const done = () => { S.bdPrinting = false; };
+  toast('Checking the latest numbers and photos…');
+  bdFlush().then(() => loadBadges(true)).then(() => {
+    const stale = S.badges.rows.filter(r => bdKind(r) === kind && bdPicked(r) && r.has_photo && (!bdPhoto(r) || (r.photo_at || '') !== ((S.bdPhAt || {})[r.id] || '')));
+    return stale.map(r => r.week_ending).filter((w, i, a) => a.indexOf(w) === i).reduce((ch, we) => ch.then(() => bdPhotos(we)), Promise.resolve());
+  }).then(() => { done(); if (S.view !== 'badges') return; render(true); badgePdfNow(kind); }, e => { done(); toast(e.message); });
 }
 function badgePdfNow(kind) {
   const d = S.badges; if (!d) return;
   const list = d.rows.filter(r => bdKind(r) === kind && bdPicked(r)).sort((a, b) => a.day1_date.localeCompare(b.day1_date) || a.full_name.localeCompare(b.full_name));
   if (!list.length) return toast('Tick who to print first.');
-  const bad = list.filter(r => !bdFilled(r) || !bdPhoto(r));
-  if (bad.length) return toast(firstNamesOf(bad) + ': ' + (bad.some(r => !bdFilled(r)) ? 'numbers missing' : 'photo still loading or missing') + '.');
+  const bad = list.filter(r => !bdFilled(r) || !bdPhoto(r) || bdDupOf(r));
+  if (bad.length) return toast(firstNamesOf(bad) + ': ' + (bad.some(r => !bdFilled(r)) ? 'numbers missing' : bad.some(bdDupOf) ? 'the same number as someone else' : 'photo still loading or missing') + '.');
   toast('Making the badges…');
   const label = { hf: 'HelloFresh', tmm: 'TMM', ndcs: 'NDCS' }[kind], t = S.me.today, name = label + ' badges ' + t.slice(8, 10) + '.' + t.slice(5, 7) + '.' + t.slice(0, 4);
   Promise.all([badgeAssets(), Promise.all(list.map(r => bdFace(r, kind === 'tmm')))]).then(r => {
@@ -4715,7 +4824,7 @@ function badgePdfNow(kind) {
     if (!(kind === 'hf' ? art.hf && art.hfBack : art[kind])) throw new Error('The ' + BADGE_LABEL[kind] + ' badge artwork isn\'t in yet. Add it from the file first.');
     const bytes = pdfImageFile(badgePages(kind, r[0], list, r[1]), name);
     bytes.onShare = () => call('badgesPrinted', { ids: list.map(x => x.id), kind: kind }).then(x => {
-      list.forEach(row => { row.badge_printed_at = x.at; row.badge_printed_by = x.by; if (S.bdPick) delete S.bdPick[row.id]; });
+      list.forEach(row => { const cur = bdRowOf(row.id) || row; cur.badge_printed_at = x.at; cur.badge_printed_by = x.by; if (S.bdPick) delete S.bdPick[row.id]; });
       const again = k => { if (S.view !== 'badges') return; if (document.querySelector('.sheet-back') && k < 20) return setTimeout(() => again(k + 1), 250); render(true); };
       again(0);  // once the preview has closed
     }).catch(() => {});
@@ -4920,7 +5029,9 @@ function flush() {
 window.addEventListener('online', () => flush());
 
 function brandOf(c) { return brandCo(c) === 'JUSS' ? 'JUSS Marketing' : 'LINK Marketing'; }
-function waUrl(mobile, text) { return 'https://wa.me/44' + String(mobile).slice(1) + '?text=' + encodeURIComponent(text); }
+/** A mobile with its country code, digits only: 07… is the UK's (44…); +353… or 00353… (kept as Hyrre gave it) is its own. */
+function intlNo(mobile) { const m = String(mobile || '').replace(/[^\d+]/g, ''); return m.charAt(0) === '+' ? m.slice(1).replace(/\D/g, '') : m.slice(0, 2) === '00' ? m.slice(2) : m.charAt(0) === '0' ? '44' + m.slice(1) : m; }
+function waUrl(mobile, text) { return 'https://wa.me/' + intlNo(mobile) + '?text=' + encodeURIComponent(text); }
 /** A laptop or desktop computer: not a phone or tablet, no touch screen. */
 const IS_DESKTOP = !/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) && !(navigator.maxTouchPoints > 0);
 // WhatsApp on a computer (the Windows / Mac app) turns the emojis in a pre-filled message into "�" (Angad, 23 Oct: Jake's
@@ -4953,7 +5064,7 @@ document.addEventListener('click', e => {
 // ───── Not on WhatsApp: the same message by text (from the sender's own phone) or email ─────
 /** WhatsApp's *bold* stars would show as stars in a text or email. */
 function plainMsg(text) { return String(text).replace(/\*([^*\n]+)\*/g, '$1'); }
-function smsUrl(mobile, text) { return 'sms:+44' + String(mobile).slice(1) + (IS_IOS ? '&' : '?') + 'body=' + encodeURIComponent(plainMsg(text)); }
+function smsUrl(mobile, text) { return 'sms:+' + intlNo(mobile) + (IS_IOS ? '&' : '?') + 'body=' + encodeURIComponent(plainMsg(text)); }
 function mailUrl(email, subject, text) { return 'mailto:' + email + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(plainMsg(text)); }
 /** Once someone has texted or emailed them (= not on WhatsApp), every message to them goes by text. */
 function msgUrl(c, text) { return c.no_whatsapp ? smsUrl(c.mobile, text) : waUrl(c.mobile, text); }
@@ -5402,7 +5513,7 @@ function renderCandidate(c, quiet) {
       // An unspent conviction (Angad, 3 Nov): nothing happens by itself. Approve = they can be booked; Decline = Not suitable, nobody books them.
       adm += '<p><b>Decision needed:</b> ' + (c.admin_status === 'pending' ? h(c.outcome_by) + ' wants to book BA Academy' + (c.admin_check ? ', and they declared an unspent conviction (the client won\'t badge them)' : '') + '.'
           : '⛔ They declared an unspent conviction: the client won\'t badge them. <b>Approve</b> and they can be booked onto Day 1 as normal; <b>Decline</b> marks them Not suitable, so nobody books them.') +
-        (c.admin_check ? ' Tapped Yes by mistake? Correct the answer below.' : '') + '</p><input type="text" id="anote" placeholder="Note (optional)">' +
+        (c.admin_check ? ' Tapped Yes by mistake? Correct the answer below.' : '') + '</p><input type="text" id="anote" placeholder="' + (c.q13_unspent === 'Yes' ? 'Note (optional · only admins see it)' : 'Note (optional)') + '">' +
         '<div class="row" style="margin-top:8px"><button class="btn green grow" id="approve">Approve</button><button class="btn red grow" id="reject">' + (c.admin_status === 'pending' ? 'Reject' : 'Decline') + '</button></div><hr>';
     }
     const byAdmin = (S.users || []).some(u => u.id === c.booker_id && u.roles.indexOf('admin') >= 0);

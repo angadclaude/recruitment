@@ -126,7 +126,7 @@ const ONBOARD = {
   },
   JUSS: {
     brand: 'JUSS Marketing', colour: '#E4613F', phone: '077823 77774', maps: 'https://maps.app.goo.gl/n2wTFyzScHLr1Voy9', day3: false,
-    client: ['Hello Fresh', 'http://www.hellofresh.co.uk/'], website: ['JUSS Marketing', 'https://jussmarketing.co.uk/'], magazine: ['JUSS Magazine', 'https://jussmarketing.co.uk/magazine/'],  // moved off Manus with the JUSS website, 21 Oct 2026
+    client: ['Hello Fresh', 'http://www.hellofresh.co.uk/'], clientTMM: ['The Modern Milkman', 'https://themodernmilkman.co.uk/'], website: ['JUSS Marketing', 'https://jussmarketing.co.uk/'], magazine: ['JUSS Magazine', 'https://jussmarketing.co.uk/magazine/'],  // moved off Manus with the JUSS website, 21 Oct 2026
     playbook: ['JUSS Playbook', 'https://juss-playbook.vercel.app/'],  // its own address since 21 Oct 2026 (juss-hf-playbook.vercel.app is the same app and keeps working)
     from: 'rubal@jussmarketing.co.uk',
     week1: [
@@ -150,7 +150,7 @@ const SHEETS = {
     'q5_start_date', 'q6_days', 'q7_commute', 'q8_resilience', 'q9_results_paid', 'q9_results_detail',
     'q10_door', 'q11_coach', 'q12_bdp_stage', 'q12_bdp_why', 'q13_unspent', 'q14_questions',
     'outcome', 'academy_date', 'outcome_notes', 'outcome_by', 'outcome_at', 'outcome_late',
-    'admin_status', 'admin_note', 'admin_by', 'admin_at',
+    'admin_status', 'admin_note', 'admin_by', 'admin_at', 'admin_note_private',
     'pay_excluded', 'pay_excluded_reason', 'thanks_sent_at', 'offer_sent_at',
     'welcome_token', 'academy_confirmed_at',
     'p_why_sales', 'p_why_sales_note', 'p_interesting', 'eval_edited_at', 'thanks_by', 'no_whatsapp', 'day1_status', 'day1_by', 'day1_at', 'day1_reminded_at', 'day1_reminded_by', 'recruit_source', 'databyte_at', 'databyte_by', 'onboard_email_at', 'onboard_email_by',
@@ -183,7 +183,7 @@ const SHEETS = {
   Availability: ['id', 'created_at', 'week_ending', 'candidate_id', 'day1_date', 'full_name', 'mobile', 'company', 'coach_id', 'coach_name',
     'driver', 'w1', 'w2', 'notes', 'has_photo', 'updated_at', 'updated_by', 'campaign', 'removed_at', 'removed_by', 'grade', 'grade_by', 'grade_at',
     // their ID badge (Angad, 10 Nov): the number(s) the client gives (NDCS one, HelloFresh three, one a line), NDCS's expiry if not the usual
-    'badge_no', 'badge_expiry', 'badge_by', 'badge_at', 'badge_printed_at', 'badge_printed_by'],
+    'badge_no', 'badge_expiry', 'badge_by', 'badge_at', 'badge_printed_at', 'badge_printed_by', 'badge_camp', 'photo_at'],
   StarterPhotos: ['id', 'data', 'updated_at'],  // one photo per Availability row (same id), a small JPEG as a data: URL
 };
 
@@ -1041,11 +1041,17 @@ function submitEval(req) {
     }
     const wasYes = c.q13_unspent === 'Yes';
     EVAL_FIELDS.forEach(k => { c[k] = String(a[k] || '').trim().slice(0, 1000); });
+    // A "Yes" to the convictions question isn't taken back from this page: anyone with their mobile can open "Change my answers"
+    // on the day. A "Yes" tapped by mistake is Jess's and Rubal's to correct (fixConviction), after speaking to them (11 Nov).
+    if (status === 'edited' && wasYes) c.q13_unspent = 'Yes';
+    // The form filled in after their booker already booked Day 1: the booking waits for an admin, like one made after it
+    let waits = false;
+    if (c.q13_unspent === 'Yes' && !wasYes && c.outcome === 'Academy booked' && !c.admin_status) { c.admin_status = 'pending'; waits = true; }
     const pres = presenterAnswer(a);
     if (pres) { c.presented_by_id = pres.id; c.presented_by = pres.name; }
     if (status === 'new') c.eval_at = nowStr(); else c.eval_edited_at = nowStr();
     writeRow('Candidates', c);
-    return { c: c, status: status, newYes: c.q13_unspent === 'Yes' && !wasYes };
+    return { c: c, status: status, newYes: c.q13_unspent === 'Yes' && !wasYes, waits: waits };
   });
   const c = res.c, first = c.full_name.split(' ')[0];
   if (res.status !== 'already') log(null, res.status === 'edited' ? 'evaluation_changed' : 'evaluation', c.id, '');
@@ -1053,8 +1059,14 @@ function submitEval(req) {
   if (b && res.status === 'new') notify([b], whose(b, '📋 ' + first + "'s evaluation is in"), 'Call ' + c.full_name + ' — log the outcome by ' + deadlineLabel() + '.', c.id);
   if (b && res.status === 'edited') notify([b], whose(b, '✏️ ' + first + ' changed their evaluation answers'), 'Have a look before you call ' + first + '.', c.id);
   // An unspent conviction: the admins decide before anyone books Day 1 (Angad, 3 Nov). The booker's alert above says nothing about it.
-  if (res.newYes) notify(usersAll().filter(isAdmin), '⛔ ' + first + ' declared an unspent conviction',
-    'The client won\'t badge them. Approve or decline on ' + first + '\'s page before anyone books Day 1' + (c.booker_name ? ' (booked by ' + c.booker_name + ')' : '') + '.', c.id);
+  // The Log (kept 6 months, copied to the Sheet) says only that an admin check is needed, never the answer (11 Nov: the title was logged).
+  const admins = usersAll().filter(x => truthy(x.active) && isAdmin(x));
+  if (res.newYes && res.waits) notify(admins, '🔴 Decision needed: ' + c.full_name,
+    first + ' is already booked for BA Academy' + (c.academy_date ? ' on ' + longDate(c.academy_date) : '') + ', and has now declared an unspent conviction (the client won\'t badge them). ' +
+    'The booking waits: approve or decline on ' + first + '\'s page' + (c.booker_name ? ' (booked by ' + c.booker_name + ')' : '') + '.', c.id);
+  else if (res.newYes) notify(admins, '⛔ ' + first + ' declared an unspent conviction',
+    'The client won\'t badge them. Approve or decline on ' + first + '\'s page before anyone books Day 1' + (c.booker_name ? ' (booked by ' + c.booker_name + ')' : '') + '.', c.id,
+    '⛔ Admin check needed: ' + first);
   return { status: res.status, booker_first: c.booker_name ? c.booker_name.split(' ')[0] : 'Our team' };
 }
 
@@ -1113,7 +1125,13 @@ function shape(c, u) {
   delete o.resume_token;
   delete o.welcome_token;
   if (c.welcome_token) o.welcome_url = welcomeUrl(c);
-  if (!isAdmin(u)) o.q13_unspent = '';
+  if (!isAdmin(u)) {
+    o.q13_unspent = '';
+    // An admin's decision on someone who declared a conviction: their booker sees the decision and who made it, never the note,
+    // which may say why (11 Nov: "Rejected by Jess: unspent conviction…" showed on the booker's page and in the call log)
+    if (c.q13_unspent === 'Yes' || truthy(c.admin_note_private)) { o.admin_note = ''; o.outcome_log = decisionNotesOff(c.outcome_log); }
+    delete o.admin_note_private;
+  }
   o.admin_check = convictionCheck(c) ? 'TRUE' : '';  // red card + "Academy booked" waits for an admin; the reason stays with the admins
   o.flags = flagsFor(c, isAdmin(u));
   o.pay_reason = payExclusion(c);
@@ -1175,7 +1193,8 @@ function bundle(req, u) {
   const out = { weekEnding: we, items: listWeek({ weekEnding: we }, u).items, pay: payReport({ weekEnding: we }, u) };
   if (req.withMe) out.me = me(req, u);
   if (req.withUsers && isAdmin(u)) out.users = listUsers(req, u).users;
-  if (canBook(u)) out.bookings = bookingList(req, u).items;  // Jess, Rubal, Angad: who's booked for the presentations
+  out.today = todayStr();  // an app left open overnight asks for "me" again when this moves on (11 Nov: Monday's reminders said "tomorrow")
+  if (canBook(u)) { out.bookings = bookingList(req, u).items; out.hyrre = hyrreInfo(); }  // Jess, Rubal, Angad: who's booked for the presentations, and Hyrre's last pull
   // The number on the Chase tab: this week's + carried over from earlier weeks ("3+8")
   const cw = weekEnding(todayStr()), now = chaseNow(u);
   out.chase = now.length;
@@ -1271,7 +1290,7 @@ function saveOutcome(req, u) {
     if (req.outcome === 'Academy booked' && (c.rag === 'R' || truthy(c.repeat_block) || c.q13_unspent === 'Yes')) {
       if (isAdmin(u)) { c.admin_status = 'approved'; c.admin_by = u.name; c.admin_at = nowStr(); }
       else if (c.admin_status !== 'approved') c.admin_status = 'pending';
-    } else if (c.admin_status === 'pending') c.admin_status = '';
+    } else if (c.admin_status === 'pending' || (req.outcome === 'Academy booked' && c.admin_status === 'rejected')) c.admin_status = '';  // nothing to decide any more (a "Yes" corrected to "No" after a decline, 11 Nov: they were booked but stuck as rejected, off Day 1 and onboarding)
     const wasPending = c._wasPending, wasBooked = c._wasBooked;
     // The call log marks each response that came after the deadline (a rebook the next week says LATE there; the outcome doesn't)
     addOutcomeLog(c, { at: c.outcome_at, by: u.name, o: c.outcome, d: c.academy_date, cb: c.callback_at, late: c.outcome_at > outcomeDeadline(c.attended_date) ? 1 : 0, n: c.outcome_notes });
@@ -1282,7 +1301,7 @@ function saveOutcome(req, u) {
   if (res.starter) newStarterAlert(c);
   log(u, 'outcome', c.id, c.outcome + (c.outcome_late ? ' LATE' : ''));
   if (res.alert) {
-    notify(usersAll().filter(isAdmin), '🔴 Decision needed: ' + c.full_name,
+    notify(usersAll().filter(x => truthy(x.active) && isAdmin(x)), '🔴 Decision needed: ' + c.full_name,
       c.booker_name + ' wants to book BA Academy, but ' + decisionWhy(c) + '.', c.id);
   }
   return shape(c, u);
@@ -1295,6 +1314,12 @@ function firstOutcomeAt(c) {
   return at && at < c.outcome_at ? at : c.outcome_at;
 }
 /** Every response logged on the call (No answer, Thinking it over, Academy booked…), who and when: outcome / outcome_at only keep the latest. */
+/** The call log without what an admin wrote on their decision ("Declined by admin: …" → "Declined by admin"). */
+function decisionNotesOff(json) {
+  let l = []; try { l = JSON.parse(json || '[]'); } catch (x) { return json; }
+  if (!Array.isArray(l)) return json;
+  return JSON.stringify(l.map(e => e && e.n && /^(Declined by admin|Academy booking rejected): /.test(e.n) ? Object.assign({}, e, { n: e.n.split(': ')[0] }) : e));
+}
 function addOutcomeLog(c, e) {
   let l = []; try { l = JSON.parse(c.outcome_log || '[]'); } catch (x) { l = []; }
   if (!Array.isArray(l)) l = [];
@@ -1308,6 +1333,7 @@ function adminDecision(req, u) {
     if (['approved', 'rejected'].indexOf(req.decision) < 0) throw new Error('Bad decision');
     c.admin_status = req.decision; c.admin_note = String(req.note || '').slice(0, 500);
     c.admin_by = u.name; c.admin_at = nowStr();
+    if (c.q13_unspent === 'Yes') c.admin_note_private = 'TRUE';  // decided on a declared conviction: the notes are the admins' for good, whatever is corrected or decided later (shape)
     if (req.decision === 'rejected') {
       const why = (c.outcome === 'Academy booked' ? 'Academy booking rejected' : 'Declined by admin') + (c.admin_note ? ': ' + c.admin_note : '');
       c.outcome = 'Not suitable'; c.academy_date = '';
@@ -1379,10 +1405,13 @@ function setCampaign(req, u) {
   if (!isAdmin(u)) throw new Error('Admin only');
   if (CAMPAIGNS.concat(['']).indexOf(req.campaign) < 0) throw new Error('FR, HF or TMM');
   const c = withLock(() => {
-    const c = getC(req.id);
+    const c = getC(req.id), was = campaignOf(c);
     c.campaign = req.campaign; c.brand = campBrand(c.campaign);  // '' = their booker's company again
     writeRow('Candidates', c);
-    readTable('Availability').filter(r => r.candidate_id === c.id).forEach(r => { r.campaign = campaignOf(c); writeRow('Availability', r); });
+    readTable('Availability').filter(r => r.candidate_id === c.id).forEach(r => {
+      if (r.badge_no && !r.badge_camp) r.badge_camp = was;  // badge numbers typed before 11 Nov: they were for the client they were with (badgeRow)
+      r.campaign = campaignOf(c); writeRow('Availability', r);
+    });
     return c;
   });
   log(u, 'campaign', c.id, campaignOf(c));
@@ -1417,7 +1446,8 @@ function fixName(req, u) {
   const res = withLock(() => {
     const c = getC(req.id), was = c.full_name;
     c.full_name = name; writeRow('Candidates', c);
-    readTable('Availability').filter(r => r.candidate_id === c.id).forEach(r => { r.full_name = name; writeRow('Availability', r); });
+    // A badge printed under the old spelling isn't "printed" any more: it's ticked again for the next print (11 Nov)
+    readTable('Availability').filter(r => r.candidate_id === c.id).forEach(r => { if (r.full_name !== name) { r.badge_printed_at = ''; r.badge_printed_by = ''; } r.full_name = name; writeRow('Availability', r); });
     return { c: c, was: was };
   });
   log(u, 'name_fixed', res.c.id, res.was + ' → ' + name);
@@ -1599,6 +1629,10 @@ function saveUser(req, u) {
     if (x.id && !rec) throw new Error('User not found');
     oldEmail = rec ? normEmail(rec.email) : '';
     const renamed = rec && rec.name !== cleanName(x.name), oldCo = rec ? rec.company : '';
+    // Someone the app knows by name (Christie: badges, Book Appts, Megan's bookings…): another spelling in Team would take all of
+    // that away without a word (11 Nov). The name is changed in the app's settings first.
+    const inSettings = rec && renamed && truthy(rec.active) && normName(rec.name) !== normName(x.name) ? namedInSettings(rec.name) : [];
+    if (inSettings.length) throw new Error(rec.name + ' is set up by that exact name for ' + inSettings.join(', ') + '. Changing it here would switch those off for them. Ask Angad to have the name changed in the app\'s settings first.');
     // A leaver's record is never turned into someone else's (5 Nov: Fiza's switched-off record was renamed to the new recruiter, which
     // put her name on every appointment Fiza booked, and the record stayed switched off). A typo fix (a near spelling) is fine.
     if (rec && renamed && !truthy(rec.active) && !nameNear(rec.name, x.name) && !closeSpelling(rec.name, x.name) && readTable('Candidates').some(c => c.booker_id === rec.id))
@@ -1683,9 +1717,23 @@ function bookerKeys(u) {
 function handovers(day) {
   return (CONFIG.HANDOVER || []).filter(x => day && day <= x.until).map(x => {
     const was = usersAll().filter(u => normName(u.name) === normName(x.from))[0];
-    const to = usersAll().filter(u => normEmail(u.email) === normEmail(x.to) && truthy(u.active))[0];
+    const to = usersAll().filter(u => truthy(u.active) && namedAs(u, x.to))[0];
     return { was: was, to: to, names: [x.from].concat(x.also || [], was ? aliasesOf(was) : []) };
   }).filter(x => x.to && !(x.was && truthy(x.was.active)));
+}
+/** A CONFIG entry is this person: their email, or (no @) their name, for someone on a shared mailbox (11 Nov: HANDOVER's `to` only
+ *  took an email, so "flip it to Christie's name" would have sent a leaver's alerts to nobody, without a word). */
+function namedAs(u, entry) { const e = String(entry || ''); return !!e && (e.indexOf('@') >= 0 ? normEmail(e) === normEmail(u.email) : normName(e) === normName(u.name)); }
+/** Where someone's name is written into the app's settings (CONFIG, by name): renaming them in Team would quietly take them off it. */
+function namedInSettings(name) {
+  const n = normName(name), is = l => (l || []).some(e => String(e).indexOf('@') < 0 && normName(e) === n), out = [];
+  if (is(CONFIG.BADGE_TEAM)) out.push('badges');
+  if (is(CONFIG.RECRUIT_TEAM)) out.push('the recruitment team');
+  if (is(CONFIG.BOOK_TEAM)) out.push('Book Appts');
+  if (is([CONFIG.HYRRE.MANAGER])) out.push('Megan\'s bookings');
+  if (is(CONFIG.OFFICE_BOOKERS)) out.push('Office bookings');
+  if (is((CONFIG.HANDOVER || []).map(h => h.to))) out.push('a leaver\'s alerts');
+  return out;
 }
 /** Someone whose alerts reach a person: switched on with an email, or switched off with someone taking theirs. */
 function alertable(b) { return truthy(b.active) ? !!b.email : successorsOf(b).length > 0; }
@@ -1696,7 +1744,7 @@ function successorOf(u) { return successorsOf(u)[0] || null; }
 /** Everyone who takes someone's alerts: Megan Hyrre's go to CONFIG.HYRRE.ALERTS_TO (Rubal, Jess) and whoever manages her (Christie);
  *  anyone else's to who took over. */
 function successorsOf(u) {
-  const by = emails => usersAll().filter(v => truthy(v.active) && emails.some(e => normEmail(e) === normEmail(v.email)));
+  const by = who => usersAll().filter(v => truthy(v.active) && who.some(e => namedAs(v, e)));
   if (isHyrreBooker(u)) {
     const l = by(CONFIG.HYRRE.ALERTS_TO || []);
     usersAll().filter(v => truthy(v.active) && isHyrreManager(v) && !l.some(w => w.id === v.id)).forEach(v => l.push(v));
@@ -2046,12 +2094,21 @@ function badgeArtInfo() {
   out.at = p.getProperty('BADGE_ART_AT') || '';
   return out;
 }
-/** Their badge lines: one for NDCS (the ID number) and the Modern Milkman (MMC…), three for HelloFresh, upper case, one a line. */
-function badgeLines(v) { return String(v || '').split(/[\n,;]+/).map(x => x.trim().toUpperCase().replace(/\s+/g, '')).filter(Boolean); }
+/** Their badge lines: one for NDCS (the ID number) and the Modern Milkman (MMC…), three for HelloFresh, upper case, one a line.
+ *  Each keeps its place (11 Nov): HelloFresh's R… and GD2D… typed before the JU… stay in boxes 2 and 3, the first left empty. */
+function badgeLines(v) {
+  const l = String(v || '').split(/[\n,;]/).map(x => x.trim().toUpperCase().replace(/\s+/g, ''));
+  while (l.length && !l[l.length - 1]) l.pop();
+  return l;
+}
+/** A starter's badge row. Their numbers were typed for one client's badge (badge_camp): placed somewhere else since, they show as
+ *  not typed yet, and not printed (11 Nov: an NDCS ID never prints as a Modern Milkman number). Moved back, they're there again. */
 function badgeRow(r, a) {
+  const mine = !a.badge_camp || a.badge_camp === r.campaign;
   return { id: r.id, week_ending: r.week_ending, day1_date: r.day1_date, full_name: r.full_name, campaign: r.campaign, coach_name: r.coach_name, has_photo: r.has_photo,
-    badge_no: a.badge_no || '', badge_expiry: a.badge_expiry || '', badge_at: a.badge_at || '', badge_by: a.badge_by || '',
-    badge_printed_at: a.badge_printed_at || '', badge_printed_by: a.badge_printed_by || '' };
+    photo_at: a.photo_at || '',  // when their photo last changed: a phone prints from a fresh one
+    badge_no: mine ? a.badge_no || '' : '', badge_expiry: mine ? a.badge_expiry || '' : '', badge_at: a.badge_at || '', badge_by: a.badge_by || '',
+    badge_printed_at: mine ? a.badge_printed_at || '' : '', badge_printed_by: mine ? a.badge_printed_by || '' : '' };
 }
 /** Everyone who started in the last BADGE_WEEKS Day 1 weeks and is still with us, newest first, with their badge numbers. */
 function badgeList(req, u) {
@@ -2063,16 +2120,20 @@ function badgeList(req, u) {
 }
 function saveBadge(req, u) {
   if (!canBadge(u)) throw new Error(badgeTeamOnly());
-  const lines = badgeLines(req.badge_no), exp = String(req.badge_expiry || '');
-  if (lines.some(x => !/^[A-Z0-9][A-Z0-9\-\/]{0,19}$/.test(x))) throw new Error('Badge numbers: letters and numbers only.');
+  const typed = badgeLines(req.badge_no), exp = String(req.badge_expiry || '');
+  if (typed.some(x => x && !/^[A-Z0-9][A-Z0-9\-\/]{0,19}$/.test(x))) throw new Error('Badge numbers: letters and numbers only.');
   if (exp && !/^\d{4}-\d\d-\d\d$/.test(exp)) throw new Error('Pick the expiry date.');
   const a0 = availRecord(req.id), cur = availRows(a0.week_ending).filter(x => x.id === a0.id)[0];
   const camp = cur ? cur.campaign : a0.campaign || (a0.company === 'JUSS' ? 'HF' : 'FR'), hf = camp === 'HF';  // where they're placed now
+  const lines = hf ? typed : typed.filter(Boolean);  // HelloFresh's three keep their boxes; the others have one
   const r = withLock(() => {
     const a = availRecord(req.id);
     if (camp === 'FR' && lines.some(x => !/^\d{3,8}$/.test(x))) throw new Error('NDCS ID numbers are numbers only (like 27545).');  // an O for a 0 never gets printed
     if (lines.length > (hf ? 3 : 1)) throw new Error(hf ? 'HelloFresh badges have three numbers.' : camp === 'TMM' ? 'Modern Milkman badges have one number (MMC…).' : 'NDCS badges have one ID number.');
-    a.badge_no = lines.join('\n'); a.badge_expiry = camp === 'FR' ? exp : ''; a.badge_by = u.name; a.badge_at = nowStr();
+    const no = lines.join('\n'), ex = camp === 'FR' ? exp : '';
+    // A number or expiry corrected after printing: not printed any more, so the right one is ticked for the next print (11 Nov)
+    if (no !== String(a.badge_no || '') || ex !== String(a.badge_expiry || '') || (a.badge_camp && a.badge_camp !== camp)) { a.badge_printed_at = ''; a.badge_printed_by = ''; }
+    a.badge_no = no; a.badge_expiry = ex; a.badge_camp = no ? camp : ''; a.badge_by = u.name; a.badge_at = nowStr();
     writeRow('Availability', a);
     return a;
   });
@@ -2086,7 +2147,7 @@ function badgesPrinted(req, u) {
   const ids = (Array.isArray(req.ids) ? req.ids : []).map(String).slice(0, 200);
   if (!ids.length) return { ok: true, n: 0 };
   const done = withLock(() => readTable('Availability').filter(a => ids.indexOf(a.id) >= 0).map(a => { a.badge_printed_at = nowStr(); a.badge_printed_by = u.name; writeRow('Availability', a); return a; }));
-  log(u, 'badges_printed', '', done.length + ' ' + (req.kind === 'hf' ? 'HelloFresh' : 'NDCS'));
+  log(u, 'badges_printed', '', done.length + ' ' + ({ hf: 'HelloFresh', tmm: 'Modern Milkman' }[req.kind] || 'NDCS'));
   return { ok: true, n: done.length, at: nowStr(), by: u.name };
 }
 /** The badge artwork for the PDF (admins), as data: URLs. */
@@ -2123,7 +2184,8 @@ function saveStarterPhoto(req, u) {
     if (!data) { if (pr) deleteWhere('StarterPhotos', x => x.id === a.id); }
     else if (pr) writeRow('StarterPhotos', { _row: pr, id: a.id, data: data, updated_at: nowStr() });
     else appendRow('StarterPhotos', { id: a.id, data: data, updated_at: nowStr() });
-    a.has_photo = data ? 'TRUE' : ''; a.updated_at = nowStr(); a.updated_by = u.name;
+    a.has_photo = data ? 'TRUE' : ''; a.photo_at = nowStr() + ' ' + uid().slice(0, 4);  // changes with every photo, even two in one minute: a phone holding the old one fetches it again before a badge print
+    a.updated_at = nowStr(); a.updated_by = u.name;
     writeRow('Availability', a);
   });
   return { ok: true, has_photo: !!data };
@@ -2209,7 +2271,10 @@ function bellDue() {
   // This week's cohort, then last week's: a Week 1 filled in the week after still goes on that week's tab
   for (const we of [thisWe, addDays(thisWe, -7)]) {
     if (stamp < addDays(we, -5) + ' ' + at) continue;  // the first of them is due at 18:00 on the Tuesday
-    const sent = bellProp('BELL_SENT_' + we, {});
+    let sent = bellProp('BELL_SENT_' + we, {});
+    // On a sheet, then placed where there's no bell sheet (the Modern Milkman): they go on neither, and the admins clear the old row
+    const off = availRows(we).filter(r => !BELL[r.campaign] && BELL[sent[r.id]]);
+    if (off.length) sent = bellMovedOff(we, off);
     // Not on their campaign's sheet yet: new, or switched FR ↔ HF since they went on the other one
     const due = availRows(we).filter(r => !r.no_longer && /[IO]/.test(r.w1) && sent[r.id] !== r.campaign && stamp >= addDays(r.day1_date, 1) + ' ' + at);
     const sheets = Object.keys(BELL).filter(k => ids[k]).map(k => ({ key: k, id: ids[k], section: BELL[k].section,
@@ -2218,6 +2283,20 @@ function bellDue() {
     if (sheets.length) return { we: we, tab: bellTab(we), sheets: sheets };
   }
   return null;
+}
+/** Someone on a bell sheet who's now placed where there's none (11 Nov: FR or HF → TMM): kept as off both, saved before the alert
+ *  goes, and the admins are told once to clear their old row (the app never deletes rows). */
+function bellMovedOff(we, off) {
+  const lines = [];
+  const sent = withLock(() => {
+    const s = bellProp('BELL_SENT_' + we, {});
+    off.forEach(r => { if (!BELL[s[r.id]]) return; lines.push(bellRow(r).name + ': clear them from the ' + BELL[s[r.id]].name); s[r.id] = r.campaign; });
+    PropertiesService.getScriptProperties().setProperty('BELL_SENT_' + we, JSON.stringify(s));
+    return s;
+  });
+  if (lines.length) notify(usersAll().filter(x => truthy(x.active) && isAdmin(x)), '🔔 Bell sheets: moved campaign',
+    lines.join('\n') + '\n(' + bellTab(we) + ', under New Starts. The Modern Milkman has no bell sheet.)', 'avail');
+  return sent;
 }
 /** What Google wrote (server/bell.js): keeps who's on, tells the admins who went on and, once each, what's in the way. */
 function bellDone(res) {
@@ -2339,7 +2418,7 @@ function pushTo(userIds, title, body, url) {
 }
 
 /** Send an alert: phone push when set up; email to anyone the push didn't reach (or everyone, if EMAIL_ALERTS is on). */
-function notify(users, title, body, cid) {
+function notify(users, title, body, cid, logAs) {
   // Someone switched off: whoever took over from them gets it instead (CONFIG.HANDOVER; Megan Hyrre's: Rubal and Jess), else nobody.
   // Never twice.
   const list = users.reduce((a, u) => a.concat(u && !truthy(u.active) ? successorsOf(u) : [u]), [])
@@ -2352,7 +2431,7 @@ function notify(users, title, body, cid) {
   // One Log line per alert: who got it on their phone, who by email (and any email that failed), so "did they get it?" has an answer
   const first = l => l.map(u => u.name.split(' ')[0]).join(', ');
   const phone = list.filter(u => reached.indexOf(u.id) >= 0), ok = emailed.filter(e => e.ok).map(e => e.u), bad = emailed.filter(e => !e.ok).map(e => e.u);
-  log({ name: 'alert' }, 'alert', cid || '', title + ' → ' + [phone.length ? '📲 ' + first(phone) : '', ok.length ? '✉️ ' + first(ok) : '', bad.length ? '❌ email failed: ' + first(bad) : ''].filter(String).join(' · '));
+  log({ name: 'alert' }, 'alert', cid || '', (logAs || title) + ' → ' + [phone.length ? '📲 ' + first(phone) : '', ok.length ? '✉️ ' + first(ok) : '', bad.length ? '❌ email failed: ' + first(bad) : ''].filter(String).join(' · '));
 }
 
 // ───────────────────────── ALERTS HEALTH (admin): is everyone actually reachable? ─────────────────────────
@@ -2926,13 +3005,15 @@ function bookingByToken(t) {
 function bookingInfo(req) {
   const b = bookingByToken(req.t), u = userById(b.booked_by_id);
   return { first_name: b.first_name, slot_date: b.slot_date, slot_time: b.slot_time || CONFIG.BOOK_TIME, company: b.company || CONFIG.BOOK_CO,
-    confirmed_at: b.confirmed_at, came: b.status === 'came', booker: u ? u.name.split(' ')[0] : '', today: todayStr() };
+    confirmed_at: b.confirmed_at, came: b.status === 'came', over: b.status === 'booked' && bookingOver(b), booker: u ? u.name.split(' ')[0] : '', today: todayStr() };
 }
 /** They tapped 🔒 Confirm I'm coming: confirmed in the app, and whoever booked them hears about it (once). */
 function confirmBooking(req) {
   const b = withLock(() => {
     delete MEMO.Bookings;
     const x = bookingByToken(req.t);
+    // A day that's been and gone can't be confirmed (11 Nov: "You're locked in. See you Monday" the day after they missed it)
+    if (!x.confirmed_at && x.status === 'booked' && bookingOver(x)) throw new Error(BOOK_GONE);
     if (!x.confirmed_at && x.status === 'booked') { x.confirmed_at = nowStr(); x.confirmed_by = 'CONFIRM'; x.updated_at = nowStr(); writeRow('Bookings', x); x._new = true; }
     return x;
   });
@@ -2943,6 +3024,7 @@ function confirmBooking(req) {
   }
   return { confirmed_at: b.confirmed_at };
 }
+const BOOK_GONE = 'That day has been and gone. Reply to the message you were sent and we\'ll book you another day.';
 function bookingName(b) { return (b.first_name + ' ' + (b.last_name || '')).trim(); }
 /** Their presentation is over: an earlier day, or today from BOOK_MISSED_TIME ("didn't come"). */
 function bookingOver(b) { const now = nowStr(); return b.slot_date < now.slice(0, 10) || (b.slot_date === now.slice(0, 10) && now.slice(11, 16) >= CONFIG.BOOK_MISSED_TIME); }
@@ -2965,7 +3047,8 @@ function saveBooking(req, u) {
       if (b.hyrre_id) throw new Error(HYRRE_OWNS);
       if (b.status !== 'booked') throw new Error(b.status === 'came' ? 'They\'ve already checked in.' : 'This booking was cancelled.');
       const moved = b.slot_date !== day;
-      Object.assign(b, { first_name: first, last_name: last, mobile: mobile, source: source, notes: notes, slot_date: day, updated_at: nowStr() });
+      // Where they applied stays unless one is picked (Megan's rebooks are "Hirematic", which isn't one of the chips)
+      Object.assign(b, { first_name: first, last_name: last, mobile: mobile, source: BOOK_SOURCES.indexOf(f.source) >= 0 ? f.source : b.source || source, notes: notes, slot_date: day, updated_at: nowStr() });
       if (moved) ['confirm_at', 'confirm_by', 'confirm_via', 'confirmed_at', 'confirmed_by', 'remind_at', 'remind_by', 'remind_via', 'missed_at', 'missed_by', 'missed_via'].forEach(k => { b[k] = ''; });
       writeRow('Bookings', b);
       log(u, moved ? 'booking_moved' : 'booking_edited', '', first + ' ' + last + ' → ' + day);
@@ -2976,8 +3059,9 @@ function saveBooking(req, u) {
     const old = f.rebook_of ? getBooking(f.rebook_of) : null;
     // Megan's no-show rebooked here (Angad, 30 Oct: Rubal "can't do anything for Megan's appointments"): still Megan's, from
     // where they applied, and ours from now on. Hyrre isn't told: "let it do what it does", J&L is the extra layer
-    const hy = !!(old && old.hyrre_id);
-    if (hy && old.status === 'booked' && !bookingOver(old)) throw new Error(HYRRE_OWNS);
+    // …and so is a rebook of that rebook (11 Nov: the second one became the sender's, "Teamtailor", and every phone could send it)
+    const hy = !!(old && (old.hyrre_id || hyrreRootOf(old, readTable('Bookings'))));
+    if (old && old.hyrre_id && old.status === 'booked' && !bookingOver(old)) throw new Error(HYRRE_OWNS);
     if (old && old.status === 'booked') { old.status = 'no_show'; old.updated_at = nowStr(); writeRow('Bookings', old); }
     const b = appendRow('Bookings', {
       id: uid(), created_at: nowStr(), booked_by_id: hy ? old.booked_by_id : u.id, booked_by: hy ? old.booked_by : u.name, first_name: first, last_name: last, mobile: mobile,
@@ -3142,7 +3226,10 @@ function hyrreImport(req) {
         const ours = b ? [] : rows.filter(r => !r.hyrre_id && r.status !== 'cancelled' && hyrreRootOf(r, rows) === id);
         const came = ours.filter(r => r.status === 'came');
         if (came.length && !came.some(r => r.slot_date === day)) { n.skipped++; return; }  // they've been, on the day we rebooked them for
-        if (!b) b = came.filter(r => r.slot_date === day)[0] || ours.filter(r => r.status === 'booked' && r.slot_date >= today)[0];  // that day: Hyrre marks them attended
+        if (!b) b = came.filter(r => r.slot_date === day)[0] || ours.filter(r => r.status === 'booked' && !bookingOver(r))[0];  // that day: Hyrre marks them attended
+        // Missed the day we rebooked them for, and approved in Hyrre for a later one: ours is a no-show (📅 Rebooked) and stays where
+        // it was, Hyrre's new day is added (11 Nov: the same afternoon's pull moved it, and the "didn't come" row went with it)
+        if (!b) ours.filter(r => r.status === 'booked' && bookingOver(r) && r.slot_date < day).forEach(r => { r.status = 'no_show'; r.updated_at = now; writeRow('Bookings', r); });
         if (b && b.slot_date !== day) {
           moved.push({ b: b, was: b.slot_date });
           b.slot_date = day;
@@ -3283,6 +3370,8 @@ function onboardStep(req, u) {
  *  chunky buttons). Table layout + inline styles so it holds up in Gmail, Outlook and Apple Mail (Outlook desktop: solid colours). */
 function onboardEmail(c, u, pick) {
   const co = brandCo(c, pick), o = ONBOARD[co], first = c.full_name.split(' ')[0];
+  // The client they'll be working for: JUSS has two (11 Nov: a starter placed on the Modern Milkman was told to read up on Hello Fresh)
+  const client = o.clientTMM && campaignOf(c) === 'TMM' ? o.clientTMM : o.client;
   // Signed under the other company (Jess sending a JUSS email, Rubal a LINK one): "In association with …" (Angad, 20 Oct)
   const signCo = homeCo(u.email) && homeCo(u.email) !== co ? 'In association with ' + o.brand : o.brand;
   // After launch the playbook button goes through the hub: they sign in with this email and land in their own playbook
@@ -3436,8 +3525,8 @@ function onboardEmail(c, u, pick) {
     card(chip('📝', 'Notepad &amp; pen') + chip('🪪', 'Photo ID') + chip('🔑', 'Your right-to-work share code')) +
     // Get ready
     head('📚', 'Get ready') +
-    card('<p style="margin:0">' + dk((co === 'JUSS' ? 'We highly recommend you read up on our client, <b>' + esc(o.client[0]) + '</b>, ahead of your training.' : 'Read up and do some research on our client, <b>' + esc(o.client[0]) + '</b>, before your product coaching.') +
-      ' And check out the team in our online magazine!') + '</p><div style="margin-top:6px">' + btn('🌐 ' + esc(o.client[0]), o.client[1], true) + btn('📖 ' + esc(o.magazine[0]), o.magazine[1]) +
+    card('<p style="margin:0">' + dk((co === 'JUSS' ? 'We highly recommend you read up on our client, <b>' + esc(client[0]) + '</b>, ahead of your training.' : 'Read up and do some research on our client, <b>' + esc(client[0]) + '</b>, before your product coaching.') +
+      ' And check out the team in our online magazine!') + '</p><div style="margin-top:6px">' + btn('🌐 ' + esc(client[0]), client[1], true) + btn('📖 ' + esc(o.magazine[0]), o.magazine[1]) +
       (o.website ? btn('✨ ' + esc(o.website[0]), o.website[1]) : '') + '</div>') +
     // Sign-off, as a signature card
     gap(24) +
@@ -3459,7 +3548,7 @@ function onboardEmail(c, u, pick) {
     (o.preCoaching ? '2. Complete the Pre-Coaching Module (15-20 minutes): ' + o.preCoaching[1] + '\n' : '') +
     (o.preCoaching ? '3' : '2') + '. Read your ' + o.playbook[0] + ': ' + pbUrl + ' (first time? Tap "New BA – set up profile" to make your login)\n' +
     '\nBRING: notepad and pen, photo ID, your right-to-work share code\n' +
-    '\nGet ready: ' + o.client[0] + ' ' + o.client[1] + ' · ' + o.magazine[0] + ' ' + o.magazine[1] + (o.website ? ' · ' + o.website[1] : '') + '\n' +
+    '\nGet ready: ' + client[0] + ' ' + client[1] + ' · ' + o.magazine[0] + ' ' + o.magazine[1] + (o.website ? ' · ' + o.website[1] : '') + '\n' +
     '\nAny questions, just reply to this email or call ' + o.phone + '.\nI’ll be in the office to meet you when you arrive. Excited to work with you!\n\nThanks,\nKind Regards,\n' + u.name + '\n' + signCo;
   return { to: c.email, subject: o.brand + ' - Your Brand Ambassador Journey Begins!', html: html, text: text };
 }
@@ -3584,11 +3673,12 @@ function digestFor(u, rows, today) {
 function weekStats(u, rows) {
   const mine = rows.filter(c => c.booker_id === u.id && truthy(c.in_room));
   const booked = mine.filter(c => c.outcome === 'Academy booked' && c.admin_status !== 'rejected');
+  const waiting = booked.filter(c => c.admin_status === 'pending');  // waiting for an admin: nothing for the booker to send yet (11 Nov: the roundup said "Day 1 text NOT sent")
   return {
-    user: u, name: u.name, all: mine, booked: booked,
+    user: u, name: u.name, all: mine, booked: booked, waiting: waiting,
     notBooked: mine.filter(c => c.outcome && booked.indexOf(c) < 0),
     open: mine.filter(c => !c.outcome && !noCallNeeded(c)),
-    sent: booked.filter(c => c.offer_sent_at), unsent: booked.filter(c => !c.offer_sent_at),
+    sent: booked.filter(c => c.offer_sent_at), unsent: booked.filter(c => !c.offer_sent_at && waiting.indexOf(c) < 0),
     net: rows.filter(c => c.booker_id === u.id && !payExclusion(c)).length,
   };
 }
@@ -3608,6 +3698,7 @@ function roundupFor(s) {
   if (s.open.length) lines.push('📞 No outcome yet: ' + firstNames(s.open) + ' (due ' + deadlineLabel() + ')');
   if (s.sent.length) lines.push('📲 Day 1 text sent: ' + firstNames(s.sent));
   if (s.unsent.length) lines.push('⚠️ Day 1 text NOT sent: ' + firstNames(s.unsent));
+  if (s.waiting.length) lines.push('⏳ Waiting for an admin: ' + firstNames(s.waiting));
   if (!isAdmin(s.user)) lines.push('Net ' + s.net + '/' + target + (s.net >= target ? ' ✅ target hit 🔥' : ' · ' + (target - s.net) + ' short'));
   return { title: '🏁 Week roundup: ' + plural(s.net, 'appointment') + ' · ' + s.booked.length + ' booked', body: lines.join('\n') };  // = their net, as on the poster
 }

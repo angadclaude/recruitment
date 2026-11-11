@@ -53,6 +53,7 @@ const ok = (cond, msg) => { assert.ok(cond, msg); passed++; console.log('  ✓ '
   const christie = await loginApi('christie@example.com'), satpal = await loginApi('satpal@jussmarketing.co.uk');
 
   const browser = await chromium.launch();
+  const pageErrors = require('./watch').watch(browser);  // every page's own errors, all the way through
   const ctx = await browser.newContext(PHONE);
   await ctx.clock.setSystemTime(new Date(Date.now() + CLOCK_OFF));
   await ctx.addInitScript(t => { try { if (!localStorage.getItem('lr_tok')) localStorage.setItem('lr_tok', JSON.stringify(t)); } catch (e) {} }, jess);
@@ -183,11 +184,12 @@ const ok = (cond, msg) => { assert.ok(cond, msg); passed++; console.log('  ✓ '
 
   console.log('what stops a wrong badge');
   const rowOf = n => '.bdrow:has-text("' + n + '")', lak = rowOf('Lakshmi Venkataraman') + ' .bdno';
+  await p.click(rowOf('Sara Adeyemi') + ' .bdpick'); await p.click(rowOf('Sara Adeyemi') + ' .bdpick');  // unticked, then ticked by hand
   await p.fill(lak, '90145'); await p.click('.section-h');  // Sara's number, typed for Lakshmi by mistake
   await p.waitForFunction(() => /Same number as Sara Adeyemi/.test(document.querySelector('#page').innerText));
   const dupTxt = await p.innerText('#page');
   ok(/Same number as Sara Adeyemi/.test(dupTxt) && /Same number as Lakshmi/.test(dupTxt) && await p.$eval(rowOf('Sara Adeyemi') + ' .bdpick', el => el.disabled && !el.checked) &&
-    await p.$eval(rowOf('Lakshmi Venkataraman') + ' .bdpick', el => el.disabled && !el.checked), 'the same number on two starters: both flagged red and neither can be printed until it\'s put right');
+    await p.$eval(rowOf('Lakshmi Venkataraman') + ' .bdpick', el => el.disabled && !el.checked), 'the same number on two starters: both flagged red and neither can be printed until it\'s put right (a tick made by hand goes too)');
   await p.fill(lak, '90140'); await p.click('.section-h');
   await p.waitForFunction(() => !/Same number as/.test(document.querySelector('#page').innerText));
   ok(await p.$eval(rowOf('Sara Adeyemi') + ' .bdpick', el => !el.disabled && el.checked), 'put right: both ticked again');
@@ -206,6 +208,24 @@ const ok = (cond, msg) => { assert.ok(cond, msg); passed++; console.log('  ✓ '
 
   console.log('typing them in on the phone');
   const kin = '.bdrow:has-text("Kira Fong-Sullivan") .bdno';
+  // A slow connection: Ivan's number typed, straight on to Dina's box, typing there while Ivan's save comes back (11 Nov: the
+  // redraw after a save wiped whatever was being typed in the next row, and closed the phone's keyboard)
+  await post('/dev/delay', { ms: 700 });
+  const ivn = rowOf('Ivan Ilic') + ' .bdno', din = rowOf('Dina Shah') + ' .bdno';
+  await p.fill(ivn, '90135'); await p.click(din); await p.keyboard.press('End'); await p.keyboard.type('7');
+  await toastIs(/Ivan's badge saved/); await p.waitForTimeout(400);
+  const mid = await p.$eval(din, el => ({ v: el.value, focused: document.activeElement === el }));
+  await post('/dev/delay', { ms: 0 });
+  ok(mid.v === '901367' && mid.focused && (await api(jess, 'badgeList', {})).rows.find(r => r.full_name === 'Ivan Ilic').badge_no === '90135',
+    'typing in the next row while the one before is still saving: nothing typed is lost and the cursor stays in the box ("' + mid.v + '")');
+  await p.keyboard.press('Backspace'); await p.click('.section-h');
+  // HelloFresh's R… and GD2D… typed before the JU…: each stays in its own box (they used to slide up into boxes 1 and 2)
+  await p.fill(kin + '[data-i="1"]', 'r0146'); await p.fill(kin + '[data-i="2"]', 'gd2d016'); await p.click('.section-h');
+  let kPart = null; for (let i = 0; i < 30 && !(kPart && kPart.badge_no); i++) { kPart = (await api(jess, 'badgeList', {})).rows.find(r => r.full_name === 'Kira Fong-Sullivan'); await p.waitForTimeout(150); }
+  await p.waitForFunction(sel => document.querySelector(sel) && document.querySelector(sel).value === 'R0146', '.bdrow[data-bd="' + S.Kira.id + '"] .bdno[data-i="1"]');
+  const kBoxes = await p.$$eval(kin, l => l.map(i => i.value));
+  ok(kPart.badge_no === '\nR0146\nGD2D016' && kBoxes.join('|') === '|R0146|GD2D016' && /Waiting for numbers/.test(await rowTxt('Kira Fong-Sullivan')) && await p.$eval(rowOf('Kira Fong-Sullivan') + ' .bdpick', el => el.disabled),
+    'HelloFresh numbers typed out of order keep their boxes (' + JSON.stringify(kBoxes) + '): still waiting for the JU…, not printable');
   await p.fill(kin + '[data-i="0"]', 'ju0146'); await p.fill(kin + '[data-i="1"]', 'r0146'); await p.fill(kin + '[data-i="2"]', 'gd2d016');
   await p.click('.section-h');  // leave the box: it saves
   await p.waitForFunction(() => /Ready to print/.test((document.querySelector('.bdrow[data-bd] ') || {}).innerText || '') || true);
@@ -285,6 +305,61 @@ const ok = (cond, msg) => { assert.ok(cond, msg); passed++; console.log('  ✓ '
   const tl = await look(jpegs(pdf3)[0], [[T.x + T.photo[0] + 150, T.y + T.photo[1] + 150, 150, 150], [T.x + T.name[0] - 150, T.y + T.name[1] - 36, 300, 44], [T.x + T.code[0] - 120, T.y + T.code[1] - 36, 240, 44], [T.x, T.y + T.dy, 1365, 1072]]);
   ok(tl.dark[0] > 1000 && tl.dark[1] > 150 && tl.dark[2] > 150 && tl.dark[3] === 0, 'Modern Milkman: her photo, name and MMC number on the card (the shape of the Canva one), the next place empty');
 
+  console.log('after a print');
+  const rowsNow = async () => (await api(jess, 'badgeList', {})).rows, named = (l, n) => l.find(r => r.full_name.indexOf(n) === 0);
+  // The client corrects a number after the badge was printed: it isn't "printed" any more, so it's ticked for the next print
+  await p.fill(rowOf('Sara Adeyemi') + ' .bdno', '90147'); await p.click('.section-h');
+  await p.waitForFunction(() => { const t = Array.from(document.querySelectorAll('.bdrow')).find(r => /Sara/.test(r.innerText)).innerText; return /Ready to print/.test(t) && !/Printed/.test(t); });
+  ok(named(await rowsNow(), 'Sara').badge_printed_at === '' && named(await rowsNow(), 'Sara').badge_no === '90147' && await p.$eval(rowOf('Sara Adeyemi') + ' .bdpick', el => el.checked),
+    'a number corrected after printing: not "printed" any more, and ticked for the next print (it used to stay "✓ Printed" and be left out)');
+  // Harvey's number and photo are corrected on another phone (the office one) while this page is open. Print fetches both again.
+  await api(christie, 'saveBadge', { id: S.Harvey.id, badge_no: '90139' });
+  await api(christie, 'saveStarterPhoto', { id: S.Harvey.id, data: await fakePhoto(200) });
+  const calls = []; const onReq = r => { if (/\/api$/.test(r.url())) { try { calls.push(JSON.parse(r.postData()).action); } catch (e) { /* not ours */ } } };
+  p.on('request', onReq);
+  ok(await p.inputValue(har) === '90133', 'another phone corrects Harvey\'s number and retakes his photo: this page, opened before, still shows the old 90133');
+  await p.click('[data-bdprint=ndcs]');
+  await p.waitForSelector('.pdfprev canvas');
+  p.off('request', onReq);
+  const hv = named(await rowsNow(), 'Harvey');
+  ok(await p.inputValue(har) === '90139' && hv.badge_no === '90139' && hv.photo_at && calls.indexOf('badgeList') >= 0 && calls.indexOf('availPhotos') > calls.indexOf('badgeList') && calls.indexOf('saveBadge') < 0,
+    'Print asks for the list and the changed photo again first (' + calls.join(', ') + '): Harvey prints as 90139 with his new photo, and this page\'s old copy never overwrites it');
+  ok(/Preview · 1 page\b/i.test(await p.innerText('.pdfprev')), 'the two corrected ones (Sara, Harvey) are the ones on the page');
+  await p.click('#pdfx'); await p.waitForSelector('.pdfprev', { state: 'detached' });
+  ok(!named(await rowsNow(), 'Harvey').badge_printed_at, 'a preview closed without Share / Save marks nobody as printed');
+  // A number the server refuses (a letter O for a zero): the print stops and says whose, the box keeps what was typed
+  await p.fill(din, '9O136');
+  await p.click('[data-bdprint=ndcs]');
+  ok(await toastIs(/Dina's badge wasn't saved\. NDCS ID numbers are numbers only/) && !(await p.$('.pdfprev')) && await p.inputValue(din) === '9O136' && named(await rowsNow(), 'Dina').badge_no === '90136',
+    'a number that won\'t save (9O136, a letter O) stops the print and says whose: "Dina\'s badge wasn\'t saved. NDCS ID numbers are numbers only (like 27545)."');
+  await p.fill(din, '90136'); await p.click('.section-h');
+  // Leaving by a tab without leaving the box first (an iPhone doesn't count a tab tap as leaving it): the number is saved on the way out
+  await p.evaluate(id => { const i = document.querySelector('.bdrow[data-bd="' + id + '"] .bdno'); i.value = '90137'; i.dispatchEvent(new Event('input', { bubbles: true }));
+    document.querySelector('.tabbar [data-tab="academy"]').click(); }, S.Ivan.id);
+  let iv = null; for (let i = 0; i < 30 && !(iv && iv.badge_no === '90137'); i++) { iv = named(await rowsNow(), 'Ivan'); await p.waitForTimeout(150); }
+  ok(iv.badge_no === '90137', 'a number typed and a tab tapped straight after (no tap outside the box first): saved on the way out of the page');
+  await p.waitForSelector('#goBadges'); await p.click('#goBadges'); await p.waitForSelector('.bdrow');
+
+  console.log('numbers belong to one client\'s badge');
+  // Sam starts on Fundraising, gets his NDCS ID and his badge is printed. Then he's moved to the Modern Milkman.
+  await post('/dev/eval', { js: `appendRow('Candidates', { id: 'sw1', created_at: nowStr(), attended_date: '2026-11-02', week_ending: '2026-11-08', full_name: 'Sam Switch', mobile: '07700900992', company: 'LINK',
+    in_room: 'TRUE', rag: 'G', outcome: 'Academy booked', academy_date: '2026-11-09', day1_status: 'arrived' }); delete MEMO.Candidates; 1` });
+  const sam = async () => named(await rowsNow(), 'Sam');
+  const s0 = await sam();
+  await api(jess, 'saveBadge', { id: s0.id, badge_no: '90160' }); await api(jess, 'badgesPrinted', { ids: [s0.id], kind: 'ndcs' });
+  const s1 = await sam();
+  await api(angad, 'setCampaign', { id: 'sw1', campaign: 'TMM' }); const s2 = await sam();
+  await api(angad, 'setCampaign', { id: 'sw1', campaign: 'FR' }); const s3 = await sam();
+  ok(s1.campaign === 'FR' && s1.badge_no === '90160' && s1.badge_printed_at && s2.campaign === 'TMM' && s2.badge_no === '' && !s2.badge_printed_at && s3.badge_no === '90160' && s3.badge_printed_at,
+    'moved to the Modern Milkman after his NDCS ID was typed and printed: his Modern Milkman badge has no number yet and isn\'t "printed" (the NDCS ID never prints as an MMC number); moved back by mistake-fix, the ID is there again');
+  await api(angad, 'fixName', { id: 'sw1', full_name: 'Sam Switcher' }); const s4 = await sam();
+  ok(s4.full_name === 'Sam Switcher' && s4.badge_no === '90160' && !s4.badge_printed_at, 'his name corrected after printing: the badge is ticked to print again with the right spelling');
+  await api(angad, 'setCampaign', { id: 'sw1', campaign: 'HF' }); await api(jess, 'saveBadge', { id: s0.id, badge_no: 'ju0160, r0160, gd2d060' });
+  const s5 = await sam();
+  ok(s5.campaign === 'HF' && s5.badge_no === 'JU0160\nR0160\nGD2D060', 'placed on HelloFresh, his three numbers typed: those are his badge now');
+  await post('/dev/eval', { js: `readTable('Availability').filter(r => r.candidate_id === 'sw1').forEach(r => sheet('Availability').deleteRow(rowOfId('Availability', r.id))); delete MEMO.Availability;
+    sheet('Candidates').deleteRow(rowOfId('Candidates', 'sw1')); delete MEMO.Candidates; 1` });
+
   console.log('three campaigns on Day 1');
   const camp = await post('/dev/eval', { js: `(() => {
     const a = usersAll().filter(u => u.email === 'angad@linkmarketing.org.uk')[0];
@@ -294,12 +369,17 @@ const ok = (cond, msg) => { assert.ok(cond, msg); passed++; console.log('  ✓ '
     const c = setCampaign({ id: 'tmm1', campaign: 'TMM' }, a), x = day1Results('2026-11-09');
     let bad = ''; try { setCampaign({ id: 'tmm1', campaign: 'MILK' }, a); } catch (e) { bad = e.message; }
     const r = [c.campaign, getC('tmm1').brand, campaignOf({ company: 'LINK', campaign: 'TMM' }), campaignOf({ company: 'JUSS', campaign: '' }), x.tmm, bad];
+    // Their welcome email names the client they'll work for (11 Nov: a Modern Milkman starter was told to read up on Hello Fresh)
+    const em = JSON.stringify(onboardEmail(getC('tmm1'), a)), hfEm = JSON.stringify(onboardEmail(Object.assign({}, getC('tmm1'), { campaign: 'HF' }), a));
+    r.push(/our client, <b>The Modern Milkman<.b>/.test(em) && /themodernmilkman\.co\.uk/.test(em) && !/Hello Fresh|hellofresh/i.test(em) && /JUSS/.test(em),
+      /our client, <b>Hello Fresh<.b>/.test(hfEm) && !/Modern Milkman/.test(hfEm));
     sheet('Candidates').deleteRow(rowOfId('Candidates', 'tmm1')); delete MEMO.Candidates;
     return JSON.stringify(r);
   })()` });
   const cr = JSON.parse(camp.out);
   ok(cr[0] === 'TMM' && cr[1] === 'JUSS' && cr[2] === 'TMM' && cr[3] === 'HF' && cr[4] === 1 && /FR, HF or TMM/.test(cr[5]),
     'Day 1: FR, HF or TMM; placed in TMM = joins JUSS (their messages come from JUSS); still nobody starts in TMM until it\'s picked; the morning-after results count TMM');
+  ok(cr[6] === true && cr[7] === true, 'the welcome email of a starter placed on the Modern Milkman says "read up on our client, The Modern Milkman" (button and text too), from JUSS; a HelloFresh starter\'s still says Hello Fresh');
 
   console.log('a reprint, and who sees the button');
   const L26 = await api(jess, 'badgeList', { weeks: 26 });
@@ -320,6 +400,7 @@ const ok = (cond, msg) => { assert.ok(cond, msg); passed++; console.log('  ✓ '
   ok(await toastIs(/Badge artwork in ✓/), 'the artwork file still goes in, saved as .txt with a byte-order mark (as phones sometimes do)');
 
   await browser.close();
+  require('./watch').report(pageErrors); passed++;
   console.log('\nALL ' + passed + ' BADGE CHECKS PASSED (' + (process.env.JL_BACKEND === 'pg' ? 'Supabase back end' : 'Google back end') + ')');
   process.exit(0);
 })().catch(e => { console.error('\nFAILED:', e); process.exit(1); });

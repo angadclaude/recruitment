@@ -264,6 +264,7 @@ const FIRST = [
     'Thursday\'s morning pull: "📲 1 of Megan\'s to remind for today" goes to Christie only, "signed Christie / Megan"; not Rubal or Jess (Angad, 9 Nov)');
   await api(jess, 'saveBooking', { booking: { first_name: 'Leah', last_name: 'Brown', mobile: '07700900126', slot_date: '2026-10-29', source: 'Teamtailor' } });
   const browser = await chromium.launch();
+  const pageErrors = require('./watch').watch(browser);  // every page's own errors, all the way through
   const newContext = browser.newContext.bind(browser);
   browser.newContext = async (...a) => { const ctx = await newContext(...a); CONTEXTS.push(ctx); await ctx.clock.setSystemTime(new Date(Date.now() + CLOCK_OFF)); return ctx; };
   const ctx = await browser.newContext(PHONE);
@@ -366,6 +367,7 @@ const FIRST = [
   ok(!(await refused(rubal, 'saveBooking', { booking: { id: re.id, first_name: 'Aisha', last_name: 'Khan', mobile: re.mobile, slot_date: '2026-11-02', source: 'Hirematic' } })) &&
     !(await refused(rubal, 'saveBooking', { booking: { id: re.id, first_name: 'Aisha', last_name: 'Khan', mobile: re.mobile, slot_date: '2026-10-30', source: 'Hirematic' } })),
     'ours to change from now on (a day moved and back)');
+  ok((await api(rubal, 'bookingList', {})).items.find(b => b.id === re.id).source === 'Hirematic', 'changing the day keeps where they applied (Hirematic: it turned into "Teamtailor")');
   await setTime('2026-10-29T11:16:00+00:00');
   const m5 = await api('', 'hyrreImport', { ticket: await ticket(), pipeline: '403', window: WINDOW, items: second });
   ok(JSON.stringify(m5.marks.find(m => m.id === 'h1')) === JSON.stringify({ id: 'h1', status: 'no_show' }) &&
@@ -399,7 +401,64 @@ const FIRST = [
   ok(p7.added === 0 && ianNow.length === 2 && all.find(b => b.id === ianRe.id).hyrre_id === 'h9' && all.find(b => b.id === ianRe.id).status === 'came' &&
     JSON.stringify(p7.marks.find(m => m.id === 'h9')) === JSON.stringify({ id: 'h9', status: 'attended' }) && all.find(b => b.id === re.id).status === 'booked',
     'approved in Hyrre for Friday, the day he came: still one booking, and Hyrre marks him attended');
+
+  console.log('rebooked twice, a day gone by, last week\'s link (11 Nov)');
+  let rows = (await api(chrisTok, 'bookingList', {})).items;
+  const kimHy = rows.find(b => b.hyrre_id === 'h10');
+  const k1 = await api(chrisTok, 'saveBooking', { booking: { rebook_of: kimHy.id, first_name: 'Kim', last_name: 'Lee', mobile: kimHy.mobile, slot_date: '2026-11-02' } });
+  await setTime('2026-11-02T10:40:00+00:00');  // Monday: she misses that one too
+  const k2 = await api(chrisTok, 'saveBooking', { booking: { rebook_of: k1.id, first_name: 'Kim', last_name: 'Lee', mobile: kimHy.mobile, slot_date: '2026-11-03', source: 'Teamtailor' } });
+  const nora = await api(chrisTok, 'saveBooking', { booking: { first_name: 'Nora', last_name: 'Tile', mobile: '07700900231', slot_date: '2026-11-03', source: 'Teamtailor' } });
+  rows = (await api(chrisTok, 'bookingList', {})).items;
+  ok(k1.booked_by === 'Megan Hyrre' && k2.booked_by === 'Megan Hyrre' && k2.booked_by_id === meganId && k2.source === 'Hirematic' && !k2.hyrre_id && rows.find(b => b.id === k1.id).status === 'no_show',
+    'a Megan no-show rebooked a second time is still Megan\'s, from Hirematic (it used to become the sender\'s, "Teamtailor", so every phone could send it)');
+  // Tuesday 10:05: Nora has checked in, Kim hasn't confirmed. "Confirmed" is who tapped CONFIRM, not who's in the room
+  await setTime('2026-11-03T09:50:00+00:00');
+  await api('', 'checkin', { form: { full_name: 'Nora Tile', mobile: '07700900231', email: 'nora@example.com', over18: 'Yes', rtw: 'British or Irish citizen', privacy_ok: true, source: 'Indeed' } });
+  await setTime('2026-11-03T10:05:00+00:00');
+  await chp.reload(); await chp.waitForSelector('.tabbar button');
+  await chp.click('.tabbar button[data-tab=book]'); await chp.waitForSelector('.bkrow');
+  await chp.waitForTimeout(900);
+  const tiles = JSON.stringify(await chp.$$eval('.kpis .kpi', l => l.map(k => [k.querySelector('b').dataset.n, k.querySelector('span').textContent])));
+  ok(tiles === '[["2","Booked"],["0","Confirmed"],["1","Not confirmed"],["0","Not sent"]]' || /\["2","Booked"\],\["0","Confirmed"\],\["1","Not confirmed"\]/.test(tiles),
+    'the day\'s tiles before 10:30 with one already in the room: Booked 2 · Confirmed 0 · Not confirmed 1 (someone who checked in used to count as "confirmed"): ' + tiles);
+  // 10:40: Kim's day has been and gone. Her link can't confirm it, and says so
+  await setTime('2026-11-03T10:40:00+00:00');
+  const bkSheet = await getJson('/dev/sheet?name=Bookings'), bi = bkSheet[0].indexOf('id'), ti = bkSheet[0].indexOf('confirm_token');
+  const kTok = bkSheet.find(r => r[bi] === k2.id)[ti];
+  const kInfo = await api('', 'bookingInfo', { t: kTok });
+  ok(kInfo.over === true && /been and gone\. Reply to the message/.test(await refused('', 'confirmBooking', { t: kTok })) && !(await api(chrisTok, 'bookingList', {})).items.find(b => b.id === k2.id).confirmed_at,
+    'a CONFIRM link tapped after the day has gone: "That day has been and gone. Reply to the message you were sent and we\'ll book you another day." (it used to say "locked in" and tell the team she\'d confirmed)');
+  const kPage = await cctx.newPage();
+  await kPage.goto(APP + 'booked.html?t=' + kTok + '&n=Kim&d=2026-11-03');
+  await kPage.waitForFunction(() => /has been and gone/.test(document.body.innerText));
+  ok(!(await kPage.$('#conf')) && !/locked in/.test(await kPage.innerText('body')), 'her page: "Tuesday 3rd November has been and gone. Reply to the message… and we\'ll book you another day", no Confirm button');
+  // 11:15 pull: Hyrre has her approved for Thursday. Tuesday's stays a "didn't come" (📅 Rebooked); Thursday's is added
+  await setTime('2026-11-03T11:16:00+00:00');
+  const p9 = await api('', 'hyrreImport', { ticket: await ticket(), pipeline: '403', window: WINDOW, items: fri.concat([item('h10', 'Kim Lee', '07700900210', '2026-11-05')]) });
+  rows = (await api(chrisTok, 'bookingList', {})).items;
+  const kTue = rows.find(b => b.id === k2.id), kThu = rows.find(b => b.hyrre_id === 'h10' && b.slot_date === '2026-11-05');
+  ok(p9.added === 1 && kTue.status === 'no_show' && kTue.slot_date === '2026-11-03' && kThu && kThu.status === 'booked' && kThu.booked_by === 'Megan Hyrre',
+    'missed the day we rebooked her for, approved in Hyrre for a later one the same morning: Tuesday stays a no-show where it was, Thursday is added (the pull used to move Tuesday\'s booking, and its "didn\'t come" row went)');
+  await kPage.reload();
+  await kPage.waitForFunction(() => /you've been rebooked/.test(document.body.innerText));
+  ok(!/You're booked in/.test(await kPage.innerText('body')) && !(await kPage.$('#conf')),
+    'her old link now: "That day has passed and you\'ve been rebooked: your newest message has your new day…" (it used to keep showing "You\'re booked in" for Tuesday)');
+  await kPage.close();
+  // The office phone left open overnight: next morning "today" has moved on with the day (Monday's reminders used to say "tomorrow")
+  ok(/Today/i.test(await chp.innerText('.bknav .lbl')) && /Tuesday 3 November/i.test(await chp.innerText('.bknav .lbl')), 'Tuesday, Book Appts open on the office phone: "Today · Tuesday 3 November"');
+  await setTime('2026-11-04T08:50:00+00:00');
+  await chp.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await chp.waitForFunction(() => /Wednesday 4 November/i.test((document.querySelector('.bknav .lbl') || {}).innerText || ''), null, { timeout: 15000 }).catch(() => {});
+  ok(/Today/i.test(await chp.innerText('.bknav .lbl')) && /Wednesday 4 November/i.test(await chp.innerText('.bknav .lbl')),
+    'the same page, never reloaded, opened again on Wednesday morning: "Today · Wednesday 4 November" (it used to stay on Tuesday until a reload)');
+  // A mobile from another country (Hyrre keeps it as given): its own country code, not 44 in front of it
+  const jsSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'JS.html'), 'utf8');
+  const intlNo = new Function(jsSrc.match(/function intlNo\(mobile\) \{[^\n]+\}/)[0] + '; return intlNo;')();
+  ok(intlNo('07700900201') === '447700900201' && intlNo('+49151234567') === '49151234567' && intlNo('00353871234567') === '353871234567' && /'https:\/\/wa\.me\/' \+ intlNo\(mobile\)/.test(jsSrc) && /'sms:\+' \+ intlNo\(mobile\)/.test(jsSrc),
+    'WhatsApp and text links: 07700 900201 → 447700900201; Eva\'s +49151234567 → 49151234567 (it used to open a chat with 4449151234567)');
   await browser.close();
+  require('./watch').report(pageErrors); passed++;
 
   console.log('\nALL ' + passed + ' HYRRE CHECKS PASSED (' + (process.env.JL_BACKEND === 'pg' ? 'Supabase' : 'Google') + ' back end)');
   process.exit(0);

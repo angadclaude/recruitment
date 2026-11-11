@@ -147,6 +147,7 @@ async function fillEval(p) {
   ok(hist.length === 2, 'history import keeps the last 6 months only');
 
   const browser = await chromium.launch();
+  const pageErrors = require('./watch').watch(browser);  // every page's own errors, all the way through
   const newContext = browser.newContext.bind(browser);
   browser.newContext = async (...a) => { const ctx = await newContext(...a); CONTEXTS.push(ctx); await ctx.clock.setSystemTime(new Date(Date.now() + CLOCK_OFF)); return ctx; };
 
@@ -2191,6 +2192,18 @@ async function fillEval(p) {
       'placed in HF after going on the FR sheet: onto the HF one too, and the admins hear "' + (mvP[0] ? mvP[0].body.contents.en.split('\n')[0] : 'none') + '"');
     await api(admin, 'setCampaign', { id: mvR.candidate_id, campaign: mvWas || '' });
     await post('/dev/props', { ['BELL_SENT_' + WE]: sentB4 });
+    // Placed on the Modern Milkman after going on the FR sheet (11 Nov): TMM has no bell sheet, so they're on neither, and the
+    // admins are told once to clear the FR row (before: nothing was said, and they stayed counted as on the FR sheet)
+    const frOn = async () => (await api(admin, 'availWeek', { weekEnding: WE })).bell.sheets.find(x => x.key === 'FR').on, frOn0 = await frOn();
+    await api(admin, 'setCampaign', { id: mvR.candidate_id, campaign: 'TMM' });
+    const tm0 = (await getJson('/dev/pushes')).length, dueTm = await bellDue(), tmP = (await getJson('/dev/pushes')).slice(tm0).filter(x => /^🔔 Bell sheets: moved campaign/.test(ttl(x)));
+    const tm1 = (await getJson('/dev/pushes')).length; await bellDue();
+    const tmAgain = (await getJson('/dev/pushes')).slice(tm1).filter(x => /^🔔 Bell sheets/.test(ttl(x)));
+    ok(dueTm === null && tmP.length === adminIds.length && tmP[0].body.contents.en.startsWith(mvR.full_name.toUpperCase() + ': clear them from the FR bell sheet') &&
+      /The Modern Milkman has no bell sheet/.test(tmP[0].body.contents.en) && !tmAgain.length && await frOn() === frOn0 - 1,
+      'placed on the Modern Milkman after going on the FR sheet: on neither sheet, the admins hear once "' + (tmP[0] ? tmP[0].body.contents.en.split('\n')[0] : 'none') + '", and the FR count drops by one');
+    await api(admin, 'setCampaign', { id: mvR.candidate_id, campaign: mvWas || '' });
+    await post('/dev/props', { ['BELL_SENT_' + WE]: sentB4 });
     if (!PG) {  // the same person typed a little differently by hand is already there (28 Oct: "HILAIRE (EMMANUEL) EBILA" went on twice)
       const hand = mvR.full_name.toUpperCase().split(' '), handName = hand[0] + ' (NICK) ' + hand.slice(1).join('-');
       const relayB = rows => post('/api', { action: 'relayBell', secret: BRS, id: FRID, we: '2026-10-25', section: 'NEW STARTS', rows: rows });
@@ -3008,6 +3021,8 @@ async function fillEval(p) {
   ok(cvOk.admin_status === 'approved' && cvOk.admin_by === 'Jess Grace' && cvOk.admin_check === '' && cvOk.flags.some(f => f.level === 'amber' && /unspent conviction: the client won't badge them · approved by Jess Grace$/.test(f.text)) &&
     cvBk2.admin_check === '' && !cvBk2.flags.some(f => /Admin check/.test(f.text)) && (await post('/api', { action: 'welcomeInfo', t: cvTok })).ok && (await api(admin, 'academyList', {})).items.some(c => c.id === cv1.id),
     'Jess approves → booked as normal: welcome page live, on the Day 1 list; her flag turns amber "· approved by Jess Grace", the booker\'s red goes');
+  ok(cvOk.admin_note === 'spent by Day 1, client confirmed' && cvBk2.admin_status === 'approved' && cvBk2.admin_by === 'Jess Grace' && cvBk2.admin_note === '' && !/client confirmed|spent by/.test(JSON.stringify(cvBk2)),
+    'what Jess wrote with her decision stays with the admins: the booker sees "Approved by Jess Grace", not the note (11 Nov: it showed word for word)');
   // 2. Mia tapped Yes by mistake (Angad: "sometimes that also happens"): booked → waiting; Angad corrects the answer → the booking goes ahead
   ok((await api(fizaTok, 'saveOutcome', { id: cv2.id, outcome: 'Academy booked', academy_date: '2026-11-02', outcome_notes: '' })).admin_status === 'pending', 'Mia (Yes by mistake) booked by her booker → waits too');
   ok(/Admin only/.test(await refused(fizaTok, 'fixConviction', { id: cv2.id, answer: 'No' })) && /Choose Yes or No/.test(await refused(admin, 'fixConviction', { id: cv2.id, answer: 'Maybe' })), 'only an admin can correct the convictions answer, and only to Yes or No');
@@ -3024,6 +3039,7 @@ async function fillEval(p) {
   ok(devNo.outcome === 'Not suitable' && devNo.admin_status === 'rejected' && devNo.outcome_by === 'Jess Grace' && devNo.outcome_at && !devNo.outcome_late && devLog.length === 1 && devLog[0].o === 'Not suitable' && devLog[0].n === 'Declined by admin: client badge' &&
     devBk.outcome === 'Not suitable' && devBk.admin_check === '' && !devBk.flags.some(f => /Admin check/.test(f.text)) && !(await api(admin, 'chaseList', {})).items.some(c => c.id === cv3.id),
     'Jess declines Dev before any call → Not suitable (logged "Declined by admin: client badge", not LATE, off Chase); his booker sees Not suitable and no more red');
+  ok(devBk.admin_note === '' && /"n":"Declined by admin"[,}]/.test(devBk.outcome_log) && !/client badge/.test(JSON.stringify(devBk)), 'his booker\'s call log says "Declined by admin", without what Jess wrote');
   ok((await api(fizaTok, 'saveOutcome', { id: cv3.id, outcome: 'Academy booked', academy_date: '2026-11-02', outcome_notes: '' })).admin_status === 'pending', 'booking him after the decline waits for an admin again');
   await api(jessT, 'adminDecision', { id: cv3.id, decision: 'rejected', note: '' });
   // 4. Ade: an admin books them directly → the phone asks first ("Book Day 1 anyway? That counts as your approval"); saved as approved
@@ -3038,6 +3054,39 @@ async function fillEval(p) {
   const adeNow = await api(admin, 'getCandidate', { id: cv4.id });
   ok(adeNow.outcome === 'Academy booked' && adeNow.admin_status === 'approved' && adeNow.admin_by === 'Angad Oshan' && adeNow.admin_check === '' && (await api(admin, 'academyList', {})).pending.length === 0,
     'OK → booked and approved by Angad (no "Awaiting admin"); nothing left waiting on the Day 1 tab');
+  // 5. Nia (11 Nov): the Log, the page anyone with her mobile can open, a note, and a "Yes" that was a mistake after all
+  const cv5 = await ci({ full_name: 'Nia Noted', mobile: '07700900888', email: 'nia@example.com', booker_id: fiza.id });
+  const cv6 = await ci({ full_name: 'Lee Lateform', mobile: '07700900889', email: 'lee@example.com', booker_id: fiza.id });
+  for (const c of [cv5, cv6]) await api(nathan, 'saveNotes', { id: c.id, rag: 'G', stars: 4, tags: [], notes: '' });
+  await ev(cv5, { q13_unspent: 'Yes' });
+  const niaLog = (await getJson('/dev/sheet?name=Log')).filter(r => r[2] === 'alert' && r[3] === cv5.id).map(r => r[4]).join(' | ');
+  ok(await pushN(angadId, /^⛔ Nia declared an unspent conviction$/) === 1 && /⛔ Admin check needed: Nia → /.test(niaLog) && !/convict/i.test(niaLog),
+    'the admins\' phones say "⛔ Nia declared an unspent conviction"; the Log (kept 6 months, copied to the Sheet) says only "⛔ Admin check needed: Nia"');
+  const evAgain = await api('', 'submitEval', { id: cv5.id, resume: cv5.resume, edit: true, answers: { q1_excitement: '8', q2_stood_out: 'x', q3_reason: 'Leadership', q4_situation: 'Studying', q5_start_date: '2026-10-19',
+    q6_days: '5 days', q7_commute: 'Yes', q8_resilience: 'x', q9_results_paid: 'No', q10_door: 'D) "Annoying, but I\'ll keep going."', q11_coach: 'A) Ask them to show me, then copy it', q12_bdp_stage: 'Not sure yet', q13_unspent: 'No' } });
+  const niaAfterEdit = await api(admin, 'getCandidate', { id: cv5.id });
+  ok(evAgain.status === 'edited' && niaAfterEdit.q13_unspent === 'Yes' && niaAfterEdit.admin_check === 'TRUE',
+    '"Change my answers" on the evaluation page (anyone with the mobile can open it) with the convictions answer now "No": it stays "Yes", still red. A "Yes" tapped by mistake is Jess\'s and Rubal\'s to correct');
+  await api(jessT, 'adminDecision', { id: cv5.id, decision: 'rejected', note: 'unspent conviction, client won\'t badge' });
+  await api(jessT, 'fixConviction', { id: cv5.id, answer: 'No' });  // she rings: it was a mis-tap
+  const niaBooked = await api(fizaTok, 'saveOutcome', { id: cv5.id, outcome: 'Academy booked', academy_date: '2026-11-02', outcome_notes: '' });
+  const niaTok = (String(niaBooked.welcome_url || '').match(/[?&]t=([^&]+)/) || [])[1], niaBk = await api(fizaTok, 'getCandidate', { id: cv5.id });
+  ok(niaBooked.outcome === 'Academy booked' && niaBooked.admin_status === '' && (await post('/api', { action: 'welcomeInfo', t: niaTok })).ok && (await api(admin, 'academyList', {})).items.some(c => c.id === cv5.id),
+    'declined, then the "Yes" corrected to "No", then booked by her booker: the booking goes ahead (welcome page live, on the Day 1 list). She used to be stuck as "rejected": booked, but off Day 1 and onboarding with no way out');
+  ok((await api(admin, 'getCandidate', { id: cv5.id })).admin_note === 'unspent conviction, client won\'t badge' && niaBk.admin_note === '' && !/convict|badge/i.test(JSON.stringify(niaBk)) && !('admin_note_private' in niaBk),
+    'Jess\'s note on that decline stays the admins\' for good, even with the answer corrected: nothing on the booker\'s copy says "conviction"');
+  // 6. Lee: his booker books Day 1 before he's filled in the form; the form then says "Yes" → the booking waits, like one made after it
+  const leeB = await api(fizaTok, 'saveOutcome', { id: cv6.id, outcome: 'Academy booked', academy_date: '2026-11-02', outcome_notes: '' });
+  await ev(cv6, { q13_unspent: 'Yes' });
+  const leeNow = await api(admin, 'getCandidate', { id: cv6.id }), leeTok = (String(leeB.welcome_url || '').match(/[?&]t=([^&]+)/) || [])[1];
+  const leeP = (await pushesTo(angadId)).find(p => /^🔴 Decision needed: Lee Lateform$/.test(p.body.headings.en));
+  ok(leeB.admin_status === '' && leeNow.admin_status === 'pending' && leeP && /^Lee is already booked for BA Academy on Monday 2nd November, and has now declared an unspent conviction \(the client won't badge them\)\. The booking waits: approve or decline on Lee's page \(booked by Fiza Iqbal\)\.$/.test(leeP.body.contents.en) &&
+    !(await post('/api', { action: 'welcomeInfo', t: leeTok })).ok && (await api(admin, 'academyList', {})).pending.some(c => c.id === cv6.id) && await pushN(angadId, /^⛔ Lee declared/) === 0,
+    'booked first, the evaluation (with a "Yes") after: the booking waits for an admin: "🔴 Decision needed: Lee Lateform · Lee is already booked… and has now declared an unspent conviction" (it used to stay live: Day 1 list, welcome page, onboarding)');
+  const leeRound = (await post('/dev/eval', { js: `JSON.stringify(roundupFor(weekStats(userById('${fiza.id}'), readTable('Candidates').filter(c => c.id === '${cv6.id}' || c.id === '${cv5.id}'))))` })).out;
+  ok(/⏳ Waiting for an admin: Lee/.test(JSON.parse(leeRound).body) && !/NOT sent: [^\n]*Lee/.test(JSON.parse(leeRound).body) && /NOT sent: Nia/.test(JSON.parse(leeRound).body),
+    'the Friday roundup: Lee is "⏳ Waiting for an admin", not "⚠️ Day 1 text NOT sent" (his booker has nothing to send yet)');
+  for (const c of [cv5, cv6]) await api(admin, 'saveOutcome', { id: c.id, outcome: 'Declined', outcome_notes: '' });
 
   // ── Day 1 tab, week by week (Angad, 20 Oct: "week ending wise similar to All tab") ──
   const d1Week = await api(admin, 'academyList', { weekEnding: '2026-10-25' });
@@ -3177,6 +3226,12 @@ async function fillEval(p) {
     await setupTo('fiza@example.com') === setupWas + 1 && (await post('/dev/eval', { js: "PropertiesService.getScriptProperties().getProperty('FIZA_RECORD_RESTORED')" })).out,
     'fizaRecordRestored (once): Fiza Iqbal again (LINK · off · no email), her ' + nFiza + ' candidates read Fiza Iqbal, and Christie Zammit gets her own record (JUSS · booker + admin · on) with the mailbox and the setup email');
   const logRows = await getJson('/dev/sheet?name=Log');
+  const chNo = await refused(admin, 'saveUser', { user: { id: chR.id, name: 'Christy Zammit', email: chR.email, company: 'JUSS', roles: ['booker', 'admin'], active: true } });
+  const named = (await post('/dev/eval', { js: `JSON.stringify((() => { const u = { name: 'Christie Zammit', email: 'office@example.com' }; return [namedAs(u, 'christie  zammit'), namedAs(u, 'Christy Zammit'), namedAs(u, 'Office@Example.com'), namedAs(u, 'someone@example.com'), namedAs(u, '')]; })())` })).out;
+  ok(/^(saveUser: )?Christie Zammit is set up by that exact name for badges, (the recruitment team, )?Book Appts, Megan's bookings, Office bookings\. Changing it here would switch those off for them\. Ask Angad to have the name changed in the app's settings first\.$/.test(chNo) &&
+    (await api(admin, 'listUsers')).users.find(u => u.id === chR.id).name === 'Christie Zammit' && named === '[true,false,true,false,false]',
+    'someone the settings know by name can\'t be renamed in Team by accident (Christie → "Christy" would quietly take away badges, Book Appts and Megan\'s bookings); a setting can name a person by name or by email' +
+    ' [refused: "' + chNo.slice(0, 60) + '…" · by name / email: ' + named + ']');
   ok(logRows.some(r => r[2] === 'user_save' && /^Fiza Iqbal restored .*: \d+ of her candidates read Fiza Iqbal again; her email cleared$/.test(r[4])) && logRows.some(r => r[2] === 'user_save' && /^Christie Zammit booker,admin active=TRUE/.test(r[4])) && !logRows.some(r => r[2] === 'user_save' && /@/.test(r[4])),
     'the Log says what was put right, never the email address');
   // Someone new on a leaver's shared mailbox: Add a person just works, the email moves across (Mo is switched off, with candidates)
@@ -3365,6 +3420,7 @@ async function fillEval(p) {
   }
 
   await browser.close();
+  require('./watch').report(pageErrors);
   console.log('\nALL CHECKS PASSED');
   process.exit(0);
 })().catch(e => { console.error('\nFAILED:', e); process.exit(1); });
