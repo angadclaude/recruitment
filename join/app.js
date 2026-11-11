@@ -1,4 +1,4 @@
-window.APP_VERSION = 'de149516';
+window.APP_VERSION = '09efe025';
 
 (function () {
 'use strict';
@@ -2978,7 +2978,7 @@ function chaseAdmin(list, carry, v) {
   return '<div class="card"><div class="display" style="font-size:24px">' + chaseHead(people, v, n => (n === 1 ? 'person' : 'people') + ' ') + '</div>' +
     '<p class="hint" style="margin:6px 0 0">' + sub + '</p>' +
     (canNudge ? '<div class="bullbtns" style="margin-top:12px"><button class="btn" id="nudgeAll">🔔 Nudge all ' + rows.length + '</button><a class="btn wa" id="waGroup" target="_blank" rel="noopener" href="' + h('https://wa.me/?text=' + encodeURIComponent(group)) + '">💬 Post to team WhatsApp</a></div>' +
-      '<p class="hint" style="margin:8px 0 0">Nudge = an alert on each booker\'s phone listing exactly who to chase from this week (email if they\'re not set up). WhatsApp = the same list for the bookers\' group.</p>' : '') +
+      '<p class="hint" style="margin:8px 0 0">Nudge = an alert on each booker\'s phone listing exactly who to chase from ' + (v.isNow ? 'this' : 'that') + ' week (email if they\'re not set up). WhatsApp = the same list for the bookers\' group.</p>' : '') +
     earlierLine(v) + '</div>' +
     '<div id="cres"></div>' +
     (noBooker.length || ticks.length ? '<div class="card needs"><b>👀 Needs you</b>' + (noBooker.length ? '<div class="leakline">❓ No booker: ' + nm(noBooker) + '</div>' : '') +
