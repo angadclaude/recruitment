@@ -34,7 +34,7 @@ const CONFIG = {
   DIGEST_TIME: '18:00',           // Mon–Thu: each booker's round-up of their day
   ROUNDUP_TIME: '15:00',          // Friday: week roundup to each booker + a team roundup to admins
   TEAM_ROUNDUP: true,             // false = admins don't get the Friday team roundup
-  CHASE_DAYS: 14,                 // Chase tab: appointments and no-shows from the last 2 weeks stay on it until they're dealt with
+  CHASE_DAYS: 14,                 // Chase tab: appointments from the last 2 weeks stay on it until they're dealt with; a missed or unticked Day 1 for 2 weeks from that Day 1
   // Booking a presentation straight after the call (Angad, 23 Oct): these three book applicants (Teamtailor CVs) from the app,
   // which writes the confirmation, the evening-before reminder and "sorry we missed you", and check-in finds the booking.
   BOOK_TEAM: ['angad@linkmarketing.org.uk', 'jess@linkmarketing.org.uk', 'rubal@jussmarketing.co.uk', 'Christie Zammit'],  // a name for someone on a shared mailbox (never a team member's email here)
@@ -1197,7 +1197,7 @@ function bundle(req, u) {
   if (req.withUsers && isAdmin(u)) out.users = listUsers(req, u).users;
   out.today = todayStr();  // an app left open overnight asks for "me" again when this moves on (11 Nov: Monday's reminders said "tomorrow")
   if (canBook(u)) { out.bookings = bookingList(req, u).items; out.hyrre = hyrreInfo(); }  // Jess, Rubal, Angad: who's booked for the presentations, and Hyrre's last pull
-  // The number on the Chase tab: this week's + carried over from earlier weeks ("3+8")
+  // The number on the Chase tab: this week's people to chase (nothing is carried over from earlier weeks since 11 Nov: chaseCarry stays 0)
   const cw = weekEnding(todayStr()), now = chaseNow(u);
   out.chase = now.length;
   out.chaseCarry = now.filter(x => chaseWeek(x.c) < cw).length;
@@ -2627,11 +2627,18 @@ function maybeDailyDigest() {
 // ───────────────────────── CHASE: nobody drops out of the pipeline ─────────────────────────
 /** Why this candidate needs chasing ('' = they don't). One rule for the Chase tab, the nudges and the badge.
  *  log (rated in the room, no outcome yet) · callback (No answer / Thinking it over) · stale (those, over 2 weeks).
- *  Day 1 people (Academy booked: Day 1 text, not confirmed, no-show, admin's decision) are on the Day 1 tab only (Angad, 19 Oct). */
-const BOOKER_LEAKS = ['stale', 'log', 'callback'];
+ *  noshow (missed their Day 1: rebook them) · tick (their Day 1 has gone and nobody ticked Arrived / No-show: the admins').
+ *  Those two are on Chase only, under their Day 1's week, for CHASE_DAYS from that Day 1, then they're off it whatever happened
+ *  (Angad, 11 Nov: "these people should only stay for 14 days. Keep it as a blanket rule. And they should only be on the chase
+ *  tab": until then they sat on the Day 1 tab as "Still to sort from an earlier week"). The rest of Day 1 (the Day 1 text, not
+ *  confirmed, an admin's decision) stays on the Day 1 tab (Angad, 19 Oct). */
+const BOOKER_LEAKS = ['stale', 'log', 'callback', 'noshow'];
 function leakOf(c, today) {
   const from = addDays(today, -(CONFIG.CHASE_DAYS - 1));
-  if (c.outcome === 'Academy booked') return '';
+  if (c.outcome === 'Academy booked') {
+    if (c.admin_status === 'pending' || c.admin_status === 'rejected' || !c.academy_date || c.academy_date > today || c.academy_date < from) return '';
+    return c.day1_status === 'no_show' ? 'noshow' : !c.day1_status && c.academy_date < today ? 'tick' : '';
+  }
   if (!truthy(c.in_room) || noCallNeeded(c)) return '';
   // No answer / Thinking it over never just drop off: after 2 weeks they're "stale" until someone logs a final answer
   // (Declined, Not suitable, Academy booked). A call-back time they asked for that's still to come keeps them as a call back.
@@ -2649,28 +2656,32 @@ function chaseRows(u) {
     return k && (admin || BOOKER_LEAKS.indexOf(k) >= 0) ? { c: c, k: k } : null;
   }).filter(Boolean);
 }
-/** Chase goes week by week (week ending Sunday): a chase belongs to its appointment's week, or to a later call-back's
- *  week ("call me next Tuesday" is next week's job). Anything from before this week still open is "carried over". */
+/** Chase goes week by week (week ending Sunday), and each week shows only its own people (Angad, 11 Nov: "just put the people
+ *  that need to be chased from that particular week ending… not always keep carried forward"). A chase belongs to its
+ *  appointment's week, or to a later call-back's week ("call me next Tuesday" is next week's job); a missed or unticked Day 1
+ *  to that Day 1's week. Nothing from an earlier week is carried into this one: it stays open under its own week. */
 function chaseWeek(c) {
+  if (c.outcome === 'Academy booked') return weekEnding(c.academy_date);
   const cb = String(c.callback_at || '').slice(0, 10);
   return weekEnding(cb > c.attended_date ? cb : c.attended_date);
 }
-/** What's on Chase now: this week's plus carried over (call-backs booked for later weeks wait for their week). */
+/** What's on Chase now: this week's (the number on the tab). Earlier weeks' are under their own week; call-backs booked for
+ *  later weeks wait for theirs. */
 function chaseNow(u) {
   const cw = weekEnding(todayStr());
-  return chaseRows(u).filter(x => chaseWeek(x.c) <= cw);
+  return chaseRows(u).filter(x => chaseWeek(x.c) === cw);
 }
 function chaseList(req, u) {
   return { today: todayStr(), weekEnding: weekEnding(todayStr()), days: CONFIG.CHASE_DAYS, items: chaseRows(u).map(x => Object.assign(shape(x.c, u), { leak: x.k })) };
 }
-const LEAK_LINES = [['stale', '🔴 Stale: close it out'], ['log', '📞 Log the call'], ['callback', '🔁 Call back']];
+const LEAK_LINES = [['stale', '🔴 Stale: close it out'], ['log', '📞 Log the call'], ['callback', '🔁 Call back'], ['noshow', '🎓 Missed Day 1: rebook']];
 /** Admin, one tap (Chase tab): every booker with someone to chase gets an alert listing exactly who (email if they're not set up).
- *  Only the week on screen (req.week; this week also takes in what's carried over). The same booker isn't nudged twice in 30 minutes. */
+ *  Only the week on screen (req.week, else this week). The same booker isn't nudged twice in 30 minutes. */
 function chaseOutcomes(req, u) {
   if (!isAdmin(u)) throw new Error('Admin only');
   const today = todayStr(), now = nowStr(), only = Array.isArray(req.ids) && req.ids.length ? req.ids : null;
   const cw = weekEnding(today), week = /^\d{4}-\d{2}-\d{2}$/.test(req.week || '') ? weekEnding(req.week) : cw;
-  const inView = c => { const w = chaseWeek(c); return w === week || (week === cw && w < cw); };
+  const inView = c => chaseWeek(c) === week;
   const by = {};
   chaseRows(u).forEach(x => { if (x.c.booker_id && BOOKER_LEAKS.indexOf(x.k) >= 0 && inView(x.c)) { const b = (by[x.c.booker_id] = by[x.c.booker_id] || {}); (b[x.k] = b[x.k] || []).push(x.c); } });
   const cache = CacheService.getScriptCache(), out = { nudged: [], recently: [], noApp: [] };
