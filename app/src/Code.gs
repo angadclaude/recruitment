@@ -150,7 +150,7 @@ const SHEETS = {
     'q5_start_date', 'q6_days', 'q7_commute', 'q8_resilience', 'q9_results_paid', 'q9_results_detail',
     'q10_door', 'q11_coach', 'q12_bdp_stage', 'q12_bdp_why', 'q13_unspent', 'q14_questions',
     'outcome', 'academy_date', 'outcome_notes', 'outcome_by', 'outcome_at', 'outcome_late',
-    'admin_status', 'admin_note', 'admin_by', 'admin_at', 'admin_note_private',
+    'admin_status', 'admin_note', 'admin_by', 'admin_at',
     'pay_excluded', 'pay_excluded_reason', 'thanks_sent_at', 'offer_sent_at',
     'welcome_token', 'academy_confirmed_at',
     'p_why_sales', 'p_why_sales_note', 'p_interesting', 'eval_edited_at', 'thanks_by', 'no_whatsapp', 'day1_status', 'day1_by', 'day1_at', 'day1_reminded_at', 'day1_reminded_by', 'recruit_source', 'databyte_at', 'databyte_by', 'onboard_email_at', 'onboard_email_by',
@@ -164,6 +164,8 @@ const SHEETS = {
                  // list: 6 JUSS starters went to FR, so the company alone can't say (27 Oct)
     'day1_left_at', 'day1_left_by',  // arrived on Day 1 but didn't come back after it (still a Day 1 start)
     'fieldiq_at', 'fieldiq_by',  // unused: a FieldIQ tick on Day 1, built and taken out on 29 Oct (Angad: "no more ticks"); kept so the columns stay put
+    'admin_note_private',  // an admin's decision on a declared conviction: its notes are the admins' only (shape). NEW COLUMNS GO HERE, AT THE END, ALWAYS:
+                           // on 11 Nov this one went in beside admin_note, and every read of this tab stopped for 20 minutes (readTable's check)
   ],
   // Presentations booked after a call. status: booked · came (checked in) · no_show (rebooked after missing it) · cancelled.
   // Each message sent (confirmation, reminder, "sorry we missed you"): when, by whom, how.
