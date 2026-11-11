@@ -182,13 +182,15 @@ A tab in the bottom bar for admins. **Bookers** have the same list as **📞 Do 
 | 🎓 Missed Day 1: rebook | marked **No-show** on the Day 1 list, in the **14 days** since that Day 1 | rebooked with a new date, closed out (Declined / Not suitable), or 14 days have passed |
 | ☑️ Day 1 not ticked (admins, under *Needs you*) | their Day 1 has gone and nobody tapped Arrived or No-show, in the 14 days since | it's ticked on the Day 1 list (tap the name to go there), or 14 days have passed |
 
-**A missed Day 1 is on Chase only, for 14 days, and that's a blanket rule (Angad, 11 Nov).** It used to sit on the Day 1 tab as *"Still to sort from an earlier week"*. The **Day 1 tab** is now just **🚀 To onboard**, **🗓️ Availability** and the week's list (the Day 1 text and "not confirmed" are on each person's row there).
+**Each week on Chase shows only its own people (Angad, 11 Nov).** Nobody is carried forward into this week any more, and the number on the tab is this week's. One line under the headline says how many are still open in earlier weeks: tap it (or ‹) to go to that week, where each person has ✅ Booked · Declined · Not suitable · 📞 Call back to close them out. Nudges cover the week on screen.
+
+**A missed Day 1 is on Chase only, under that Day 1's week, for 14 days, and that's a blanket rule (Angad, 11 Nov).** It used to sit on the Day 1 tab as *"Still to sort from an earlier week"*. The **Day 1 tab** is now just **🚀 To onboard**, **🗓️ Availability** and the week's list (the Day 1 text and "not confirmed" are on each person's row there).
 
 **Bookers** see their own, grouped like that, with Call / WhatsApp / Log outcome / Remind / Rebook on each person.
 
 **Admins** see everyone, one card per booker. Tap a name to open them.
 - **🔔 Nudge all** (Friday 3pm, or any time): each booker gets an alert listing exactly who ("⏰ Jess: 3 people to chase · 📞 Log the call: Ali (by Fri 18:00) · 🔁 Call back: Sam"). Tapping it opens their Chase tab. Email if they're not set up; no repeat within 30 minutes.
-- **📄 Chase w/e … (PDF)** (admins, like the All tab's): the week on screen as a PDF, carried over included, a table per booker: name, company, mobile, appointment day, evaluated, what's needed (log the call / call back / stale, LATE in red) and their last logged call.
+- **📄 Chase w/e … (PDF)** (admins, like the All tab's): the week on screen as a PDF, a table per booker: name, company, mobile, appointment day, evaluated, what's needed (log the call / call back / stale, LATE in red) and their last logged call.
 - **🔔 Nudge** on one card: just that booker.
 - **💬 Post to team WhatsApp**: the same list, by booker, for the bookers' group.
 - **👀 Needs you**: the admins' own loose ends: appointments with no booker, and a Day 1 nobody ticked (tap the name for that Day 1 list). Bookings waiting on your decision are at the top of the Day 1 tab.
