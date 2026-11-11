@@ -1591,7 +1591,8 @@ async function fillEval(p) {
   await shot(ap, '28-day1-arrivals', true);
   const abdT = await loginApi('abdullahi@example.com');
   const abdD1 = (await api(abdT, 'academyList', {})).items.find(c => c.id === adham.id);
-  ok(abdD1 && abdD1.day1_status === 'no_show' && !(await api(abdT, 'chaseList', {})).items.some(c => c.id === adham.id), 'a no-show stays on the Day 1 tab for their booker to rebook (not on Chase)');
+  ok(abdD1 && abdD1.day1_status === 'no_show' && (await api(abdT, 'chaseList', {})).items.some(c => c.id === adham.id && c.leak === 'noshow'),
+    'a no-show stays in that Day 1\'s list, and is on Chase for their booker to rebook (their Do now), from the moment it\'s ticked (Angad, 11 Nov)');
   const adQ = '.trow[data-cand="' + adham.id + '"] .quick';
   ok(await ap.$(adQ + ' [data-out]') && /Rebook/.test(await ap.innerText(adQ)), 'Day 1 tab: the no-show gets Call / WhatsApp / Rebook right there');
   await ap.click('[data-d1="no_show"][data-id="' + adham.id + '"]');
@@ -3094,14 +3095,30 @@ async function fillEval(p) {
     'server: one week of Day 1 starters when asked (w/e 25 Oct: ' + d1Week.items.map(c => c.first_name).join(', ') + ')');
   await api(admin, 'markDay1', { id: adham.id, status: 'no_show' });
   await ap.goto(APP + 'index.html?c=academy'); await ap.waitForSelector('.d1nav');
-  const behindTxt = await ap.innerText('.d1behind');
-  ok(/Still to sort from an earlier week · \d+/.test(behindTxt) && /Adham · no-show/.test(behindTxt) && !/Last week/.test(await ap.innerText('.d1nav')),
-    'Tuesday after: the tab has moved on from last week; a no-show from an earlier week stays in sight: "' + behindTxt.split('\n')[0] + ' … Adham · no-show"');
+  // The Day 1 tab is To onboard, Availability and the list. A no-show from an earlier week (or a Day 1 nobody ticked) is on
+  // Chase only, for 14 days from that Day 1 (Angad, 11 Nov: "these people should only stay for 14 days. Keep it as a blanket
+  // rule. And they should only be on the chase tab"); it used to sit here as "Still to sort from an earlier week"
+  ok(!(await ap.$('.d1behind')) && !/Still to sort/.test(await ap.innerText('#page')) && !/Last week/.test(await ap.innerText('.d1nav')) && await ap.$('#goAvail'),
+    'Tuesday after: the Day 1 tab has moved on from last week, and has no "Still to sort from an earlier week" card: Availability and the week\'s list');
   await shot(ap, '27b-day1-week-ahead', true);
-  await ap.click('.d1behind .nm:has-text("Adham")');
+  const chAd = (await api(admin, 'chaseList', {})).items.find(c => c.id === adham.id), chBk = (await api(abdT, 'chaseList', {})).items.find(c => c.id === adham.id);
+  const d1Rule = (await post('/dev/eval', { js: `JSON.stringify((() => { const c = (d, st, x) => Object.assign({ outcome: 'Academy booked', academy_date: d, day1_status: st }, x || {});
+    return [leakOf(c('2026-10-19', 'no_show'), '2026-11-01'), leakOf(c('2026-10-19', 'no_show'), '2026-11-02'), leakOf(c('2026-10-19', ''), '2026-10-20'), leakOf(c('2026-10-19', ''), '2026-11-02'),
+      leakOf(c('2026-10-19', ''), '2026-10-19'), leakOf(c('2026-10-19', 'arrived'), '2026-10-20'), leakOf(c('2026-10-19', 'dropped'), '2026-10-20'), leakOf(c('2026-10-19', 'no_show', { admin_status: 'pending' }), '2026-10-20'),
+      BOOKER_LEAKS.indexOf('noshow') >= 0, BOOKER_LEAKS.indexOf('tick') >= 0]; })())` })).out;
+  ok(chAd && chAd.leak === 'noshow' && chBk && chBk.leak === 'noshow' && d1Rule === '["noshow","","tick","","","","","",true,false]',
+    'a Day 1 no-show is on Chase (the admins\', and his booker\'s Do now) for 14 days from that Day 1, then off it, a blanket rule; a Day 1 nobody ticked too, for the admins only; arrived, dropped out or waiting on an admin: never (' + d1Rule + ')');
+  await ap.goto(APP + 'index.html?c=chase'); await ap.waitForSelector('.seg-nav');
+  await ap.waitForFunction(() => /Missed Day 1: rebook: Adham/.test(document.getElementById('page').innerText), null, { timeout: 10000 }).catch(() => {});
+  const chTxt = await ap.innerText('#page');
+  ok(/🎓 Missed Day 1: rebook: Adham/.test(chTxt) && /stays here for 14 days from that Day 1, then drops off/.test(chTxt) && /This week · ending/i.test(await ap.innerText('.seg-nav')),
+    'admin Chase tab, this week: "🎓 Missed Day 1: rebook: Adham" on his booker\'s card, and "stays here for 14 days from that Day 1, then drops off"');
+  await shot(ap, '25c-chase-missed-day1', true);
+  await ap.goto(APP + 'index.html?c=academy'); await ap.waitForSelector('.d1nav');
+  await ap.click('#d1prev');
   await ap.waitForFunction(() => /Last week · ending/i.test(document.querySelector('.d1nav').innerText));
   ok(/25 Oct/.test(await ap.innerText('.d1nav')) && /Monday 19 October/i.test(await ap.innerText('#page')) && await ap.$('.trow[data-cand="' + adham.id + '"] .quick [data-out]'),
-    'tap Adham → that week (Last week · ending Sun 25 Oct) with his Rebook buttons');
+    '‹ on Day 1 → last week (ending Sun 25 Oct): Adham in that week\'s list with his Rebook buttons');
   await ap.click('#d1prev');
   await ap.waitForFunction(() => /Week ending/i.test(document.querySelector('.d1nav').innerText) && !document.querySelector('#page .item.sk'));
   ok(/18 Oct/.test(await ap.innerText('.d1nav')) && !(await ap.$('.trow[data-cand="' + adham.id + '"]')), '‹ goes back a week (Week ending Sun 18 Oct, fetched on its own)');

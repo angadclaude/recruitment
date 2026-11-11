@@ -1,4 +1,4 @@
-window.APP_VERSION = 'd9c702de';
+window.APP_VERSION = '6dbeae01';
 
 (function () {
 'use strict';
@@ -1786,7 +1786,7 @@ function viewMine(quiet) {
 /** Mine → Do now: everyone of yours Chase has, this week and carried over (log the call, call back, over 2 weeks). */
 function doNow() {
   if (!S.me) return [];
-  const r = S.chase || {}, today = r.today || S.me.today, cw = weekEndingOf(today), rank = { log: 0, callback: 1, stale: 2 };
+  const r = S.chase || {}, today = r.today || S.me.today, cw = weekEndingOf(today), rank = { log: 0, noshow: 1, callback: 2, stale: 3 };
   // The Chase list (carried over too), with this week's list on top of it: someone checked in or logged a minute ago is right
   const all = myCands((r.items || []).concat((S.data[cw] || {}).items || []));
   return all.map(c => ({ c: c, k: leakOf(c, today, r.days) })).filter(x => BOOKER_LEAKS.indexOf(x.k) >= 0 && chaseWeek(x.c) <= cw)
@@ -1799,6 +1799,11 @@ function myCands(list) {
 }
 function doRow(x) {
   const c = x.c, na = c.outcome === 'No answer', via = c.no_whatsapp ? 'sms' : 'whatsapp';
+  // Missed their Day 1 (the last 14 days): call, "we missed you", rebook
+  if (x.k === 'noshow') return '<div class="drow" data-for="' + h(c.id) + '">' + avatar(c) + '<button type="button" class="dmain" data-open="' + h(c.id) + '"><b>' + h(c.full_name) + '</b><span><span class="pill red">🎓 Missed Day 1 ' + h(fmt(c.academy_date)) + '</span></span></button>' +
+    '<a class="dic" href="tel:' + h(c.mobile) + '" aria-label="Call">' + icon('phone', 18) + '</a>' +
+    '<a class="dic" href="' + h(msgUrl(c, msgRebook(c))) + '" target="_blank" rel="noopener" aria-label="We missed you">' + icon('chat', 18) + '</a>' +
+    '<button type="button" class="dgo" data-out="1">Rebook</button></div>';
   const pill = x.k === 'log' ? '<span class="pill red">📞 Log the call' + (c.deadline && londonNow() > c.deadline ? ' · LATE' : '') + '</span>'
     : x.k === 'stale' ? '<span class="pill red">🔴 Over 2 weeks: close it</span>'
     : na ? '<span class="pill amber">📵 No answer: call again</span>' : '<span class="pill amber">🔁 Call back' + (c.callback_at ? ' ' + h(whenShort(c.callback_at)) : '') + '</span>';
@@ -2780,18 +2785,26 @@ const QR_CAPTIONS = { checkin: 'Takes 1 minute 👋', eval: '4 minutes · your a
 // ───── Chase tab: nobody drops out of the pipeline. Admins: everyone, by booker (one tap nudges them). Bookers: their own. ─────
 // Week by week (week ending Sunday); anything older still open is "carried over". Day 1 people are on the Day 1 tab only.
 // Same rule as leakOf() / chaseWeek() in Code.gs (the nudges and the badge use those); re-run here so a change shows straight away.
-const LEAKS = { stale: '🔴 Stale: close it out', log: '📞 Log the call', callback: '🔁 Call back' };
-const BOOKER_LEAKS = ['stale', 'log', 'callback'];
+const LEAKS = { stale: '🔴 Stale: close it out', log: '📞 Log the call', callback: '🔁 Call back', noshow: '🎓 Missed Day 1: rebook', tick: '☑️ Day 1 not ticked' };
+const BOOKER_LEAKS = ['stale', 'log', 'callback', 'noshow'];
+/** Same rule as the server's. noshow / tick: a missed Day 1 to rebook, a Day 1 nobody ticked: on Chase only, for 14 days from that
+ *  Day 1 (Angad, 11 Nov: off the Day 1 tab's "Still to sort from an earlier week"). */
 function leakOf(c, today, days) {
   const from = addDays(today, -((days || 14) - 1));
-  if (c.outcome === 'Academy booked') return '';
+  if (c.outcome === 'Academy booked') {
+    if (c.admin_status === 'pending' || c.admin_status === 'rejected' || !c.academy_date || c.academy_date > today || c.academy_date < from) return '';
+    return c.day1_status === 'no_show' ? 'noshow' : !c.day1_status && c.academy_date < today ? 'tick' : '';
+  }
   if (!(c.in_room === true || c.in_room === 'TRUE') || c.non_qual || c.rag === 'W') return '';
   if (c.outcome === 'No answer' || wantsCb(c.outcome)) return c.attended_date < from && !(c.callback_at > londonNow()) ? 'stale' : 'callback';
   if (c.attended_date < from) return '';
   return c.outcome ? '' : 'log';
 }
 /** The week a chase belongs to: its appointment's week, or a later call-back's week ("call me next Tuesday"). */
-function chaseWeek(c) { const cb = String(c.callback_at || '').slice(0, 10); return weekEndingOf(cb > c.attended_date ? cb : c.attended_date); }
+function chaseWeek(c) {
+  if (c.outcome === 'Academy booked') return weekEndingOf((S.chase && S.chase.today) || S.me.today);  // a missed or unticked Day 1: this week's job for its 14 days
+  const cb = String(c.callback_at || '').slice(0, 10); return weekEndingOf(cb > c.attended_date ? cb : c.attended_date);
+}
 /** The Chase tab's number: this week's + carried over, e.g. "3+8". */
 function chaseBadge() { const n = S.chaseN || 0, cc = S.chaseCarry || 0; return cc && n > cc ? (n - cc) + '+' + cc : n > 99 ? '99+' : String(n); }
 function msgRebook(c) {
@@ -2877,6 +2890,7 @@ function drawChase(quiet) {
   const det = page.querySelector('details.carry'); if (det) det.ontoggle = () => { S.carryOpen = det.open; };
   page.querySelectorAll('[data-cand]').forEach(b => { b.onclick = () => nav('cand', { id: b.dataset.cand }, true); });
   const ga = page.querySelector('#goAcademy'); if (ga) ga.onclick = () => nav('academy', {}, true);
+  page.querySelectorAll('[data-d1wk]').forEach(b => { b.onclick = () => { S.d1Pick = { on: today, auto: false, we: b.dataset.d1wk }; nav('academy', {}, true); }; });
   if (!admin) return;
   page.querySelector('#chasePdf').onclick = () => savePdf(chasePdf(week, list, carry, due), chasePdfName(week) + '.pdf');
   const res = page.querySelector('#cres'), first = n => String(n).split(' ')[0];
@@ -2913,8 +2927,8 @@ function carryCard(carry, openFirst) {
 }
 /** Booker: their own people for the week, grouped by what to do, with the call / WhatsApp / log buttons right there. */
 function chaseBooker(list, carry, v) {
-  const kind = x => v.week < v.cw ? 'close' : x.k === 'log' || x.c.outcome !== 'No answer' ? 'call' : 'noanswer';
-  const why = { stale: 'over 2 weeks: booked or declined?', log: 'by ' + v.due, callback: 'still warm: call them' };
+  const kind = x => x.k === 'noshow' ? 'rebook' : v.week < v.cw ? 'close' : x.k === 'log' || x.c.outcome !== 'No answer' ? 'call' : 'noanswer';
+  const why = { stale: 'over 2 weeks: booked or declined?', log: 'by ' + v.due, callback: 'still warm: call them', noshow: 'the last 14 days: get them rebooked' };
   const n = list.length, lt = v.late(list);
   const sub = v.isNow ? (n ? 'Everyone here could drop out of your pipeline. Sort them before ' + h(v.due) + '.' + (lt ? ' <b class="red">' + lt + ' outcome' + (lt === 1 ? '' : 's') + ' LATE.</b>' : '') : 'This week\'s pipeline is clean. Keep it that way.')
     : v.week < v.cw ? (n ? 'Still no final answer from that week. Close each one out.' : 'Everyone from that week has a final answer.') : 'The call-back times people asked for. You get a reminder at each one.';
@@ -2932,15 +2946,17 @@ function chaseAdmin(list, carry, v) {
   const users = S.users || [], first = n => String(n).split(' ')[0], by = {};
   const KEYS = BOOKER_LEAKS.concat('carry'), label = k => k === 'carry' ? '↩️ Carried over' : LEAKS[k];
   const add = (x, k) => { const b = (by[x.c.booker_id] = by[x.c.booker_id] || { id: x.c.booker_id, name: x.c.booker_name, company: x.c.company, L: {}, n: 0 }); (b.L[k] = b.L[k] || []).push(x); b.n++; };
-  list.filter(x => x.c.booker_id).forEach(x => add(x, x.k));
+  // A Day 1 nobody ticked is the admins' own job (Arrived / No-show on the Day 1 tab), not a booker's
+  const ticks = list.filter(x => x.k === 'tick'), missed = list.filter(x => x.k === 'noshow').length;
+  list.filter(x => x.c.booker_id && x.k !== 'tick').forEach(x => add(x, x.k));
   carry.filter(x => x.c.booker_id).forEach(x => add(x, 'carry'));
   const rows = Object.keys(by).map(k => by[k]).sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
-  const noBooker = list.concat(carry).filter(x => !x.c.booker_id);
+  const noBooker = list.concat(carry).filter(x => !x.c.booker_id && x.k !== 'tick');
   const nm = l => l.map(x => '<button class="nm" data-cand="' + h(x.c.id) + '">' + h(x.c.first_name) + '</button>').join('');
   const names = l => l.map(x => x.c.first_name).join(', ');
   const people = list.length, lt = v.late(list), canNudge = rows.length && v.week <= v.cw;
-  const tally = BOOKER_LEAKS.map(k => v.count(k) ? LEAKS[k].split(' ')[0] + ' ' + v.count(k) + ' ' + { stale: 'stale', log: 'to log' + (lt ? ' (' + lt + ' LATE)' : ''), callback: 'call back' }[k] : '')
-    .concat(carry.length ? ['↩️ ' + carry.length + ' carried over'] : []).filter(String).join(' · ');
+  const tally = BOOKER_LEAKS.map(k => v.count(k) ? LEAKS[k].split(' ')[0] + ' ' + v.count(k) + ' ' + { stale: 'stale', log: 'to log' + (lt ? ' (' + lt + ' LATE)' : ''), callback: 'call back', noshow: 'missed Day 1' }[k] : '')
+    .concat(ticks.length ? ['☑️ ' + ticks.length + ' Day 1 not ticked'] : [], carry.length ? ['↩️ ' + carry.length + ' carried over'] : []).filter(String).join(' · ');
   const group = '⏰ *Pipeline check: week ending ' + fmt(v.week) + '*\n_Outcomes due ' + v.due + '_\n' +
     rows.map(b => '\n*' + first(b.name) + '*\n' + KEYS.filter(k => b.L[k]).map(k => label(k) + ': ' + names(b.L[k])).join('\n')).join('\n') +
     '\n\nSort them now 👉 ' + ((S.me.links && S.me.links.staff) || '');
@@ -2949,7 +2965,7 @@ function chaseAdmin(list, carry, v) {
     KEYS.filter(k => b.L[k]).map(k => '<div class="leakline">' + label(k) + ': ' + nm(b.L[k]) + '</div>').join('') +
     (noApp(b.id) ? '<div class="sub wrap muted">Not in the app yet: WhatsApp only</div>' : '') + '</div>' +
     (noApp(b.id) || !canNudge ? '' : '<button class="btn ghost sm" data-nudge="' + h(b.id) + '">🔔 Nudge</button>') + '</div>';
-  const sub = rows.length || noBooker.length
+  const sub = rows.length || noBooker.length || ticks.length
     ? 'across ' + rows.length + ' booker' + (rows.length === 1 ? '' : 's') + (noBooker.length ? ' + ' + noBooker.length + ' with no booker' : '') + (tally ? ' · ' + h(tally) : '')
     : v.isNow ? 'Every appointment this week has an outcome.' : v.week < v.cw ? 'Everyone from that week has a final answer.' : 'Call-backs people ask for that week show here.';
   return '<div class="card"><div class="display" style="font-size:24px">' + chaseHead(people, v, n => (n === 1 ? 'person' : 'people') + ' ') + '</div>' +
@@ -2957,7 +2973,10 @@ function chaseAdmin(list, carry, v) {
     (canNudge ? '<div class="bullbtns" style="margin-top:12px"><button class="btn" id="nudgeAll">🔔 Nudge all ' + rows.length + '</button><a class="btn wa" id="waGroup" target="_blank" rel="noopener" href="' + h('https://wa.me/?text=' + encodeURIComponent(group)) + '">💬 Post to team WhatsApp</a></div>' +
       '<p class="hint" style="margin:8px 0 0">Nudge = an alert on each booker\'s phone listing exactly who to chase' + (v.isNow && carry.length ? ', carried over included' : '') + ' (email if they\'re not set up). WhatsApp = the same list for the bookers\' group.</p>' : '') + '</div>' +
     '<div id="cres"></div>' +
-    (noBooker.length ? '<div class="card needs"><b>👀 Needs you</b><div class="leakline">❓ No booker: ' + nm(noBooker) + '</div></div>' : '') +
+    (noBooker.length || ticks.length ? '<div class="card needs"><b>👀 Needs you</b>' + (noBooker.length ? '<div class="leakline">❓ No booker: ' + nm(noBooker) + '</div>' : '') +
+      (ticks.length ? '<div class="leakline">' + LEAKS.tick + ': ' + ticks.map(x => '<button class="nm" data-d1wk="' + weekEndingOf(x.c.academy_date) + '">' + h(x.c.first_name) + ' · ' + h(fmt(x.c.academy_date)) + '</button>').join('') +
+        '</div><p class="small muted" style="margin:6px 0 0">Tap a name for that Day 1 list, then Arrived or No-show.</p>' : '') + '</div>' : '') +
+    (missed || ticks.length ? '<p class="hint" style="margin:0 2px 10px">🎓 A missed Day 1, or one nobody ticked, stays here for 14 days from that Day 1, then drops off. Rebook them (tap the name) or close them out.</p>' : '') +
     carryCard(carry, false) +
     (rows.length ? '<div class="list alist">' + rows.map(row).join('') + '</div>' : '');
 }
@@ -3157,8 +3176,8 @@ function drawAcademy(r, quiet) {
   };
   const toOnb = admin ? r.items.filter(c => c.academy_date >= today && !c.onboard_email_at && c.day1_status !== 'dropped') : [];
   const pend = admin ? r.pending || [] : [];  // Academy bookings waiting on an admin (moved here from Chase)
-  // Left over from an earlier week (a no-show to rebook, a Day 1 nobody ticked): so it isn't lost when the tab moves on
-  const behind = r.items.filter(c => c.academy_date < mon && (c.day1_status === 'no_show' || (!c.day1_status && c.academy_date < today)));
+  // (A no-show to rebook and a Day 1 nobody ticked from an earlier week used to sit here as "Still to sort": they're on Chase
+  // only now, for 14 days from that Day 1 (Angad, 11 Nov). This tab is To onboard, Availability and the list.)
   const weekLbl = we === thisWe ? 'This week · ending' : we === addDays(thisWe, 7) ? 'Next week · ending' : we === addDays(thisWe, -7) ? 'Last week · ending' : 'Week ending';
   const lastWe = weekEndingOf(r.items.reduce((m, c) => c.academy_date > m ? c.academy_date : m, today)), maxWe = lastWe > addDays(thisWe, 7) ? lastWe : addDays(thisWe, 7);
   const weekNav1 = '<div class="seg-nav d1nav"><div class="lbl"><span>' + weekLbl + '</span><b>' + fmt(we) + '</b></div>' +
@@ -3178,9 +3197,7 @@ function drawAcademy(r, quiet) {
       pend.map(c => '<button class="nm" data-cand="' + h(c.id) + '">' + h(c.first_name) + ' · ' + h(fmt(c.academy_date)) + '</button>').join('') + '</div>' : '') +
     (toOnb.length ? '<div class="card needs onbq"><b>🚀 To onboard · ' + toOnb.length + '</b><p class="small muted" style="margin:4px 0 2px">Add them on Databyte, send Databyte\'s welcome email (it activates their FieldIQ login), then send ours. Tap a name.</p>' +
       toOnb.map(c => '<button class="nm" data-cand="' + h(c.id) + '">' + h(c.first_name) + '</button>').join('') + '</div>' : '') +
-    (behind.length ? '<div class="card needs d1behind"><b>↩️ Still to sort from an earlier week · ' + behind.length + '</b><p class="small muted" style="margin:4px 0 2px">A no-show to rebook, or nobody ticked Arrived / No-show. Tap a name to go to that week.</p>' +
-      behind.map(c => '<button class="nm" data-wk="' + weekEndingOf(c.academy_date) + '">' + h(c.first_name) + ' · ' + (c.day1_status === 'no_show' ? 'no-show' : 'not ticked') + '</button>').join('') + '</div>' : '') +
-    (pend.length || toOnb.length || behind.length ? '<div style="height:14px"></div>' : '') +
+    (pend.length || toOnb.length ? '<div style="height:14px"></div>' : '') +
     (admin ? '<button class="btn ghost block" id="goAvail" style="margin:0 0 ' + (S.me.badges ? 8 : 12) + 'px">🗓️ Availability · Week 1 &amp; Week 2</button>' : '') +  // bookers: their NS Availability tab
     (S.me.badges ? '<button class="btn ghost block" id="goBadges" style="margin:0 0 12px">🪪 Badges · NDCS, HelloFresh &amp; TMM</button>' : '') +  // Jess, Rubal and Christie only (Angad, 10 Nov)
     weekNav1 + weekTools + filt +
@@ -3193,7 +3210,6 @@ function drawAcademy(r, quiet) {
   const gav = page.querySelector('#goAvail'); if (gav) gav.onclick = () => nav('avail', { we: we }, true);
   const gbd = page.querySelector('#goBadges'); if (gbd) gbd.onclick = () => nav('badges', {}, true);
   page.querySelector('#d1next').onclick = () => go(addDays(we, 7));
-  page.querySelectorAll('.nm[data-wk]').forEach(b => { b.onclick = () => go(b.dataset.wk); });
   page.querySelectorAll('.trow[data-cand] .main').forEach(el => { el.onclick = () => nav('cand', { id: el.parentNode.dataset.cand }, true); });
   page.querySelectorAll('.nm[data-cand]').forEach(b => { b.onclick = () => nav('cand', { id: b.dataset.cand }, true); });
   bindItems(page);  // the Day 1 details / rebook buttons
@@ -4239,24 +4255,24 @@ function chasePdfName(we) { return 'Chase w-e ' + we.slice(8, 10) + '.' + we.sli
 function chasePdf(week, list, carry, due) {
   const l = list.concat(carry), first = n => String(n || '').split(' ')[0], cnt = k => l.filter(x => x.k === k).length;
   const late = x => x.k === 'log' && x.c.deadline && londonNow() > x.c.deadline, nLate = l.filter(late).length;
-  const todo = x => (carry.indexOf(x) >= 0 ? 'Carried: ' : '') + { stale: 'Stale', log: 'Log the call', callback: 'Call back' }[x.k] + (late(x) ? ' LATE' : '');
+  const todo = x => (carry.indexOf(x) >= 0 ? 'Carried: ' : '') + { stale: 'Stale', log: 'Log the call', callback: 'Call back', noshow: 'Missed Day 1: rebook', tick: 'Day 1 not ticked' }[x.k] + (late(x) ? ' LATE' : '');
   const last = c => {
     const e = callLog(c)[0];
     return e ? [e.o + (e.cb ? ', call back ' + fmtTs(e.cb) : '') + ' · ' + first(e.by) + ' ' + fmtTs(e.at)] : ['No call logged yet', 'amber'];
   };
   const by = {};
   l.forEach(x => { const k = x.c.booker_id || ''; (by[k] = by[k] || { name: x.c.booker_name || 'No booker', l: [] }).l.push(x); });
-  const order = { log: 0, callback: 1, stale: 2 };
+  const order = { log: 0, noshow: 1, tick: 1, callback: 2, stale: 3 };
   return listPdf({
     name: chasePdfName(week), heading: 'Chase · week ending ' + fmtLong(week) + ' ' + week.slice(0, 4),
-    sub: 'Everyone with no final answer yet: no outcome logged, a call-back to make, or stale. Outcomes due ' + due + '.',
+    sub: 'Everyone with no final answer yet: no outcome logged, a call-back to make, stale, or a missed Day 1 from the last 14 days. Outcomes due ' + due + '.',
     boxes: [[l.length, 'To chase'], [cnt('log'), 'No outcome\nlogged', cnt('log') ? 'amber' : ''], [nLate, 'LATE', nLate ? 'red' : ''], [cnt('callback'), 'No answer or\nthinking it over'],
       [cnt('stale'), 'Stale\n(over 2 weeks)', cnt('stale') ? 'red' : ''], [carry.length, 'Carried over\nfrom earlier weeks']],
     line: l.length ? 'Bookers: ' + pdfTally(l, x => first(x.c.booker_name) || 'No booker') + '  ·  LINK ' + l.filter(x => x.c.company === 'LINK').length + '  ·  JUSS ' + l.filter(x => x.c.company === 'JUSS').length : '',
     cols: [['#', 18], ['Name', 104], ['Co', 28], ['Mobile', 66], ['Appt', 50], ['Eval', 26], ['To do', 74], ['Last call', 157]],
     groups: Object.keys(by).map(k => by[k]).sort((a, b) => b.l.length - a.l.length || a.name.localeCompare(b.name)).map(g => {
       const n = k => g.l.filter(x => x.k === k).length, gl = g.l.filter(late).length;
-      return { head: g.name, note: [n('log') ? n('log') + ' to log' + (gl ? ' (' + gl + ' LATE)' : '') : '', n('callback') ? n('callback') + ' call back' : '', n('stale') ? n('stale') + ' stale' : '',
+      return { head: g.name, note: [n('log') ? n('log') + ' to log' + (gl ? ' (' + gl + ' LATE)' : '') : '', n('callback') ? n('callback') + ' call back' : '', n('stale') ? n('stale') + ' stale' : '', n('noshow') ? n('noshow') + ' missed Day 1' : '', n('tick') ? n('tick') + ' Day 1 not ticked' : '',
           g.l.filter(x => carry.indexOf(x) >= 0).length ? g.l.filter(x => carry.indexOf(x) >= 0).length + ' carried over' : ''].filter(String).join(' · '),
         rows: g.l.slice().sort((a, b) => order[a.k] - order[b.k] || a.c.attended_date.localeCompare(b.c.attended_date)).map(x => ({ fill: late(x) || x.k === 'stale' ? 'red' : '',
           cells: [x.c.full_name, x.c.company || '', x.c.mobile || '', fmt(x.c.attended_date), x.c.eval_at ? 'Yes' : ['No', 'amber', true], [todo(x), late(x) || x.k === 'stale' ? 'red' : x.k === 'log' ? 'amber' : '', true], last(x.c)] })) };
