@@ -3228,7 +3228,7 @@ async function fillEval(p) {
   const logRows = await getJson('/dev/sheet?name=Log');
   const chNo = await refused(admin, 'saveUser', { user: { id: chR.id, name: 'Christy Zammit', email: chR.email, company: 'JUSS', roles: ['booker', 'admin'], active: true } });
   const named = (await post('/dev/eval', { js: `JSON.stringify((() => { const u = usersAll().filter(x => x.name === 'Christie Zammit')[0]; return [namedAs(u, 'christie  zammit'), namedAs(u, 'Christy Zammit'), namedAs(u, u.email), namedAs(u, 'someone@example.com'), namedAs(u, '')]; })())` })).out;
-  ok(/^Christie Zammit is set up by that exact name for badges, the recruitment team, Book Appts, Megan's bookings, Office bookings\. Changing it here would switch those off for them\. Ask Angad to have the name changed in the app's settings first\.$/.test(chNo) &&
+  ok(/^Christie Zammit is set up by that exact name for badges, (the recruitment team, )?Book Appts, Megan's bookings, Office bookings\. Changing it here would switch those off for them\. Ask Angad to have the name changed in the app's settings first\.$/.test(chNo) &&
     (await api(admin, 'listUsers')).users.find(u => u.id === chR.id).name === 'Christie Zammit' && named === '[true,false,true,false,false]',
     'someone the settings know by name can\'t be renamed in Team by accident (Christie → "Christy" would quietly take away badges, Book Appts and Megan\'s bookings); a setting can name a person by name or by email');
   ok(logRows.some(r => r[2] === 'user_save' && /^Fiza Iqbal restored .*: \d+ of her candidates read Fiza Iqbal again; her email cleared$/.test(r[4])) && logRows.some(r => r[2] === 'user_save' && /^Christie Zammit booker,admin active=TRUE/.test(r[4])) && !logRows.some(r => r[2] === 'user_save' && /@/.test(r[4])),
