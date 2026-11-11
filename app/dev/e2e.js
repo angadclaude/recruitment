@@ -845,18 +845,18 @@ async function fillEval(p) {
   ok(rTeam && /Tap to chase them in one go/.test(rTeam.body.contents.en) && /\?c=chase$/.test(rTeam.body.web_url), 'the team roundup opens the Chase tab when tapped');
   ok(rFiza && /\?c=chase$/.test(rFiza.body.web_url), "each booker's roundup opens their own Chase tab");
 
-  // ── Chase tab, week by week: this week's people at risk (+ anything carried over from earlier weeks), one tap nudges every booker ──
+  // ── Chase tab, week by week: each week shows only its own people at risk (Angad, 11 Nov: nothing is carried forward), one tap nudges every booker ──
   const BL = ['stale', 'log', 'callback'];
   const weOfE = ymd => { const d = new Date(ymd + 'T12:00:00Z'), w = d.getUTCDay(); return new Date(d.getTime() + (w ? 7 - w : 0) * 86400000).toISOString().slice(0, 10); };
-  // (a missed or unticked Day 1 is this week's job for its 14 days, never carried over: `now` = the week it's looked at in)
-  const chaseWk = (c, now) => { if (c.leak === 'noshow' || c.leak === 'tick') return now || cw; const cb = String(c.callback_at || '').slice(0, 10); return weOfE(cb > c.attended_date ? cb : c.attended_date); };
+  // (a missed or unticked Day 1 belongs to that Day 1's week)
+  const chaseWk = c => { if (c.leak === 'noshow' || c.leak === 'tick') return weOfE(c.academy_date); const cb = String(c.callback_at || '').slice(0, 10); return weOfE(cb > c.attended_date ? cb : c.attended_date); };
   const badgeOf = (all, carry) => carry && all > carry ? (all - carry) + '+' + carry : String(all);
   const pipeR = await api(admin, 'chaseList', {}), pipe = pipeR.items, cw = pipeR.weekEnding;
-  const nowP = pipe.filter(c => chaseWk(c) <= cw), thisP = nowP.filter(c => chaseWk(c) === cw), carryP = nowP.filter(c => chaseWk(c) < cw);
+  const thisP = pipe.filter(c => chaseWk(c) === cw), nowP = thisP, carryP = [];  // the Chase tab and its number: this week's people only
   const toChase = [...new Set(nowP.filter(c => c.booker_id).map(c => c.booker_id))];
   const fizaLog = thisP.filter(c => c.booker_id === fiza.id && c.leak === 'log').map(c => c.first_name);
   ok(cw === '2026-10-18' && toChase.includes(fiza.id) && fizaLog.length > 0 && !pipe.some(c => c.id === ishita.id) && pipe.some(c => c.leak === 'callback' && c.outcome === 'No answer') && pipe.every(c => BL.includes(c.leak)),
-    'Friday 15:00, week ending 18 Oct: ' + thisP.length + ' this week + ' + carryP.length + ' carried over, across ' + toChase.length + ' bookers: ' + nowP.map(c => c.first_name + ' (' + c.leak + ')').join(', ') + '. "No answer" stays on until it\'s resolved; rejected Ishita isn\'t chased');
+    'Friday 15:00, week ending 18 Oct: ' + thisP.length + ' this week, across ' + toChase.length + ' bookers: ' + nowP.map(c => c.first_name + ' (' + c.leak + ')').join(', ') + '. "No answer" stays on until it\'s resolved; rejected Ishita isn\'t chased');
   ok(!pipe.some(c => c.outcome === 'Academy booked'), 'Day 1 people still to come (Day 1 text, not confirmed) are on the Day 1 tab, not Chase');
   await ap.goto(APP + 'index.html?c=chase');
   await ap.waitForSelector('#nudgeAll');
@@ -894,7 +894,7 @@ async function fillEval(p) {
   ok(cTitle === 'Chase w-e 18.10.2026' && cdl.suggestedFilename() === 'Chase w-e 18.10.2026.pdf' && /\/Title \(Chase w-e 18\.10\.2026\)/.test(cRaw) &&
     cHas('Chase · week ending Sunday 18 October 2026') && cHas('Fiza Iqbal') && cHas('To chase') && cHas('Last call') &&
     nowP.every(c => cRaw.includes(c.full_name)) && fizaRows.filter(c => c.leak === 'log').every(c => cRaw.includes(c.full_name)) && /\((Carried: )?Log the call( LATE)?\) Tj/.test(cRaw),
-    '📄 → "Chase w-e 18.10.2026.pdf": all ' + nowP.length + ' to chase (carried over included), a table per booker, what each needs and their last call');
+    '📄 → "Chase w-e 18.10.2026.pdf": all ' + nowP.length + ' to chase that week, a table per booker, what each needs and their last call');
   await shot(ap, '25-chase-admin', true);
   await ap.click('[data-nudge="' + fiza.id + '"] >> xpath=.. >> .nm'); await ap.waitForSelector('text=Call outcome');
   ok(true, 'tapping a name opens that candidate');
@@ -2847,25 +2847,42 @@ async function fillEval(p) {
     'over 2 weeks on "No answer": still on Chase as "🔴 Stale: close it out" (Ali); a call-back time still to come keeps them a call back (Young, Thu 18:00)');
   const kidC = st.find(c => c.id === kid.id), aliC = st.find(c => c.id === ali.id);
   ok(chaseWk(aliC) === '2026-10-18' && chaseWk(kidC) === '2026-11-01', 'week ending 1 Nov: Ali (week ending 18 Oct) is carried over; Young\'s call-back this Thursday makes them this week\'s');
-  await ap.goto(APP + 'index.html?c=chase'); await ap.waitForSelector('[data-nudge]');
-  // The phone shows its saved copy of Chase first, then the fresh one a moment later
-  await ap.waitForFunction(() => /↩️ Carried over: Ali/.test(document.getElementById('page').innerText), null, { timeout: 10000 }).catch(() => {});
-  ok(/↩️ Carried over: Ali/.test(await ap.innerText('#page')) && /This week · ending/i.test(await ap.innerText('.seg-nav')), 'admin Chase tab, this week: "↩️ Carried over: Ali" on Fiza\'s card');
-  const carryN = st.filter(c => chaseWk(c, '2026-11-01') < '2026-11-01').length;
-  ok(new RegExp('↩️ Carried over · ' + carryN).test(await ap.innerText('details.carry summary')) && !(await ap.$eval('details.carry', d => d.open)),
-    'a folded "↩️ Carried over · ' + carryN + '" card for closing them out (folded for admins: each booker\'s card already says who)');
+  await ap.goto(APP + 'index.html?c=chase'); await ap.waitForSelector('.seg-nav');
+  // Each week shows only its own people (Angad, 11 Nov: "just put the people that need to be chased from that particular week
+  // ending… not always keep carried forward"). Ali isn't listed again under this week: one line says how many are still open
+  // in earlier weeks, and takes you there.
+  const earlierN = st.filter(c => chaseWk(c) < '2026-11-01').length, lastEarlier = st.map(chaseWk).filter(w => w < '2026-11-01').sort().pop();
+  await ap.waitForFunction(() => /still open in earlier weeks/.test(document.getElementById('page').innerText), null, { timeout: 10000 }).catch(() => {});
+  const wkTxt = await ap.innerText('#page');
+  ok(/This week · ending/i.test(await ap.innerText('.seg-nav')) && !/Carried over/.test(wkTxt) && !/\bAli\b/.test(wkTxt) && !(await ap.$('details.carry')) &&
+    new RegExp('↩️ ' + earlierN + ' still open in earlier weeks: go to w/e ').test(wkTxt) && await ap.textContent('.tabbar button[data-tab=chase] .tbadge') === String(st.filter(c => chaseWk(c) === '2026-11-01').length),
+    'admin Chase tab, this week: only this week\'s people (no "Carried over", no Ali), the number on the tab is this week\'s, and one line: "↩️ ' + earlierN + ' still open in earlier weeks"');
+  await ap.click('#cearlier');
+  await ap.waitForFunction(() => /^Week ending/i.test(document.querySelector('.seg-nav .lbl span').innerText));
+  ok(new RegExp(new Date(lastEarlier + 'T12:00:00Z').getUTCDate() + ' ').test(await ap.innerText('.seg-nav .lbl b')), 'tap it → the latest earlier week with someone still open (w/e ' + lastEarlier + ')');
+  for (let i = 0; i < 4 && !/18 Oct/.test(await ap.innerText('.seg-nav .lbl b')); i++) { await ap.click('#cprev'); await ap.waitForTimeout(300); }
+  await ap.waitForFunction(() => /Stale: close it out: Ali/.test(document.getElementById('page').innerText), null, { timeout: 10000 }).catch(() => {});
+  ok(/18 Oct/.test(await ap.innerText('.seg-nav .lbl b')) && /🔴 Stale: close it out: Ali/.test(await ap.innerText('#page')) && /still open/.test(await ap.innerText('.card .display')),
+    'Ali\'s own week (ending 18 Oct): "🔴 Stale: close it out: Ali" on Fiza\'s card, "N still open"');
+  const closeN = st.filter(c => chaseWk(c) === '2026-10-18' && c.leak !== 'tick').length;
+  ok(new RegExp('✅ Close them out · ' + closeN).test(await ap.innerText('details.carry summary')) && !(await ap.$eval('details.carry', d => d.open)),
+    'a folded "✅ Close them out · ' + closeN + '" card for that week (folded for admins: each booker\'s card already says who)');
   await ap.click('details.carry summary');
   const aliClose = '.ccard:has(.item[data-id="' + ali.id + '"]) .qclose';
   await ap.waitForSelector(aliClose);
-  await shot(ap, '45-chase-carried-over', true);
+  await shot(ap, '45-chase-earlier-week', true);
   ok(JSON.stringify(await ap.$$eval(aliClose + ' button', b => b.map(x => x.dataset.out))) === '["Academy booked","Declined","Not suitable","Call back"]',
-    'each carried-over person: ✅ Booked · Declined · Not suitable · 🔁 Call back');
+    'each person still open: ✅ Booked · Declined · Not suitable · 🔁 Call back');
   await ap.click(aliClose + ' [data-out="Declined"]'); await ap.waitForSelector('.sheet #sosave');
   ok(await ap.textContent('.sheet .chips[data-name=outcome] .chip.on') === 'Declined', 'tapping Declined opens the outcome sheet with Declined picked (Save confirms it)');
   await ap.click('#socancel');
   const stP0 = (await pushesTo(fiza.id)).length;
-  await api(admin, 'chaseOutcomes', { ids: [fiza.id] });
-  ok((await pushesTo(fiza.id)).slice(stP0).some(p => /🔴 Stale: close it out: Ali/.test(p.body.contents.en)), 'her nudge lists it too: "🔴 Stale: close it out: Ali"');
+  const thisWkNudge = await api(admin, 'chaseOutcomes', { ids: [fiza.id] });
+  const stP1 = (await pushesTo(fiza.id)).slice(stP0);
+  await post('/dev/eval', { js: "CacheService.getScriptCache().remove('chase_" + fiza.id + "_' + todayStr()); 1" });
+  await api(admin, 'chaseOutcomes', { ids: [fiza.id], week: '2026-10-18' });
+  ok(!stP1.some(p => /Ali/.test(p.body.contents.en)) && (await pushesTo(fiza.id)).slice(stP0 + stP1.length).some(p => /🔴 Stale: close it out: Ali/.test(p.body.contents.en)),
+    'a nudge covers the week on screen only: this week\'s doesn\'t list Ali (' + (thisWkNudge.nudged.length ? 'she has others this week' : 'nobody of hers this week') + '); the one sent from his week does: "🔴 Stale: close it out: Ali"');
   const nextWk = await api(admin, 'chaseOutcomes', { ids: [fiza.id], week: '2026-11-08' });
   ok(!nextWk.nudged.length && !nextWk.recently.length, 'a nudge for a later week only covers that week (nothing booked for Fiza then: nobody nudged)');
   await api(admin, 'saveOutcome', { id: ali.id, outcome: 'Declined', outcome_notes: 'not for him' });
@@ -3110,10 +3127,14 @@ async function fillEval(p) {
   ok(chAd && chAd.leak === 'noshow' && chBk && chBk.leak === 'noshow' && d1Rule === '["noshow","","tick","","","","","",true,false]',
     'a Day 1 no-show is on Chase (the admins\', and his booker\'s Do now) for 14 days from that Day 1, then off it, a blanket rule; a Day 1 nobody ticked too, for the admins only; arrived, dropped out or waiting on an admin: never (' + d1Rule + ')');
   await ap.goto(APP + 'index.html?c=chase'); await ap.waitForSelector('.seg-nav');
+  await ap.waitForFunction(() => /still open in earlier weeks: go to w\/e Sun 25 Oct/.test(document.getElementById('page').innerText), null, { timeout: 10000 }).catch(() => {});
+  ok(/This week · ending/i.test(await ap.innerText('.seg-nav')) && !/Adham/.test(await ap.innerText('#page')) && /still open in earlier weeks: go to w\/e Sun 25 Oct ›/.test(await ap.innerText('#page')),
+    'admin Chase tab, this week: Adham (Day 1 last week) isn\'t listed under this week; "… still open in earlier weeks: go to w/e Sun 25 Oct ›"');
+  await ap.click('#cearlier');
   await ap.waitForFunction(() => /Missed Day 1: rebook: Adham/.test(document.getElementById('page').innerText), null, { timeout: 10000 }).catch(() => {});
   const chTxt = await ap.innerText('#page');
-  ok(/🎓 Missed Day 1: rebook: Adham/.test(chTxt) && /stays here for 14 days from that Day 1, then drops off/.test(chTxt) && /This week · ending/i.test(await ap.innerText('.seg-nav')),
-    'admin Chase tab, this week: "🎓 Missed Day 1: rebook: Adham" on his booker\'s card, and "stays here for 14 days from that Day 1, then drops off"');
+  ok(/25 Oct/.test(await ap.innerText('.seg-nav .lbl b')) && /🎓 Missed Day 1: rebook: Adham/.test(chTxt) && /is listed under that Day 1's week for 14 days from that Day 1, then drops off/.test(chTxt),
+    'his Day 1\'s week (ending 25 Oct): "🎓 Missed Day 1: rebook: Adham" on his booker\'s card, and "listed under that Day 1\'s week for 14 days from that Day 1, then drops off"');
   await shot(ap, '25c-chase-missed-day1', true);
   await ap.goto(APP + 'index.html?c=academy'); await ap.waitForSelector('.d1nav');
   // (the tab opens on the week with the next Day 1, which may be next week: ‹ until it says Last week)

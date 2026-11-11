@@ -1,4 +1,4 @@
-window.APP_VERSION = '6dbeae01';
+window.APP_VERSION = 'de149516';
 
 (function () {
 'use strict';
@@ -2802,10 +2802,10 @@ function leakOf(c, today, days) {
 }
 /** The week a chase belongs to: its appointment's week, or a later call-back's week ("call me next Tuesday"). */
 function chaseWeek(c) {
-  if (c.outcome === 'Academy booked') return weekEndingOf((S.chase && S.chase.today) || S.me.today);  // a missed or unticked Day 1: this week's job for its 14 days
+  if (c.outcome === 'Academy booked') return weekEndingOf(c.academy_date);  // a missed or unticked Day 1: that Day 1's week
   const cb = String(c.callback_at || '').slice(0, 10); return weekEndingOf(cb > c.attended_date ? cb : c.attended_date);
 }
-/** The Chase tab's number: this week's + carried over, e.g. "3+8". */
+/** The Chase tab's number: this week's people to chase (an older server's "3+8", carried over, still reads right). */
 function chaseBadge() { const n = S.chaseN || 0, cc = S.chaseCarry || 0; return cc && n > cc ? (n - cc) + '+' + cc : n > 99 ? '99+' : String(n); }
 function msgRebook(c) {
   return 'Hey ' + c.first_name + '! 👋' + heartOf(c) + '\n\n' +
@@ -2872,14 +2872,17 @@ function drawChase(quiet) {
   const all = r.items.map(c => ({ c: c, k: leakOf(c, today, r.days), w: chaseWeek(c) })).filter(x => x.k && (admin || BOOKER_LEAKS.indexOf(x.k) >= 0));
   if (S.chaseWeekOn !== cw) { S.chaseWeek = cw; S.chaseWeekOn = cw; }  // a new week has started: back to this week
   const week = S.chaseWeek, isNow = week === cw;
-  const list = all.filter(x => x.w === week), carry = isNow ? all.filter(x => x.w < cw).sort((a, b) => a.w.localeCompare(b.w)) : [];
-  S.chaseN = all.filter(x => x.w <= cw).length; S.chaseCarry = all.filter(x => x.w < cw).length;
+  // Each week shows only its own people (Angad, 11 Nov: "just put the people that need to be chased from that particular week
+  // ending… not always keep carried forward"). Nobody from an earlier week is listed again under this one: they stay open
+  // under their own week, one line here says how many, and ‹ goes back to them.
+  const list = all.filter(x => x.w === week), carry = [], before = all.filter(x => x.w < week);
+  S.chaseN = all.filter(x => x.w === cw).length; S.chaseCarry = 0;
   const late = l => l.filter(x => x.k === 'log' && x.c.deadline && londonNow() > x.c.deadline).length;
   const count = (k, l) => (l || list).filter(x => x.k === k).length;
   const ahead = week < cw || all.some(x => x.w > week);  // after this week there's only somewhere to go if call-backs are booked
   const wk = '<div class="seg-nav"><div class="lbl"><span>' + (isNow ? 'This week · ending' : week < cw ? 'Week ending' : 'Coming up · week ending') + '</span><b>' + fmt(week) + '</b></div>' +
     '<button class="iconbtn" id="cprev" aria-label="Previous week">‹</button><button class="iconbtn" id="cnext" aria-label="Next week"' + (ahead ? '' : ' disabled') + '>›</button></div>';
-  const v = { week: week, cw: cw, isNow: isNow, due: due, late: late, count: count };
+  const v = { week: week, cw: cw, isNow: isNow, due: due, late: late, count: count, earlier: before.length, earlierWeek: before.map(x => x.w).sort().pop() || '' };
   const pdf = admin ? '<button class="btn ghost block" id="chasePdf" style="margin:2px 0 12px">📄 Chase w/e ' + h(fmt(week)) + ' (PDF)</button>' : '';
   const page = paint('Chase', wk + pdf + (admin ? chaseAdmin(list, carry, v) : chaseBooker(list, carry, v)), quiet);
   paintTabs();
@@ -2888,6 +2891,7 @@ function drawChase(quiet) {
   page.querySelector('#cprev').onclick = () => go(addDays(week, -7));
   page.querySelector('#cnext').onclick = () => go(addDays(week, 7));
   const det = page.querySelector('details.carry'); if (det) det.ontoggle = () => { S.carryOpen = det.open; };
+  const ce = page.querySelector('#cearlier'); if (ce) ce.onclick = () => go(v.earlierWeek);
   page.querySelectorAll('[data-cand]').forEach(b => { b.onclick = () => nav('cand', { id: b.dataset.cand }, true); });
   const ga = page.querySelector('#goAcademy'); if (ga) ga.onclick = () => nav('academy', {}, true);
   page.querySelectorAll('[data-d1wk]').forEach(b => { b.onclick = () => { S.d1Pick = { on: today, auto: false, we: b.dataset.d1wk }; nav('academy', {}, true); }; });
@@ -2914,16 +2918,19 @@ function chaseHead(n, v, unit) {
   if (v.week < v.cw) return n ? n + ' still open' : 'All closed out 🎉';
   return n ? n + ' call-back' + (n === 1 ? '' : 's') + ' booked' : 'No call-backs booked';
 }
-/** Earlier weeks' people with no final answer yet, at the top of this week. Close each one out, or book a call-back to keep
- *  chasing them (they move to that week). */
-function carryCard(carry, openFirst) {
-  if (!carry.length) return '';
+/** An earlier week on screen: everyone from it with no final answer yet, each with the buttons to close them out (or a call-back
+ *  to keep chasing them: they move to that week). A missed Day 1 gets Call / message / Rebook. */
+function carryCard(list, v, openFirst) {
+  const l = list.filter(x => x.k !== 'tick');
+  if (v.week >= v.cw || !l.length) return '';
   const open = S.carryOpen === undefined ? openFirst : S.carryOpen;
-  const weeks = carry.map(x => x.w).filter((w, i, a) => a.indexOf(w) === i);
-  return '<details class="card carry"' + (open ? ' open' : '') + '><summary><b>↩️ Carried over · ' + carry.length + '</b><span>' +
-    (weeks.length === 1 ? 'from w/e ' + fmt(weeks[0]) : 'from ' + weeks.length + ' earlier weeks') + '</span></summary>' +
+  return '<details class="card carry"' + (open ? ' open' : '') + '><summary><b>✅ Close them out · ' + l.length + '</b><span>w/e ' + fmt(v.week) + '</span></summary>' +
     '<p class="hint" style="margin:6px 0 2px">No final answer yet. Close each one out, or book a call-back to keep chasing them (they move to that week).</p>' +
-    '<div class="list">' + carry.map(x => item(x.c, true, 'close')).join('') + '</div></details>';
+    '<div class="list">' + l.map(x => item(x.c, true, x.k === 'noshow' ? 'rebook' : 'close')).join('') + '</div></details>';
+}
+/** One line, not a list: how many are still open in the weeks before the one on screen, and the way back to them. */
+function earlierLine(v) {
+  return v.earlier ? '<button type="button" class="linkbtn" id="cearlier" style="display:block;margin:10px 0 0;text-align:left">↩️ ' + v.earlier + ' still open in earlier weeks: go to w/e ' + h(fmt(v.earlierWeek)) + ' ›</button>' : '';
 }
 /** Booker: their own people for the week, grouped by what to do, with the call / WhatsApp / log buttons right there. */
 function chaseBooker(list, carry, v) {
@@ -2932,8 +2939,8 @@ function chaseBooker(list, carry, v) {
   const n = list.length, lt = v.late(list);
   const sub = v.isNow ? (n ? 'Everyone here could drop out of your pipeline. Sort them before ' + h(v.due) + '.' + (lt ? ' <b class="red">' + lt + ' outcome' + (lt === 1 ? '' : 's') + ' LATE.</b>' : '') : 'This week\'s pipeline is clean. Keep it that way.')
     : v.week < v.cw ? (n ? 'Still no final answer from that week. Close each one out.' : 'Everyone from that week has a final answer.') : 'The call-back times people asked for. You get a reminder at each one.';
-  return '<div class="card"><div class="display" style="font-size:24px">' + chaseHead(n, v, () => '') + '</div><p class="hint" style="margin:6px 0 0">' + sub + '</p></div>' +
-    carryCard(carry, true) +
+  return '<div class="card"><div class="display" style="font-size:24px">' + chaseHead(n, v, () => '') + '</div><p class="hint" style="margin:6px 0 0">' + sub + '</p>' + earlierLine(v) + '</div>' +
+    carryCard(list, v, true) +
     BOOKER_LEAKS.map(k => {
       const l = list.filter(x => x.k === k);
       return l.length ? '<div class="section-h"><b>' + LEAKS[k] + ' · ' + l.length + '</b><span>' + h(k === 'log' && v.late(l) ? v.late(l) + ' LATE' : why[k]) + '</span></div><div class="list">' + l.map(x => item(x.c, true, kind(x))).join('') + '</div>' : '';
@@ -2971,13 +2978,14 @@ function chaseAdmin(list, carry, v) {
   return '<div class="card"><div class="display" style="font-size:24px">' + chaseHead(people, v, n => (n === 1 ? 'person' : 'people') + ' ') + '</div>' +
     '<p class="hint" style="margin:6px 0 0">' + sub + '</p>' +
     (canNudge ? '<div class="bullbtns" style="margin-top:12px"><button class="btn" id="nudgeAll">🔔 Nudge all ' + rows.length + '</button><a class="btn wa" id="waGroup" target="_blank" rel="noopener" href="' + h('https://wa.me/?text=' + encodeURIComponent(group)) + '">💬 Post to team WhatsApp</a></div>' +
-      '<p class="hint" style="margin:8px 0 0">Nudge = an alert on each booker\'s phone listing exactly who to chase' + (v.isNow && carry.length ? ', carried over included' : '') + ' (email if they\'re not set up). WhatsApp = the same list for the bookers\' group.</p>' : '') + '</div>' +
+      '<p class="hint" style="margin:8px 0 0">Nudge = an alert on each booker\'s phone listing exactly who to chase from this week (email if they\'re not set up). WhatsApp = the same list for the bookers\' group.</p>' : '') +
+    earlierLine(v) + '</div>' +
     '<div id="cres"></div>' +
     (noBooker.length || ticks.length ? '<div class="card needs"><b>👀 Needs you</b>' + (noBooker.length ? '<div class="leakline">❓ No booker: ' + nm(noBooker) + '</div>' : '') +
       (ticks.length ? '<div class="leakline">' + LEAKS.tick + ': ' + ticks.map(x => '<button class="nm" data-d1wk="' + weekEndingOf(x.c.academy_date) + '">' + h(x.c.first_name) + ' · ' + h(fmt(x.c.academy_date)) + '</button>').join('') +
         '</div><p class="small muted" style="margin:6px 0 0">Tap a name for that Day 1 list, then Arrived or No-show.</p>' : '') + '</div>' : '') +
-    (missed || ticks.length ? '<p class="hint" style="margin:0 2px 10px">🎓 A missed Day 1, or one nobody ticked, stays here for 14 days from that Day 1, then drops off. Rebook them (tap the name) or close them out.</p>' : '') +
-    carryCard(carry, false) +
+    (missed || ticks.length ? '<p class="hint" style="margin:0 2px 10px">🎓 A missed Day 1, or one nobody ticked, is listed under that Day 1\'s week for 14 days from that Day 1, then drops off. Rebook them (tap the name) or close them out.</p>' : '') +
+    carryCard(list, v, false) +
     (rows.length ? '<div class="list alist">' + rows.map(row).join('') + '</div>' : '');
 }
 
@@ -4267,7 +4275,7 @@ function chasePdf(week, list, carry, due) {
     name: chasePdfName(week), heading: 'Chase · week ending ' + fmtLong(week) + ' ' + week.slice(0, 4),
     sub: 'Everyone with no final answer yet: no outcome logged, a call-back to make, stale, or a missed Day 1 from the last 14 days. Outcomes due ' + due + '.',
     boxes: [[l.length, 'To chase'], [cnt('log'), 'No outcome\nlogged', cnt('log') ? 'amber' : ''], [nLate, 'LATE', nLate ? 'red' : ''], [cnt('callback'), 'No answer or\nthinking it over'],
-      [cnt('stale'), 'Stale\n(over 2 weeks)', cnt('stale') ? 'red' : ''], [carry.length, 'Carried over\nfrom earlier weeks']],
+      [cnt('stale'), 'Stale\n(over 2 weeks)', cnt('stale') ? 'red' : ''], [cnt('noshow') + cnt('tick'), 'Missed or\nunticked Day 1']],
     line: l.length ? 'Bookers: ' + pdfTally(l, x => first(x.c.booker_name) || 'No booker') + '  ·  LINK ' + l.filter(x => x.c.company === 'LINK').length + '  ·  JUSS ' + l.filter(x => x.c.company === 'JUSS').length : '',
     cols: [['#', 18], ['Name', 104], ['Co', 28], ['Mobile', 66], ['Appt', 50], ['Eval', 26], ['To do', 74], ['Last call', 157]],
     groups: Object.keys(by).map(k => by[k]).sort((a, b) => b.l.length - a.l.length || a.name.localeCompare(b.name)).map(g => {
