@@ -531,7 +531,7 @@ async function fillEval(p) {
   ok(/💡 Plays semi-pro football/.test(snap) && /Wants to earn on results, saving for a house/.test(snap), 'booker sees the room answers: 💡 ice-breaker + why sales');
   ok(/🎤 Presentation by Nathan Smith/.test(snap) && !/rated by/.test(snap), 'their page says who ran the presentation: "🎤 Presentation by Nathan Smith" (he rated the room too)');
   const hdr = (await getJson('/dev/sheet?name=Candidates'))[0];
-  ok(hdr.slice(-24).join() === 'recruit_source,databyte_at,databyte_by,onboard_email_at,onboard_email_by,brand,presented_by_id,presented_by,offer_by,offer_via,offer_co,thanks_via,thanks_co,outcome_log,callback_at,callback_by_id,callback_nudged,booking_id,booking_note,campaign,day1_left_at,day1_left_by,fieldiq_at,fieldiq_by' && new Set(hdr).size === hdr.length,
+  ok(hdr.slice(-25).join() === 'recruit_source,databyte_at,databyte_by,onboard_email_at,onboard_email_by,brand,presented_by_id,presented_by,offer_by,offer_via,offer_co,thanks_via,thanks_co,outcome_log,callback_at,callback_by_id,callback_nudged,booking_id,booking_note,campaign,day1_left_at,day1_left_by,fieldiq_at,fieldiq_by,admin_note_private' && new Set(hdr).size === hdr.length,
     'live Sheet with the presenter headers written twice: the empty copies cleared, the new columns added in the right place (no data moved)');
   ok(!/unspent criminal convictions/i.test(snap), 'conviction answer hidden from bookers');
   ok(/A door gets shut in your face\. What's your first thought\?/.test(snap) && /Tell us about a time you kept going when things got tough\. What did you do\?/.test(snap) &&
@@ -848,7 +848,8 @@ async function fillEval(p) {
   // ── Chase tab, week by week: this week's people at risk (+ anything carried over from earlier weeks), one tap nudges every booker ──
   const BL = ['stale', 'log', 'callback'];
   const weOfE = ymd => { const d = new Date(ymd + 'T12:00:00Z'), w = d.getUTCDay(); return new Date(d.getTime() + (w ? 7 - w : 0) * 86400000).toISOString().slice(0, 10); };
-  const chaseWk = c => { const cb = String(c.callback_at || '').slice(0, 10); return weOfE(cb > c.attended_date ? cb : c.attended_date); };
+  // (a missed or unticked Day 1 is this week's job for its 14 days, never carried over: `now` = the week it's looked at in)
+  const chaseWk = (c, now) => { if (c.leak === 'noshow' || c.leak === 'tick') return now || cw; const cb = String(c.callback_at || '').slice(0, 10); return weOfE(cb > c.attended_date ? cb : c.attended_date); };
   const badgeOf = (all, carry) => carry && all > carry ? (all - carry) + '+' + carry : String(all);
   const pipeR = await api(admin, 'chaseList', {}), pipe = pipeR.items, cw = pipeR.weekEnding;
   const nowP = pipe.filter(c => chaseWk(c) <= cw), thisP = nowP.filter(c => chaseWk(c) === cw), carryP = nowP.filter(c => chaseWk(c) < cw);
@@ -856,7 +857,7 @@ async function fillEval(p) {
   const fizaLog = thisP.filter(c => c.booker_id === fiza.id && c.leak === 'log').map(c => c.first_name);
   ok(cw === '2026-10-18' && toChase.includes(fiza.id) && fizaLog.length > 0 && !pipe.some(c => c.id === ishita.id) && pipe.some(c => c.leak === 'callback' && c.outcome === 'No answer') && pipe.every(c => BL.includes(c.leak)),
     'Friday 15:00, week ending 18 Oct: ' + thisP.length + ' this week + ' + carryP.length + ' carried over, across ' + toChase.length + ' bookers: ' + nowP.map(c => c.first_name + ' (' + c.leak + ')').join(', ') + '. "No answer" stays on until it\'s resolved; rejected Ishita isn\'t chased');
-  ok(!pipe.some(c => c.outcome === 'Academy booked'), 'Day 1 people (Day 1 text, not confirmed, no-show) are on the Day 1 tab only, not Chase');
+  ok(!pipe.some(c => c.outcome === 'Academy booked'), 'Day 1 people still to come (Day 1 text, not confirmed) are on the Day 1 tab, not Chase');
   await ap.goto(APP + 'index.html?c=chase');
   await ap.waitForSelector('#nudgeAll');
   ok(await ap.textContent('#abTitle') === 'Chase' && await ap.$('.tabbar button.on[data-tab=chase]') &&
@@ -2850,7 +2851,7 @@ async function fillEval(p) {
   // The phone shows its saved copy of Chase first, then the fresh one a moment later
   await ap.waitForFunction(() => /↩️ Carried over: Ali/.test(document.getElementById('page').innerText), null, { timeout: 10000 }).catch(() => {});
   ok(/↩️ Carried over: Ali/.test(await ap.innerText('#page')) && /This week · ending/i.test(await ap.innerText('.seg-nav')), 'admin Chase tab, this week: "↩️ Carried over: Ali" on Fiza\'s card');
-  const carryN = st.filter(c => chaseWk(c) < '2026-11-01').length;
+  const carryN = st.filter(c => chaseWk(c, '2026-11-01') < '2026-11-01').length;
   ok(new RegExp('↩️ Carried over · ' + carryN).test(await ap.innerText('details.carry summary')) && !(await ap.$eval('details.carry', d => d.open)),
     'a folded "↩️ Carried over · ' + carryN + '" card for closing them out (folded for admins: each booker\'s card already says who)');
   await ap.click('details.carry summary');
