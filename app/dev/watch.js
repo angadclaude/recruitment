@@ -5,8 +5,10 @@
 'use strict';
 
 // Expected in the tests themselves: a page with no signal (the offline check-ins), a request cut off when a test closes or
-// reloads a page mid-call, and Chromium's own note about a download.
-const EXPECTED = [/Failed to load resource/i, /net::ERR_/i, /Failed to fetch/i, /NetworkError/i, /Load failed/i, /The network connection was lost/i, /AbortError/i];
+// reloads a page mid-call, and the test browser's own clock script being refused by the welcome email preview (that frame is
+// sandboxed with no scripts, as it should be: the email itself has none).
+const EXPECTED = [/Failed to load resource/i, /net::ERR_/i, /Failed to fetch/i, /NetworkError/i, /Load failed/i, /The network connection was lost/i, /AbortError/i,
+  /Blocked script execution in 'about:srcdoc'/];
 
 function watch(browser) {
   const seen = [];
@@ -28,7 +30,7 @@ function report(seen) {
   real.forEach(x => { const k = x.kind + ' · ' + x.text.split('\n').slice(0, 3).join(' ⏎ ').slice(0, 400) + ' · ' + x.url.replace(/^https?:\/\/[^/]+/, '').slice(0, 80); by[k] = (by[k] || 0) + 1; });
   Object.keys(by).forEach(k => console.log('  PAGE ERROR ×' + by[k] + ' · ' + k));
   if (real.length) throw new Error(real.length + ' page error(s): a screen threw or logged an error during the run (listed above)');
-  console.log('  ✓ no page threw or logged an error, all the way through (' + (seen.length - real.length) + ' expected no-signal lines)');
+  console.log('  ✓ no page threw or logged an error, all the way through (' + (seen.length - real.length) + ' expected lines from the tests themselves)');
 }
 
 module.exports = { watch, report };
