@@ -295,12 +295,17 @@ const ok = (cond, msg) => { assert.ok(cond, msg); passed++; console.log('  ✓ '
     const c = setCampaign({ id: 'tmm1', campaign: 'TMM' }, a), x = day1Results('2026-11-09');
     let bad = ''; try { setCampaign({ id: 'tmm1', campaign: 'MILK' }, a); } catch (e) { bad = e.message; }
     const r = [c.campaign, getC('tmm1').brand, campaignOf({ company: 'LINK', campaign: 'TMM' }), campaignOf({ company: 'JUSS', campaign: '' }), x.tmm, bad];
+    // Their welcome email names the client they'll work for (11 Nov: a Modern Milkman starter was told to read up on Hello Fresh)
+    const em = JSON.stringify(onboardEmail(getC('tmm1'), a)), hfEm = JSON.stringify(onboardEmail(Object.assign({}, getC('tmm1'), { campaign: 'HF' }), a));
+    r.push(/our client, <b>The Modern Milkman<\/b>/.test(em) && /themodernmilkman\.co\.uk/.test(em) && !/Hello Fresh|hellofresh/i.test(em) && /JUSS/.test(em),
+      /our client, <b>Hello Fresh<\/b>/.test(hfEm) && !/Modern Milkman/.test(hfEm));
     sheet('Candidates').deleteRow(rowOfId('Candidates', 'tmm1')); delete MEMO.Candidates;
     return JSON.stringify(r);
   })()` });
   const cr = JSON.parse(camp.out);
   ok(cr[0] === 'TMM' && cr[1] === 'JUSS' && cr[2] === 'TMM' && cr[3] === 'HF' && cr[4] === 1 && /FR, HF or TMM/.test(cr[5]),
     'Day 1: FR, HF or TMM; placed in TMM = joins JUSS (their messages come from JUSS); still nobody starts in TMM until it\'s picked; the morning-after results count TMM');
+  ok(cr[6] === true && cr[7] === true, 'the welcome email of a starter placed on the Modern Milkman says "read up on our client, The Modern Milkman" (button and text too), from JUSS; a HelloFresh starter\'s still says Hello Fresh');
 
   console.log('a reprint, and who sees the button');
   const L26 = await api(jess, 'badgeList', { weeks: 26 });

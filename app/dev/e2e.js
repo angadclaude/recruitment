@@ -2192,6 +2192,18 @@ async function fillEval(p) {
       'placed in HF after going on the FR sheet: onto the HF one too, and the admins hear "' + (mvP[0] ? mvP[0].body.contents.en.split('\n')[0] : 'none') + '"');
     await api(admin, 'setCampaign', { id: mvR.candidate_id, campaign: mvWas || '' });
     await post('/dev/props', { ['BELL_SENT_' + WE]: sentB4 });
+    // Placed on the Modern Milkman after going on the FR sheet (11 Nov): TMM has no bell sheet, so they're on neither, and the
+    // admins are told once to clear the FR row (before: nothing was said, and they stayed counted as on the FR sheet)
+    const frOn = async () => (await api(admin, 'availWeek', { weekEnding: WE })).bell.sheets.find(x => x.key === 'FR').on, frOn0 = await frOn();
+    await api(admin, 'setCampaign', { id: mvR.candidate_id, campaign: 'TMM' });
+    const tm0 = (await getJson('/dev/pushes')).length, dueTm = await bellDue(), tmP = (await getJson('/dev/pushes')).slice(tm0).filter(x => /^🔔 Bell sheets: moved campaign/.test(ttl(x)));
+    const tm1 = (await getJson('/dev/pushes')).length; await bellDue();
+    const tmAgain = (await getJson('/dev/pushes')).slice(tm1).filter(x => /^🔔 Bell sheets/.test(ttl(x)));
+    ok(dueTm === null && tmP.length === adminIds.length && tmP[0].body.contents.en.startsWith(mvR.full_name.toUpperCase() + ': clear them from the FR bell sheet') &&
+      /The Modern Milkman has no bell sheet/.test(tmP[0].body.contents.en) && !tmAgain.length && await frOn() === frOn0 - 1,
+      'placed on the Modern Milkman after going on the FR sheet: on neither sheet, the admins hear once "' + (tmP[0] ? tmP[0].body.contents.en.split('\n')[0] : 'none') + '", and the FR count drops by one');
+    await api(admin, 'setCampaign', { id: mvR.candidate_id, campaign: mvWas || '' });
+    await post('/dev/props', { ['BELL_SENT_' + WE]: sentB4 });
     if (!PG) {  // the same person typed a little differently by hand is already there (28 Oct: "HILAIRE (EMMANUEL) EBILA" went on twice)
       const hand = mvR.full_name.toUpperCase().split(' '), handName = hand[0] + ' (NICK) ' + hand.slice(1).join('-');
       const relayB = rows => post('/api', { action: 'relayBell', secret: BRS, id: FRID, we: '2026-10-25', section: 'NEW STARTS', rows: rows });

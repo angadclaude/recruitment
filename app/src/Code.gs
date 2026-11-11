@@ -126,7 +126,7 @@ const ONBOARD = {
   },
   JUSS: {
     brand: 'JUSS Marketing', colour: '#E4613F', phone: '077823 77774', maps: 'https://maps.app.goo.gl/n2wTFyzScHLr1Voy9', day3: false,
-    client: ['Hello Fresh', 'http://www.hellofresh.co.uk/'], website: ['JUSS Marketing', 'https://jussmarketing.co.uk/'], magazine: ['JUSS Magazine', 'https://jussmarketing.co.uk/magazine/'],  // moved off Manus with the JUSS website, 21 Oct 2026
+    client: ['Hello Fresh', 'http://www.hellofresh.co.uk/'], clientTMM: ['The Modern Milkman', 'https://themodernmilkman.co.uk/'], website: ['JUSS Marketing', 'https://jussmarketing.co.uk/'], magazine: ['JUSS Magazine', 'https://jussmarketing.co.uk/magazine/'],  // moved off Manus with the JUSS website, 21 Oct 2026
     playbook: ['JUSS Playbook', 'https://juss-playbook.vercel.app/'],  // its own address since 21 Oct 2026 (juss-hf-playbook.vercel.app is the same app and keeps working)
     from: 'rubal@jussmarketing.co.uk',
     week1: [
@@ -2086,7 +2086,7 @@ function badgesPrinted(req, u) {
   const ids = (Array.isArray(req.ids) ? req.ids : []).map(String).slice(0, 200);
   if (!ids.length) return { ok: true, n: 0 };
   const done = withLock(() => readTable('Availability').filter(a => ids.indexOf(a.id) >= 0).map(a => { a.badge_printed_at = nowStr(); a.badge_printed_by = u.name; writeRow('Availability', a); return a; }));
-  log(u, 'badges_printed', '', done.length + ' ' + (req.kind === 'hf' ? 'HelloFresh' : 'NDCS'));
+  log(u, 'badges_printed', '', done.length + ' ' + ({ hf: 'HelloFresh', tmm: 'Modern Milkman' }[req.kind] || 'NDCS'));
   return { ok: true, n: done.length, at: nowStr(), by: u.name };
 }
 /** The badge artwork for the PDF (admins), as data: URLs. */
@@ -2209,7 +2209,10 @@ function bellDue() {
   // This week's cohort, then last week's: a Week 1 filled in the week after still goes on that week's tab
   for (const we of [thisWe, addDays(thisWe, -7)]) {
     if (stamp < addDays(we, -5) + ' ' + at) continue;  // the first of them is due at 18:00 on the Tuesday
-    const sent = bellProp('BELL_SENT_' + we, {});
+    let sent = bellProp('BELL_SENT_' + we, {});
+    // On a sheet, then placed where there's no bell sheet (the Modern Milkman): they go on neither, and the admins clear the old row
+    const off = availRows(we).filter(r => !BELL[r.campaign] && BELL[sent[r.id]]);
+    if (off.length) sent = bellMovedOff(we, off);
     // Not on their campaign's sheet yet: new, or switched FR ↔ HF since they went on the other one
     const due = availRows(we).filter(r => !r.no_longer && /[IO]/.test(r.w1) && sent[r.id] !== r.campaign && stamp >= addDays(r.day1_date, 1) + ' ' + at);
     const sheets = Object.keys(BELL).filter(k => ids[k]).map(k => ({ key: k, id: ids[k], section: BELL[k].section,
@@ -2218,6 +2221,20 @@ function bellDue() {
     if (sheets.length) return { we: we, tab: bellTab(we), sheets: sheets };
   }
   return null;
+}
+/** Someone on a bell sheet who's now placed where there's none (11 Nov: FR or HF → TMM): kept as off both, saved before the alert
+ *  goes, and the admins are told once to clear their old row (the app never deletes rows). */
+function bellMovedOff(we, off) {
+  const lines = [];
+  const sent = withLock(() => {
+    const s = bellProp('BELL_SENT_' + we, {});
+    off.forEach(r => { if (!BELL[s[r.id]]) return; lines.push(bellRow(r).name + ': clear them from the ' + BELL[s[r.id]].name); s[r.id] = r.campaign; });
+    PropertiesService.getScriptProperties().setProperty('BELL_SENT_' + we, JSON.stringify(s));
+    return s;
+  });
+  if (lines.length) notify(usersAll().filter(x => truthy(x.active) && isAdmin(x)), '🔔 Bell sheets: moved campaign',
+    lines.join('\n') + '\n(' + bellTab(we) + ', under New Starts. The Modern Milkman has no bell sheet.)', 'avail');
+  return sent;
 }
 /** What Google wrote (server/bell.js): keeps who's on, tells the admins who went on and, once each, what's in the way. */
 function bellDone(res) {
@@ -3283,6 +3300,8 @@ function onboardStep(req, u) {
  *  chunky buttons). Table layout + inline styles so it holds up in Gmail, Outlook and Apple Mail (Outlook desktop: solid colours). */
 function onboardEmail(c, u, pick) {
   const co = brandCo(c, pick), o = ONBOARD[co], first = c.full_name.split(' ')[0];
+  // The client they'll be working for: JUSS has two (11 Nov: a starter placed on the Modern Milkman was told to read up on Hello Fresh)
+  const client = o.clientTMM && campaignOf(c) === 'TMM' ? o.clientTMM : o.client;
   // Signed under the other company (Jess sending a JUSS email, Rubal a LINK one): "In association with …" (Angad, 20 Oct)
   const signCo = homeCo(u.email) && homeCo(u.email) !== co ? 'In association with ' + o.brand : o.brand;
   // After launch the playbook button goes through the hub: they sign in with this email and land in their own playbook
@@ -3436,8 +3455,8 @@ function onboardEmail(c, u, pick) {
     card(chip('📝', 'Notepad &amp; pen') + chip('🪪', 'Photo ID') + chip('🔑', 'Your right-to-work share code')) +
     // Get ready
     head('📚', 'Get ready') +
-    card('<p style="margin:0">' + dk((co === 'JUSS' ? 'We highly recommend you read up on our client, <b>' + esc(o.client[0]) + '</b>, ahead of your training.' : 'Read up and do some research on our client, <b>' + esc(o.client[0]) + '</b>, before your product coaching.') +
-      ' And check out the team in our online magazine!') + '</p><div style="margin-top:6px">' + btn('🌐 ' + esc(o.client[0]), o.client[1], true) + btn('📖 ' + esc(o.magazine[0]), o.magazine[1]) +
+    card('<p style="margin:0">' + dk((co === 'JUSS' ? 'We highly recommend you read up on our client, <b>' + esc(client[0]) + '</b>, ahead of your training.' : 'Read up and do some research on our client, <b>' + esc(client[0]) + '</b>, before your product coaching.') +
+      ' And check out the team in our online magazine!') + '</p><div style="margin-top:6px">' + btn('🌐 ' + esc(client[0]), client[1], true) + btn('📖 ' + esc(o.magazine[0]), o.magazine[1]) +
       (o.website ? btn('✨ ' + esc(o.website[0]), o.website[1]) : '') + '</div>') +
     // Sign-off, as a signature card
     gap(24) +
@@ -3459,7 +3478,7 @@ function onboardEmail(c, u, pick) {
     (o.preCoaching ? '2. Complete the Pre-Coaching Module (15-20 minutes): ' + o.preCoaching[1] + '\n' : '') +
     (o.preCoaching ? '3' : '2') + '. Read your ' + o.playbook[0] + ': ' + pbUrl + ' (first time? Tap "New BA – set up profile" to make your login)\n' +
     '\nBRING: notepad and pen, photo ID, your right-to-work share code\n' +
-    '\nGet ready: ' + o.client[0] + ' ' + o.client[1] + ' · ' + o.magazine[0] + ' ' + o.magazine[1] + (o.website ? ' · ' + o.website[1] : '') + '\n' +
+    '\nGet ready: ' + client[0] + ' ' + client[1] + ' · ' + o.magazine[0] + ' ' + o.magazine[1] + (o.website ? ' · ' + o.website[1] : '') + '\n' +
     '\nAny questions, just reply to this email or call ' + o.phone + '.\nI’ll be in the office to meet you when you arrive. Excited to work with you!\n\nThanks,\nKind Regards,\n' + u.name + '\n' + signCo;
   return { to: c.email, subject: o.brand + ' - Your Brand Ambassador Journey Begins!', html: html, text: text };
 }
