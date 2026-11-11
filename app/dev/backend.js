@@ -129,12 +129,48 @@ async function mirror() {
     'live copy: 5 minutes later only the refused tab is sent again (' + calls + ' call); unchanged tabs are left alone');
 }
 
+// 5. A tab's columns only ever grow at the end. Rows are written by column position, so readTable refuses a tab whose columns
+//    don't start with the ones it knows. On 11 Nov a new column went into the middle of the Candidates list: every harness
+//    passed (they build their tabs fresh, in the new order) and the live app, whose tab has the old order, stopped reading
+//    candidates for 13 minutes. app/dev/columns.json is the columns the live data has: this code must start with exactly
+//    those, and must read tabs built with them. Adding a column: put it LAST in SHEETS in Code.gs, then add it last here too.
+async function columns() {
+  const fs = require('fs'), path = require('path'), vm = require('vm');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'Code.gs'), 'utf8'), i = src.indexOf('const SHEETS = '), j = src.indexOf('\n};', i);
+  const now = vm.runInNewContext('(' + src.slice(i + 15, j + 2) + ')'), live = require('./columns.json');
+  Object.keys(live).forEach(t => {
+    const at = live[t].findIndex((h, k) => !now[t] || now[t][k] !== h);
+    ok(at < 0, t + ': the ' + live[t].length + ' columns the live data has are still the first ' + live[t].length + ', in order' +
+      (at < 0 ? (now[t].length > live[t].length ? ' (+ ' + now[t].slice(live[t].length).join(', ') + ' at the end)' : '')
+        : ' ✗ column ' + (at + 1) + ' is "' + ((now[t] || [])[at] || 'missing') + '" where the live tab has "' + live[t][at] + '": a new column goes LAST in SHEETS, never in the middle'));
+  });
+  ok(Object.keys(now).every(t => live[t]), 'every tab is listed in app/dev/columns.json (' + Object.keys(now).filter(t => !live[t]).join(', ') + ')');
+  // …and tabs as the live data has them (those headers, a row that wide) are read by this code, both ways round
+  const db = await pgliteAdapter(); await db.migrate();
+  const rt = new Runtime({ db, testMode: true, env: {} });
+  const out = await rt.run({ type: 'eval', js: `(() => { const LIVE = ${JSON.stringify(live)}, bad = [];
+    setup();
+    Object.keys(LIVE).forEach(n => { try {
+      const sh = sheet(n), w = LIVE[n].length;
+      sh.getRange(1, 1, sh.getMaxRows(), sh.getMaxColumns()).clearContent();
+      sh.getRange(1, 1, 2, w).setValues([LIVE[n].slice(), LIVE[n].map((h, k) => (k ? h + '!' : 'row1'))]);
+      delete MEMO[n];
+      const r = readTable(n).filter(x => x.id === 'row1' || x[LIVE[n][0]] === 'row1')[0];
+      if (!r || LIVE[n].some((h, k) => k && r[h] !== h + '!')) bad.push(n + ': a value came back under the wrong column');
+      else if (SHEETS[n].slice(LIVE[n].length).some(h => r[h] !== '')) bad.push(n + ': a new column is not empty');
+    } catch (e) { bad.push(n + ': ' + e.message); } });
+    return JSON.stringify(bad); })()` });
+  ok(out === '[]', 'tabs with the live data\'s columns are read by this code, every value under its own column' + (out === '[]' ? '' : ' ✗ ' + out));
+  await rt.stop(); await db.end();
+}
+
 (async () => {
   console.log('Back end (PGlite)');
   await claims();
   await spoilt();
   await outbox();
   await mirror();
+  await columns();
   console.log(fails ? '\n' + fails + ' FAILED' : '\nALL BACK END CHECKS PASSED');
   process.exit(fails ? 1 : 0);
 })().catch(e => { console.error('FAILED', e); process.exit(1); });
