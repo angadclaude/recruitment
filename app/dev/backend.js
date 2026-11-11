@@ -132,7 +132,7 @@ async function mirror() {
 // 5. A tab's columns only ever grow at the end. Rows are written by column position, so readTable refuses a tab whose columns
 //    don't start with the ones it knows. On 11 Nov a new column went into the middle of the Candidates list: every harness
 //    passed (they build their tabs fresh, in the new order) and the live app, whose tab has the old order, stopped reading
-//    candidates for 25 minutes. app/dev/columns.json is the columns the live data has: this code must start with exactly
+//    candidates for 13 minutes. app/dev/columns.json is the columns the live data has: this code must start with exactly
 //    those, and must read tabs built with them. Adding a column: put it LAST in SHEETS in Code.gs, then add it last here too.
 async function columns() {
   const fs = require('fs'), path = require('path'), vm = require('vm');

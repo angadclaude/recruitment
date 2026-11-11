@@ -165,7 +165,7 @@ const SHEETS = {
     'day1_left_at', 'day1_left_by',  // arrived on Day 1 but didn't come back after it (still a Day 1 start)
     'fieldiq_at', 'fieldiq_by',  // unused: a FieldIQ tick on Day 1, built and taken out on 29 Oct (Angad: "no more ticks"); kept so the columns stay put
     'admin_note_private',  // an admin's decision on a declared conviction: its notes are the admins' only (shape). NEW COLUMNS GO HERE, AT THE END, ALWAYS:
-                           // on 11 Nov this one went in beside admin_note, and every read of this tab stopped for 20 minutes (readTable's check)
+                           // on 11 Nov this one went in beside admin_note, and every read of this tab stopped for 13 minutes (readTable's check)
   ],
   // Presentations booked after a call. status: booked · came (checked in) · no_show (rebooked after missing it) · cancelled.
   // Each message sent (confirmation, reminder, "sorry we missed you"): when, by whom, how.
