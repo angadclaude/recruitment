@@ -92,11 +92,49 @@ async function outbox() {
   await pg.close();
 }
 
+// 4. The live copy in the Google Sheet (server/mirror.js): a starter's photo (too long for a Sheet cell) goes as a note, and a
+//    tab Google refuses is skipped and tried again, never in the way of the tabs after it (11 Nov: Users stood still 9 days).
+async function mirror() {
+  const { mirrorToSheet, CELL_MAX } = require('../../server/mirror');
+  const photo = 'data:image/jpeg;base64,' + 'A'.repeat(140000);
+  const tabs = { Candidates: [['c1', 'Lucy Test']], Codes: [['x']], StarterPhotos: [['a1', photo, '2026-11-02 10:40']], Users: [['u1', 'Christie Zammit']],
+    Log: [['2026-11-02 10:00', 'x'.repeat(CELL_MAX + 500)]] };
+  const props = {}, got = {}; let refuse = 'Candidates', calls = 0;
+  const sql = (str, ...v) => {
+    const q = str.join('?');
+    if (/from jl\.tabs/.test(q)) return Promise.resolve(Object.keys(tabs).sort().map(n => ({ name: n, headers: ['id', 'b', 'c'] })));
+    if (/from jl\.rows/.test(q)) return Promise.resolve(tabs[v[0]].map(r => ({ vals: r })));
+    if (/^select val from jl\.props/.test(q.trim())) return Promise.resolve(props[v[0]] ? [{ val: props[v[0]] }] : []);
+    if (/insert into jl\.props/.test(q)) { props[v[0]] = v[1]; return Promise.resolve([]); }
+    throw new Error('unexpected query: ' + q);
+  };
+  const relay = (action, x) => {  // Google: refuses the tab it's told to, and any cell over its limit
+    calls++;
+    if (x.tab === refuse) return Promise.reject(new Error('Service Spreadsheets failed'));
+    if (x.rows.some(r => r.some(c => String(c).length > CELL_MAX))) return Promise.reject(new Error('Your input contains more than the maximum of 50000 characters in a single cell.'));
+    got[x.tab] = x.rows; return Promise.resolve({ tab: x.tab, rows: x.rows.length });
+  };
+  const err = console.error; console.error = () => {};
+  const first = await mirrorToSheet(sql, relay);
+  ok(got.StarterPhotos && got.StarterPhotos[0][1] === '(picture: in the app)' && got.StarterPhotos[0][0] === 'a1' && got.StarterPhotos[0][2] === '2026-11-02 10:40',
+    'live copy: a starter\'s photo (140,000 characters, a Sheet cell holds 50,000) goes as "(picture: in the app)", its id and date kept');
+  ok(got.Users && got.Users[0][1] === 'Christie Zammit' && first.some(x => x.tab === 'Candidates' && /Spreadsheets failed/.test(x.error)) && !got.Candidates,
+    'live copy: a tab Google refuses is reported and skipped; the tabs after it (Users) are still copied');
+  ok(got.Log && got.Log[0][1].length === CELL_MAX && /cut: too long for a Sheet cell/.test(got.Log[0][1]), 'live copy: any other cell too long for the Sheet is cut with a note, so its tab still goes');
+  ok(!got.Codes && !first.some(x => x.tab === 'Codes'), 'live copy: never the login tabs');
+  refuse = ''; calls = 0;
+  const second = await mirrorToSheet(sql, relay);
+  console.error = err;
+  ok(calls === 1 && second.length === 1 && second[0].tab === 'Candidates' && second[0].rows === 1 && got.Candidates,
+    'live copy: 5 minutes later only the refused tab is sent again (' + calls + ' call); unchanged tabs are left alone');
+}
+
 (async () => {
   console.log('Back end (PGlite)');
   await claims();
   await spoilt();
   await outbox();
+  await mirror();
   console.log(fails ? '\n' + fails + ' FAILED' : '\nALL BACK END CHECKS PASSED');
   process.exit(fails ? 1 : 0);
 })().catch(e => { console.error('FAILED', e); process.exit(1); });

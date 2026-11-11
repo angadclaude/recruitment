@@ -147,6 +147,7 @@ async function fillEval(p) {
   ok(hist.length === 2, 'history import keeps the last 6 months only');
 
   const browser = await chromium.launch();
+  const pageErrors = require('./watch').watch(browser);  // every page's own errors, all the way through
   const newContext = browser.newContext.bind(browser);
   browser.newContext = async (...a) => { const ctx = await newContext(...a); CONTEXTS.push(ctx); await ctx.clock.setSystemTime(new Date(Date.now() + CLOCK_OFF)); return ctx; };
 
@@ -3365,6 +3366,7 @@ async function fillEval(p) {
   }
 
   await browser.close();
+  require('./watch').report(pageErrors);
   console.log('\nALL CHECKS PASSED');
   process.exit(0);
 })().catch(e => { console.error('\nFAILED:', e); process.exit(1); });

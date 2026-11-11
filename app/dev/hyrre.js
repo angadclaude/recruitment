@@ -264,6 +264,7 @@ const FIRST = [
     'Thursday\'s morning pull: "📲 1 of Megan\'s to remind for today" goes to Christie only, "signed Christie / Megan"; not Rubal or Jess (Angad, 9 Nov)');
   await api(jess, 'saveBooking', { booking: { first_name: 'Leah', last_name: 'Brown', mobile: '07700900126', slot_date: '2026-10-29', source: 'Teamtailor' } });
   const browser = await chromium.launch();
+  const pageErrors = require('./watch').watch(browser);  // every page's own errors, all the way through
   const newContext = browser.newContext.bind(browser);
   browser.newContext = async (...a) => { const ctx = await newContext(...a); CONTEXTS.push(ctx); await ctx.clock.setSystemTime(new Date(Date.now() + CLOCK_OFF)); return ctx; };
   const ctx = await browser.newContext(PHONE);
@@ -400,6 +401,7 @@ const FIRST = [
     JSON.stringify(p7.marks.find(m => m.id === 'h9')) === JSON.stringify({ id: 'h9', status: 'attended' }) && all.find(b => b.id === re.id).status === 'booked',
     'approved in Hyrre for Friday, the day he came: still one booking, and Hyrre marks him attended');
   await browser.close();
+  require('./watch').report(pageErrors); passed++;
 
   console.log('\nALL ' + passed + ' HYRRE CHECKS PASSED (' + (process.env.JL_BACKEND === 'pg' ? 'Supabase' : 'Google') + ' back end)');
   process.exit(0);

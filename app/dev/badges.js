@@ -53,6 +53,7 @@ const ok = (cond, msg) => { assert.ok(cond, msg); passed++; console.log('  ✓ '
   const christie = await loginApi('christie@example.com'), satpal = await loginApi('satpal@jussmarketing.co.uk');
 
   const browser = await chromium.launch();
+  const pageErrors = require('./watch').watch(browser);  // every page's own errors, all the way through
   const ctx = await browser.newContext(PHONE);
   await ctx.clock.setSystemTime(new Date(Date.now() + CLOCK_OFF));
   await ctx.addInitScript(t => { try { if (!localStorage.getItem('lr_tok')) localStorage.setItem('lr_tok', JSON.stringify(t)); } catch (e) {} }, jess);
@@ -320,6 +321,7 @@ const ok = (cond, msg) => { assert.ok(cond, msg); passed++; console.log('  ✓ '
   ok(await toastIs(/Badge artwork in ✓/), 'the artwork file still goes in, saved as .txt with a byte-order mark (as phones sometimes do)');
 
   await browser.close();
+  require('./watch').report(pageErrors); passed++;
   console.log('\nALL ' + passed + ' BADGE CHECKS PASSED (' + (process.env.JL_BACKEND === 'pg' ? 'Supabase back end' : 'Google back end') + ')');
   process.exit(0);
 })().catch(e => { console.error('\nFAILED:', e); process.exit(1); });

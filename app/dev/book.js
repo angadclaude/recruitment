@@ -175,6 +175,7 @@ const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked 
 
   console.log('the screens');
   const browser = await chromium.launch();
+  const pageErrors = require('./watch').watch(browser);  // every page's own errors, all the way through
   const newContext = browser.newContext.bind(browser);
   browser.newContext = async (...a) => { const ctx = await newContext(...a); CONTEXTS.push(ctx); await ctx.clock.setSystemTime(new Date(Date.now() + CLOCK_OFF)); return ctx; };
   const as = async (tok, url) => {
@@ -410,6 +411,7 @@ const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked 
   ok((await api(angad, 'getCandidate', { id: beni.id })).booking_id === benie.id && (await api(jess, 'bookingList', {})).items.find(b => b.id === benie.id).status === 'came',
     'a name a letter out ("Beni" booked as "Benie", another mobile) still finds today\'s booking (30 Oct: Sitar / Sitara)');
   await browser.close();
+  require('./watch').report(pageErrors); passed++;
 
   console.log('GDPR');
   await setTime('2027-01-28T03:00:00+00:00'); await post('/dev/run', { fn: 'dailyMaintenance' });
