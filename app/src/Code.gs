@@ -1333,7 +1333,7 @@ function adminDecision(req, u) {
     if (['approved', 'rejected'].indexOf(req.decision) < 0) throw new Error('Bad decision');
     c.admin_status = req.decision; c.admin_note = String(req.note || '').slice(0, 500);
     c.admin_by = u.name; c.admin_at = nowStr();
-    c.admin_note_private = c.q13_unspent === 'Yes' ? 'TRUE' : '';  // decided on a declared conviction: the note is the admins' for good, even if the answer is corrected later (shape)
+    if (c.q13_unspent === 'Yes') c.admin_note_private = 'TRUE';  // decided on a declared conviction: the notes are the admins' for good, whatever is corrected or decided later (shape)
     if (req.decision === 'rejected') {
       const why = (c.outcome === 'Academy booked' ? 'Academy booking rejected' : 'Declined by admin') + (c.admin_note ? ': ' + c.admin_note : '');
       c.outcome = 'Not suitable'; c.academy_date = '';

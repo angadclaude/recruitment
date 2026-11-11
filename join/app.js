@@ -1,4 +1,4 @@
-window.APP_VERSION = '8e017e7b';
+window.APP_VERSION = 'd9c702de';
 
 (function () {
 'use strict';
@@ -895,8 +895,10 @@ function startBooked() {
   }).catch(e => {
     // The server's answer (cancelled, or rebooked for another day), not a lost signal: that's what the page says now, in place of
     // "You're booked in" for the old day (11 Nov), and this phone's copy of the old booking goes
-    if (!e.retry) store.del(key);
-    if (!quick || !e.retry) $app.innerHTML = logos(56) + '<div class="card center"><div class="big-emoji">🔗</div><p>' + h(e.message) + '</p></div>';
+    // (only those two answers: a server hiccup leaves the page they already have alone)
+    const gone = !e.retry && /link has expired|been rebooked/.test(e.message);
+    if (gone) store.del(key);
+    if (!quick || gone) $app.innerHTML = logos(56) + '<div class="card center"><div class="big-emoji">🔗</div><p>' + h(e.message) + '</p></div>';
   });
 }
 function renderBooked(w, keepScroll) {
