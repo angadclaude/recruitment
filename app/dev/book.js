@@ -262,18 +262,20 @@ const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked 
   ok(/TOMORROW · Wednesday 28 October/i.test(rs) && /0 of 1 sent/.test(rs) && /Ollie Grant/.test(rs), 'Tomorrow → 📲 Send tomorrow\'s reminders: the send list ("0 of 1 sent")');
   const remTxt = textOf(await jp.getAttribute('.bksheet a.btn[data-bks]', 'href'));
   // The surer tone (Angad, 12 Nov): they're booked, so nothing asks "still coming?"; the hosts are named; "done by" is the slot + 90
-  // minutes; their short link goes once, alone, as the very last line; and the Google Maps link stays (his choice: "Keep the Maps link")
+  // minutes. Both links (settled from real messages on his own WhatsApp that evening): theirs first, "👉 Confirm your spot: …", so
+  // WhatsApp's card is ours; "🗺️ Tap for directions: <Google Maps>" under the place. No earnings line, no "See you tomorrow!"
   const ol2B = (await api(jess, 'bookingList', {})).items.find(b => b.first_name === 'Ollie' && b.slot_date === '2026-10-28');
   ok(/^[a-hjkmnp-z2-9]{8}$/.test(ol2B.short_code), 'every booking has a short code for its link: 8 random letters and numbers (' + ol2B.short_code.length + ' characters, none of 0 o 1 l i)');
-  ok(remTxt === 'Hey Ollie! 👋\n\n*Tomorrow’s the day!* 🙌\nYou’re booked in to *meet the team* at *JUSS Marketing*\n\n📅 *Wednesday 28th October · 10:00 AM*\n' +
-    '📍 Automotive House, Slough (2 mins from the station)\n🗺️ https://maps.app.goo.gl/zeP4MjS2hMJzB9V9A\n\n' +
-    '🤝 *Rubal or Jess* will be hosting and expecting you\n💷 Meet the team and see real earnings examples\n⏰ Aim to arrive *10 minutes early* · done by 11:30\n👔 Office wear / smart casual\n\n' +
-    'See you tomorrow! 🔥\n\nKind regards,\n*Jess Grace*\nIn association with *JUSS Marketing Ltd*\n\n' + PUBLIC + 'b/' + ol2B.short_code,
-    'the reminder, word for word: "Tomorrow’s the day!", Rubal or Jess hosting, real earnings examples, 10 minutes early · done by 11:30, office wear, signed by Jess, then her link');
-  ok((remTxt.match(/https?:\/\//g) || []).length === 2 && remTxt.split('\n').pop() === PUBLIC + 'b/' + ol2B.short_code && remTxt.split(PUBLIC).length === 2 && !/still coming|CONFIRM|\bYES\b/i.test(remTxt),
-    'her link once, alone on the very last line after the sign-off; the Google Maps link stays in the message (Angad, 12 Nov: "Keep the Maps link"); no "Still coming? Tap CONFIRM"');
+  ok(remTxt === 'Hey Ollie! 👋\n\n*Tomorrow’s the day!* 🙌\nYou’re booked in to *meet the team* at *JUSS Marketing*\n👉 Confirm your spot: ' + PUBLIC + 'b/' + ol2B.short_code + '\n\n' +
+    '📅 *Wednesday 28th October · 10:00 AM*\n📍 Automotive House, Slough (2 mins from the station)\n🗺️ Tap for directions: https://maps.app.goo.gl/zeP4MjS2hMJzB9V9A\n\n' +
+    '🤝 *Rubal or Jess* will be hosting and expecting you\n⏰ Aim to arrive *10 minutes early* · done by 11:30\n👔 Office wear / smart casual\n\n' +
+    'Kind regards,\n*Jess Grace*\nIn association with *JUSS Marketing Ltd*',
+    'the reminder, word for word: "Tomorrow’s the day!", booked in to meet the team, her booking link, the day, the place with "Tap for directions", Rubal or Jess hosting, 10 minutes early · done by 11:30, office wear, signed by Jess');
+  ok((remTxt.match(/https?:\/\//g) || []).length === 2 && remTxt.match(/https?:\/\/\S+/)[0] === PUBLIC + 'b/' + ol2B.short_code && remTxt.split(PUBLIC).length === 2 &&
+    remTxt.indexOf(PUBLIC) < remTxt.indexOf('https://maps.app.goo.gl/') && !/still coming|Tap \*CONFIRM|\bYES\b|See you|earnings/i.test(remTxt),
+    'her link once and first (so WhatsApp makes the card from it), the Google Maps link after it under the place; no "Still coming? Tap CONFIRM", no earnings line, no "See you tomorrow!"');
   const rsCard = await jp.innerText('.bksheet');
-  ok(!/turns into a card/.test(rsCard) && !(await jp.$('.bksheet .wacard')), 'the reminders list doesn\'t promise our card: with the Maps link first, WhatsApp shows Google\'s');
+  ok(/their link turns into a card on top of the message\. Give it a second to appear, then send\./.test(rsCard), 'the send list says the link turns into a card: give it a second, then send');
   // The other two branches, in the same tone: already confirmed (no link, nothing to confirm) and no page at all (reply YES)
   // (the app's own functions, lifted from JS.html, with this booking and Jess's settings)
   const appJs = fs.readFileSync(path.join(__dirname, '..', 'src', 'JS.html'), 'utf8');
@@ -293,12 +295,12 @@ const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked 
     later: asJess().remind(Object.assign({}, ol2B, { slot_time: '14:00' })),
     hosts: msgs(oneHost).remind(ol2B),
   };
-  const four = '🤝 *Rubal or Jess* will be hosting and expecting you\n💷 Meet the team and see real earnings examples\n⏰ Aim to arrive *10 minutes early* · done by 11:30\n👔 Office wear / smart casual\n\n';
-  ok(variants.confirmed.includes(four + '✅ You’re confirmed. Anything changes, just message me.\n\nSee you tomorrow! 🔥') && /🗺️ https:\/\/maps\.app\.goo\.gl\//.test(variants.confirmed) &&
-    !variants.confirmed.includes('/b/') && /\*JUSS Marketing Ltd\*$/.test(variants.confirmed),
-    'already confirmed: the same lines, "✅ You’re confirmed", the map link, and no link to confirm with');
-  ok(variants.noPage.includes(four + '👉 Reply *YES* and we’ll have your name ready at the door ✅\n\nSee you tomorrow! 🔥') && /🗺️ https:\/\/maps\.app\.goo\.gl\//.test(variants.noPage) &&
-    !/still coming/i.test(variants.noPage) && !/still coming/i.test(variants.confirmed),
+  const four = '🤝 *Rubal or Jess* will be hosting and expecting you\n⏰ Aim to arrive *10 minutes early* · done by 11:30\n👔 Office wear / smart casual\n\n';
+  ok(variants.confirmed.includes(four + '✅ You’re confirmed. Anything changes, just message me.\n\nKind regards,') && /🗺️ Tap for directions: https:\/\/maps\.app\.goo\.gl\//.test(variants.confirmed) &&
+    !variants.confirmed.includes('/b/') && !/Confirm your spot/.test(variants.confirmed) && /\*JUSS Marketing Ltd\*$/.test(variants.confirmed),
+    'already confirmed: the same lines, "✅ You’re confirmed", the map link, and no link of hers to confirm with');
+  ok(variants.noPage.includes(four + '👉 Reply *YES* and we’ll have your name ready at the door ✅\n\nKind regards,') && /🗺️ Tap for directions: https:\/\/maps\.app\.goo\.gl\//.test(variants.noPage) &&
+    !/Confirm your spot/.test(variants.noPage) && !/still coming/i.test(variants.noPage) && !/still coming/i.test(variants.confirmed),
     'no page for them: "Reply YES and we’ll have your name ready at the door" (never "if you’re still coming"), the map link');
   ok(/· done by 3:30\n/.test(variants.later) && /· 2:00 PM\*\n/.test(variants.later) && /🤝 \*Sam\* will be hosting and expecting you/.test(variants.hosts),
     '"done by" is their slot + 90 minutes (a 2:00 PM slot → done by 3:30), and the hosts come from the settings (CONFIG.BOOK_HOSTS), not the message');

@@ -287,7 +287,7 @@ const FIRST = [
   ok(/0 of 1 sent/.test(remList) && /Leah Brown/.test(remList) && !/Aisha Khan/.test(remList) && /📱 Christie sends Megan's from the office phone \(1\)\./.test(remList),
     'Rubal\'s phone: today\'s reminders are Leah\'s only ("0 of 1 sent"); Aisha (Megan\'s) isn\'t there: "📱 Christie sends Megan\'s from the office phone (1)"');
   const lMsg = decodeURIComponent((await rp.getAttribute('.bksheet .trow:has-text("Leah Brown") a.btn[data-kind=remind]', 'href')).split('?text=')[1]);
-  ok(/Kind regards,\n\*Rubal Oshan\*\nIn association with \*JUSS Marketing Ltd\*\n\nhttps:\/\/[^\n]+\/b\/[a-hjkmnp-z2-9]{8}$/.test(lMsg), 'Leah\'s (booked in the app) is still signed by whoever sends it (Rubal), then her link');
+  ok(/Kind regards,\n\*Rubal Oshan\*\nIn association with \*JUSS Marketing Ltd\*$/.test(lMsg) && /\n👉 Confirm your spot: https:\/\/[^\n]+\/b\/[a-hjkmnp-z2-9]{8}\n\n📅/.test(lMsg), 'Leah\'s (booked in the app) is still signed by whoever sends it (Rubal), her link under the opening line');
   await rp.click('#bkdone');
   await rp.click('.bkrow:has-text("Aisha Khan") [data-bk]'); await rp.waitForSelector('.bksheet');
   const shR = await rp.innerText('.bksheet');
@@ -307,14 +307,16 @@ const FIRST = [
   const aMsg = await cWa('Aisha Khan');
   ok(/0 of 2 sent/.test(await chp.innerText('.bksheet')) && /Megan's: Christie \/ Megan/.test(await chp.innerText('.bksheet')) &&
     /^Hey Aisha! 👋\n\n\*Today’s the day!\* 🙌/.test(aMsg) &&
-    /Kind regards,\n\*Christie \/ Megan\*\nIn association with \*JUSS Marketing Ltd\*\n\nhttps:\/\/[^\n]+\/b\/[a-hjkmnp-z2-9]{8}$/.test(aMsg) && /signed Christie \/ Megan/.test(await chp.innerText('.bksheet .trow:has-text("Aisha Khan")')) &&
+    /Kind regards,\n\*Christie \/ Megan\*\nIn association with \*JUSS Marketing Ltd\*$/.test(aMsg) && /\n👉 Confirm your spot: https:\/\/[^\n]+\/b\/[a-hjkmnp-z2-9]{8}\n\n📅/.test(aMsg) && /signed Christie \/ Megan/.test(await chp.innerText('.bksheet .trow:has-text("Aisha Khan")')) &&
     /Kind regards,\n\*Christie Zammit\*\n/.test(await cWa('Leah Brown')),
-    'the office phone (Christie): both, "0 of 2 sent"; Aisha\'s reminder ("Today\'s the day!") signed *Christie / Megan*, then her link; Leah\'s signed Christie Zammit');
+    'the office phone (Christie): both, "0 of 2 sent"; Aisha\'s reminder ("Today\'s the day!") signed *Christie / Megan*, with her link under the opening line; Leah\'s signed Christie Zammit');
   // The surer tone (Angad, 12 Nov: 2 of 41 had tapped CONFIRM): she's booked, so nothing asks if she's still coming
-  ok(aMsg.includes('📍 Automotive House, Slough (2 mins from the station)\n🗺️ https://maps.app.goo.gl/zeP4MjS2hMJzB9V9A\n\n🤝 *Rubal or Jess* will be hosting and expecting you\n💷 Meet the team and see real earnings examples\n' +
-      '⏰ Aim to arrive *10 minutes early* · done by 11:30\n👔 Office wear / smart casual\n\nSee you today! 🔥\n\nKind regards,') &&
-    (aMsg.match(/https?:\/\//g) || []).length === 2 && !/still coming|CONFIRM|maps\.app|booked\.html|Aisha&|n=/i.test(aMsg.split('\n').pop()) && !/still coming|CONFIRM/i.test(aMsg),
-    'Megan\'s reminder in the surer tone: the map link, Rubal or Jess hosting and expecting her, real earnings examples, 10 minutes early · done by 11:30, office wear; her own link last, with nothing about her in it');
+  ok(aMsg.includes('You’re booked in to *meet the team* at *JUSS Marketing*\n👉 Confirm your spot: ') &&
+    aMsg.includes('📍 Automotive House, Slough (2 mins from the station)\n🗺️ Tap for directions: https://maps.app.goo.gl/zeP4MjS2hMJzB9V9A\n\n🤝 *Rubal or Jess* will be hosting and expecting you\n' +
+      '⏰ Aim to arrive *10 minutes early* · done by 11:30\n👔 Office wear / smart casual\n\nKind regards,') &&
+    (aMsg.match(/https?:\/\//g) || []).length === 2 && /\/b\/[a-hjkmnp-z2-9]{8}$/.test(aMsg.match(/https?:\/\/\S+/)[0]) && !/Aisha|n=|booked\.html/.test(aMsg.match(/https?:\/\/\S+/)[0]) &&
+    !/still coming|Tap \*CONFIRM|See you|earnings/i.test(aMsg),
+    'Megan\'s reminder in the surer tone: her link first (nothing about her in it, so the card is ours), the place with "Tap for directions", Rubal or Jess hosting and expecting her, 10 minutes early · done by 11:30, office wear; no earnings line, no "See you"');
   await chp.click('.bksheet .trow:has-text("Aisha Khan") a.btn[data-kind=remind]');
   await chp.waitForFunction(() => /1 of 2 sent/.test(document.getElementById('bkprog').textContent));
   await chp.waitForTimeout(800);
@@ -496,13 +498,14 @@ const FIRST = [
     'tapping the alert on the office phone opens Book Appts with the welcome list: Nina and Omar, "0 of 2 sent", signed Christie / Megan');
   const wHref = await wPage.getAttribute('.bksheet .trow:has-text("Nina Patel") a.btn[data-kind=welcome]', 'href'), wMsg = decodeURIComponent(wHref.split('?text=')[1]);
   const SITE = require('../site.json').url;
-  ok(/^https:\/\/wa\.me\/447700900241\?text=/.test(wHref) && wMsg === 'Hey Nina! 👋\n\nYou’re *booked in* to *meet the team* at *JUSS Marketing* 🎉\n\n' +
-    '📅 *Thursday 5th November · 10:00 AM*\n📍 2nd Floor East, Automotive House, Grays Place, Slough SL2 5AF\n🚆 Right opposite Slough station (exit from *platform 5*)\n\n' +
-    '🤝 *Rubal or Jess* will be expecting you\n⏰ Aim to arrive *10 minutes early* · done by 11:30\n\nSee you tomorrow! 🔥\n\n' +
-    'Kind regards,\n*Christie / Megan*\nIn association with *JUSS Marketing Ltd*\n\n' + SITE + 'b/' + nina.short_code,
-    'Nina\'s welcome, word for word: booked in, Thursday 5th November · 10:00 AM, the address, right opposite Slough station (platform 5), Rubal or Jess expecting her, 10 minutes early · done by 11:30, signed *Christie / Megan*, then her link');
-  ok((wMsg.match(/https?:\/\//g) || []).length === 1 && wMsg.split('\n').pop() === SITE + 'b/' + nina.short_code && !/nina|patel|900241/i.test(nina.short_code),
-    'one link in it, the last line, with nothing about her in it');
+  ok(/^https:\/\/wa\.me\/447700900241\?text=/.test(wHref) && wMsg === 'Hey Nina! 👋\n\nYou’re *booked in* to *meet the team* at *JUSS Marketing* 🎉\n👉 Confirm your spot: ' + SITE + 'b/' + nina.short_code + '\n\n' +
+    '📅 *Thursday 5th November · 10:00 AM*\n📍 2nd Floor East, Automotive House, Grays Place, Slough SL2 5AF\n🗺️ Tap for directions: https://maps.app.goo.gl/zeP4MjS2hMJzB9V9A\n' +
+    '🚆 Right opposite Slough station (exit from *platform 5*)\n\n🤝 *Rubal or Jess* will be expecting you\n⏰ Aim to arrive *10 minutes early* · done by 11:30\n\n' +
+    'Kind regards,\n*Christie / Megan*\nIn association with *JUSS Marketing Ltd*',
+    'Nina\'s welcome, word for word: booked in to meet the team, her booking link, Thursday 5th November · 10:00 AM, the address with "Tap for directions", right opposite Slough station (platform 5), Rubal or Jess expecting her, 10 minutes early · done by 11:30, signed *Christie / Megan*');
+  ok((wMsg.match(/https?:\/\//g) || []).length === 2 && wMsg.match(/https?:\/\/\S+/)[0] === SITE + 'b/' + nina.short_code && wMsg.indexOf(SITE) < wMsg.indexOf('https://maps.app.goo.gl/') &&
+    !/nina|patel|900241/i.test(nina.short_code) && !/See you/.test(wMsg),
+    'her link is the first link in it (WhatsApp makes the card from the first), with nothing about her in it; the Google Maps link comes after, under the address');
   const bHtml = fs.readFileSync(path.join(__dirname, '..', '..', 'join', 'b.html'), 'utf8'), ogDesc = (/property="og:description" content="([^"]*)"/.exec(bHtml) || [])[1];
   const card = await wPage.$eval('.bksheet .wacard', el => ({ t: el.querySelector('b').textContent, d: el.querySelector('span').textContent, img: el.querySelector('img').getAttribute('src'), site: el.querySelector('i').textContent }));
   ok(card.t === 'You\'re booked in' && card.d === ogDesc && card.d === 'Tap to confirm you\'re coming. Rubal or Jess will have your name ready at the door.' && card.img === 'img/og-booked-juss.jpg' &&
@@ -538,10 +541,11 @@ const FIRST = [
   await wPage.click('#bknext'); await wPage.waitForSelector('[data-bkrem="2026-11-05"]'); await wPage.click('[data-bkrem="2026-11-05"]'); await wPage.waitForSelector('.bksheet [data-bks]');
   const remOf = async who => decodeURIComponent((await wPage.getAttribute('.bksheet .trow:has-text("' + who + '") a.btn[data-kind=remind]', 'href')).split('?text=')[1]);
   const ninaRem = await remOf('Nina Patel'), kimRem = await remOf('Kim Lee');
-  ok(/0 of 2 sent/.test(await wPage.innerText('.bksheet')) && /✅ You’re confirmed\. Anything changes, just message me\.\n\nSee you tomorrow! 🔥/.test(ninaRem) && /🗺️ https:\/\/maps\.app\.goo\.gl\//.test(ninaRem) &&
-    !/\/b\//.test(ninaRem) && /\*Christie \/ Megan\*\nIn association with \*JUSS Marketing Ltd\*$/.test(ninaRem) && /🤝 \*Rubal or Jess\* will be hosting and expecting you/.test(ninaRem),
-    'her reminder is still to send ("0 of 2 sent"), and as she\'s confirmed it says so: no link to confirm with, the map link instead');
-  ok(/\n\nhttps:\/\/[^\n]+\/b\/[a-hjkmnp-z2-9]{8}$/.test(kimRem) && (kimRem.match(/https?:\/\//g) || []).length === 2 && /🗺️ https:\/\/maps\.app\.goo\.gl\//.test(kimRem) && !/still coming|CONFIRM/i.test(kimRem), 'Kim (not confirmed): the surer wording, the map link, her own link last');
+  ok(/0 of 2 sent/.test(await wPage.innerText('.bksheet')) && /✅ You’re confirmed\. Anything changes, just message me\.\n\nKind regards,/.test(ninaRem) && /🗺️ Tap for directions: https:\/\/maps\.app\.goo\.gl\//.test(ninaRem) &&
+    !/\/b\//.test(ninaRem) && !/Confirm your spot/.test(ninaRem) && /\*Christie \/ Megan\*\nIn association with \*JUSS Marketing Ltd\*$/.test(ninaRem) && /🤝 \*Rubal or Jess\* will be hosting and expecting you/.test(ninaRem),
+    'her reminder is still to send ("0 of 2 sent"), and as she\'s confirmed it says so: no link of hers to confirm with, the map link stays');
+  ok(/\n👉 Confirm your spot: https:\/\/[^\n]+\/b\/[a-hjkmnp-z2-9]{8}\n\n📅/.test(kimRem) && (kimRem.match(/https?:\/\//g) || []).length === 2 && /🗺️ Tap for directions: https:\/\/maps\.app\.goo\.gl\//.test(kimRem) &&
+    kimRem.indexOf('/b/') < kimRem.indexOf('maps.app.goo.gl') && !/still coming|Tap \*CONFIRM/i.test(kimRem), 'Kim (not confirmed): the surer wording, her own link first, then the map link');
   await wPage.click('#bkdone');
   // Friday 10:40: Omar was never welcomed and his presentation is over: he's off the list and can't be sent one
   await setTime('2026-11-06T10:40:00+00:00');

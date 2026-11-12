@@ -1,4 +1,4 @@
-window.APP_VERSION = '12035f05';
+window.APP_VERSION = '0332a219';
 
 (function () {
 'use strict';
@@ -3383,10 +3383,10 @@ function bookPage(b) {
   const base = ((S.me.links && S.me.links.checkin) || '').replace(/checkin\.html.*$/, '');
   return b.confirm_token && base ? base + 'booked.html?t=' + b.confirm_token + '&n=' + encodeURIComponent(b.first_name) + '&d=' + b.slot_date : '';
 }
-/** Their page's short link (…/b/<code>; a LINK booking's is …/bl/<code>), the last line of the reminder and the welcome (Angad, 12 Nov).
- *  WhatsApp turns the FIRST link in a message into a card on top of it. In the welcome theirs is the only link, so the card is the
- *  page's "You're booked in · Tap to confirm"; in the reminder the Google Maps link comes first (Angad chose to keep it), so the card
- *  there is Google's. No code yet (a phone's older copy of the booking): the long link. */
+/** Their page's short link (…/b/<code>; a LINK booking's is …/bl/<code>), in the reminder and the welcome (Angad, 12 Nov).
+ *  WhatsApp turns the FIRST link in a message into a card on top of it, so theirs goes first ("👉 Confirm your spot: …", under the opening
+ *  line) and the card is the page's "You're booked in · Tap to confirm"; the Google Maps link comes after it, under the address, so
+ *  both are in the message. No code yet (a phone's older copy of the booking): the long link. */
 function bookLink(b) {
   const base = ((S.me.links && S.me.links.checkin) || '').replace(/checkin\.html.*$/, '');
   return b.short_code && base ? base + (bookCo(b) === 'LINK' ? 'bl/' : 'b/') + b.short_code : bookPage(b);
@@ -3436,39 +3436,41 @@ function msgBookConfirm(b) {
     'Questions before then? Just message me here 💬\n\n' + bookSign(b);
 }
 /** The evening before (or that morning): "Tomorrow's the day!" In the surer tone Angad approved on 12 Nov (2 of 41 had tapped CONFIRM):
- *  they're booked, so nothing asks "still coming?"; the hosts are named (bookHosts); and their link goes once, alone, as the very last
- *  line. The Google Maps link stays in it (Angad, 12 Nov, asked which to keep: "Keep the Maps link"): WhatsApp makes its card from the
- *  first link in a message, so this message shows Google's map card, not "You're booked in" (the welcome, with no Maps link, shows
- *  ours). Already confirmed: no link of theirs (nothing to confirm). No page at all: YES in the same tone. */
+ *  they're booked, so nothing asks "still coming?"; the hosts are named (bookHosts). Both links are in it, as he settled that evening
+ *  from real messages on his own WhatsApp: theirs first ("👉 Confirm your spot: …"), so WhatsApp's card is ours, and "🗺️ Tap for
+ *  directions: <Google Maps>" under the place ("I need people to click on it and get to the place"). No earnings line and no "See
+ *  you tomorrow!" (he took both out). Already confirmed: no link of theirs (nothing to confirm). No page: YES in the same tone. */
 function msgBookRemind(b) {
   const n = bookDaysTo(b.slot_date), day = n === 0 ? 'today' : n === 1 ? 'tomorrow' : DAYS_LONG[D(b.slot_date).getUTCDay()], co = bookCo(b);
   const link = b.confirmed_at ? '' : bookLink(b);
   return 'Hey ' + b.first_name + '! 👋\n\n' +
     '*' + day.charAt(0).toUpperCase() + day.slice(1) + '’s the day!* 🙌\n' +
-    'You’re booked in to *meet the team* at *' + co + ' Marketing*\n\n' +
+    'You’re booked in to *meet the team* at *' + co + ' Marketing*\n' +
+    (link ? '👉 Confirm your spot: ' + link + '\n' : '') + '\n' +
     '📅 *' + fmtOrd(b.slot_date) + ' · ' + fmt12(b.slot_time || bookCfg().time) + '*\n' +
     '📍 Automotive House, Slough (2 mins from the station)\n' +
-    '🗺️ ' + OFFICES[co].maps + '\n\n' +
+    '🗺️ Tap for directions: ' + OFFICES[co].maps + '\n\n' +
     '🤝 *' + bookHosts() + '* will be hosting and expecting you\n' +
-    '💷 Meet the team and see real earnings examples\n' +
     '⏰ Aim to arrive *10 minutes early* · done by ' + bookDoneBy(b) + '\n' +
     '👔 Office wear / smart casual\n\n' +
     (b.confirmed_at ? '✅ You’re confirmed. Anything changes, just message me.\n\n' : link ? '' : '👉 Reply *YES* and we’ll have your name ready at the door ✅\n\n') +
-    'See you ' + (n > 1 ? 'on ' + day : day) + '! 🔥\n\n' + bookSign(b) + (link ? '\n\n' + link : '');
+    bookSign(b);
 }
 /** Megan's new booking, the day it comes in from Hyrre (Angad, 12 Nov; Megan now tells them "one of our team will WhatsApp you
- *  directions before the day"): you're booked in, the day and time, where it is, who's expecting them, and their link as the last
- *  line (the card). The same sure tone as the reminder; its own state (welcome_at), never the reminder's. */
+ *  directions before the day"): you're booked in, their link (first, so the card is ours), the day and time, where it is with
+ *  "Tap for directions", who's expecting them. The same sure tone as the reminder; its own state (welcome_at), never the reminder's. */
 function msgBookWelcome(b) {
-  const n = bookDaysTo(b.slot_date), day = n === 0 ? 'today' : n === 1 ? 'tomorrow' : DAYS_LONG[D(b.slot_date).getUTCDay()], co = bookCo(b), link = bookLink(b);
+  const co = bookCo(b), link = bookLink(b);
   return 'Hey ' + b.first_name + '! 👋\n\n' +
-    'You’re *booked in* to *meet the team* at *' + co + ' Marketing* 🎉\n\n' +
+    'You’re *booked in* to *meet the team* at *' + co + ' Marketing* 🎉\n' +
+    (link ? '👉 Confirm your spot: ' + link + '\n' : '') + '\n' +
     '📅 *' + fmtOrd(b.slot_date) + ' · ' + fmt12(b.slot_time || bookCfg().time) + '*\n' +
     '📍 ' + OFFICES[co].address + '\n' +
+    '🗺️ Tap for directions: ' + OFFICES[co].maps + '\n' +
     '🚆 Right opposite Slough station (exit from *platform 5*)\n\n' +
     '🤝 *' + bookHosts() + '* will be expecting you\n' +
     '⏰ Aim to arrive *10 minutes early* · done by ' + bookDoneBy(b) + '\n\n' +
-    'See you ' + (n > 1 ? 'on ' + day : day) + '! 🔥\n\n' + bookSign(b) + (link ? '\n\n' + link : '');
+    bookSign(b);
 }
 /** Megan's new bookings still waiting for that welcome: the server's welcomeDue (Megan's own, from Hyrre, first pulled since
  *  welcomeFrom, booked, not welcomed, for a day after today: today's get the morning reminder instead). */
@@ -3476,9 +3478,9 @@ function bookWelcomeDue(b) {
   return bookHy(b) && meganOf(b) && b.status === 'booked' && !b.welcome_at && b.slot_date > S.me.today &&
     String(b.created_at).slice(0, 10) >= (bookCfg().welcomeFrom || '9999');
 }
-/** Their link is the message's last line and its only link: WhatsApp shows it as the card (it cards the first link, so not the
- *  reminder, where the Google Maps link comes first). */
-function bookHasCard(msg) { return /\n\nhttps?:\/\/\S+$/.test(msg) && msg.match(/https?:\/\//g).length === 1; }
+/** The first link in the message is theirs: that's the one WhatsApp makes its card from (not the confirmation, where the Google
+ *  Maps link comes first, nor a reminder to someone already confirmed, which has no link of theirs). */
+function bookHasCard(msg) { const m = /https?:\/\/\S+/.exec(msg); return !!m && /\/bl?\/[a-z0-9]{6,12}$|\/booked\.html\?t=/.test(m[0]); }
 const BOOK_CARD_TIP = '💡 In WhatsApp their link turns into a card on top of the message. Give it a second to appear, then send.';
 /** That card, as they'll see it, on top of "What they'll get". */
 function bookCardHtml(b) {
@@ -3773,6 +3775,7 @@ function bookRemindSheet(date) {
     '<div class="sheet-h"><div><div class="label muted">' + (n === 0 ? 'TODAY · ' : n === 1 ? 'TOMORROW · ' : '') + h(fmtLong(date)) + ' · ' + h(bookCfg().time) + '</div><div class="display">📲 Reminders</div></div></div>' +
     '<p class="hint" style="margin-top:-6px"><b id="bkprog">' + prog() + '</b>. ' + (hy ? 'Signed by you, and 🤖 Hyrre\'s by whoever booked them (Megan\'s: ' + h(bookSigner({ booked_by: bookCfg().hyrreBy || 'Megan Hyrre' })) + ').' : 'Signed by you.') +
       ' Tap send, come back, next one.' + (office ? ' <b>' + h(officeNote()) + ' (' + office + ').</b>' : '') + '</p>' + deskPasteNote() +
+    '<p class="hint bkcardtip" style="margin-top:-4px">' + BOOK_CARD_TIP + '</p>' +
     '<div class="list">' + items.map(b => '<div class="trow"><span class="av co-' + bookCo(b) + '">' + h(initials(bookName(b))) + '</span><div class="main"><div class="name">' + h(bookName(b)) + '</div>' +
       '<div class="sub"><span class="co ' + bookCo(b) + '">' + bookCo(b) + '</span> ' + (bookHy(b) ? '🤖 ' + h(bookSignedBy(b)) + ' · ' : '') + (b.confirmed_at ? '✅ confirmed' : '⏳ not confirmed') + ' · ' + h(b.source) + '</div></div>' +
       (reminded(b) ? sent(b) : bookSend(b, 'remind')) + '</div>').join('') + '</div>' +
