@@ -969,6 +969,22 @@ table.t td { padding: 9px 4px; border-bottom: 1px solid var(--line); vertical-al
 .sutab td { text-align: center; padding: 8px 2px; border-top: 1px solid var(--line); }
 .sutab th:first-child, .sutab td:first-child { text-align: left; }
 .su-src { margin-top: 10px; }
+/* Show-up by where they applied: this week | last 4 weeks, three numbers each (fits a phone: small figures, the source wraps) */
+.susrc { font-size: 13.5px; margin-top: 6px; }
+.susrc th { letter-spacing: .06em; padding: 2px 1px 6px; }
+.susrc .grp th { color: var(--ink2); padding-bottom: 2px; }
+.susrc td { padding: 7px 1px; }
+.susrc td:first-child { overflow-wrap: anywhere; padding-right: 4px; }
+.susrc .g2, .susrc .grp th:last-child { border-left: 1px solid var(--line); }
+.susrc .tot td { border-top: 2px solid var(--line); font-weight: 700; }
+/* The card WhatsApp shows for their booking link, on top of "What they'll get" */
+.wacard { border-radius: 12px; overflow: hidden; background: #F0F2F5; margin: 0 0 10px; white-space: normal; }
+.wacard img { display: block; width: 100%; aspect-ratio: 1200 / 630; object-fit: cover; background: #0D2833; }
+.wacard-t { padding: 8px 10px 9px; display: grid; gap: 2px; }
+.wacard-t b { font-size: 14px; color: #111B21; }
+.wacard-t span { font-size: 12.5px; color: #54656F; line-height: 1.35; }
+.wacard-t i { font-style: normal; font-size: 11.5px; color: #8696A0; }
+.bkcardtip { margin: 8px 2px; }
 .su-l { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; }
 
 @media (prefers-reduced-motion: reduce) {

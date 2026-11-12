@@ -47,7 +47,7 @@ const to = (list, id) => list.filter(p => p.body.include_aliases.external_id.inc
 const textOf = href => decodeURIComponent(href.split(/[?&]text=|[?&]body=/)[1]);
 
 // The approved wording (Angad, 23 Oct): the thank-you's style, no hearts, signed by whoever sends it, JUSS Marketing Ltd
-const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked in* for your *Appointment Presentation* 🎉\n\n' +
+const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked in* to *meet the team* 🎉\n\n' +
   '📅 *Tuesday 27th October · 10:00 AM*\n⏱️ Approximately 60–90 minutes\n\n' +
   '📍 *Where*\nJUSS Marketing, 2nd Floor East\nAutomotive House, Grays Place, Slough SL2 5AF\n🗺️ https://maps.app.goo.gl/zeP4MjS2hMJzB9V9A\n' +
   '🚗 Parking right outside the main entrance\n🚆 By train? Exit Slough station from *platform 5*\n\n' +
@@ -261,11 +261,49 @@ const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked 
   const rs = await jp.innerText('.bksheet');
   ok(/TOMORROW · Wednesday 28 October/i.test(rs) && /0 of 1 sent/.test(rs) && /Ollie Grant/.test(rs), 'Tomorrow → 📲 Send tomorrow\'s reminders: the send list ("0 of 1 sent")');
   const remTxt = textOf(await jp.getAttribute('.bksheet a.btn[data-bks]', 'href'));
-  const ol2Tok = (await api(jess, 'bookingList', {})).items.find(b => b.first_name === 'Ollie' && b.slot_date === '2026-10-28').confirm_token;
-  ok(remTxt === 'Hey Ollie! 👋\n\n*Tomorrow’s the day!* 🙌\nYour *Appointment Presentation* with *JUSS Marketing*\n\n📅 *Wednesday 28th October · 10:00 AM*\n' +
-    '📍 Automotive House, Slough (2 mins from the station)\n🗺️ https://maps.app.goo.gl/zeP4MjS2hMJzB9V9A\n\n⏰ Aim to arrive *10 minutes early*\n👔 Office wear / smart casual\n\n' +
-    '👇 Still coming? Tap *CONFIRM* ✅\n' + PUBLIC + 'booked.html?t=' + ol2Tok + '&n=Ollie&d=2026-10-28\n\nSee you tomorrow! 🔥\n\nKind regards,\n*Jess Grace*\nIn association with *JUSS Marketing Ltd*',
-    'the reminder: "Tomorrow’s the day!", the CONFIRM link (not confirmed yet), signed by Jess');
+  // The surer tone (Angad, 12 Nov): they're booked, so nothing asks "still coming?"; the hosts are named; "done by" is the slot + 90
+  // minutes. Both links (settled from real messages on his own WhatsApp that evening): theirs first, "👉 Confirm your spot: …", so
+  // WhatsApp's card is ours; "🗺️ Tap for directions: <Google Maps>" under the place. No earnings line, no "See you tomorrow!"
+  const ol2B = (await api(jess, 'bookingList', {})).items.find(b => b.first_name === 'Ollie' && b.slot_date === '2026-10-28');
+  ok(/^[a-hjkmnp-z2-9]{8}$/.test(ol2B.short_code), 'every booking has a short code for its link: 8 random letters and numbers (' + ol2B.short_code.length + ' characters, none of 0 o 1 l i)');
+  ok(remTxt === 'Hey Ollie! 👋\n\n*Tomorrow’s the day!* 🙌\nYou’re booked in to *meet the team* at *JUSS Marketing*\n👉 Confirm your spot: ' + PUBLIC + 'b/' + ol2B.short_code + '\n\n' +
+    '📅 *Wednesday 28th October · 10:00 AM*\n📍 Automotive House, Slough (2 mins from the station)\n🗺️ Tap for directions: https://maps.app.goo.gl/zeP4MjS2hMJzB9V9A\n\n' +
+    '🤝 *Rubal or Jess* will be hosting and expecting you\n⏰ Aim to arrive *10 minutes early* · done by 11:30\n👔 Office wear / smart casual\n\n' +
+    'Kind regards,\n*Jess Grace*\nIn association with *JUSS Marketing Ltd*',
+    'the reminder, word for word: "Tomorrow’s the day!", booked in to meet the team, her booking link, the day, the place with "Tap for directions", Rubal or Jess hosting, 10 minutes early · done by 11:30, office wear, signed by Jess');
+  ok((remTxt.match(/https?:\/\//g) || []).length === 2 && remTxt.match(/https?:\/\/\S+/)[0] === PUBLIC + 'b/' + ol2B.short_code && remTxt.split(PUBLIC).length === 2 &&
+    remTxt.indexOf(PUBLIC) < remTxt.indexOf('https://maps.app.goo.gl/') && !/still coming|Tap \*CONFIRM|\bYES\b|See you|earnings/i.test(remTxt),
+    'her link once and first (so WhatsApp makes the card from it), the Google Maps link after it under the place; no "Still coming? Tap CONFIRM", no earnings line, no "See you tomorrow!"');
+  const rsCard = await jp.innerText('.bksheet');
+  ok(/their link turns into a card on top of the message\. Give it a second to appear, then send\./.test(rsCard), 'the send list says the link turns into a card: give it a second, then send');
+  // The other two branches, in the same tone: already confirmed (no link, nothing to confirm) and no page at all (reply YES)
+  // (the app's own functions, lifted from JS.html, with this booking and Jess's settings)
+  const appJs = fs.readFileSync(path.join(__dirname, '..', 'src', 'JS.html'), 'utf8');
+  const fnOf = n => { const m = new RegExp('\\nfunction ' + n + '\\([^\\n]*\\{(?:[^\\n]*\\}(?=\\n)|[\\s\\S]*?\\n\\})').exec(appJs); if (!m) throw new Error('no function ' + n + ' in JS.html'); return m[0]; };
+  const constOf = n => { const m = new RegExp('\\nconst ' + n + ' = (?:[^\\n]*;(?=\\n)|[\\s\\S]*?\\n\\};)').exec(appJs); if (!m) throw new Error('no const ' + n + ' in JS.html'); return m[0]; };
+  const meJ = await api(jess, 'me', {});
+  const msgs = new Function('S', ['D', 'addDays', 'fmtOrd', 'fmt12', 'bookCfg', 'bookCo', 'bookHy', 'bookDaysTo', 'bookPage', 'bookLink', 'bookHosts', 'bookDoneBy', 'bookSigner', 'bookSign', 'msgBookRemind', 'msgBookWelcome'].map(fnOf)
+    .concat(['DAYS_LONG', 'MONTHS_LONG', 'OFFICES', 'BOOK_DEFAULT'].map(constOf)).join('\n') + '\nreturn { remind: msgBookRemind, welcome: msgBookWelcome };');
+  const asJess = () => msgs({ me: JSON.parse(JSON.stringify(meJ)) });
+  ok(!/presentation/i.test(remTxt) && !/presentation/i.test(asJess().welcome(ol2B)) && !/presentation/i.test(CONFIRM_SAM) && /booked in\* to \*meet the team\* at \*JUSS Marketing\* 🎉/.test(asJess().welcome(ol2B)),
+    'none of them says "presentation" before they come: the confirmation, the reminder and the welcome all say "meet the team"');
+  ok(asJess().remind(ol2B) === remTxt, '(the same message from the app\'s own function, for the other branches)');
+  const oneHost = { me: Object.assign(JSON.parse(JSON.stringify(meJ)), {}) }; oneHost.me.book.hosts = ['Sam'];
+  const variants = {
+    confirmed: asJess().remind(Object.assign({}, ol2B, { confirmed_at: '2026-10-27 12:00:00' })),
+    noPage: asJess().remind(Object.assign({}, ol2B, { confirm_token: '', short_code: '' })),
+    later: asJess().remind(Object.assign({}, ol2B, { slot_time: '14:00' })),
+    hosts: msgs(oneHost).remind(ol2B),
+  };
+  const four = '🤝 *Rubal or Jess* will be hosting and expecting you\n⏰ Aim to arrive *10 minutes early* · done by 11:30\n👔 Office wear / smart casual\n\n';
+  ok(variants.confirmed.includes(four + '✅ You’re confirmed. Anything changes, just message me.\n\nKind regards,') && /🗺️ Tap for directions: https:\/\/maps\.app\.goo\.gl\//.test(variants.confirmed) &&
+    !variants.confirmed.includes('/b/') && !/Confirm your spot/.test(variants.confirmed) && /\*JUSS Marketing Ltd\*$/.test(variants.confirmed),
+    'already confirmed: the same lines, "✅ You’re confirmed", the map link, and no link of hers to confirm with');
+  ok(variants.noPage.includes(four + '👉 Reply *YES* and we’ll have your name ready at the door ✅\n\nKind regards,') && /🗺️ Tap for directions: https:\/\/maps\.app\.goo\.gl\//.test(variants.noPage) &&
+    !/Confirm your spot/.test(variants.noPage) && !/still coming/i.test(variants.noPage) && !/still coming/i.test(variants.confirmed),
+    'no page for them: "Reply YES and we’ll have your name ready at the door" (never "if you’re still coming"), the map link');
+  ok(/· done by 3:30\n/.test(variants.later) && /· 2:00 PM\*\n/.test(variants.later) && /🤝 \*Sam\* will be hosting and expecting you/.test(variants.hosts),
+    '"done by" is their slot + 90 minutes (a 2:00 PM slot → done by 3:30), and the hosts come from the settings (CONFIG.BOOK_HOSTS), not the message');
   await shot(jp, 'b4-reminders');
   await jp.$eval('.bksheet a.btn[data-bks]', a => { a.addEventListener('click', e => e.preventDefault()); a.click(); });
   await jp.waitForFunction(() => /1 of 1 sent/.test(document.getElementById('bkprog').textContent));
@@ -277,6 +315,8 @@ const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked 
   const lctx = await browser.newContext(PHONE), lp = await lctx.newPage();
   await lp.goto(leahPage.replace(PUBLIC, APP)); await lp.waitForSelector('#conf');
   const lpt = await lp.innerText('#app');
+  ok(/To meet the team at JUSS Marketing/.test(lpt) && !/presentation/i.test(lpt) && /text=Meet%20the%20team%20%E2%80%93%20JUSS%20Marketing/.test(await lp.getAttribute('a[href*="calendar.google.com"]', 'href')),
+    'her page says "To meet the team at JUSS Marketing" (Angad, 12 Nov: the same words as Megan, not "Appointment Presentation"), and so does its calendar entry');
   ok(/You're booked in, Leah/.test(lpt) && /Thursday 29 October/.test(lpt) && /10:00 AM/.test(lpt) && /Automotive House/.test(lpt) && /JUSS Marketing/.test(lpt) && /from Jess/.test(lpt) &&
     await lp.evaluate(() => document.body.dataset.co) === 'JUSS', 'her page: "You\'re booked in, Leah 🎉", Thursday 29 October · 10:00 AM, where, Maps + calendar, JUSS look');
   const cal = await lp.getAttribute('a[href*="calendar.google.com"]', 'href');
@@ -288,6 +328,35 @@ const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked 
   let lc = null; for (let i = 0; i < 25 && !(lc && lc.confirmed_at); i++) { lc = (await api(jess, 'bookingList', {})).items.find(b => b.first_name === 'Leah'); if (!lc.confirmed_at) await new Promise(r => setTimeout(r, 200)); }
   ok(lc.confirmed_by === 'CONFIRM' && to(await pushesSince(n0), jessId).some(p => p.body.headings.en === '✅ Leah confirmed Thursday\'s presentation'), 'confirmed in the app, and Jess gets "✅ Leah confirmed Thursday\'s presentation"');
   await lctx.close();
+
+  // Her short link (…/b/<code>, the reminder's last line): the same page, and what WhatsApp reads to draw the card (Angad, 12 Nov)
+  const shortUrl = APP + 'b/' + lc.short_code;
+  const sHtml = await (await fetch(shortUrl)).text(), sHead = sHtml.split('</head>')[0];
+  const meta = (html, p) => (new RegExp('<meta property="' + p + '" content="([^"]*)"').exec(html) || [])[1];
+  ok(meta(sHtml, 'og:title') === 'You\'re booked in' && meta(sHtml, 'og:description') === 'Tap to confirm you\'re coming. Rubal or Jess will have your name ready at the door.' &&
+    meta(sHtml, 'og:image') === PUBLIC + 'img/og-booked-juss.jpg' && /<meta name="twitter:card" content="summary_large_image">/.test(sHead) && sHtml.indexOf('og:title') < sHtml.indexOf('<script src='),
+    'the short link\'s page, as first served (no JavaScript): og:title "You\'re booked in", og:description "Tap to confirm you\'re coming. Rubal or Jess will have your name ready at the door.", the JUSS card image');
+  ok(!/Leah|Brown|07700900126|7700900126|2026-10-29|29 Oct/i.test(sHtml) && sHtml.indexOf(lc.confirm_token) < 0 && !/property="og:url"/.test(sHtml) && /<meta name="robots" content="noindex, nofollow">/.test(sHead) &&
+    !/leah|brown|900126/i.test(lc.short_code),
+    'nothing about her in the tags or the code: no name, mobile, day or token; no og:url (the card opens the link that was sent); still noindex');
+  const img = fs.statSync(path.join(__dirname, '..', '..', 'join', 'img', 'og-booked-juss.jpg')), imgL = fs.statSync(path.join(__dirname, '..', '..', 'join', 'img', 'og-booked-link.jpg'));
+  ok(img.size > 10000 && img.size < 300000 && imgL.size > 10000 && imgL.size < 300000, 'the card images are in the build, JUSS and LINK, under 300 KB each (WhatsApp\'s limit): ' + Math.round(img.size / 1024) + ' KB and ' + Math.round(imgL.size / 1024) + ' KB');
+  const sctx = await browser.newContext(PHONE), sp = await sctx.newPage();
+  await sp.goto(shortUrl); await sp.waitForSelector('.wl-done');
+  const spt = await sp.innerText('#app');
+  ok(/You're booked in, Leah/.test(spt) && /Thursday 29 October/.test(spt) && /10:00 AM/.test(spt) && /locked in\. See you Thursday at 10:00 AM/.test(spt) && await sp.$('a[href*="maps.app.goo.gl"]') &&
+    await sp.evaluate(() => getComputedStyle(document.querySelector('.wl-hero h1')).fontFamily.indexOf('Anton') >= 0 && !!document.querySelector('link[href^="app.css"]').sheet),
+    'the short link opens the same "You\'re booked in, Leah" page: her day, the map button, already locked in, styles and fonts loaded');
+  const lHtml = await (await fetch(APP + 'bl/' + lc.short_code)).text();
+  ok(meta(lHtml, 'og:image') === PUBLIC + 'img/og-booked-link.jpg' && meta(lHtml, 'og:title') === 'You\'re booked in' && /class="t-LINK"/.test(lHtml), 'a LINK booking\'s link (…/bl/<code>) has the LINK card');
+  const longHtml = await (await fetch(APP + 'booked.html')).text();
+  ok(meta(longHtml, 'og:title') === 'You\'re booked in' && meta(longHtml, 'og:image') === PUBLIC + 'img/og-booked-juss.jpg' && !/<base /.test(longHtml) && /<base href="\/join\/">/.test(sHtml),
+    'the long booked.html?t=… links (already sent) work as before and get the same card');
+  await sp.goto(APP + 'b/zzzzzzzz'); await sp.waitForFunction(() => /link has expired/.test(document.body.innerText));
+  ok(!(await sp.$('#conf')) && !/booked in,/.test(await sp.innerText('body')) && /link has expired/.test(await refused('', 'bookingInfo', { t: lc.short_code.slice(0, 7) })) &&
+    /link has expired/.test(await refused('', 'bookingInfo', { t: '' })),
+    'a made-up or cut-off code opens nothing: "This link has expired…"');
+  await sctx.close();
 
   // Booked on another device (Angad, 23 Oct: booked Lucy on the laptop, couldn't open her on the phone). It shows up on Jess's
   // phone by itself (Angad, 23 Oct: "it should keep updating whenever someone books more people"), and opens with one tap
@@ -325,8 +394,8 @@ const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked 
   const missRow = await ap.innerText('.bkrow:has-text("Ollie")');
   ok(/Didn't come/.test(missRow) && await ap.$('.bkrow:has-text("Ollie") a[data-kind=missed]') && await ap.$('.bkrow:has-text("Ollie") [data-bkre]'), 'Wed 10:40, Ollie didn\'t come again → "Sorry we missed you" + 📅 Rebook on his row');
   const missTxt = textOf(await ap.getAttribute('.bkrow:has-text("Ollie") a.btn[data-kind=missed]', 'href'));
-  ok(missTxt === 'Hey Ollie! 👋\n\nWe missed you at your *Appointment Presentation* today 😕 Everything OK?\n\nYour spot isn’t gone: let’s get you *rebooked* 📅\n' +
-    'We run presentations *Monday to Friday at 10:00 AM*.\n\n👉 Which day suits you? Just reply here 💬\n\nKind regards,\n*Angad Oshan*\nIn association with *JUSS Marketing Ltd*',
+  ok(missTxt === 'Hey Ollie! 👋\n\nWe missed you today 😕 Everything OK?\n\nYour spot isn’t gone: let’s get you *rebooked* 📅\n' +
+    'You can come in and *meet the team* *Monday to Friday at 10:00 AM*.\n\n👉 Which day suits you? Just reply here 💬\n\nKind regards,\n*Angad Oshan*\nIn association with *JUSS Marketing Ltd*',
     'the "sorry we missed you", signed by Angad');
   await shot(ap, 'b5-didnt-come', true);
   await ap.click('.bkrow:has-text("Ollie") [data-bkre]'); await ap.waitForSelector('.bksheet #bkfn');
@@ -353,12 +422,49 @@ const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked 
   ok(lb.status === 'came', 'checked in → her booking says she came');
   await cctx.close();
 
+  // Show-up by where they applied (Angad, 12 Nov): this week and the last 4 weeks, most came first, adding up to the card's totals.
+  // Earlier weeks' bookings, as Hyrre's sources name them (and three that must not count: 5 weeks back, a Saturday, cancelled)
+  const weNow = (await api(satpal, 'payReport', {})).weekEnding;
+  const dayOf = (we, back, wd) => { const d = new Date(we + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - 7 * back - 7 + wd); return d.toISOString().slice(0, 10); };  // wd 1 = Monday
+  const old = [[1, 1, 'Job Ad #1', 'came'], [1, 2, 'Job Ad #1', 'booked'], [1, 3, 'Hirematic', 'came'], [2, 2, 'Job Ad #2', 'no_show'], [2, 4, 'Job Ad #1', 'came'], [3, 5, 'Teamtailor', 'booked'],
+    [3, 1, 'Hirematic', 'cancelled'], [2, 6, 'Job Ad #1', 'came'], [4, 3, 'Job Ad #1', 'came']];
+  await post('/dev/eval', { js: `(() => { ${JSON.stringify(old.map(o => ({ d: dayOf(weNow, o[0], o[1]), s: o[2], st: o[3] })))}.forEach((o, i) => appendRow('Bookings', { id: 'old' + i, created_at: o.d + ' 09:00:00',
+    booked_by_id: 'hyrremegan', booked_by: 'Megan Hyrre', first_name: 'Old' + i, last_name: 'Row', mobile: '0770090030' + i, source: o.s, notes: '', slot_date: o.d, slot_time: '10:00', company: 'JUSS', status: o.st })); return 'ok'; })()` });
+  const sw = [0, 1, 2, 3].map(k => { const d = new Date(weNow + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - 7 * k); return d.toISOString().slice(0, 10); });
+  const weeks = []; for (const w of sw) weeks.push((await api(satpal, 'payReport', { weekEnding: w })).showup);
+  const suNow = weeks[0], bs = suNow.bySource, sum = (l, f) => l.reduce((a, x) => a + f(x), 0);
+  ok(bs && sum(bs.rows, r => r.week.booked) === suNow.booked && sum(bs.rows, r => r.week.came) === suNow.came && suNow.booked > 0 &&
+    JSON.stringify(bs.rows.filter(r => r.week.booked).map(r => [r.source, r.week.booked, r.week.came]).sort()) === JSON.stringify(suNow.sources.map(x => [x.source, x.booked, x.came]).sort()),
+    'show-up by source, this week: the sources add up to the card\'s totals (' + suNow.came + ' of ' + suNow.booked + ' came) and match "where they applied"');
+  ok(sum(bs.rows, r => r.four.booked) === bs.four.booked && sum(bs.rows, r => r.four.came) === bs.four.came && bs.four.booked === sum(weeks, w => w.booked) && bs.four.came === sum(weeks, w => w.came) &&
+    bs.four.booked === suNow.booked + 6 && bs.four.came === suNow.came + 3,
+    'the last 4 weeks: the sources add up to its total, which is the four weeks\' cards added together (' + bs.four.came + ' of ' + bs.four.booked + '); 5 weeks back, a Saturday and a cancelled booking don\'t count');
+  const ja1 = bs.rows.find(r => r.source === 'Job Ad #1'), ja2 = bs.rows.find(r => r.source === 'Job Ad #2');
+  ok(ja1 && ja1.four.booked === 3 && ja1.four.came === 2 && ja1.week.booked === 0 && ja2.four.booked === 1 && ja2.four.came === 0 &&
+    bs.rows.every((r, i) => !i || bs.rows[i - 1].week.came > r.week.came || (bs.rows[i - 1].week.came === r.week.came && bs.rows[i - 1].four.came >= r.four.came)),
+    'Job Ad #1: 2 of 3 came over the 4 weeks, Job Ad #2: 0 of 1; sorted by who came (this week, then the 4 weeks): ' + bs.rows.map(r => r.source + ' ' + r.week.came + '/' + r.four.came).join(', '));
   // Show-up for admins, on Appts Attended
   const spp = await as(satpal);
   await spp.click('.tabbar button[data-tab=pay]'); await spp.waitForSelector('.showup');
   const sut = await spp.innerText('.showup');
+  const srcRows = await spp.$$eval('.susrc tr', l => l.map(tr => [...tr.children].map(td => td.textContent)));
+  ok(JSON.stringify(srcRows[0]) === '["","This week","Last 4 weeks"]' && JSON.stringify(srcRows[1]) === '["Source","Booked","Came","%","Booked","Came","%"]' &&
+    JSON.stringify(srcRows.find(r => r[0] === 'Job Ad #1')) === '["Job Ad #1","0","0","–","3","2","67%"]' &&
+    JSON.stringify(srcRows[srcRows.length - 1].slice(0, 3)) === JSON.stringify(['All', String(suNow.booked), String(suNow.came)]) &&
+    JSON.stringify(srcRows[srcRows.length - 1].slice(4, 6)) === JSON.stringify([String(bs.four.booked), String(bs.four.came)]) &&
+    await spp.evaluate(() => document.querySelector('.susrc').scrollWidth <= document.querySelector('.showup').clientWidth),
+    'on the card: Source | This week (Booked · Came · %) | Last 4 weeks (Booked · Came · %), "Job Ad #1 … 3 · 2 · 67%", and an "All" row with the card\'s totals; it fits a phone');
   ok(/Jess Grace/.test(sut) && /Angad Oshan/.test(sut) && /Teamtailor/.test(sut) && !(await spp.$('.tabbar button[data-tab=book]')) && await spp.$('.tabbar button[data-tab=team]'), 'Satpal (admin): the 📅 Show-up card on Appts Attended; no Book Appts tab (he isn\'t on the booking team), Team stays a tab');
   await shot(spp, 'b7-showup', true);
+  // A week nobody counts for yet (next week, looked at now; a Monday before 10:30 is the same): the card stays, for the 4 weeks by source
+  const nextWe = (() => { const d = new Date(weNow + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + 7); return d.toISOString().slice(0, 10); })();
+  const suNext = (await api(satpal, 'payReport', { weekEnding: nextWe })).showup;
+  const cardOf = new Function('S', 'h', 'fmt', 'addDays', 'weekEndingOf', 'bookCfg', fnOf('showupCard') + '\nreturn showupCard;')({ me: { today: nextWe } }, x => String(x), x => x, (d, n) => { const t = new Date(d + 'T00:00:00Z'); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); }, d => d, () => ({ missed: '10:30' }));
+  const nextCard = cardOf(suNext);
+  ok(suNext.booked === 0 && suNext.bySource.four.booked === bs.four.booked - 1 && sum(suNext.bySource.rows, r => r.four.booked) === suNext.bySource.four.booked &&
+    /nobody counted yet this week/.test(nextCard) && /<td>Job Ad #1<\/td><td>0<\/td><td>0<\/td><td><b>–<\/b><\/td><td class="g2">3<\/td><td>2<\/td>/.test(nextCard) && !/Booked by/.test(nextCard) &&
+    cardOf({ rows: [], sources: [], booked: 0, came: 0, bySource: { from: 'a', to: 'b', rows: [], four: { booked: 0, came: 0 } } }) === '',
+    'a week with nobody counted yet still shows the card for its 4 weeks by source ("nobody counted yet this week", Job Ad #1 2 of 3); nothing at all in 4 weeks: no card');
   await spp.context().close();
 
   // On a laptop: WhatsApp's computer app turns pre-filled emojis into "�" (Angad, 23 Oct: Jake's confirmation from the laptop).

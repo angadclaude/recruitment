@@ -47,8 +47,9 @@ const CONFIG = {
   BOOK_TIME: '10:00',             // presentations: Mon–Fri at 10:00
   BOOK_REMIND_TIME: '18:00',      // the evening before (Sunday for Monday's): whoever booked them gets "N to remind for tomorrow"
   BOOK_MISSED_TIME: '10:30',      // on the day: anyone booked who hasn't checked in by now "didn't come" (and their booker is told)
-  // Who hosts the presentation, by first name (Angad, 12 Nov): named on the booking link's WhatsApp preview card, "…will have your
-  // name ready at the door" (app/build.js reads this line for the card)
+  BOOK_LENGTH_MIN: 90,            // "done by 11:30" in the reminder and the welcome: the slot time plus this (the long end of "approximately 60–90 minutes")
+  // Who hosts the presentation, by first name (Angad, 12 Nov): "Rubal or Jess will be hosting and expecting you" in the reminder and the
+  // welcome, and "…will have your name ready at the door" on the link's preview card (app/build.js reads this line for the card)
   BOOK_HOSTS: ['Rubal', 'Jess'],
   // Hyrre (Angad, 27 Oct): its AI caller "Megan" screens Slough's CVs and pencils them into the 10:00; Rubal approves them in Hyrre.
   // At 08:45 and 17:15 a scheduled task on Angad's computer reads the approved ones from Hyrre (Rubal's login, look-only) and sends
@@ -59,6 +60,7 @@ const CONFIG = {
   // MARK_FROM: from this day the pulls also mark Hyrre's attended / no-show from our check-ins (Script Property HYRRE_MARK_FROM wins);
   // MARK_PULL: the first pull after the presentation (the scheduled task runs at 08:45, 11:15 and 17:15).
   HYRRE: { PIPELINE: '403', BOOKER: 'Megan Hyrre', ALERTS_TO: ['rubal@jussmarketing.co.uk', 'jess@linkmarketing.org.uk'], LATE: '09:15', MARK_FROM: '2026-11-02', MARK_PULL: '11:15',
+    WELCOME_FROM: '2026-11-13',  // Megan's bookings first pulled from this day get our same-day welcome WhatsApp (Script Property HYRRE_WELCOME_FROM wins)
     MANAGER: 'Christie Zammit' },  // manages Megan (Angad, 5 Nov): Megan's alerts reach her too, and what she sends for Megan's bookings is signed "Christie / Megan"
   D1_RESULTS_TIME: '09:00',       // the morning after a Day 1: the results to admins (Angad's Tuesday list, 27 Oct)
   D1_RESULTS_FROM: '2026-11-02',  // the first Day 1 with FR / HF set in the app (26 Oct's were only on paper): no alert with a wrong split
@@ -177,7 +179,9 @@ const SHEETS = {
     'confirm_at', 'confirm_by', 'confirm_via', 'confirmed_at', 'confirmed_by', 'remind_at', 'remind_by', 'remind_via',
     'missed_at', 'missed_by', 'missed_via', 'candidate_id', 'came_at', 'updated_at',
     'confirm_token',  // their "You're booked in" page (booked.html?t=…) with the CONFIRM button
-    'hyrre_id', 'hyrre_at'],  // booked in Hyrre (its application id) and when the morning pull last saw it there
+    'hyrre_id', 'hyrre_at',  // booked in Hyrre (its application id) and when the morning pull last saw it there
+    'short_code',  // their page's short link (…/b/<code>): 8 random letters and numbers, nothing about them in it
+    'welcome_at', 'welcome_by', 'welcome_via'],  // Megan's: our same-day welcome WhatsApp (its own state, never the reminder's)
   History: ['attended_date', 'full_name', 'mobile', 'email', 'booker_raw', 'presenter_raw'],
   Codes: ['email', 'code_hash', 'expires', 'attempts'],
   Sessions: ['token', 'user_id', 'expires'],
@@ -1172,6 +1176,8 @@ function me(req, u) {
     bookTeam: bookTeam(),
     badges: canBadge(u),  // Day 1 → 🪪 Badges: Jess, Rubal and Christie only
     book: { time: CONFIG.BOOK_TIME, co: CONFIG.BOOK_CO, missed: CONFIG.BOOK_MISSED_TIME, sources: BOOK_SOURCES,
+      hosts: CONFIG.BOOK_HOSTS, lengthMin: CONFIG.BOOK_LENGTH_MIN,  // "Rubal or Jess will be hosting…", "done by 11:30"
+      welcomeFrom: hyrreWelcomeFrom(),  // Megan's bookings first pulled from this day get the welcome
       hyrre: canBook(u) ? hyrreInfo() : null, hyrreBy: CONFIG.HYRRE.BOOKER,  // the last pull from Hyrre (Book Appts)
       hyrreManager: isHyrreManager(u),  // manages Megan: what they send for her bookings is signed "Christie / Megan"
       hyrreSender: (hyrreSender() || {}).name || '',  // set: only that person sends Megan's (the office phone); everyone else sees who does
@@ -2940,9 +2946,14 @@ function bookingList(req, u) {
   if (!canBook(u)) return { items: [] };
   const from = addDays(weekEnding(todayStr()), -13);  // last week's Monday: Book Appts goes back a week, day by day or the whole week
   // Booked before CONFIRM existed (23 Oct), or from Hyrre before our reminders went to them too (30 Oct): give them their page now
-  const noPage = b => b.status === 'booked' && !b.confirm_token;
+  // …and before the short link (12 Nov): give them their code
+  const noPage = b => b.status === 'booked' && (!b.confirm_token || !b.short_code);
   if (readTable('Bookings').some(b => noPage(b) && b.slot_date >= from)) {
-    withLock(() => { delete MEMO.Bookings; readTable('Bookings').filter(noPage).forEach(b => { b.confirm_token = token().slice(0, 24); writeRow('Bookings', b); }); });
+    withLock(() => {
+      delete MEMO.Bookings;
+      const rows = readTable('Bookings'), taken = bookCodes(rows);
+      rows.filter(noPage).forEach(b => { if (!b.confirm_token) b.confirm_token = token().slice(0, 24); if (!b.short_code) b.short_code = bookCode(taken); writeRow('Bookings', b); });
+    });
   }
   return { items: readTable('Bookings').filter(b => b.status !== 'cancelled' && b.slot_date >= from).map(bookOut) };
 }
@@ -3011,9 +3022,26 @@ function bookingByMobile(req) {
   const u = b ? userById(b.booked_by_id) : null;
   return b && u ? { found: true, booker_id: u.id, booker_name: u.name, booker_company: u.company, company: b.company, time: b.slot_time } : { found: false };
 }
-/** Their "You're booked in" page (booked.html?t=…): only what the page shows, nothing else about them. */
+/** The short link's code (…/b/<code>, Angad 12 Nov: one short link as the last line of the message, shown by WhatsApp as a card).
+ *  Random, so it says nothing about them: no name, mobile or day in it. 8 characters from 31 (no 0/o, 1/l/i) = 850 billion codes,
+ *  so nobody finds a live one by guessing. taken: the codes in use (the new one is added to it). */
+const BOOK_CODE_CHARS = 'abcdefghjkmnpqrstuvwxyz23456789', BOOK_CODE_LEN = 8;
+function bookCodes(rows) { const o = {}; rows.forEach(b => { if (b.short_code) o[b.short_code] = true; }); return o; }
+function bookCode(taken) {
+  for (let i = 0; i < 20; i++) {
+    const hex = token();
+    let s = '';
+    for (let j = 0; j < BOOK_CODE_LEN; j++) s += BOOK_CODE_CHARS.charAt(parseInt(hex.substr(j * 4 + 20, 4), 16) % BOOK_CODE_CHARS.length);
+    if (!taken[s]) { taken[s] = true; return s; }
+  }
+  throw new Error('Couldn\'t make their booking link. Try again.');
+}
+/** Their "You're booked in" page (booked.html?t=…, or the short link …/b/<code>): only what the page shows, nothing else about them. */
 function bookingByToken(t) {
-  const b = t && String(t).length >= 16 ? readTable('Bookings').filter(x => x.confirm_token === String(t))[0] : null;
+  const s = String(t || '');
+  // The long link's token (24 characters), or the short link's code (…/b/<code>, BOOK_CODE_LEN characters)
+  const b = s.length >= 16 ? readTable('Bookings').filter(x => x.confirm_token === s)[0]
+    : s.length === BOOK_CODE_LEN ? readTable('Bookings').filter(x => x.short_code === s)[0] : null;
   if (!b || b.status === 'cancelled') throw new Error('This link has expired. Message the person who booked you and they\'ll sort it.');
   if (b.status === 'no_show') throw new Error('That day has passed and you\'ve been rebooked: your newest message has your new day and its own CONFIRM link.');
   return b;
@@ -3082,22 +3110,27 @@ function saveBooking(req, u) {
     const b = appendRow('Bookings', {
       id: uid(), created_at: nowStr(), booked_by_id: hy ? old.booked_by_id : u.id, booked_by: hy ? old.booked_by : u.name, first_name: first, last_name: last, mobile: mobile,
       source: hy ? old.source : source, notes: notes, slot_date: day, slot_time: CONFIG.BOOK_TIME, company: CONFIG.BOOK_CO, status: 'booked', confirm_token: token().slice(0, 24),
-      rebook_of: old ? old.id : '', no_whatsapp: old ? old.no_whatsapp : '', updated_at: nowStr(),
+      rebook_of: old ? old.id : '', no_whatsapp: old ? old.no_whatsapp : '', updated_at: nowStr(), short_code: bookCode(bookCodes(readTable('Bookings'))),
     });
     log(u, old ? 'booking_rebooked' : 'booking', '', first + ' ' + last + ' → ' + day);
     return bookOut(b);
   });
 }
-/** act: sent (kind confirm · remind · missed, via whatsapp · sms) · yes (they replied YES) · cancel. */
+/** act: sent (kind confirm · remind · missed · welcome, via whatsapp · sms) · yes (they replied YES) · cancel. */
 function bookingAction(req, u) {
   if (!canBook(u)) throw new Error('Only the booking team can do that.');
   const via = req.via === 'sms' ? 'sms' : 'whatsapp';
-  if (['sent', 'yes', 'cancel'].indexOf(req.act) < 0 || (req.act === 'sent' && ['confirm', 'remind', 'missed'].indexOf(req.kind) < 0)) throw new Error('Unknown action');
+  if (['sent', 'yes', 'cancel'].indexOf(req.act) < 0 || (req.act === 'sent' && ['confirm', 'remind', 'missed', 'welcome'].indexOf(req.kind) < 0)) throw new Error('Unknown action');
   return withLock(() => {
     const b = getBooking(req.id);
     // Hyrre's: our reminder and "sorry we missed you" (signed Megan) and their yes, nothing else (Angad, 30 Oct)
-    if (b.hyrre_id && !(req.act === 'yes' || (req.act === 'sent' && (req.kind === 'remind' || req.kind === 'missed')))) throw new Error(HYRRE_OWNS);
+    // …and, for Megan's, our same-day welcome (12 Nov): its own state (welcome_at), never the reminder's
+    if (b.hyrre_id && !(req.act === 'yes' || (req.act === 'sent' && (req.kind === 'remind' || req.kind === 'missed' || req.kind === 'welcome')))) throw new Error(HYRRE_OWNS);
     if (b.hyrre_id && req.kind === 'missed' && !bookingOver(b)) throw new Error('Their presentation isn\'t over yet.');
+    if (req.act === 'sent' && req.kind === 'welcome') {
+      if (!b.hyrre_id || b.booked_by_id !== HYRRE_BOOKER_ID) throw new Error('The welcome is for Megan\'s bookings from Hyrre. Bookings made here get the confirmation.');
+      if (b.status !== 'booked' || bookingOver(b)) throw new Error('Their presentation is over: no welcome to send.');
+    }
     if (req.act === 'sent') {
       b[req.kind + '_at'] = nowStr(); b[req.kind + '_by'] = u.name; b[req.kind + '_via'] = via;
       if (via === 'sms') b.no_whatsapp = 'TRUE';  // not on WhatsApp: their next message goes by text too
@@ -3155,11 +3188,16 @@ function maybeMissedBookings() {
   });
 }
 /** Show-up for the week (admins, Appts Attended): booked vs came, by who booked them and where they applied.
- *  Today's only count once BOOK_MISSED_TIME has passed (before that, the ones still to come aren't no-shows). */
-function showupFor(we) {
-  const mon = addDays(we, -6), fri = addDays(we, -2), now = nowStr(), today = now.slice(0, 10), past = now.slice(11, 16) >= CONFIG.BOOK_MISSED_TIME;
-  const rows = readTable('Bookings').filter(b => b.status !== 'cancelled' && b.slot_date >= mon && b.slot_date <= fri &&
+ *  Today's only count once BOOK_MISSED_TIME has passed (before that, the ones still to come aren't no-shows).
+ *  showupRows: the bookings that count between two days (Mon–Fri, cancelled ones left out). */
+function showupRows(from, to) {
+  const now = nowStr(), today = now.slice(0, 10), past = now.slice(11, 16) >= CONFIG.BOOK_MISSED_TIME;
+  return readTable('Bookings').filter(b => b.status !== 'cancelled' && b.slot_date >= from && b.slot_date <= to && weekday(b.slot_date) > 0 && weekday(b.slot_date) < 6 &&
     (b.slot_date < today || (b.slot_date === today && (past || b.status === 'came'))));
+}
+function showupFor(we) {
+  const mon = addDays(we, -6), fri = addDays(we, -2);
+  const rows = showupRows(mon, fri);
   const by = {}, src = {};
   rows.forEach(b => {
     const k = b.booked_by_id, s = b.source || 'Other';
@@ -3169,11 +3207,23 @@ function showupFor(we) {
     if (b.status === 'came') { by[k].came++; src[s].came++; }
   });
   const list = o => Object.keys(o).map(k => o[k]).sort((a, b) => b.booked - a.booked);
-  return { rows: list(by), sources: list(src), booked: rows.length, came: rows.filter(b => b.status === 'came').length };
+  // By where they applied (Angad, 12 Nov: Job Ad #1–#5, Hirematic, Teamtailor…): this week and the 4 weeks to this one (this week and the
+  // three before it), the same bookings and the same "came" as the card's totals, so each column adds up to its total. Most came first.
+  const four = showupRows(addDays(mon, -21), fri), bs = {}, came = l => l.filter(b => b.status === 'came').length;
+  const tally = (l, k) => l.forEach(b => {
+    const s = b.source || 'Other';
+    bs[s] = bs[s] || { source: s, week: { booked: 0, came: 0 }, four: { booked: 0, came: 0 } };
+    bs[s][k].booked++; if (b.status === 'came') bs[s][k].came++;
+  });
+  tally(rows, 'week'); tally(four, 'four');
+  const bySource = Object.keys(bs).map(k => bs[k]).sort((a, b) => b.week.came - a.week.came || b.four.came - a.four.came || b.week.booked - a.week.booked ||
+    b.four.booked - a.four.booked || a.source.localeCompare(b.source));
+  return { rows: list(by), sources: list(src), booked: rows.length, came: came(rows),
+    bySource: { from: addDays(mon, -21), to: fri, rows: bySource, four: { booked: four.length, came: came(four) } } };
 }
 /** After 12 weeks a booking keeps who, when and whether they came; the notes from the call and their page's link go. */
 function trimOldBookings(before) {
-  readTable('Bookings').forEach(b => { if (b.slot_date && b.slot_date < before && (b.notes || b.confirm_token)) { b.notes = ''; b.confirm_token = ''; writeRow('Bookings', b); } });
+  readTable('Bookings').forEach(b => { if (b.slot_date && b.slot_date < before && (b.notes || b.confirm_token || b.short_code)) { b.notes = ''; b.confirm_token = ''; b.short_code = ''; writeRow('Bookings', b); } });
 }
 
 // ───────────────────────── HYRRE: Megan's bookings, pulled every morning (Angad, 27 Oct) ─────────────────────────
@@ -3220,11 +3270,12 @@ function hyrreImport(req) {
   const w = req.window || {}, isDay = d => /^\d{4}-\d{2}-\d{2}$/.test(String(d || ''));
   if (!isDay(w.from) || !isDay(w.to) || w.from > w.to) throw new Error('Which days were read? (window from / to)');
   const items = Array.isArray(req.items) ? req.items.slice(0, 1000) : [], today = todayStr(), now = nowStr();
-  const keyOf = (id, day) => String(id) + '|' + day, moved = [];
+  const keyOf = (id, day) => String(id) + '|' + day, moved = [], fresh = [];
   const n = withLock(() => {
     delete MEMO.Bookings;
     const megan = hyrreBooker(), rows = readTable('Bookings'), mine = {}, seen = {}, n = { approved: 0, added: 0, updated: 0, cancelled: 0, skipped: 0 };
-    moved.length = 0;
+    const codes = bookCodes(rows);
+    moved.length = 0; fresh.length = 0;
     rows.filter(b => b.hyrre_id).forEach(b => { mine[keyOf(b.hyrre_id, b.slot_date)] = b; });
     items.forEach(x => {
       const day = String(x.date || ''), id = String(x.id || '').slice(0, 40);
@@ -3265,9 +3316,11 @@ function hyrreImport(req) {
         writeRow('Bookings', b);
         return;
       }
-      appendRow('Bookings', { id: uid(), created_at: now, booked_by_id: by.id, booked_by: by.name, first_name: first, last_name: last, mobile: mobile,
+      const nid = uid();
+      appendRow('Bookings', { id: nid, created_at: now, booked_by_id: by.id, booked_by: by.name, first_name: first, last_name: last, mobile: mobile,
         source: String(x.source || 'Hyrre').slice(0, 40), notes: '', slot_date: day, slot_time: time, company: CONFIG.BOOK_CO, status: 'booked',
-        confirm_token: token().slice(0, 24), hyrre_id: id, hyrre_at: now, updated_at: now });
+        confirm_token: token().slice(0, 24), hyrre_id: id, hyrre_at: now, updated_at: now, short_code: bookCode(codes) });
+      fresh.push(nid);
       n.added++;
     });
     // No longer approved in Hyrre (declined, moved to another day, taken off) and still to come: off the list. One whose
@@ -3291,6 +3344,7 @@ function hyrreImport(req) {
   PropertiesService.getScriptProperties().setProperty('HYRRE_LAST', JSON.stringify(last));
   log({ name: 'Hyrre' }, 'hyrre_sync', '', n.approved + ' approved · ' + n.added + ' new · ' + n.updated + ' changed · ' + n.cancelled + ' cancelled' + (n.skipped ? ' · ' + n.skipped + ' skipped' : ''));
   hyrreMorningReminders();
+  hyrreWelcomeAlert(fresh);
   const marks = hyrreMarks(items);
   if (marks.length) log({ name: 'Hyrre' }, 'hyrre_marks', '', marks.filter(m => m.status === 'attended').length + ' attended · ' + marks.filter(m => m.status === 'no_show').length + ' no-show');
   return Object.assign({ marks: marks }, last);
@@ -3332,6 +3386,29 @@ function hyrreMorningReminders() {
   const rows = readTable('Bookings').filter(b => b.hyrre_id && b.status === 'booked' && b.slot_date === today && String(b.remind_at).slice(0, 10) < addDays(today, -1));
   if (!rows.length || !claim('BOOK_HY_REMINDED', today)) return;
   remindAlerts(rows, 'today', today);
+}
+/** Our same-day welcome for Megan's bookings (Angad, 12 Nov: about 1 in 10 of Megan's came; Megan now tells them "one of our team
+ *  will WhatsApp you directions before the day"). Due: Megan's own, from Hyrre, first pulled since WELCOME_FROM, still booked, not
+ *  welcomed yet, for a day after today (today's get the morning reminder instead, which says the same; one whose presentation is
+ *  over gets none). Its own state (welcome_at): it never counts as the evening-before reminder (remind_at). The app's bookWelcomeDue
+ *  is the same rule. */
+function hyrreWelcomeFrom() { return PropertiesService.getScriptProperties().getProperty('HYRRE_WELCOME_FROM') || CONFIG.HYRRE.WELCOME_FROM; }
+function welcomeDue(b, today) {
+  return !!b.hyrre_id && b.booked_by_id === HYRRE_BOOKER_ID && b.status === 'booked' && !b.welcome_at && b.slot_date > today &&
+    String(b.created_at).slice(0, 10) >= hyrreWelcomeFrom();
+}
+/** A pull that brought in new approved bookings: one alert, "👋 N of Megan's to welcome", to whoever sends Megan's (the office phone,
+ *  Christie; with nobody managing Megan, to Rubal and Jess, like her reminders). N = everyone waiting for theirs, so it matches the
+ *  list it opens (?c=bookwel). A pull with nothing new says nothing: once per pull, never a nag. */
+function hyrreWelcomeAlert(fresh) {
+  if (!fresh.length) return;
+  delete MEMO.Bookings;
+  const today = todayStr(), due = readTable('Bookings').filter(b => welcomeDue(b, today));
+  if (!due.some(b => fresh.indexOf(b.id) >= 0)) return;
+  const megan = CONFIG.HYRRE.BOOKER.split(' ')[0], mgr = hyrreSender();
+  notify([mgr || userById(HYRRE_BOOKER_ID)], '👋 ' + due.length + ' of ' + megan + '\'s to welcome',
+    'New from Hyrre: ' + firstNames(due.map(b => ({ full_name: b.first_name })), 6) + '. Tap to send ' + (due.length === 1 ? 'their' : 'each one their') +
+    ' welcome on WhatsApp, signed ' + (mgr ? mgr.name.split(' ')[0] + ' / ' : '') + megan + ': their day, the address and who\'s expecting them.', 'bookwel');
 }
 /** The last pull (Book Appts shows it): { at, approved, added, updated, cancelled, skipped }, or null before the first. */
 function hyrreInfo() {

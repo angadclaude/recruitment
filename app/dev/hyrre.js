@@ -287,7 +287,7 @@ const FIRST = [
   ok(/0 of 1 sent/.test(remList) && /Leah Brown/.test(remList) && !/Aisha Khan/.test(remList) && /📱 Christie sends Megan's from the office phone \(1\)\./.test(remList),
     'Rubal\'s phone: today\'s reminders are Leah\'s only ("0 of 1 sent"); Aisha (Megan\'s) isn\'t there: "📱 Christie sends Megan\'s from the office phone (1)"');
   const lMsg = decodeURIComponent((await rp.getAttribute('.bksheet .trow:has-text("Leah Brown") a.btn[data-kind=remind]', 'href')).split('?text=')[1]);
-  ok(/Kind regards,\n\*Rubal Oshan\*\nIn association with \*JUSS Marketing Ltd\*$/.test(lMsg), 'Leah\'s (booked in the app) is still signed by whoever sends it (Rubal)');
+  ok(/Kind regards,\n\*Rubal Oshan\*\nIn association with \*JUSS Marketing Ltd\*$/.test(lMsg) && /\n👉 Confirm your spot: https:\/\/[^\n]+\/b\/[a-hjkmnp-z2-9]{8}\n\n📅/.test(lMsg), 'Leah\'s (booked in the app) is still signed by whoever sends it (Rubal), her link under the opening line');
   await rp.click('#bkdone');
   await rp.click('.bkrow:has-text("Aisha Khan") [data-bk]'); await rp.waitForSelector('.bksheet');
   const shR = await rp.innerText('.bksheet');
@@ -306,10 +306,17 @@ const FIRST = [
   const cWa = async who => decodeURIComponent((await chp.getAttribute('.bksheet .trow:has-text("' + who + '") a.btn[data-kind=remind]', 'href')).split('?text=')[1]);
   const aMsg = await cWa('Aisha Khan');
   ok(/0 of 2 sent/.test(await chp.innerText('.bksheet')) && /Megan's: Christie \/ Megan/.test(await chp.innerText('.bksheet')) &&
-    /^Hey Aisha! 👋\n\n\*Today’s the day!\* 🙌/.test(aMsg) && /👇 Still coming\? Tap \*CONFIRM\* ✅\nhttp[^\n]*booked\.html\?t=[0-9a-f]{24}&n=Aisha&d=2026-10-29\n/.test(aMsg) &&
-    /Kind regards,\n\*Christie \/ Megan\*\nIn association with \*JUSS Marketing Ltd\*$/.test(aMsg) && /signed Christie \/ Megan/.test(await chp.innerText('.bksheet .trow:has-text("Aisha Khan")')) &&
+    /^Hey Aisha! 👋\n\n\*Today’s the day!\* 🙌/.test(aMsg) &&
+    /Kind regards,\n\*Christie \/ Megan\*\nIn association with \*JUSS Marketing Ltd\*$/.test(aMsg) && /\n👉 Confirm your spot: https:\/\/[^\n]+\/b\/[a-hjkmnp-z2-9]{8}\n\n📅/.test(aMsg) && /signed Christie \/ Megan/.test(await chp.innerText('.bksheet .trow:has-text("Aisha Khan")')) &&
     /Kind regards,\n\*Christie Zammit\*\n/.test(await cWa('Leah Brown')),
-    'the office phone (Christie): both, "0 of 2 sent"; Aisha\'s reminder ("Today\'s the day!", her CONFIRM link) signed *Christie / Megan*; Leah\'s signed Christie Zammit');
+    'the office phone (Christie): both, "0 of 2 sent"; Aisha\'s reminder ("Today\'s the day!") signed *Christie / Megan*, with her link under the opening line; Leah\'s signed Christie Zammit');
+  // The surer tone (Angad, 12 Nov: 2 of 41 had tapped CONFIRM): she's booked, so nothing asks if she's still coming
+  ok(aMsg.includes('You’re booked in to *meet the team* at *JUSS Marketing*\n👉 Confirm your spot: ') &&
+    aMsg.includes('📍 Automotive House, Slough (2 mins from the station)\n🗺️ Tap for directions: https://maps.app.goo.gl/zeP4MjS2hMJzB9V9A\n\n🤝 *Rubal or Jess* will be hosting and expecting you\n' +
+      '⏰ Aim to arrive *10 minutes early* · done by 11:30\n👔 Office wear / smart casual\n\nKind regards,') &&
+    (aMsg.match(/https?:\/\//g) || []).length === 2 && /\/b\/[a-hjkmnp-z2-9]{8}$/.test(aMsg.match(/https?:\/\/\S+/)[0]) && !/Aisha|n=|booked\.html/.test(aMsg.match(/https?:\/\/\S+/)[0]) &&
+    !/still coming|Tap \*CONFIRM|See you|earnings/i.test(aMsg),
+    'Megan\'s reminder in the surer tone: her link first (nothing about her in it, so the card is ours), the place with "Tap for directions", Rubal or Jess hosting and expecting her, 10 minutes early · done by 11:30, office wear; no earnings line, no "See you"');
   await chp.click('.bksheet .trow:has-text("Aisha Khan") a.btn[data-kind=remind]');
   await chp.waitForFunction(() => /1 of 2 sent/.test(document.getElementById('bkprog').textContent));
   await chp.waitForTimeout(800);
@@ -347,7 +354,7 @@ const FIRST = [
 
   console.log('Megan\'s no-show: our "sorry we missed you" and rebook, from the office phone (Angad, 30 Oct + 9 Nov)');
   const missMsg = decodeURIComponent((await chp.getAttribute('.bkrow:has-text("Aisha Khan") a.btn[data-kind=missed]', 'href')).split('?text=')[1]);
-  ok(/^Hey Aisha! 👋\n\nWe missed you at your \*Appointment Presentation\* today 😕/.test(missMsg) && /Which day suits you\? Just reply here/.test(missMsg) &&
+  ok(/^Hey Aisha! 👋\n\nWe missed you today 😕 Everything OK\?\n\n/.test(missMsg) && /You can come in and \*meet the team\* \*Monday to Friday at 10:00 AM\*\./.test(missMsg) && !/presentation/i.test(missMsg) && /Which day suits you\? Just reply here/.test(missMsg) &&
     /Kind regards,\n\*Christie \/ Megan\*\nIn association with \*JUSS Marketing Ltd\*$/.test(missMsg), 'Aisha\'s "sorry we missed you": rebook by replying, signed *Christie / Megan*');
   await chp.click('.bkrow:has-text("Aisha Khan") a.btn[data-kind=missed]'); await chp.waitForTimeout(800);
   let aNow = (await api(chrisTok, 'bookingList', {})).items.find(b => b.id === aSent.id);
@@ -452,6 +459,103 @@ const FIRST = [
   await chp.waitForFunction(() => /Wednesday 4 November/i.test((document.querySelector('.bknav .lbl') || {}).innerText || ''), null, { timeout: 15000 }).catch(() => {});
   ok(/Today/i.test(await chp.innerText('.bknav .lbl')) && /Wednesday 4 November/i.test(await chp.innerText('.bknav .lbl')),
     'the same page, never reloaded, opened again on Wednesday morning: "Today · Wednesday 4 November" (it used to stay on Tuesday until a reload)');
+  console.log('the same-day welcome for Megan\'s new bookings (Angad, 12 Nov)');
+  // Megan now tells them "one of our team will WhatsApp you directions before the day". A pull that brings new approved bookings
+  // → one alert to whoever sends Megan's (the office phone), a send list like the reminders', each one once, its own state
+  await post('/dev/props', { HYRRE_WELCOME_FROM: '2026-11-04' });
+  const lastPull = fri.concat([item('h10', 'Kim Lee', '07700900210', '2026-11-05')]);
+  const wItems = lastPull.concat([
+    item('w1', 'Nina Patel', '07700900241', '2026-11-05', { source: 'Job Ad #2' }),      // tomorrow
+    item('w2', 'Omar Reid', '07700900242', '2026-11-06', { source: 'Job Ad #1' }),       // Friday
+    item('w3', 'Pia Stone', '07700900243', '2026-11-04', { source: 'Job Ad #1' }),       // today: the morning reminder is her one message
+    item('w4', 'Quin Tate', '07700900244', '2026-11-06', { note: 'Booked by Rubal' }),   // by hand in Hyrre: Rubal's, not Megan's
+  ]);
+  const isWel = p => /to welcome$/.test(p.body.headings.en);
+  n0 = (await getJson('/dev/pushes')).length;
+  const pw = await api('', 'hyrreImport', { ticket: await ticket(), pipeline: '403', window: WINDOW, items: wItems });
+  const wp = await pushesSince(n0), wc = to(wp, christie.id).filter(isWel);
+  ok(pw.added === 4 && wc.length === 1 && wc[0].body.headings.en === '👋 2 of Megan\'s to welcome' &&
+    wc[0].body.contents.en === 'New from Hyrre: Nina, Omar. Tap to send each one their welcome on WhatsApp, signed Christie / Megan: their day, the address and who\'s expecting them.' &&
+    /\?c=bookwel$/.test(wc[0].body.web_url) && wp.filter(isWel).length === 1,
+    'a pull with 4 new bookings → one alert, to the office phone (Christie) only: "👋 2 of Megan\'s to welcome · New from Hyrre: Nina, Omar…" (not Pia, who\'s in today; not Quin, booked by Rubal; not Kim, pulled before it started)');
+  ok(megRem(wp, christie.id, 'today') && /: Pia ⏳\./.test(megRem(wp, christie.id, 'today').body.contents.en), 'Pia, in today: the morning reminder is her one message ("📲 1 of Megan\'s to remind for today")');
+  n0 = (await getJson('/dev/pushes')).length;
+  const pw2 = await api('', 'hyrreImport', { ticket: await ticket(), pipeline: '403', window: WINDOW, items: wItems });
+  ok(pw2.added === 0 && !(await pushesSince(n0)).some(isWel), 'the next pull, nothing new: no second alert (once per pull that brings someone, never a nag)');
+  rows = (await api(chrisTok, 'bookingList', {})).items;
+  let nina = rows.find(b => b.hyrre_id === 'w1');
+  const omar = rows.find(b => b.hyrre_id === 'w2'), quin = rows.find(b => b.hyrre_id === 'w4'), eva = rows.find(b => b.hyrre_id === 'h5');
+  const openCodes = rows.filter(b => b.status === 'booked').map(b => b.short_code);
+  ok(/^[a-hjkmnp-z2-9]{8}$/.test(nina.short_code) && openCodes.every(c => /^[a-hjkmnp-z2-9]{8}$/.test(c)) && new Set(openCodes).size === openCodes.length && !nina.welcome_at && !nina.remind_at,
+    'each has its short code (8 random characters, no two the same, older bookings given theirs too); nothing sent yet');
+  ok(/for Megan's bookings from Hyrre/.test(await refused(chrisTok, 'bookingAction', { id: quin.id, act: 'sent', kind: 'welcome', via: 'whatsapp' })) &&
+    /presentation is over/.test(await refused(chrisTok, 'bookingAction', { id: eva.id, act: 'sent', kind: 'welcome', via: 'whatsapp' })),
+    'the welcome is Megan\'s only (Quin, booked by Rubal: refused) and never for a presentation that\'s over (Eva: refused)');
+  const wPage = await cctx.newPage(); await wPage.goto(APP + 'index.html?c=bookwel'); await wPage.waitForSelector('.bksheet #bkwprog');
+  const wl = await wPage.innerText('.bksheet');
+  ok(/0 of 2 sent/.test(wl) && /Nina Patel/.test(wl) && /Thu 5 Nov · Job Ad #2/.test(wl) && /Omar Reid/.test(wl) && !/Pia Stone|Quin Tate|Kim Lee/.test(wl) && /signed Christie \/ Megan/i.test(wl) &&
+    /It isn't their reminder: that still goes the evening before\./.test(wl) && /their link turns into a card on top of the message/.test(wl),
+    'tapping the alert on the office phone opens Book Appts with the welcome list: Nina and Omar, "0 of 2 sent", signed Christie / Megan');
+  const wHref = await wPage.getAttribute('.bksheet .trow:has-text("Nina Patel") a.btn[data-kind=welcome]', 'href'), wMsg = decodeURIComponent(wHref.split('?text=')[1]);
+  const SITE = require('../site.json').url;
+  ok(/^https:\/\/wa\.me\/447700900241\?text=/.test(wHref) && wMsg === 'Hey Nina! 👋\n\nYou’re *booked in* to *meet the team* at *JUSS Marketing* 🎉\n👉 Confirm your spot: ' + SITE + 'b/' + nina.short_code + '\n\n' +
+    '📅 *Thursday 5th November · 10:00 AM*\n📍 2nd Floor East, Automotive House, Grays Place, Slough SL2 5AF\n🗺️ Tap for directions: https://maps.app.goo.gl/zeP4MjS2hMJzB9V9A\n' +
+    '🚆 Right opposite Slough station (exit from *platform 5*)\n\n🤝 *Rubal or Jess* will be expecting you\n⏰ Aim to arrive *10 minutes early* · done by 11:30\n\n' +
+    'Kind regards,\n*Christie / Megan*\nIn association with *JUSS Marketing Ltd*',
+    'Nina\'s welcome, word for word: booked in to meet the team, her booking link, Thursday 5th November · 10:00 AM, the address with "Tap for directions", right opposite Slough station (platform 5), Rubal or Jess expecting her, 10 minutes early · done by 11:30, signed *Christie / Megan*');
+  ok((wMsg.match(/https?:\/\//g) || []).length === 2 && wMsg.match(/https?:\/\/\S+/)[0] === SITE + 'b/' + nina.short_code && wMsg.indexOf(SITE) < wMsg.indexOf('https://maps.app.goo.gl/') &&
+    !/nina|patel|900241/i.test(nina.short_code) && !/See you/.test(wMsg),
+    'her link is the first link in it (WhatsApp makes the card from the first), with nothing about her in it; the Google Maps link comes after, under the address');
+  const bHtml = fs.readFileSync(path.join(__dirname, '..', '..', 'join', 'b.html'), 'utf8'), ogDesc = (/property="og:description" content="([^"]*)"/.exec(bHtml) || [])[1];
+  const card = await wPage.$eval('.bksheet .wacard', el => ({ t: el.querySelector('b').textContent, d: el.querySelector('span').textContent, img: el.querySelector('img').getAttribute('src'), site: el.querySelector('i').textContent }));
+  ok(card.t === 'You\'re booked in' && card.d === ogDesc && card.d === 'Tap to confirm you\'re coming. Rubal or Jess will have your name ready at the door.' && card.img === 'img/og-booked-juss.jpg' &&
+    SITE.indexOf('//' + card.site + '/') > 0 && await wPage.$eval('.bksheet .wacard img', i => i.complete && i.naturalWidth === 1200 && i.naturalHeight === 630),
+    'the list shows the card they\'ll see on top of the message, in the page\'s own words (the same as its preview tags), with the 1200 × 630 picture');
+  await shot(wPage, 'h5-welcome-list', true);
+  await wPage.click('.bksheet .trow:has-text("Nina Patel") a.btn[data-kind=welcome]');
+  await wPage.waitForFunction(() => /1 of 2 sent/.test(document.getElementById('bkwprog').textContent));
+  await wPage.waitForTimeout(800);
+  nina = (await api(chrisTok, 'bookingList', {})).items.find(b => b.hyrre_id === 'w1');
+  ok(/^2026-11-04 08:5/.test(nina.welcome_at) && nina.welcome_by === 'Christie Zammit' && nina.welcome_via === 'whatsapp' && !nina.remind_at && !nina.confirm_at,
+    'tapping Send ticks her off ("1 of 2 sent") and saves it as welcomed (Christie, WhatsApp): its own state, not a reminder and not our confirmation');
+  await wPage.click('#bkdone'); await wPage.waitForSelector('#bkwel');
+  ok(/👋 Welcome Megan's new bookings · 1$/.test((await wPage.innerText('#bkwel')).trim()), 'back on Book Appts: "👋 Welcome Megan\'s new bookings · 1" (Omar still to go; Nina isn\'t offered again)');
+  await rp.reload(); await rp.waitForSelector('.tabbar button'); await rp.click('.tabbar button[data-tab=book]'); await rp.waitForSelector('.bkwelo');
+  ok(/👋 1 of Megan's new booking to welcome · 📱 Christie sends Megan's from the office phone/.test(await rp.innerText('.bkwelo')) && !(await rp.$('#bkwel')),
+    'Rubal\'s phone: "👋 1 of Megan\'s new booking to welcome · 📱 Christie sends Megan\'s from the office phone", no send button');
+  // Nina taps her link: the short link is her "You're booked in" page, and it confirms
+  const nctx = await browser.newContext(PHONE), np = await nctx.newPage();
+  await np.goto(APP + 'b/' + nina.short_code); await np.waitForSelector('#conf');
+  ok(/You're booked in, Nina/.test(await np.innerText('#app')) && /Thursday 5 November/.test(await np.innerText('#app')) && /from Megan/.test(await np.innerText('#app')), 'her short link: "You\'re booked in, Nina 🎉", Thursday 5 November, the message from Megan');
+  await shot(np, 'h6-short-link-page', true);
+  await np.click('#conf'); await np.waitForSelector('.wl-done');
+  for (let i = 0; i < 25 && !nina.confirmed_at; i++) { nina = (await api(chrisTok, 'bookingList', {})).items.find(b => b.hyrre_id === 'w1'); if (!nina.confirmed_at) await new Promise(r => setTimeout(r, 200)); }
+  ok(nina.confirmed_by === 'CONFIRM', 'she taps 🔒 Confirm I\'m coming there: confirmed');
+  await nctx.close();
+  // 18:00: she's still on the evening reminder list (welcomed isn't reminded), in the tone for someone who has confirmed
+  n0 = (await getJson('/dev/pushes')).length;
+  await setTime('2026-11-04T18:05:00+00:00'); await post('/dev/run', { fn: 'keepWarm' });
+  const ev = megRem(await pushesSince(n0), christie.id, 'tomorrow');
+  ok(ev && /Nina ✅/.test(ev.body.contents.en) && /Kim ⏳/.test(ev.body.contents.en), '18:00: Nina, welcomed this morning, is still on "📲 2 of Megan\'s to remind for tomorrow" (the welcome never counts as the reminder): ' + (ev ? ev.body.contents.en : 'none'));
+  await wPage.goto(APP + 'index.html'); await wPage.waitForSelector('.tabbar button'); await wPage.click('.tabbar button[data-tab=book]'); await wPage.waitForSelector('#bknext');
+  await wPage.click('#bknext'); await wPage.waitForSelector('[data-bkrem="2026-11-05"]'); await wPage.click('[data-bkrem="2026-11-05"]'); await wPage.waitForSelector('.bksheet [data-bks]');
+  const remOf = async who => decodeURIComponent((await wPage.getAttribute('.bksheet .trow:has-text("' + who + '") a.btn[data-kind=remind]', 'href')).split('?text=')[1]);
+  const ninaRem = await remOf('Nina Patel'), kimRem = await remOf('Kim Lee');
+  ok(/0 of 2 sent/.test(await wPage.innerText('.bksheet')) && /✅ You’re confirmed\. Anything changes, just message me\.\n\nKind regards,/.test(ninaRem) && /🗺️ Tap for directions: https:\/\/maps\.app\.goo\.gl\//.test(ninaRem) &&
+    !/\/b\//.test(ninaRem) && !/Confirm your spot/.test(ninaRem) && /\*Christie \/ Megan\*\nIn association with \*JUSS Marketing Ltd\*$/.test(ninaRem) && /🤝 \*Rubal or Jess\* will be hosting and expecting you/.test(ninaRem),
+    'her reminder is still to send ("0 of 2 sent"), and as she\'s confirmed it says so: no link of hers to confirm with, the map link stays');
+  ok(/\n👉 Confirm your spot: https:\/\/[^\n]+\/b\/[a-hjkmnp-z2-9]{8}\n\n📅/.test(kimRem) && (kimRem.match(/https?:\/\//g) || []).length === 2 && /🗺️ Tap for directions: https:\/\/maps\.app\.goo\.gl\//.test(kimRem) &&
+    kimRem.indexOf('/b/') < kimRem.indexOf('maps.app.goo.gl') && !/still coming|Tap \*CONFIRM/i.test(kimRem), 'Kim (not confirmed): the surer wording, her own link first, then the map link');
+  await wPage.click('#bkdone');
+  // Friday 10:40: Omar was never welcomed and his presentation is over: he's off the list and can't be sent one
+  await setTime('2026-11-06T10:40:00+00:00');
+  n0 = (await getJson('/dev/pushes')).length;
+  await api('', 'hyrreImport', { ticket: await ticket(), pipeline: '403', window: WINDOW, items: wItems.concat([item('w5', 'Rae Underhill', '07700900245', '2026-11-09', { source: 'Job Ad #1' })]) });
+  const wc2 = to(await pushesSince(n0), christie.id).filter(isWel);
+  ok(wc2.length === 1 && wc2[0].body.headings.en === '👋 1 of Megan\'s to welcome' && /^New from Hyrre: Rae\. Tap to send their welcome on WhatsApp/.test(wc2[0].body.contents.en) &&
+    /presentation is over/.test(await refused(chrisTok, 'bookingAction', { id: omar.id, act: 'sent', kind: 'welcome', via: 'whatsapp' })),
+    'Friday 10:40, a pull with Rae for Monday: "👋 1 of Megan\'s to welcome" (Rae only). Omar, never welcomed, is skipped now his presentation is over');
+  await wPage.close();
   // A mobile from another country (Hyrre keeps it as given): its own country code, not 44 in front of it
   const jsSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'JS.html'), 'utf8');
   const intlNo = new Function(jsSrc.match(/function intlNo\(mobile\) \{[^\n]+\}/)[0] + '; return intlNo;')();
