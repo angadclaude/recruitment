@@ -47,6 +47,9 @@ const CONFIG = {
   BOOK_TIME: '10:00',             // presentations: Mon–Fri at 10:00
   BOOK_REMIND_TIME: '18:00',      // the evening before (Sunday for Monday's): whoever booked them gets "N to remind for tomorrow"
   BOOK_MISSED_TIME: '10:30',      // on the day: anyone booked who hasn't checked in by now "didn't come" (and their booker is told)
+  // Who hosts the presentation, by first name (Angad, 12 Nov): named on the booking link's WhatsApp preview card, "…will have your
+  // name ready at the door" (app/build.js reads this line for the card)
+  BOOK_HOSTS: ['Rubal', 'Jess'],
   // Hyrre (Angad, 27 Oct): its AI caller "Megan" screens Slough's CVs and pencils them into the 10:00; Rubal approves them in Hyrre.
   // At 08:45 and 17:15 a scheduled task on Angad's computer reads the approved ones from Hyrre (Rubal's login, look-only) and sends
   // them here (hyrreImport). They show on Book Appts as booked by Megan Hyrre (Office Recruitment, no incentive), or by Rubal / Jess when

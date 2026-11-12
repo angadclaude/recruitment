@@ -4,6 +4,10 @@
   "buildCommand": "echo 'Nothing to build: the app in join/ is built and tested before it is pushed'",
   "outputDirectory": "join",
   "regions": ["lhr1"],
+  "rewrites": [
+    { "source": "/b/:code", "destination": "/b.html" },
+    { "source": "/bl/:code", "destination": "/bl.html" }
+  ],
   "fluid": false,
   "functions": {
     "api/rpc.js": { "maxDuration": 60, "includeFiles": "{app/src/Code.gs,server/**,hub/lib/core.js}" },

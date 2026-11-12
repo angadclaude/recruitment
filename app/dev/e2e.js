@@ -682,6 +682,21 @@ async function fillEval(p) {
   ok(/^sms:/.test(await ap.getAttribute('a.sms[data-kind=offer]', 'href')) && /📵 Not on WhatsApp/.test(await ap.innerText('body')) && !!(await ap.$('.altsend a[data-via=whatsapp]')),
     'next time: the big button texts them ("📵 Not on WhatsApp" shown), WhatsApp still there as the small option');
   await ap.locator('.wa-grid').screenshot({ path: SHOTS + '/12b-not-on-whatsapp.png' });
+  // A booking's link in WhatsApp (Angad, 12 Nov): the card's tags are in the page as it's served, the same for everyone, and the short
+  // link (…/b/<code>) is sent to that page by vercel.json
+  const metaOf = (html, p) => (new RegExp('<meta property="' + p + '" content="([^"]*)"').exec(html) || [])[1];
+  const hosts = (/BOOK_HOSTS:\s*\[([^\]]*)\]/.exec(fs.readFileSync(path.join(__dirname, '..', 'src', 'Code.gs'), 'utf8'))[1].match(/'([^']+)'/g) || []).map(x => x.slice(1, -1));
+  const cardDesc = 'Tap to confirm you\'re coming. ' + (hosts.length > 1 ? hosts.slice(0, -1).join(', ') + ' or ' + hosts[hosts.length - 1] : hosts[0]) + ' will have your name ready at the door.';
+  const bookedPages = {}; for (const f of ['booked.html', 'b.html', 'bl.html']) bookedPages[f] = await (await fetch(APP + f)).text();
+  ok(Object.keys(bookedPages).every(f => metaOf(bookedPages[f], 'og:title') === 'You\'re booked in' && metaOf(bookedPages[f], 'og:description') === cardDesc &&
+      metaOf(bookedPages[f], 'og:image') === PUBLIC + 'img/og-booked-' + (f === 'bl.html' ? 'link' : 'juss') + '.jpg' && !/property="og:url"/.test(bookedPages[f]) &&
+      /<meta name="robots" content="noindex, nofollow">/.test(bookedPages[f]) && /data-mode="booked"/.test(bookedPages[f])) && hosts.length > 0,
+    'a booking\'s link in WhatsApp: "You\'re booked in · ' + cardDesc + '" with its card picture (JUSS, and LINK for …/bl/), in the page as served; noindex, no og:url');
+  const vj = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'vercel.json'), 'utf8'));
+  ok(JSON.stringify(vj.rewrites) === '[{"source":"/b/:code","destination":"/b.html"},{"source":"/bl/:code","destination":"/bl.html"}]' && /<base href="\/">/.test(bookedPages['b.html']) &&
+    /<base href="\/">/.test(bookedPages['bl.html']) && !/<base /.test(bookedPages['booked.html']) && /\/bl\?\\\/\(\[a-z0-9\]\{6,12\}\)/.test(bookedPages['b.html']) &&
+    ['og-booked-juss.jpg', 'og-booked-link.jpg'].every(f => { const n = fs.statSync(path.join(__dirname, '..', '..', 'join', 'img', f)).size; return n > 10000 && n < 300000; }),
+    'the short link: vercel.json sends /b/<code> to b.html and /bl/<code> to bl.html, which load from the app\'s root and read the code from the address; the card pictures are built, under 300 KB');
   const appHtml = await (await fetch(APP + 'index.html')).text();
   ok(appHtml.includes('og:title" content="Juss & Link Recruitment App"') && appHtml.includes('img/og-app.jpg') && appHtml.includes('apple-mobile-web-app-title" content="Juss & Link Recruitment App"'),
     'sharing the app link shows "Juss & Link Recruitment App" + logo card; same name when added to the home screen');
