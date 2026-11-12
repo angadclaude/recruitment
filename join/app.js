@@ -1,4 +1,4 @@
-window.APP_VERSION = '09efe025';
+window.APP_VERSION = 'd4de8a3a';
 
 (function () {
 'use strict';
@@ -1205,9 +1205,10 @@ function boot() {
     // From the evening-before briefing / the 10:00 "starters to remind" alert (that one opens the send list too)
     S.openRemind = BOOT.cid === 'remind' && isAdmin(); BOOT.cid = '';
     if (isAdmin() || isBooker()) { S.tab = 'academy'; nav('academy', {}, false); } else { nav(S.tab, {}, false); nav('academy', {}, true); }
-  } else if (BOOT.cid === 'bookrem' || BOOT.cid === 'bookmiss' || BOOT.cid === 'book') {
-    // From the 18:00 "N to remind for tomorrow" alert (opens the send list) / the 10:30 "N didn't come": the Book Appts tab
-    const rem = BOOT.cid === 'bookrem'; BOOT.cid = ''; nav(canBook() ? 'book' : S.tab, {}, false);
+  } else if (BOOT.cid === 'bookrem' || BOOT.cid === 'bookmiss' || BOOT.cid === 'book' || BOOT.cid === 'bookwel') {
+    // From the 18:00 "N to remind for tomorrow" alert (opens the send list) / the 10:30 "N didn't come" / "N of Megan's to welcome"
+    // after a pull (opens its send list): the Book Appts tab
+    const rem = BOOT.cid === 'bookrem', wel = BOOT.cid === 'bookwel'; BOOT.cid = ''; nav(canBook() ? 'book' : S.tab, {}, false);
     let tries = 0;
     const open = () => {
       if (S.view !== 'book') return;
@@ -1217,6 +1218,7 @@ function boot() {
       const next = bookings().filter(b => b.status === 'booked' && (early ? b.slot_date >= S.me.today : b.slot_date > S.me.today)).map(b => b.slot_date).sort()[0];
       const p = bookPick(); p.mode = 'day'; p.day = rem && next ? next : bookWeekday(S.me.today, 1); p.we = weekEndingOf(p.day); render(true);
       if (rem && next) bookRemindSheet(next);
+      if (wel) bookWelcomeSheet();
     };
     setTimeout(open, 300);
   } else if (BOOT.cid) { const id = BOOT.cid; BOOT.cid = ''; nav('cand', { id: id }, true); } else nav(S.tab, {}, false);
@@ -3340,7 +3342,7 @@ function day1Sheet(date) {
 }
 
 // ───── Booking a presentation straight after the call (Angad, 23 Oct): Jess, Rubal and Angad book, the app writes the messages ─────
-const BOOK_DEFAULT = { time: '10:00', co: 'JUSS', missed: '10:30', sources: ['Teamtailor', 'Indeed', 'Referral', 'Other'] };
+const BOOK_DEFAULT = { time: '10:00', co: 'JUSS', missed: '10:30', sources: ['Teamtailor', 'Indeed', 'Referral', 'Other'], hosts: ['Rubal', 'Jess'], lengthMin: 90 };
 function canBook() { return !!S.me && (S.me.bookTeam || []).some(t => t.id === S.me.user.id); }
 function bookCfg() { return (S.me && S.me.book) || BOOK_DEFAULT; }
 function bookings() { return (S.bookings && S.bookings.items) || []; }
@@ -3381,6 +3383,23 @@ function bookPage(b) {
   const base = ((S.me.links && S.me.links.checkin) || '').replace(/checkin\.html.*$/, '');
   return b.confirm_token && base ? base + 'booked.html?t=' + b.confirm_token + '&n=' + encodeURIComponent(b.first_name) + '&d=' + b.slot_date : '';
 }
+/** Their page's short link (…/b/<code>; a LINK booking's is …/bl/<code>), the last line of the reminder and the welcome (Angad, 12 Nov).
+ *  WhatsApp turns the FIRST link in a message into a card on top of it (the page's "You're booked in · Tap to confirm" preview), so
+ *  a message that ends with this link carries no other link. No code yet (a phone's older copy of the booking): the long link. */
+function bookLink(b) {
+  const base = ((S.me.links && S.me.links.checkin) || '').replace(/checkin\.html.*$/, '');
+  return b.short_code && base ? base + (bookCo(b) === 'LINK' ? 'bl/' : 'b/') + b.short_code : bookPage(b);
+}
+/** "Rubal or Jess": who hosts the presentation (CONFIG.BOOK_HOSTS in Code.gs, never a name typed into a message). */
+function bookHosts() { const a = bookCfg().hosts || BOOK_DEFAULT.hosts; return a.length > 1 ? a.slice(0, -1).join(', ') + ' or ' + a[a.length - 1] : (a[0] || 'The team'); }
+/** "11:30": their slot plus the presentation's length (CONFIG.BOOK_LENGTH_MIN, 90 minutes), for "done by 11:30". */
+function bookDoneBy(b) {
+  const t = b.slot_time || bookCfg().time, m = Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5)) + (bookCfg().lengthMin || BOOK_DEFAULT.lengthMin);
+  return fmt12(String(Math.floor(m / 60) % 24).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0')).replace(/ [AP]M$/, '');
+}
+/** The card WhatsApp shows for their link: the same words as the page's preview tags (app/build.js makes those from BOOK_HOSTS too). */
+const BOOK_CARD_TITLE = 'You\'re booked in';
+function bookCardDesc() { return 'Tap to confirm you\'re coming. ' + bookHosts() + ' will have your name ready at the door.'; }
 /** "Kind regards, *Jess Grace*, In association with *JUSS Marketing Ltd*": whoever sends it (it's their WhatsApp they reply to).
  *  Hyrre's: whoever booked them, "Megan" for hers (Angad, 30 Oct: "she's the one booking"). */
 function bookSigner(b) {
@@ -3414,19 +3433,54 @@ function msgBookConfirm(b) {
     (bookPage(b) ? '👇 Tap *CONFIRM* to lock in your spot ✅\n' + bookPage(b) + '\n\n' : '👉 Reply *YES* to lock in your spot ✅\n\n') +
     'Questions before then? Just message me here 💬\n\n' + bookSign(b);
 }
-/** The evening before (or that morning): "Tomorrow's the day!" */
+/** The evening before (or that morning): "Tomorrow's the day!" In the surer tone Angad approved on 12 Nov (2 of 41 had tapped CONFIRM):
+ *  they're booked, so nothing asks "still coming?"; the hosts are named (bookHosts); and their link goes once, alone, as the very last
+ *  line, so WhatsApp shows it as the card on top of the message. WhatsApp only makes that card for the first link in a message, so with
+ *  their link the Google Maps link is left out (the map and parking are one tap away on their page). Already confirmed: no link
+ *  (nothing to confirm), the map link as before. No page at all: the map link, and YES in the same tone. */
 function msgBookRemind(b) {
   const n = bookDaysTo(b.slot_date), day = n === 0 ? 'today' : n === 1 ? 'tomorrow' : DAYS_LONG[D(b.slot_date).getUTCDay()], co = bookCo(b);
+  const link = b.confirmed_at ? '' : bookLink(b);
   return 'Hey ' + b.first_name + '! 👋\n\n' +
     '*' + day.charAt(0).toUpperCase() + day.slice(1) + '’s the day!* 🙌\n' +
     'Your *Appointment Presentation* with *' + co + ' Marketing*\n\n' +
     '📅 *' + fmtOrd(b.slot_date) + ' · ' + fmt12(b.slot_time || bookCfg().time) + '*\n' +
     '📍 Automotive House, Slough (2 mins from the station)\n' +
-    '🗺️ ' + OFFICES[co].maps + '\n\n' +
-    '⏰ Aim to arrive *10 minutes early*\n' +
+    (link ? '🗺️ Map and parking: tap your link below 👇\n\n' : '🗺️ ' + OFFICES[co].maps + '\n\n') +
+    '🤝 *' + bookHosts() + '* will be hosting and expecting you\n' +
+    '💷 Meet the team and see real earnings examples\n' +
+    '⏰ Aim to arrive *10 minutes early* · done by ' + bookDoneBy(b) + '\n' +
     '👔 Office wear / smart casual\n\n' +
-    (b.confirmed_at ? '✅ You’re confirmed. Anything changes, just message me.\n\n' : bookPage(b) ? '👇 Still coming? Tap *CONFIRM* ✅\n' + bookPage(b) + '\n\n' : '👉 Reply *YES* if you’re still coming ✅\n\n') +
-    'See you ' + (n > 1 ? 'on ' + day : day) + '! 🔥\n\n' + bookSign(b);
+    (b.confirmed_at ? '✅ You’re confirmed. Anything changes, just message me.\n\n' : link ? '' : '👉 Reply *YES* and we’ll have your name ready at the door ✅\n\n') +
+    'See you ' + (n > 1 ? 'on ' + day : day) + '! 🔥\n\n' + bookSign(b) + (link ? '\n\n' + link : '');
+}
+/** Megan's new booking, the day it comes in from Hyrre (Angad, 12 Nov; Megan now tells them "one of our team will WhatsApp you
+ *  directions before the day"): you're booked in, the day and time, where it is, who's expecting them, and their link as the last
+ *  line (the card). The same sure tone as the reminder; its own state (welcome_at), never the reminder's. */
+function msgBookWelcome(b) {
+  const n = bookDaysTo(b.slot_date), day = n === 0 ? 'today' : n === 1 ? 'tomorrow' : DAYS_LONG[D(b.slot_date).getUTCDay()], co = bookCo(b), link = bookLink(b);
+  return 'Hey ' + b.first_name + '! 👋\n\n' +
+    'You’re *booked in* for your *Appointment Presentation* with *' + co + ' Marketing* 🎉\n\n' +
+    '📅 *' + fmtOrd(b.slot_date) + ' · ' + fmt12(b.slot_time || bookCfg().time) + '*\n' +
+    '📍 ' + OFFICES[co].address + '\n' +
+    '🚆 Right opposite Slough station (exit from *platform 5*)\n\n' +
+    '🤝 *' + bookHosts() + '* will be expecting you\n' +
+    '⏰ Aim to arrive *10 minutes early* · done by ' + bookDoneBy(b) + '\n\n' +
+    'See you ' + (n > 1 ? 'on ' + day : day) + '! 🔥\n\n' + bookSign(b) + (link ? '\n\n' + link : '');
+}
+/** Megan's new bookings still waiting for that welcome: the server's welcomeDue (Megan's own, from Hyrre, first pulled since
+ *  welcomeFrom, booked, not welcomed, for a day after today: today's get the morning reminder instead). */
+function bookWelcomeDue(b) {
+  return bookHy(b) && meganOf(b) && b.status === 'booked' && !b.welcome_at && b.slot_date > S.me.today &&
+    String(b.created_at).slice(0, 10) >= (bookCfg().welcomeFrom || '9999');
+}
+/** The message ends with their link on a line of its own: WhatsApp shows it as the card. */
+function bookHasCard(msg) { return /\n\nhttps?:\/\/\S+$/.test(msg); }
+const BOOK_CARD_TIP = '💡 In WhatsApp their link turns into a card on top of the message. Give it a second to appear, then send.';
+/** That card, as they'll see it, on top of "What they'll get". */
+function bookCardHtml(b) {
+  return '<div class="wacard"><img src="img/og-booked-' + bookCo(b).toLowerCase() + '.jpg" alt="" loading="lazy"><div class="wacard-t"><b>' + h(BOOK_CARD_TITLE) + '</b><span>' + h(bookCardDesc()) + '</span>' +
+    '<i>' + h(bookLink(b).replace(/^https?:\/\//, '').split('/')[0]) + '</i></div></div>';
 }
 /** Didn't come: their spot isn't gone, which day suits them? */
 function msgBookMissed(b) {
@@ -3436,8 +3490,8 @@ function msgBookMissed(b) {
     'We run presentations *Monday to Friday at ' + fmt12(bookCfg().time) + '*.\n\n' +
     '👉 Which day suits you? Just reply here 💬\n\n' + bookSign(b);
 }
-const BOOK_MSG = { confirm: msgBookConfirm, remind: msgBookRemind, missed: msgBookMissed };
-const BOOK_SENT = { confirm: 'Confirmation', remind: 'Reminder', missed: 'Sorry we missed you' };
+const BOOK_MSG = { confirm: msgBookConfirm, remind: msgBookRemind, missed: msgBookMissed, welcome: msgBookWelcome };
+const BOOK_SENT = { confirm: 'Confirmation', remind: 'Reminder', missed: 'Sorry we missed you', welcome: 'Welcome' };
 /** WhatsApp's *bold* as bold, for the preview of what they'll get. */
 function waHtml(text) { return h(text).replace(/\*([^*\n]+)\*/g, '<b>$1</b>'); }
 /** 💬 Send (WhatsApp) with "📱 Text instead" under it; the other way round once they're known not to be on WhatsApp. */
@@ -3481,15 +3535,22 @@ function viewBook(quiet) {
   const d = want(weekEndingOf(S.me.today));  // the week's bundle brings the bookings, and keeps them fresh
   const p = bookPick();
   const page = paint('Book Appts', '<div class="card bookcard"><button class="btn block" id="bookNew">📅 Book a presentation</button>' +
-      '<p class="hint" style="margin:8px 2px 0">Just booked someone on the phone? Tap here: their confirmation is ready to send on WhatsApp, signed by you.</p>' + bookHyLine() + '</div>' +
+      '<p class="hint" style="margin:8px 2px 0">Just booked someone on the phone? Tap here: their confirmation is ready to send on WhatsApp, signed by you.</p>' + bookHyLine() + bookWelBtn() + '</div>' +
     '<div class="chips bkmode">' + [['day', 'Day'], ['week', 'Week']].map(m => '<button type="button" class="chip' + (p.mode === m[0] ? ' on' : '') + '" data-bkmode="' + m[0] + '">' + m[1] + '</button>').join('') + '</div>' +
     (d || S.bookings ? (p.mode === 'week' ? bookWeekHtml(p.we) : bookDayHtml(p.day)) : skeleton(3)) +
     '<p class="hint">⏳ Not confirmed yet turns ✅ Confirmed by itself when they tap CONFIRM in your message. Said yes on WhatsApp instead? Tap "Mark as confirmed". ' +
       'Booked here = the confirmation, the 18:00 reminder the evening before, "didn\'t come" at ' + h(bookCfg().missed) + ', and check-in knows who booked them. ' +
       '🤖 Hyrre\'s come in at 08:45, 11:15 and 17:15: Hyrre sends their confirmation and texts, and 📲 our reminder goes to them too, signed ' +
         h(bookSigner({ booked_by: bookCfg().hyrreBy || 'Megan Hyrre' })) + (bookCfg().hyrreSender && !bookCfg().hyrreManager ? ' from the office phone' : '') + ' ' +
-      '(18:00 the evening before, or after the 08:45 pull). Tap a name for their booking.</p>', quiet);
+      '(18:00 the evening before, or after the 08:45 pull). Megan\'s new ones also get 👋 our welcome the day they come in. Tap a name for their booking.</p>', quiet);
   bindBookings(page);
+}
+/** Megan's new bookings waiting for our welcome: the send list's button on the phone that sends Megan's; a line on everyone else's. */
+function bookWelBtn() {
+  const due = bookings().filter(bookWelcomeDue), mine = due.filter(bookCanSend);
+  if (!due.length) return '';
+  return mine.length ? '<button type="button" class="btn wa block" id="bkwel" style="margin-top:10px">👋 Welcome Megan\'s new bookings · ' + mine.length + '</button>'
+    : '<p class="hint bkoffice bkwelo" style="margin:8px 2px 0">👋 ' + due.length + ' of Megan\'s new booking' + (due.length === 1 ? '' : 's') + ' to welcome · ' + h(officeNote()) + '</p>';
 }
 /** The morning pull from Hyrre: when it last ran and what it brought. Amber on a weekday it hasn't run by 09:15. */
 function bookHyLine() {
@@ -3572,7 +3633,8 @@ function bookPills(b, yes) {
     : missed ? '<span class="pill red">❌ Didn\'t come</span>' + (b.missed_at ? '<span class="pill green">✓ Messaged ' + t(b.missed_at) + '</span>' : '')
     // Hyrre sends their confirmation; they may tap CONFIRM in our reminder
     : bookHy(b) ? '<span class="pill">🤖 Approved in Hyrre</span>' + (b.confirmed_at ? '<span class="pill green">✅ Confirmed</span>' : '<span class="pill amber">⏳ Not confirmed yet</span>' +
-        (yes ? '<button type="button" class="btn ghost sm markyes" data-bkyes="' + h(b.id) + '">✅ Mark as confirmed</button>' : '')) + reminded
+        (yes ? '<button type="button" class="btn ghost sm markyes" data-bkyes="' + h(b.id) + '">✅ Mark as confirmed</button>' : '')) +
+        (b.welcome_at ? '<span class="pill blue">👋 Welcomed</span>' : '') + reminded
     : (b.confirmed_at ?'<span class="pill green">✅ Confirmed</span>' : '<span class="pill amber">⏳ Not confirmed yet</span>' + (yes ? '<button type="button" class="btn ghost sm markyes" data-bkyes="' + h(b.id) + '">✅ Mark as confirmed</button>' : '')) +
       (b.confirm_at || b.confirmed_at ? '' : '<span class="pill red">Confirmation not sent</span>') +  // confirmed = they had it, however it reached them
       reminded;
@@ -3607,6 +3669,7 @@ function bindBookings(root) {
   root.querySelectorAll('[data-bkyes]').forEach(b => { b.onclick = e => { e.stopPropagation(); bookYes(b.dataset.bkyes, b); }; });
   root.querySelectorAll('[data-bkre]').forEach(b => { b.onclick = e => { e.stopPropagation(); const x = bookById(b.dataset.bkre); if (x) bookForm(x, 'rebook'); }; });
   root.querySelectorAll('[data-bkrem]').forEach(b => { b.onclick = () => bookRemindSheet(b.dataset.bkrem); });
+  on('bkwel', () => bookWelcomeSheet());
 }
 /** They replied YES on WhatsApp: one tap and they show as ✅ Confirmed. */
 function bookYes(id, btn, then) {
@@ -3682,12 +3745,13 @@ function bookSendSheet(b, kind) {
   const link = (via, inner, cls) => '<a class="' + (cls || '') + '" data-bks="' + h(b.id) + '" data-kind="' + kind + '" data-via="' + via + '" href="' + h(via === 'sms' ? smsUrl(b.mobile, msg) : waUrl(b.mobile, msg)) + '" target="_blank" rel="noopener">' + inner + '</a>';
   const back = bookSheetOpen(BOOK_SENT[kind],
     (kind === 'confirm' ? '<div class="flag green" style="margin-bottom:10px">✅ ' + h(bookName(b)) + ' is booked · ' + h(fmtOrd(b.slot_date)) + ', ' + h(fmt12(b.slot_time || bookCfg().time)) + '</div>' : '') +
-    '<div class="sheet-h"><div><div class="label muted">' + h(bookName(b)) + ' · ' + h(b.mobile) + '</div><div class="display">' + { confirm: 'Send the confirmation', remind: 'Send the reminder', missed: 'Sorry we missed you' }[kind] + '</div></div></div>' +
+    '<div class="sheet-h"><div><div class="label muted">' + h(bookName(b)) + ' · ' + h(b.mobile) + '</div><div class="display">' + { confirm: 'Send the confirmation', remind: 'Send the reminder', missed: 'Sorry we missed you', welcome: 'Send the welcome' }[kind] + '</div></div></div>' +
     // The two ways to send first, then what they'll get: on a phone the buttons are on screen without scrolling (Angad, 23 Oct)
     '<div class="bksend2">' + (sms ? link('sms', '📱 Text', 'btn sms') + link('whatsapp', '💬 WhatsApp', 'btn wa') : link('whatsapp', '💬 WhatsApp', 'btn wa') + link('sms', '📱 Text', 'btn sms')) + '</div>' + deskPasteNote() +
     '<p class="hint center" id="bksent">' + (b[kind + '_at'] ? '✓ Sent ' + h(fmtTs(b[kind + '_at'])) + ' by ' + h(String(b[kind + '_by']).split(' ')[0]) + ' (' + h(VIA_LABEL[b[kind + '_via']] || 'WhatsApp') + '). Send it again if you need to.'
       : (IS_DESKTOP ? bookSignedBy(b).replace(/^s/, 'S') + '.' : 'Opens with this ready, ' + bookSignedBy(b) + '.') + ' Not on WhatsApp? 📱 Text sends it from your phone\'s Messages. Tap send and come back.') + '</p>' +
-    '<div class="label muted" style="margin:10px 2px 6px">What they\'ll get</div><div class="waprev">' + waHtml(msg) + '</div>' +
+    (bookHasCard(msg) ? '<p class="hint center bkcardtip">' + BOOK_CARD_TIP + '</p>' : '') +
+    '<div class="label muted" style="margin:10px 2px 6px">What they\'ll get</div><div class="waprev">' + (bookHasCard(msg) ? bookCardHtml(b) : '') + waHtml(msg) + '</div>' +
     '<button class="btn ghost block" id="bkdone">Done</button>');
   back.querySelectorAll('[data-bks]').forEach(a => a.addEventListener('click', () => setTimeout(() => {
     const s = back.querySelector('#bksent'); if (s) s.innerHTML = '<span class="pill green">✓ Sent by you · ' + h(londonNow().slice(11, 16)) + '</span>';
@@ -3706,6 +3770,7 @@ function bookRemindSheet(date) {
     '<div class="sheet-h"><div><div class="label muted">' + (n === 0 ? 'TODAY · ' : n === 1 ? 'TOMORROW · ' : '') + h(fmtLong(date)) + ' · ' + h(bookCfg().time) + '</div><div class="display">📲 Reminders</div></div></div>' +
     '<p class="hint" style="margin-top:-6px"><b id="bkprog">' + prog() + '</b>. ' + (hy ? 'Signed by you, and 🤖 Hyrre\'s by whoever booked them (Megan\'s: ' + h(bookSigner({ booked_by: bookCfg().hyrreBy || 'Megan Hyrre' })) + ').' : 'Signed by you.') +
       ' Tap send, come back, next one.' + (office ? ' <b>' + h(officeNote()) + ' (' + office + ').</b>' : '') + '</p>' + deskPasteNote() +
+    '<p class="hint bkcardtip" style="margin-top:-4px">' + BOOK_CARD_TIP + '</p>' +
     '<div class="list">' + items.map(b => '<div class="trow"><span class="av co-' + bookCo(b) + '">' + h(initials(bookName(b))) + '</span><div class="main"><div class="name">' + h(bookName(b)) + '</div>' +
       '<div class="sub"><span class="co ' + bookCo(b) + '">' + bookCo(b) + '</span> ' + (bookHy(b) ? '🤖 ' + h(bookSignedBy(b)) + ' · ' : '') + (b.confirmed_at ? '✅ confirmed' : '⏳ not confirmed') + ' · ' + h(b.source) + '</div></div>' +
       (reminded(b) ? sent(b) : bookSend(b, 'remind')) + '</div>').join('') + '</div>' +
@@ -3714,6 +3779,30 @@ function bookRemindSheet(date) {
     if (!items.some(x => x.id === a.dataset.bks)) return;
     // The booking as it is now: coming back from WhatsApp refreshes the list, so the one this sheet opened with is an old copy
     setTimeout(() => { const b = bookById(a.dataset.bks); if (!b) return; (a.closest('.tsend') || a).outerHTML = sent(b); back.querySelector('#bkprog').textContent = prog(); }, 300);  // after WhatsApp / Messages has opened
+  }));
+}
+/** Megan's new bookings, one after another, like the reminders list: tap send, WhatsApp opens with their welcome ready, come back,
+ *  next one. Each is on it once: sent = off the count (welcome_at), and it never counts as their reminder. From the "👋 N of Megan's
+ *  to welcome" alert (?c=bookwel) or the button on Book Appts. */
+function bookWelcomeSheet() {
+  const due = bookings().filter(bookWelcomeDue).sort((a, b) => a.slot_date.localeCompare(b.slot_date) || bookByName(a, b));
+  const items = due.filter(bookCanSend), office = due.length - items.length;  // Megan's: the office phone's (Angad, 9 Nov)
+  if (!items.length) return toast(office ? officeNote() : 'Nobody new to welcome');
+  const sent = b => '<span class="pill green">✓ Sent ' + h(String(b.welcome_at).slice(11, 16)) + '</span>';
+  const prog = () => items.filter(x => (bookById(x.id) || x).welcome_at).length + ' of ' + items.length + ' sent';
+  const back = bookSheetOpen('Welcome Megan\'s new bookings',
+    '<div class="sheet-h"><div><div class="label muted">New from Hyrre · signed ' + h(bookSigner(items[0])) + '</div><div class="display">👋 Welcome</div></div></div>' +
+    '<p class="hint" style="margin-top:-6px"><b id="bkwprog">' + prog() + '</b>. One each, the day they come in: their day, the address and who\'s expecting them. ' +
+      'It isn\'t their reminder: that still goes the evening before. Tap send, come back, next one.</p>' + deskPasteNote() +
+    '<p class="hint bkcardtip" style="margin-top:-4px">' + BOOK_CARD_TIP + '</p>' +
+    '<div class="list">' + items.map(b => '<div class="trow"><span class="av co-' + bookCo(b) + '">' + h(initials(bookName(b))) + '</span><div class="main"><div class="name">' + h(bookName(b)) + '</div>' +
+      '<div class="sub"><span class="co ' + bookCo(b) + '">' + bookCo(b) + '</span> 📅 ' + h(fmt(b.slot_date)) + ' · ' + h(b.source) + '</div></div>' +
+      bookSend(b, 'welcome') + '</div>').join('') + '</div>' +
+    '<div class="label muted" style="margin:14px 2px 6px">What ' + h(items[0].first_name) + ' will get</div><div class="waprev">' + (bookHasCard(msgBookWelcome(items[0])) ? bookCardHtml(items[0]) : '') + waHtml(msgBookWelcome(items[0])) + '</div>' +
+    '<button class="btn ghost block" id="bkdone" style="margin-top:14px">Done</button>');
+  back.querySelectorAll('[data-bks]').forEach(a => a.addEventListener('click', () => {
+    if (!items.some(x => x.id === a.dataset.bks)) return;
+    setTimeout(() => { const b = bookById(a.dataset.bks); if (!b) return; (a.closest('.tsend') || a).outerHTML = sent(b); back.querySelector('#bkwprog').textContent = prog(); }, 300);  // after WhatsApp / Messages has opened
   }));
 }
 /** One booking: who, when, what's been sent, and what you can do next. */
@@ -3729,13 +3818,15 @@ function bookSheet(id) {
     '<div class="bkinfo"><div>📱 <a href="tel:' + h(b.mobile) + '">' + h(b.mobile) + '</a>' + (b.no_whatsapp ? ' · not on WhatsApp' : '') + '</div>' +
       '<div>🙋 Booked by ' + h(b.booked_by) + ' · ' + h(fmtTs(b.created_at)) + ' · ' + h(b.source) + '</div>' +
       (b.notes ? '<div>📝 ' + h(b.notes) + '</div>' : '') +
-      sentLine('confirm') + sentLine('remind') + sentLine('missed') +
+      sentLine('welcome') + sentLine('confirm') + sentLine('remind') + sentLine('missed') +
       (b.confirmed_at ? '<div>✅ ' + (b.confirmed_by === 'CONFIRM' ? 'Tapped CONFIRM · ' + h(fmtTs(b.confirmed_at)) : 'Replied YES · ' + h(fmtTs(b.confirmed_at)) + (b.confirmed_by ? ' · ' + h(String(b.confirmed_by).split(' ')[0]) : '')) + '</div>' : '') +
       (hy ? '<div>🤖 From Hyrre, approved there' + (b.hyrre_at ? ' · seen ' + h(fmtTs(b.hyrre_at)) : '') + '. Hyrre sends their confirmation and texts; our 📲 reminder is ' +
         (can ? h(bookSignedBy(b)) : 'sent from the office phone') + '. ' +
         (missed && b.status === 'booked' ? ' Didn\'t come? Send "sorry we missed you" and rebook them here. ' + bookHyAbsent() : 'To change the day or cancel, do it in Hyrre: the next pull brings it here.') + '</div>' : '') + '</div>' +
     (can ? '' : '<p class="flag amber bkoffice">' + h(officeNote()) + ', signed ' + h(String(bookCfg().hyrreSender).split(' ')[0]) + ' / Megan. Nothing to send from this phone.</p>') +
-    (hyOpen ? (can ? '<button class="btn wa block" id="bkr">📲 Send a reminder · ' + h(bookSignedBy(b)) + '</button>' : '') +
+    (hyOpen ? (can ? '<button class="btn wa block" id="bkr">📲 Send a reminder · ' + h(bookSignedBy(b)) + '</button>' +
+        (meganOf(b) && b.slot_date > S.me.today && String(b.created_at).slice(0, 10) >= (bookCfg().welcomeFrom || '9999')
+          ? '<button class="btn ghost block" id="bkw" style="margin-top:8px">👋 ' + (b.welcome_at ? 'Send the welcome again' : 'Send the welcome') + '</button>' : '') : '') +
       (b.confirmed_at ? '' : '<button class="btn ghost block" id="bky" style="margin-top:8px">✅ Mark as confirmed (they said yes)</button>') : '') +
     (open && can ? '<button class="btn wa block" id="bkc">💬 ' + (b.confirm_at ? 'Send the confirmation again' : 'Send the confirmation') + ' · WhatsApp or 📱 Text</button>' +
       '<button class="btn ghost block" id="bkr" style="margin-top:8px">📲 Send a reminder</button>' +
@@ -3750,6 +3841,7 @@ function bookSheet(id) {
   on('#bkc', () => bookSendSheet(b, 'confirm'));
   on('#bkr', () => bookSendSheet(b, 'remind'));
   on('#bkm', () => bookSendSheet(b, 'missed'));
+  on('#bkw', () => bookSendSheet(b, 'welcome'));
   on('#bke', () => bookForm(b, 'edit'));
   on('#bkre', () => bookForm(b, 'rebook'));
   on('#bky', e => bookYes(b.id, e.currentTarget, nb => bookSheet(nb.id)));
@@ -3763,15 +3855,25 @@ function bookSheet(id) {
 }
 /** Appts Attended (admins): of the people booked after a call, how many came, by who booked them and where they applied. */
 function showupCard(s) {
-  if (!s || !s.booked) return '';
+  if (!s || !(s.booked || (s.bySource && s.bySource.four.booked))) return '';
   const pct = (a, b) => b ? Math.round(a / b * 100) + '%' : '–';
-  return '<div class="section-h"><b>📅 Show-up</b><span>' + s.came + ' of ' + s.booked + ' came · ' + pct(s.came, s.booked) + '</span></div>' +
-    '<div class="card showup"><table class="sutab"><tr><th>Booked by</th><th>Booked</th><th>Came</th><th>Show-up</th></tr>' +
-      s.rows.map(r => '<tr><td>' + h(r.name) + '</td><td>' + r.booked + '</td><td>' + r.came + '</td><td><b>' + pct(r.came, r.booked) + '</b></td></tr>').join('') + '</table>' +
-    '<div class="label muted" style="margin:14px 0 2px">Where they applied</div>' +
-      s.sources.map(x => '<div class="su-src"><div class="su-l"><span><b>' + h(x.source) + '</b> · ' + x.booked + ' booked → ' + x.came + ' came</span><b>' + pct(x.came, x.booked) + '</b></div>' +
-        '<div class="bar"><i style="width:' + (x.booked ? Math.round(x.came / x.booked * 100) : 0) + '%"></i></div></div>').join('') + '</div>' +
-    '<p class="hint">Booked from the app after a call, or in Hyrre (Megan Hyrre, or by hand there), Mon–Fri. Today\'s count once ' + h(bookCfg().missed) + ' has passed. Cancelled bookings are left out.</p>';
+  // By where they applied (Angad, 12 Nov): booked, came and show-up for this week and the last 4 weeks; each column adds up to "All"
+  const bs = s.bySource, now = !!bs && addDays(bs.to, 2) === weekEndingOf(S.me.today);
+  const cells = (x, cls) => '<td' + (cls ? ' class="' + cls + '"' : '') + '>' + x.booked + '</td><td>' + x.came + '</td><td><b>' + pct(x.came, x.booked) + '</b></td>';
+  // A week with nobody counted yet (Monday before 10:30): the card stays, for the last 4 weeks by where they applied
+  return '<div class="section-h"><b>📅 Show-up</b><span>' + (s.booked ? s.came + ' of ' + s.booked + ' came · ' + pct(s.came, s.booked) : 'nobody counted yet this week') + '</span></div>' +
+    '<div class="card showup">' + (s.rows.length ? '<table class="sutab"><tr><th>Booked by</th><th>Booked</th><th>Came</th><th>Show-up</th></tr>' +
+      s.rows.map(r => '<tr><td>' + h(r.name) + '</td><td>' + r.booked + '</td><td>' + r.came + '</td><td><b>' + pct(r.came, r.booked) + '</b></td></tr>').join('') + '</table>' : '') +
+    '<div class="label muted" style="margin:' + (s.rows.length ? '14px' : '0') + ' 0 2px">Where they applied</div>' +
+      (bs ? '<table class="sutab susrc"><tr class="grp"><th></th><th colspan="3">' + (now ? 'This week' : 'That week') + '</th><th colspan="3">' + (now ? 'Last 4 weeks' : '4 weeks to it') + '</th></tr>' +
+          '<tr><th>Source</th><th>Booked</th><th>Came</th><th>%</th><th class="g2">Booked</th><th>Came</th><th>%</th></tr>' +
+          bs.rows.map(r => '<tr><td>' + h(r.source) + '</td>' + cells(r.week, '') + cells(r.four, 'g2') + '</tr>').join('') +
+          '<tr class="tot"><td>All</td>' + cells(s, '') + cells(bs.four, 'g2') + '</tr></table>'
+        // a phone's older copy of the week (before 12 Nov): the week only
+        : s.sources.map(x => '<div class="su-src"><div class="su-l"><span><b>' + h(x.source) + '</b> · ' + x.booked + ' booked → ' + x.came + ' came</span><b>' + pct(x.came, x.booked) + '</b></div>' +
+          '<div class="bar"><i style="width:' + (x.booked ? Math.round(x.came / x.booked * 100) : 0) + '%"></i></div></div>').join('')) + '</div>' +
+    '<p class="hint">Booked from the app after a call, or in Hyrre (Megan Hyrre, or by hand there), Mon–Fri. Today\'s count once ' + h(bookCfg().missed) + ' has passed. Cancelled bookings are left out.' +
+      (bs ? ' Where they applied: most came first; the 4 weeks are ' + h(fmt(bs.from)) + ' to ' + h(fmt(bs.to)) + ', this week and the three before it.' : '') + '</p>';
 }
 
 // ───── New starter onboarding (admins only): their details to copy into Databyte, and the welcome email with the FieldIQ link.

@@ -23,8 +23,15 @@ function watch(browser) {
   return seen;
 }
 
+/** Another site's page, opened by a tap in a test (💬 Send opens wa.me in a new tab, which becomes WhatsApp's own page): what that
+ *  site logs isn't a screen of ours (12 Nov: WhatsApp's page logged a Content Security Policy line and the run failed on it). */
+function elsewhere(x) { return /^https?:\/\//.test(x.url) && !/^https?:\/\/(localhost|127\.0\.0\.1)[:/]/.test(x.url); }
+
 /** Prints what was seen; throws on anything that isn't an expected network line. */
 function report(seen) {
+  const other = seen.filter(elsewhere).length;
+  seen = seen.filter(x => !elsewhere(x));
+  if (other) console.log('  (' + other + ' line' + (other === 1 ? '' : 's') + ' from other sites\' own pages left out: WhatsApp\'s page, opened by a Send tap)');
   const real = seen.filter(x => x.kind === 'exception' || !EXPECTED.some(re => re.test(x.text)));
   const by = {};
   real.forEach(x => { const k = x.kind + ' · ' + x.text.split('\n').slice(0, 3).join(' ⏎ ').slice(0, 400) + ' · ' + x.url.replace(/^https?:\/\/[^/]+/, '').slice(0, 80); by[k] = (by[k] || 0) + 1; });

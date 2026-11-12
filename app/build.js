@@ -41,21 +41,34 @@ if (!fs.existsSync(path.join(OUT, 'config.js'))) {
   ].join('\n'));
 }
 
+// "Rubal or Jess": who hosts the presentation, from CONFIG.BOOK_HOSTS in Code.gs (the booking link's preview card names them, like
+// the reminder does; one place to change it)
+const HOSTS = (() => {
+  const m = /BOOK_HOSTS:\s*\[([^\]]*)\]/.exec(read('Code.gs')), a = m ? m[1].split(',').map(x => x.trim().replace(/^'|'$/g, '')).filter(Boolean) : [];
+  if (!a.length) throw new Error('CONFIG.BOOK_HOSTS not found in Code.gs');
+  return a.length > 1 ? a.slice(0, -1).join(', ') + ' or ' + a[a.length - 1] : a[0];
+})();
+// The booking link's WhatsApp card (Angad, 12 Nov). WhatsApp reads these tags from the page as it's first served (no JavaScript), so
+// they're the same for every booking: never a name, a mobile or their day. No og:url: the card must open the link that was sent.
+const BOOKED_OG = co => ({ title: "You're booked in", desc: 'Tap to confirm you\'re coming. ' + HOSTS + ' will have your name ready at the door.', img: 'og-booked-' + co.toLowerCase() + '.jpg', noUrl: true });
+const attr = s => String(s).replace(/"/g, '&quot;');
+// The short link's pages are served at /b/<code> (vercel.json), a folder down from where they live: their files load from the app's root
+const ROOT = new URL(BASE).pathname;
+
 function page(opts) {
   const og = opts.og ? [
     `<meta property="og:type" content="website">`,
-    `<meta property="og:title" content="${opts.og.title}">`,
-    `<meta property="og:description" content="${opts.og.desc}">`,
+    `<meta property="og:title" content="${attr(opts.og.title)}">`,
+    `<meta property="og:description" content="${attr(opts.og.desc)}">`,
     `<meta property="og:image" content="${BASE}img/${opts.og.img}">`,
     `<meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">`,
-    `<meta property="og:url" content="${BASE}${opts.file === 'index.html' ? '' : opts.file}">`,
-    `<meta name="twitter:card" content="summary_large_image">`,
-  ].join('\n  ') : '';
+  ].concat(opts.og.noUrl ? [] : [`<meta property="og:url" content="${BASE}${opts.file === 'index.html' ? '' : opts.file}">`],
+    [`<meta name="twitter:card" content="summary_large_image">`]).join('\n  ') : '';
   const staff = opts.mode === 'staff';
   return `<!DOCTYPE html>
 <html lang="en"${opts.theme ? ' class="t-' + opts.theme + '"' : ''}>
 <head>
-  <meta charset="utf-8">${MOVE ? '\n  ' + MOVE : ''}
+  <meta charset="utf-8">${opts.short ? '\n  <base href="' + ROOT + '">' : ''}${MOVE ? '\n  ' + MOVE : ''}
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>${opts.title}</title>
   <meta name="theme-color" content="${opts.theme === 'JUSS' ? '#0D2833' : '#17171D'}">
@@ -73,7 +86,7 @@ function page(opts) {
   <div id="boot" data-mode="${opts.mode}" data-k="" data-cid=""></div>
   <div id="app"><div class="loading">Loading…</div></div>
   <div id="toast" class="toast" hidden></div>
-  <script>(function () { var q = new URLSearchParams(location.search), b = document.getElementById('boot').dataset; b.k = q.get('t') || ''; b.cid = q.get('c') || ''; })();</script>
+  <script>(function () { var q = new URLSearchParams(location.search), b = document.getElementById('boot').dataset; b.k = ${opts.short ? "(/\\/bl?\\/([a-z0-9]{6,12})\\/?$/.exec(location.pathname) || [])[1] || " : ''}q.get('t') || ''; b.cid = q.get('c') || ''; })();</script>
   <script src="config.js?v=${v}"></script>
   <script src="logos.js?v=${v}"></script>
   ${staff ? `<script src="qr.js?v=${v}"></script>` : ''}
@@ -101,7 +114,11 @@ const pages = [
   { file: 'welcome-juss.html', mode: 'welcome', theme: 'JUSS', title: "You're in! · JUSS Marketing BA Academy",
     og: { title: "You're IN 🎉 JUSS Marketing BA Academy", desc: 'Your Week 1 game plan + confirm your spot', img: 'og-juss.jpg' } },
   // The link in the booking confirmation: their day, where, and CONFIRM (Angad, 23 Oct)
-  { file: 'booked.html', mode: 'booked', theme: 'JUSS', title: "You're booked in · JUSS Marketing" },
+  { file: 'booked.html', mode: 'booked', theme: 'JUSS', title: "You're booked in · JUSS Marketing", og: BOOKED_OG('JUSS') },
+  // The same page behind the short link in the reminder and the welcome (Angad, 12 Nov): …/b/<code> (vercel.json sends it here; the
+  // code is read from the address), and …/bl/<code> for a LINK booking (its own card). The long booked.html?t=… links keep working.
+  { file: 'b.html', mode: 'booked', theme: 'JUSS', short: true, title: "You're booked in · JUSS Marketing", og: BOOKED_OG('JUSS') },
+  { file: 'bl.html', mode: 'booked', theme: 'LINK', short: true, title: "You're booked in · LINK Marketing", og: BOOKED_OG('LINK') },
 ];
 pages.forEach(p => write(p.file, page(p)));
 
@@ -160,7 +177,7 @@ self.addEventListener('fetch', e => {
 `);
 
 ['icon-180.png', 'icon-192.png', 'icon-512.png'].forEach(f => copy(path.join(ASSETS, f), 'icons/' + f));
-['poster-link.jpg', 'poster-juss.jpg', 'og-link.jpg', 'og-juss.jpg', 'og-app.jpg', 'logo-juss.png', 'logo-link.png'].forEach(f => copy(path.join(ASSETS, f), 'img/' + f));
+['poster-link.jpg', 'poster-juss.jpg', 'og-link.jpg', 'og-juss.jpg', 'og-app.jpg', 'og-booked-juss.jpg', 'og-booked-link.jpg', 'logo-juss.png', 'logo-link.png'].forEach(f => copy(path.join(ASSETS, f), 'img/' + f));
 // The face finder's cascade for the new starters poster (MIT, see img/face-LICENSE.txt)
 copy(path.join(ASSETS, 'face', 'facefinder.bin'), 'img/facefinder.bin');
 copy(path.join(ASSETS, 'face', 'LICENSE.txt'), 'img/face-LICENSE.txt');
