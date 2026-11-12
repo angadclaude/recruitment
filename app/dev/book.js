@@ -47,7 +47,7 @@ const to = (list, id) => list.filter(p => p.body.include_aliases.external_id.inc
 const textOf = href => decodeURIComponent(href.split(/[?&]text=|[?&]body=/)[1]);
 
 // The approved wording (Angad, 23 Oct): the thank-you's style, no hearts, signed by whoever sends it, JUSS Marketing Ltd
-const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked in* for your *Appointment Presentation* 🎉\n\n' +
+const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked in* to *meet the team* 🎉\n\n' +
   '📅 *Tuesday 27th October · 10:00 AM*\n⏱️ Approximately 60–90 minutes\n\n' +
   '📍 *Where*\nJUSS Marketing, 2nd Floor East\nAutomotive House, Grays Place, Slough SL2 5AF\n🗺️ https://maps.app.goo.gl/zeP4MjS2hMJzB9V9A\n' +
   '🚗 Parking right outside the main entrance\n🚆 By train? Exit Slough station from *platform 5*\n\n' +
@@ -265,7 +265,7 @@ const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked 
   // minutes; their short link goes once, alone, as the very last line; and the Google Maps link stays (his choice: "Keep the Maps link")
   const ol2B = (await api(jess, 'bookingList', {})).items.find(b => b.first_name === 'Ollie' && b.slot_date === '2026-10-28');
   ok(/^[a-hjkmnp-z2-9]{8}$/.test(ol2B.short_code), 'every booking has a short code for its link: 8 random letters and numbers (' + ol2B.short_code.length + ' characters, none of 0 o 1 l i)');
-  ok(remTxt === 'Hey Ollie! 👋\n\n*Tomorrow’s the day!* 🙌\nYour *Appointment Presentation* with *JUSS Marketing*\n\n📅 *Wednesday 28th October · 10:00 AM*\n' +
+  ok(remTxt === 'Hey Ollie! 👋\n\n*Tomorrow’s the day!* 🙌\nYou’re booked in to *meet the team* at *JUSS Marketing*\n\n📅 *Wednesday 28th October · 10:00 AM*\n' +
     '📍 Automotive House, Slough (2 mins from the station)\n🗺️ https://maps.app.goo.gl/zeP4MjS2hMJzB9V9A\n\n' +
     '🤝 *Rubal or Jess* will be hosting and expecting you\n💷 Meet the team and see real earnings examples\n⏰ Aim to arrive *10 minutes early* · done by 11:30\n👔 Office wear / smart casual\n\n' +
     'See you tomorrow! 🔥\n\nKind regards,\n*Jess Grace*\nIn association with *JUSS Marketing Ltd*\n\n' + PUBLIC + 'b/' + ol2B.short_code,
@@ -283,6 +283,8 @@ const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked 
   const msgs = new Function('S', ['D', 'addDays', 'fmtOrd', 'fmt12', 'bookCfg', 'bookCo', 'bookHy', 'bookDaysTo', 'bookPage', 'bookLink', 'bookHosts', 'bookDoneBy', 'bookSigner', 'bookSign', 'msgBookRemind', 'msgBookWelcome'].map(fnOf)
     .concat(['DAYS_LONG', 'MONTHS_LONG', 'OFFICES', 'BOOK_DEFAULT'].map(constOf)).join('\n') + '\nreturn { remind: msgBookRemind, welcome: msgBookWelcome };');
   const asJess = () => msgs({ me: JSON.parse(JSON.stringify(meJ)) });
+  ok(!/presentation/i.test(remTxt) && !/presentation/i.test(asJess().welcome(ol2B)) && !/presentation/i.test(CONFIRM_SAM) && /booked in\* to \*meet the team\* at \*JUSS Marketing\* 🎉/.test(asJess().welcome(ol2B)),
+    'none of them says "presentation" before they come: the confirmation, the reminder and the welcome all say "meet the team"');
   ok(asJess().remind(ol2B) === remTxt, '(the same message from the app\'s own function, for the other branches)');
   const oneHost = { me: Object.assign(JSON.parse(JSON.stringify(meJ)), {}) }; oneHost.me.book.hosts = ['Sam'];
   const variants = {
@@ -311,6 +313,8 @@ const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked 
   const lctx = await browser.newContext(PHONE), lp = await lctx.newPage();
   await lp.goto(leahPage.replace(PUBLIC, APP)); await lp.waitForSelector('#conf');
   const lpt = await lp.innerText('#app');
+  ok(/To meet the team at JUSS Marketing/.test(lpt) && !/presentation/i.test(lpt) && /text=Meet%20the%20team%20%E2%80%93%20JUSS%20Marketing/.test(await lp.getAttribute('a[href*="calendar.google.com"]', 'href')),
+    'her page says "To meet the team at JUSS Marketing" (Angad, 12 Nov: the same words as Megan, not "Appointment Presentation"), and so does its calendar entry');
   ok(/You're booked in, Leah/.test(lpt) && /Thursday 29 October/.test(lpt) && /10:00 AM/.test(lpt) && /Automotive House/.test(lpt) && /JUSS Marketing/.test(lpt) && /from Jess/.test(lpt) &&
     await lp.evaluate(() => document.body.dataset.co) === 'JUSS', 'her page: "You\'re booked in, Leah 🎉", Thursday 29 October · 10:00 AM, where, Maps + calendar, JUSS look');
   const cal = await lp.getAttribute('a[href*="calendar.google.com"]', 'href');
@@ -388,8 +392,8 @@ const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked 
   const missRow = await ap.innerText('.bkrow:has-text("Ollie")');
   ok(/Didn't come/.test(missRow) && await ap.$('.bkrow:has-text("Ollie") a[data-kind=missed]') && await ap.$('.bkrow:has-text("Ollie") [data-bkre]'), 'Wed 10:40, Ollie didn\'t come again → "Sorry we missed you" + 📅 Rebook on his row');
   const missTxt = textOf(await ap.getAttribute('.bkrow:has-text("Ollie") a.btn[data-kind=missed]', 'href'));
-  ok(missTxt === 'Hey Ollie! 👋\n\nWe missed you at your *Appointment Presentation* today 😕 Everything OK?\n\nYour spot isn’t gone: let’s get you *rebooked* 📅\n' +
-    'We run presentations *Monday to Friday at 10:00 AM*.\n\n👉 Which day suits you? Just reply here 💬\n\nKind regards,\n*Angad Oshan*\nIn association with *JUSS Marketing Ltd*',
+  ok(missTxt === 'Hey Ollie! 👋\n\nWe missed you today 😕 Everything OK?\n\nYour spot isn’t gone: let’s get you *rebooked* 📅\n' +
+    'You can come in and *meet the team* *Monday to Friday at 10:00 AM*.\n\n👉 Which day suits you? Just reply here 💬\n\nKind regards,\n*Angad Oshan*\nIn association with *JUSS Marketing Ltd*',
     'the "sorry we missed you", signed by Angad');
   await shot(ap, 'b5-didnt-come', true);
   await ap.click('.bkrow:has-text("Ollie") [data-bkre]'); await ap.waitForSelector('.bksheet #bkfn');

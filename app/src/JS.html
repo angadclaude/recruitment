@@ -910,13 +910,13 @@ function renderBooked(w, keepScroll) {
   // In their calendar for 90 minutes, the long end of "approximately 60–90 minutes"
   const end = Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5)) + 90, pad = n => String(n).padStart(2, '0');
   const ymd = w.slot_date.replace(/-/g, ''), t0 = time.replace(':', '') + '00', t1 = pad(Math.floor(end / 60)) + pad(end % 60) + '00';
-  const gcal = 'https://calendar.google.com/calendar/render?action=TEMPLATE&text=' + encodeURIComponent('Appointment Presentation – ' + brand) +
+  const gcal = 'https://calendar.google.com/calendar/render?action=TEMPLATE&text=' + encodeURIComponent('Meet the team – ' + brand) +
     '&dates=' + ymd + 'T' + t0 + '/' + ymd + 'T' + t1 + '&ctz=Europe/London&location=' + encodeURIComponent(office.address) +
     '&details=' + encodeURIComponent('Office wear / smart casual. No documents needed. Arrive 10 minutes early.');
   const sec = (icon, title) => '<section class="evsec"><div class="evsec-h"><span>' + icon + '</span>' + title + '</div>';
   $app.innerHTML = '<div class="wl wl-' + co + '">' +
     '<div class="wl-hero">' + FX + '<img class="wl-logo" src="' + LOGOS[co] + '" alt="' + h(brand) + '">' +
-    '<h1>You\'re booked in, <span class="gname">' + h(w.first_name) + '</span> 🎉</h1><p>Your <b>Appointment Presentation</b> with <b>' + h(brand) + '</b></p>' +
+    '<h1>You\'re booked in, <span class="gname">' + h(w.first_name) + '</span> 🎉</h1><p>To <b>meet the team</b> at <b>' + h(brand) + '</b></p>' +
     '<span class="wl-pill">' + h(when) + '</span></div>' +
     sec('📅', 'When and where') + '<div class="qcard"><div class="wl-date">' + h(fmtLong(w.slot_date)) + '</div>' +
     '<div class="wl-time">⏰ ' + h(fmt12(time)) + ' · approximately 60–90 minutes</div><p>📍 ' + h(office.address) + '<br><span class="muted small">2 mins from Slough station · exit from platform 5</span></p>' +
@@ -3417,11 +3417,12 @@ function bookCanSend(b) { return !meganOf(b) || !bookCfg().hyrreSender || !!book
 function officeNote() { return '📱 ' + String(bookCfg().hyrreSender).split(' ')[0] + ' sends Megan\'s from the office phone'; }
 /** "Signed by you" / "Signed Megan", for the send screens. */
 function bookSignedBy(b) { return bookSigner(b) === S.me.user.name ? 'signed by you' : 'signed ' + bookSigner(b); }
-/** The booking confirmation (Angad, 23 Oct): the thank-you's style, no hearts. */
+/** The booking confirmation (Angad, 23 Oct): the thank-you's style, no hearts. Before they come it's "meet the team", never
+ *  "Appointment Presentation" (Angad, 12 Nov: the same words as Megan's final wording, in every message and on their page). */
 function msgBookConfirm(b) {
   const co = bookCo(b);
   return 'Hey ' + b.first_name + '! 👋\n\n' +
-    'Great speaking with you! You’re *booked in* for your *Appointment Presentation* 🎉\n\n' +
+    'Great speaking with you! You’re *booked in* to *meet the team* 🎉\n\n' +
     '📅 *' + fmtOrd(b.slot_date) + ' · ' + fmt12(b.slot_time || bookCfg().time) + '*\n' +
     '⏱️ Approximately 60–90 minutes\n\n' +  // Angad, 23 Oct (was "About 1–2 hours")
     '📍 *Where*\n' + co + ' Marketing, 2nd Floor East\nAutomotive House, Grays Place, Slough SL2 5AF\n' +
@@ -3443,7 +3444,7 @@ function msgBookRemind(b) {
   const link = b.confirmed_at ? '' : bookLink(b);
   return 'Hey ' + b.first_name + '! 👋\n\n' +
     '*' + day.charAt(0).toUpperCase() + day.slice(1) + '’s the day!* 🙌\n' +
-    'Your *Appointment Presentation* with *' + co + ' Marketing*\n\n' +
+    'You’re booked in to *meet the team* at *' + co + ' Marketing*\n\n' +
     '📅 *' + fmtOrd(b.slot_date) + ' · ' + fmt12(b.slot_time || bookCfg().time) + '*\n' +
     '📍 Automotive House, Slough (2 mins from the station)\n' +
     '🗺️ ' + OFFICES[co].maps + '\n\n' +
@@ -3460,7 +3461,7 @@ function msgBookRemind(b) {
 function msgBookWelcome(b) {
   const n = bookDaysTo(b.slot_date), day = n === 0 ? 'today' : n === 1 ? 'tomorrow' : DAYS_LONG[D(b.slot_date).getUTCDay()], co = bookCo(b), link = bookLink(b);
   return 'Hey ' + b.first_name + '! 👋\n\n' +
-    'You’re *booked in* for your *Appointment Presentation* with *' + co + ' Marketing* 🎉\n\n' +
+    'You’re *booked in* to *meet the team* at *' + co + ' Marketing* 🎉\n\n' +
     '📅 *' + fmtOrd(b.slot_date) + ' · ' + fmt12(b.slot_time || bookCfg().time) + '*\n' +
     '📍 ' + OFFICES[co].address + '\n' +
     '🚆 Right opposite Slough station (exit from *platform 5*)\n\n' +
@@ -3486,9 +3487,9 @@ function bookCardHtml(b) {
 /** Didn't come: their spot isn't gone, which day suits them? */
 function msgBookMissed(b) {
   return 'Hey ' + b.first_name + '! 👋\n\n' +
-    'We missed you at your *Appointment Presentation* ' + (b.slot_date === S.me.today ? 'today' : 'on ' + DAYS_LONG[D(b.slot_date).getUTCDay()]) + ' 😕 Everything OK?\n\n' +
+    'We missed you ' + (b.slot_date === S.me.today ? 'today' : 'on ' + DAYS_LONG[D(b.slot_date).getUTCDay()]) + ' 😕 Everything OK?\n\n' +
     'Your spot isn’t gone: let’s get you *rebooked* 📅\n' +
-    'We run presentations *Monday to Friday at ' + fmt12(bookCfg().time) + '*.\n\n' +
+    'You can come in and *meet the team* *Monday to Friday at ' + fmt12(bookCfg().time) + '*.\n\n' +
     '👉 Which day suits you? Just reply here 💬\n\n' + bookSign(b);
 }
 const BOOK_MSG = { confirm: msgBookConfirm, remind: msgBookRemind, missed: msgBookMissed, welcome: msgBookWelcome };

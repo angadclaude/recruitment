@@ -352,7 +352,7 @@ const FIRST = [
 
   console.log('Megan\'s no-show: our "sorry we missed you" and rebook, from the office phone (Angad, 30 Oct + 9 Nov)');
   const missMsg = decodeURIComponent((await chp.getAttribute('.bkrow:has-text("Aisha Khan") a.btn[data-kind=missed]', 'href')).split('?text=')[1]);
-  ok(/^Hey Aisha! 👋\n\nWe missed you at your \*Appointment Presentation\* today 😕/.test(missMsg) && /Which day suits you\? Just reply here/.test(missMsg) &&
+  ok(/^Hey Aisha! 👋\n\nWe missed you today 😕 Everything OK\?\n\n/.test(missMsg) && /You can come in and \*meet the team\* \*Monday to Friday at 10:00 AM\*\./.test(missMsg) && !/presentation/i.test(missMsg) && /Which day suits you\? Just reply here/.test(missMsg) &&
     /Kind regards,\n\*Christie \/ Megan\*\nIn association with \*JUSS Marketing Ltd\*$/.test(missMsg), 'Aisha\'s "sorry we missed you": rebook by replying, signed *Christie / Megan*');
   await chp.click('.bkrow:has-text("Aisha Khan") a.btn[data-kind=missed]'); await chp.waitForTimeout(800);
   let aNow = (await api(chrisTok, 'bookingList', {})).items.find(b => b.id === aSent.id);
@@ -496,7 +496,7 @@ const FIRST = [
     'tapping the alert on the office phone opens Book Appts with the welcome list: Nina and Omar, "0 of 2 sent", signed Christie / Megan');
   const wHref = await wPage.getAttribute('.bksheet .trow:has-text("Nina Patel") a.btn[data-kind=welcome]', 'href'), wMsg = decodeURIComponent(wHref.split('?text=')[1]);
   const SITE = require('../site.json').url;
-  ok(/^https:\/\/wa\.me\/447700900241\?text=/.test(wHref) && wMsg === 'Hey Nina! 👋\n\nYou’re *booked in* for your *Appointment Presentation* with *JUSS Marketing* 🎉\n\n' +
+  ok(/^https:\/\/wa\.me\/447700900241\?text=/.test(wHref) && wMsg === 'Hey Nina! 👋\n\nYou’re *booked in* to *meet the team* at *JUSS Marketing* 🎉\n\n' +
     '📅 *Thursday 5th November · 10:00 AM*\n📍 2nd Floor East, Automotive House, Grays Place, Slough SL2 5AF\n🚆 Right opposite Slough station (exit from *platform 5*)\n\n' +
     '🤝 *Rubal or Jess* will be expecting you\n⏰ Aim to arrive *10 minutes early* · done by 11:30\n\nSee you tomorrow! 🔥\n\n' +
     'Kind regards,\n*Christie / Megan*\nIn association with *JUSS Marketing Ltd*\n\n' + SITE + 'b/' + nina.short_code,
