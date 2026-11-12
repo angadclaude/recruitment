@@ -1,0 +1,1 @@
+Pictures for the pull request "Megan's welcome, the surer reminder, the link's card, show-up by source". Test data only (made-up names and numbers). Safe to delete once the pull request is merged or closed.
