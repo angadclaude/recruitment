@@ -1,4 +1,4 @@
-window.APP_VERSION = 'd4de8a3a';
+window.APP_VERSION = 'ba8ae506';
 
 (function () {
 'use strict';
@@ -3384,8 +3384,9 @@ function bookPage(b) {
   return b.confirm_token && base ? base + 'booked.html?t=' + b.confirm_token + '&n=' + encodeURIComponent(b.first_name) + '&d=' + b.slot_date : '';
 }
 /** Their page's short link (…/b/<code>; a LINK booking's is …/bl/<code>), the last line of the reminder and the welcome (Angad, 12 Nov).
- *  WhatsApp turns the FIRST link in a message into a card on top of it (the page's "You're booked in · Tap to confirm" preview), so
- *  a message that ends with this link carries no other link. No code yet (a phone's older copy of the booking): the long link. */
+ *  WhatsApp turns the FIRST link in a message into a card on top of it. In the welcome theirs is the only link, so the card is the
+ *  page's "You're booked in · Tap to confirm"; in the reminder the Google Maps link comes first (Angad chose to keep it), so the card
+ *  there is Google's. No code yet (a phone's older copy of the booking): the long link. */
 function bookLink(b) {
   const base = ((S.me.links && S.me.links.checkin) || '').replace(/checkin\.html.*$/, '');
   return b.short_code && base ? base + (bookCo(b) === 'LINK' ? 'bl/' : 'b/') + b.short_code : bookPage(b);
@@ -3435,9 +3436,9 @@ function msgBookConfirm(b) {
 }
 /** The evening before (or that morning): "Tomorrow's the day!" In the surer tone Angad approved on 12 Nov (2 of 41 had tapped CONFIRM):
  *  they're booked, so nothing asks "still coming?"; the hosts are named (bookHosts); and their link goes once, alone, as the very last
- *  line, so WhatsApp shows it as the card on top of the message. WhatsApp only makes that card for the first link in a message, so with
- *  their link the Google Maps link is left out (the map and parking are one tap away on their page). Already confirmed: no link
- *  (nothing to confirm), the map link as before. No page at all: the map link, and YES in the same tone. */
+ *  line. The Google Maps link stays in it (Angad, 12 Nov, asked which to keep: "Keep the Maps link"): WhatsApp makes its card from the
+ *  first link in a message, so this message shows Google's map card, not "You're booked in" (the welcome, with no Maps link, shows
+ *  ours). Already confirmed: no link of theirs (nothing to confirm). No page at all: YES in the same tone. */
 function msgBookRemind(b) {
   const n = bookDaysTo(b.slot_date), day = n === 0 ? 'today' : n === 1 ? 'tomorrow' : DAYS_LONG[D(b.slot_date).getUTCDay()], co = bookCo(b);
   const link = b.confirmed_at ? '' : bookLink(b);
@@ -3446,7 +3447,7 @@ function msgBookRemind(b) {
     'Your *Appointment Presentation* with *' + co + ' Marketing*\n\n' +
     '📅 *' + fmtOrd(b.slot_date) + ' · ' + fmt12(b.slot_time || bookCfg().time) + '*\n' +
     '📍 Automotive House, Slough (2 mins from the station)\n' +
-    (link ? '🗺️ Map and parking: tap your link below 👇\n\n' : '🗺️ ' + OFFICES[co].maps + '\n\n') +
+    '🗺️ ' + OFFICES[co].maps + '\n\n' +
     '🤝 *' + bookHosts() + '* will be hosting and expecting you\n' +
     '💷 Meet the team and see real earnings examples\n' +
     '⏰ Aim to arrive *10 minutes early* · done by ' + bookDoneBy(b) + '\n' +
@@ -3474,8 +3475,9 @@ function bookWelcomeDue(b) {
   return bookHy(b) && meganOf(b) && b.status === 'booked' && !b.welcome_at && b.slot_date > S.me.today &&
     String(b.created_at).slice(0, 10) >= (bookCfg().welcomeFrom || '9999');
 }
-/** The message ends with their link on a line of its own: WhatsApp shows it as the card. */
-function bookHasCard(msg) { return /\n\nhttps?:\/\/\S+$/.test(msg); }
+/** Their link is the message's last line and its only link: WhatsApp shows it as the card (it cards the first link, so not the
+ *  reminder, where the Google Maps link comes first). */
+function bookHasCard(msg) { return /\n\nhttps?:\/\/\S+$/.test(msg) && msg.match(/https?:\/\//g).length === 1; }
 const BOOK_CARD_TIP = '💡 In WhatsApp their link turns into a card on top of the message. Give it a second to appear, then send.';
 /** That card, as they'll see it, on top of "What they'll get". */
 function bookCardHtml(b) {
@@ -3770,7 +3772,6 @@ function bookRemindSheet(date) {
     '<div class="sheet-h"><div><div class="label muted">' + (n === 0 ? 'TODAY · ' : n === 1 ? 'TOMORROW · ' : '') + h(fmtLong(date)) + ' · ' + h(bookCfg().time) + '</div><div class="display">📲 Reminders</div></div></div>' +
     '<p class="hint" style="margin-top:-6px"><b id="bkprog">' + prog() + '</b>. ' + (hy ? 'Signed by you, and 🤖 Hyrre\'s by whoever booked them (Megan\'s: ' + h(bookSigner({ booked_by: bookCfg().hyrreBy || 'Megan Hyrre' })) + ').' : 'Signed by you.') +
       ' Tap send, come back, next one.' + (office ? ' <b>' + h(officeNote()) + ' (' + office + ').</b>' : '') + '</p>' + deskPasteNote() +
-    '<p class="hint bkcardtip" style="margin-top:-4px">' + BOOK_CARD_TIP + '</p>' +
     '<div class="list">' + items.map(b => '<div class="trow"><span class="av co-' + bookCo(b) + '">' + h(initials(bookName(b))) + '</span><div class="main"><div class="name">' + h(bookName(b)) + '</div>' +
       '<div class="sub"><span class="co ' + bookCo(b) + '">' + bookCo(b) + '</span> ' + (bookHy(b) ? '🤖 ' + h(bookSignedBy(b)) + ' · ' : '') + (b.confirmed_at ? '✅ confirmed' : '⏳ not confirmed') + ' · ' + h(b.source) + '</div></div>' +
       (reminded(b) ? sent(b) : bookSend(b, 'remind')) + '</div>').join('') + '</div>' +

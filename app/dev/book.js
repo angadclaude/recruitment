@@ -262,18 +262,18 @@ const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked 
   ok(/TOMORROW · Wednesday 28 October/i.test(rs) && /0 of 1 sent/.test(rs) && /Ollie Grant/.test(rs), 'Tomorrow → 📲 Send tomorrow\'s reminders: the send list ("0 of 1 sent")');
   const remTxt = textOf(await jp.getAttribute('.bksheet a.btn[data-bks]', 'href'));
   // The surer tone (Angad, 12 Nov): they're booked, so nothing asks "still coming?"; the hosts are named; "done by" is the slot + 90
-  // minutes; and their short link goes once, alone, as the very last line (WhatsApp shows the first link in a message as a card)
+  // minutes; their short link goes once, alone, as the very last line; and the Google Maps link stays (his choice: "Keep the Maps link")
   const ol2B = (await api(jess, 'bookingList', {})).items.find(b => b.first_name === 'Ollie' && b.slot_date === '2026-10-28');
   ok(/^[a-hjkmnp-z2-9]{8}$/.test(ol2B.short_code), 'every booking has a short code for its link: 8 random letters and numbers (' + ol2B.short_code.length + ' characters, none of 0 o 1 l i)');
   ok(remTxt === 'Hey Ollie! 👋\n\n*Tomorrow’s the day!* 🙌\nYour *Appointment Presentation* with *JUSS Marketing*\n\n📅 *Wednesday 28th October · 10:00 AM*\n' +
-    '📍 Automotive House, Slough (2 mins from the station)\n🗺️ Map and parking: tap your link below 👇\n\n' +
+    '📍 Automotive House, Slough (2 mins from the station)\n🗺️ https://maps.app.goo.gl/zeP4MjS2hMJzB9V9A\n\n' +
     '🤝 *Rubal or Jess* will be hosting and expecting you\n💷 Meet the team and see real earnings examples\n⏰ Aim to arrive *10 minutes early* · done by 11:30\n👔 Office wear / smart casual\n\n' +
     'See you tomorrow! 🔥\n\nKind regards,\n*Jess Grace*\nIn association with *JUSS Marketing Ltd*\n\n' + PUBLIC + 'b/' + ol2B.short_code,
     'the reminder, word for word: "Tomorrow’s the day!", Rubal or Jess hosting, real earnings examples, 10 minutes early · done by 11:30, office wear, signed by Jess, then her link');
-  ok((remTxt.match(/https?:\/\//g) || []).length === 1 && remTxt.split('\n').pop() === PUBLIC + 'b/' + ol2B.short_code && !/still coming|CONFIRM|\bYES\b|maps\.app/i.test(remTxt),
-    'one link in it, alone on the very last line after the sign-off (so WhatsApp makes it the card); no "Still coming? Tap CONFIRM", no second link');
+  ok((remTxt.match(/https?:\/\//g) || []).length === 2 && remTxt.split('\n').pop() === PUBLIC + 'b/' + ol2B.short_code && remTxt.split(PUBLIC).length === 2 && !/still coming|CONFIRM|\bYES\b/i.test(remTxt),
+    'her link once, alone on the very last line after the sign-off; the Google Maps link stays in the message (Angad, 12 Nov: "Keep the Maps link"); no "Still coming? Tap CONFIRM"');
   const rsCard = await jp.innerText('.bksheet');
-  ok(/their link turns into a card on top of the message\. Give it a second to appear, then send\./.test(rsCard), 'the send list says the link turns into a card: give it a second, then send');
+  ok(!/turns into a card/.test(rsCard) && !(await jp.$('.bksheet .wacard')), 'the reminders list doesn\'t promise our card: with the Maps link first, WhatsApp shows Google\'s');
   // The other two branches, in the same tone: already confirmed (no link, nothing to confirm) and no page at all (reply YES)
   // (the app's own functions, lifted from JS.html, with this booking and Jess's settings)
   const appJs = fs.readFileSync(path.join(__dirname, '..', 'src', 'JS.html'), 'utf8');

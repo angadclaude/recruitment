@@ -311,10 +311,10 @@ const FIRST = [
     /Kind regards,\n\*Christie Zammit\*\n/.test(await cWa('Leah Brown')),
     'the office phone (Christie): both, "0 of 2 sent"; Aisha\'s reminder ("Today\'s the day!") signed *Christie / Megan*, then her link; Leah\'s signed Christie Zammit');
   // The surer tone (Angad, 12 Nov: 2 of 41 had tapped CONFIRM): she's booked, so nothing asks if she's still coming
-  ok(aMsg.includes('📍 Automotive House, Slough (2 mins from the station)\n🗺️ Map and parking: tap your link below 👇\n\n🤝 *Rubal or Jess* will be hosting and expecting you\n💷 Meet the team and see real earnings examples\n' +
+  ok(aMsg.includes('📍 Automotive House, Slough (2 mins from the station)\n🗺️ https://maps.app.goo.gl/zeP4MjS2hMJzB9V9A\n\n🤝 *Rubal or Jess* will be hosting and expecting you\n💷 Meet the team and see real earnings examples\n' +
       '⏰ Aim to arrive *10 minutes early* · done by 11:30\n👔 Office wear / smart casual\n\nSee you today! 🔥\n\nKind regards,') &&
-    (aMsg.match(/https?:\/\//g) || []).length === 1 && !/still coming|CONFIRM|maps\.app|booked\.html|Aisha&|n=/i.test(aMsg.split('\n').pop()) && !/still coming|CONFIRM/i.test(aMsg),
-    'Megan\'s reminder in the surer tone: Rubal or Jess hosting and expecting her, real earnings examples, 10 minutes early · done by 11:30, office wear; one link, last, with nothing about her in it');
+    (aMsg.match(/https?:\/\//g) || []).length === 2 && !/still coming|CONFIRM|maps\.app|booked\.html|Aisha&|n=/i.test(aMsg.split('\n').pop()) && !/still coming|CONFIRM/i.test(aMsg),
+    'Megan\'s reminder in the surer tone: the map link, Rubal or Jess hosting and expecting her, real earnings examples, 10 minutes early · done by 11:30, office wear; her own link last, with nothing about her in it');
   await chp.click('.bksheet .trow:has-text("Aisha Khan") a.btn[data-kind=remind]');
   await chp.waitForFunction(() => /1 of 2 sent/.test(document.getElementById('bkprog').textContent));
   await chp.waitForTimeout(800);
@@ -541,7 +541,7 @@ const FIRST = [
   ok(/0 of 2 sent/.test(await wPage.innerText('.bksheet')) && /✅ You’re confirmed\. Anything changes, just message me\.\n\nSee you tomorrow! 🔥/.test(ninaRem) && /🗺️ https:\/\/maps\.app\.goo\.gl\//.test(ninaRem) &&
     !/\/b\//.test(ninaRem) && /\*Christie \/ Megan\*\nIn association with \*JUSS Marketing Ltd\*$/.test(ninaRem) && /🤝 \*Rubal or Jess\* will be hosting and expecting you/.test(ninaRem),
     'her reminder is still to send ("0 of 2 sent"), and as she\'s confirmed it says so: no link to confirm with, the map link instead');
-  ok(/\n\nhttps:\/\/[^\n]+\/b\/[a-hjkmnp-z2-9]{8}$/.test(kimRem) && (kimRem.match(/https?:\/\//g) || []).length === 1 && !/still coming|CONFIRM/i.test(kimRem), 'Kim (not confirmed): the surer wording with her one link last');
+  ok(/\n\nhttps:\/\/[^\n]+\/b\/[a-hjkmnp-z2-9]{8}$/.test(kimRem) && (kimRem.match(/https?:\/\//g) || []).length === 2 && /🗺️ https:\/\/maps\.app\.goo\.gl\//.test(kimRem) && !/still coming|CONFIRM/i.test(kimRem), 'Kim (not confirmed): the surer wording, the map link, her own link last');
   await wPage.click('#bkdone');
   // Friday 10:40: Omar was never welcomed and his presentation is over: he's off the list and can't be sent one
   await setTime('2026-11-06T10:40:00+00:00');
