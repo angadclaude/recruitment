@@ -95,6 +95,12 @@ ready.then(gas => http.createServer(async (req, res) => {
     }
     if (u.pathname.startsWith('/join/')) {
       // The installable app (what GitHub Pages serves), wired to this dev API.
+      // A booking's short link, as vercel.json serves it: /b/<code> → b.html, /bl/<code> → bl.html (here the app lives under /join/)
+      const short = /^\/join\/(bl?)\/[a-z0-9]{6,12}\/?$/.exec(u.pathname);
+      if (short) {
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+        return res.end(fs.readFileSync(path.join(JOIN, short[1] + '.html'), 'utf8').replace('<base href="/">', '<base href="/join/">'));
+      }
       const rel = u.pathname.slice(6) || 'index.html';
       if (rel === 'config.js') { res.writeHead(200, { 'content-type': 'text/javascript' }); return res.end("window.APP_CONFIG={API_URL:'/api',ONESIGNAL_APP_ID:''};"); }
       const f = path.join(JOIN, path.normalize(rel).replace(/^(\.\.[\/])+/, ''));
