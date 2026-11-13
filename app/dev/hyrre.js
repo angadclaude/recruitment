@@ -1,4 +1,4 @@
-// Megan's bookings from Hyrre (Angad, 27 Oct): the 08:45 / 17:15 pull hands J&L Slough's approved appointments with a one-time ticket;
+// Megan's bookings from Hyrre (Angad, 27 Oct): the 08:45 / 16:45 pull hands J&L Slough's approved appointments with a one-time ticket;
 // they show on Book Appts as booked by Megan Hyrre (or by Rubal / Jess when Hyrre's note says so), Hyrre sends their confirmation,
 // our reminder goes to them too, signed Megan (30 Oct: 18:00 the evening before, or the morning alert after the 08:45 pull),
 // check-in finds them, Megan's alerts go to Rubal and Jess, and a weekday with no pull by 09:15 tells the booking team.

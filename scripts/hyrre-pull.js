@@ -1,4 +1,4 @@
-// Runs INSIDE a hyrre.co.uk tab that's logged in (Rubal's login, in Angad's Chrome), from the scheduled task (08:45, 11:15, 17:15):
+// Runs INSIDE a hyrre.co.uk tab that's logged in (Rubal's login, in Angad's Chrome), from the scheduled tasks (08:45, 11:15, 16:45, and their backups):
 // reads the Slough pipeline's appointments (GET requests) and hands them to J&L with a one-time ticket from
 // `node scripts/hyrre-sync.js ticket`. J&L decides what to keep (approved only) and who booked them. Once a presentation is over, J&L
 // answers with who to mark from our check-ins (attended, or no-show with Hyrre's rebook), and this page marks them: the only change
