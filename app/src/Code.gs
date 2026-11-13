@@ -52,13 +52,13 @@ const CONFIG = {
   // welcome, and "…will have your name ready at the door" on the link's preview card (app/build.js reads this line for the card)
   BOOK_HOSTS: ['Rubal', 'Jess'],
   // Hyrre (Angad, 27 Oct): its AI caller "Megan" screens Slough's CVs and pencils them into the 10:00; Rubal approves them in Hyrre.
-  // At 08:45 and 17:15 a scheduled task on Angad's computer reads the approved ones from Hyrre (Rubal's login, look-only) and sends
+  // At 08:45, 11:15 and 16:45 (17:15 as its backup) a scheduled task on Angad's computer reads the approved ones from Hyrre (Rubal's login, look-only) and sends
   // them here (hyrreImport). They show on Book Appts as booked by Megan Hyrre (Office Recruitment, no incentive), or by Rubal / Jess when
   // Hyrre's note says they booked them by hand. Hyrre sends their confirmation and its reminders; since 30 Oct the team also sends our
   // reminder (signed Megan, 18:00 the evening before or after the 08:45 pull). Megan's alerts go to ALERTS_TO. No pull by LATE on a
   // weekday: the booking team hears about it.
   // MARK_FROM: from this day the pulls also mark Hyrre's attended / no-show from our check-ins (Script Property HYRRE_MARK_FROM wins);
-  // MARK_PULL: the first pull after the presentation (the scheduled task runs at 08:45, 11:15 and 17:15).
+  // MARK_PULL: the first pull after the presentation (the scheduled tasks run at 08:45, 11:15 and 16:45).
   HYRRE: { PIPELINE: '403', BOOKER: 'Megan Hyrre', ALERTS_TO: ['rubal@jussmarketing.co.uk', 'jess@linkmarketing.org.uk'], LATE: '09:15', MARK_FROM: '2026-11-02', MARK_PULL: '11:15',
     WELCOME_FROM: '2026-11-13',  // Megan's bookings first pulled from this day get our same-day welcome WhatsApp (Script Property HYRRE_WELCOME_FROM wins)
     MANAGER: 'Christie Zammit' },  // manages Megan (Angad, 5 Nov): Megan's alerts reach her too, and what she sends for Megan's bookings is signed "Christie / Megan"
@@ -1955,7 +1955,7 @@ const PUBLIC_ACTIONS = {
   resumeByMobile: resumeByMobile, submitEval: submitEval, myEval: myEval, requestCode: requestCode, verifyCode: verifyCode,
   hubLogin: hubLogin, loginInfo: loginInfo, bookingByMobile: bookingByMobile, bookingInfo: bookingInfo, confirmBooking: confirmBooking,
   welcomeInfo: welcomeInfo, confirmAcademy: confirmAcademy,
-  hyrreTicket: hyrreTicket, hyrreImport: hyrreImport,  // the 08:45 / 17:15 pull from Hyrre: key → one-time ticket → Slough's appointments
+  hyrreTicket: hyrreTicket, hyrreImport: hyrreImport,  // the 08:45 / 16:45 pull from Hyrre: key → one-time ticket → Slough's appointments
 };
 const STAFF_ACTIONS = {
   me: me, bundle: bundle, listDay: listDay, listWeek: listWeek, search: search, getCandidate: getCandidate,
@@ -3228,7 +3228,7 @@ function trimOldBookings(before) {
 
 // ───────────────────────── HYRRE: Megan's bookings, pulled every morning (Angad, 27 Oct) ─────────────────────────
 // Hyrre's AI caller ("Megan") screens Slough's CVs and pencils people into the 10:00; Rubal approves them in Hyrre, which sends their
-// confirmation and its own reminders. At 08:45 and 17:15 a scheduled task on Angad's computer gets a one-time ticket (hyrreTicket: the
+// confirmation and its own reminders. At 08:45, 11:15 and 16:45 a scheduled task on Angad's computer gets a one-time ticket (hyrreTicket: the
 // key lives in .env.hyrre on that computer, only its SHA-256 here) and runs scripts/hyrre-pull.js in a Hyrre tab logged in as Rubal,
 // which reads Slough's appointments (look-only) and sends them here. Approved ones become bookings; one Hyrre no longer has approved
 // for a day still to come is cancelled. Who booked them: Megan Hyrre, or Rubal / Jess when Hyrre's note says "Booked by Rubal".
