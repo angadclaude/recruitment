@@ -627,11 +627,12 @@ table.t td { padding: 9px 4px; border-bottom: 1px solid var(--line); vertical-al
 .tile.hot { background: var(--dark); border-color: transparent; color: #fff; } .tile.hot i { background: var(--grad); } .tile.hot span { color: rgba(255,255,255,.7); }
 
 /* Bulletin controls */
-.bullbtns { display: flex; gap: 8px; margin: 12px 0 4px; }
+.bullbtns { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 4px; }
+.bullbtns #bullMid { flex-basis: 100%; }
 .bullbtns .btn { flex: 1; padding: 12px 10px; }
 .bullbtns #bshare { flex: 2; }
 .bullseg { display: flex; margin: 4px 0 12px; }
-.bullseg button { flex: 1; }
+.bullseg button { flex: 1 1 auto; padding: 10px 6px; white-space: nowrap; }
 .bullimg { position: relative; min-height: 200px; margin-bottom: 12px; }
 .bullimg img { width: 100%; display: block; border-radius: 16px; box-shadow: var(--shadow-lg); }
 .bullimg img:not([src]) { display: none; }
