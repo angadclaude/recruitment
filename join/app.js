@@ -1,4 +1,4 @@
-window.APP_VERSION = '0e6d07b6';
+window.APP_VERSION = '74e0e84d';
 
 (function () {
 'use strict';
@@ -2072,17 +2072,22 @@ function counted(c) { return inRoom(c) || !!c.non_qual; }
 function notCounting(c) { return c.limited ? noRating(c) || !!c.not_counting : counted(c) && !!c.pay_reason; }
 /** Poster numbers, on the same rules as the recruitment incentive: rated by the presenter (or a non-qualifier), Mon–Fri,
  *  and only people who count. "First appointments attended" and the Friday weekly total leave the non-qualifiers out:
- *  they have their own bubble (Angad, 26 Oct). */
+ *  they have their own bubble (Angad, 26 Oct). And they're the field bookers' only: the office's are left off (next). */
 const HYRRE_BOOKER_ID = 'hyrremegan';  // = HYRRE_BOOKER_ID in Code.gs
-/** The office's appointments are off the bulletins' names (Angad, 19 Nov: "the office appointments should go off the bulletin
- *  that we post daily and weekly"): booked by an admin, by OFFICE_BOOKERS or by Megan (Hyrre's AI caller, who showed as "Office"
- *  from 28 Oct until then). Nobody from the office is on Top performers, Week top 5, the midweek or in a shout-out. They still
- *  count in "first appointments attended" and the week's total: those numbers mean the same everywhere (Today, Appts Attended). */
+/** The office's appointments aren't on the bulletins at all (Angad, 19 Nov: "the office appointments should go off the bulletin
+ *  that we post daily and weekly"; 20 Nov: "office stats should not appear as well. That means Christy or Megan. Daily, weekly,
+ *  and half weekly bulletins"). Office = booked by an admin, by OFFICE_BOOKERS (Christie) or by Megan (Hyrre's AI caller, who
+ *  showed as "Office" from 28 Oct until then): the app's one "Office", as in the Day 1 results. Not named, and not counted in
+ *  any number on a poster (attended, non-qualifiers, walk outs, the week's and the midweek's totals). So a poster's numbers are
+ *  Today's and Appts Attended's minus the office's; the bulletin screen says how many were left off. */
 function officeAppt(c) { return !!c.office || c.booker_id === HYRRE_BOOKER_ID; }
 function bulletinNumbers(items, day, prevItems) {
   const we = weekEndingOf(day), week = [6, 5, 4, 3, 2].map(n => addDays(we, -n)), midDays = week.slice(0, 3);  // midweek = Mon, Tue, Wed
-  const att = items.filter(counted), today = att.filter(c => c.attended_date === day), inWeek = att.filter(c => week.indexOf(c.attended_date) >= 0);
-  const mid = inWeek.filter(c => midDays.indexOf(c.attended_date) >= 0), prevAtt = (prevItems || []).filter(counted);
+  const field = items.filter(c => !officeAppt(c)), off = items.filter(c => counted(c) && officeAppt(c));
+  const att = field.filter(counted), today = att.filter(c => c.attended_date === day), inWeek = att.filter(c => week.indexOf(c.attended_date) >= 0);
+  const mid = inWeek.filter(c => midDays.indexOf(c.attended_date) >= 0), prevAtt = (prevItems || []).filter(c => counted(c) && !officeAppt(c));
+  // What the office had on the same days: left off the poster, shown on the screen so the numbers can be squared with Today
+  const offOf = days => { const l = off.filter(c => days.indexOf(c.attended_date) >= 0); return { attended: l.filter(c => !c.pay_reason).length, nonQual: l.filter(notCounting).length }; };
   // First names, unless two people on the team share one (then the full name)
   const firsts = {};
   (S.users || []).map(u => u.name).concat(items.map(c => c.booker_name)).forEach(n => { if (n) { const f = n.split(' ')[0].toLowerCase(); (firsts[f] = firsts[f] || {})[n] = 1; } });
@@ -2090,23 +2095,22 @@ function bulletinNumbers(items, day, prevItems) {
   const tally = list => {
     const m = {};
     list.forEach(c => {
-      if (c.pay_reason || !c.booker_name || officeAppt(c)) return;
+      if (c.pay_reason || !c.booker_name) return;
       const k = c.booker_id || c.booker_name, r = (m[k] = m[k] || { key: k, name: short(c.booker_name), n: 0, bars: 0 });
       r.n++; if (isBar(c)) r.bars++;
     });
     return Object.keys(m).map(k => m[k]).sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
   };
   const noBooker = list => list.filter(c => !c.pay_reason && !c.booker_name).length;
-  const office = list => list.filter(c => !c.pay_reason && c.booker_name && officeAppt(c)).length;
   const bars = list => tally(list).filter(r => r.bars).sort((a, b) => b.bars - a.bars);
   return {
     day: day, weekday: D(day).getUTCDay(), target: (S.me && S.me.payTarget) || 5,
     attended: today.filter(c => !c.pay_reason).length, nonQual: today.filter(notCounting).length, walkOuts: today.filter(c => c.rag === 'W').length,
-    unrated: items.filter(c => c.attended_date === day && !counted(c)).length,
+    unrated: field.filter(c => c.attended_date === day && !counted(c)).length,
     noBooker: noBooker(today), weekNoBooker: noBooker(inWeek), midNoBooker: noBooker(mid),
-    office: office(today), weekOffice: office(inWeek), midOffice: office(mid),
+    office: offOf([day]), weekOffice: offOf(week), midOffice: offOf(midDays),
     today: tally(today), week: tally(inWeek), weekAttended: inWeek.filter(c => !c.pay_reason).length,
-    mid: tally(mid), midAttended: mid.filter(c => !c.pay_reason).length, midUnrated: items.filter(c => midDays.indexOf(c.attended_date) >= 0 && !counted(c)).length,
+    mid: tally(mid), midAttended: mid.filter(c => !c.pay_reason).length, midUnrated: field.filter(c => midDays.indexOf(c.attended_date) >= 0 && !counted(c)).length,
     bars2w: bars(inWeek.concat(prevAtt)), barsMid: bars(mid.concat(prevAtt)), twoWeeksKnown: !!prevItems,
   };
 }
@@ -2164,9 +2168,11 @@ function viewBulletin() {
   if (kind === 'midweek' && today < wed) warn.push('⚠️ Wednesday isn\'t in yet: this is ' + (today === mon ? 'Monday' : 'Monday and Tuesday') + ' so far.');
   if (pick(n.unrated, n.midUnrated, 0)) warn.push('⚠️ ' + pick(n.unrated, n.midUnrated, 0) + ' checked in ' + (kind === 'midweek' ? 'Monday to Wednesday ' : '') + 'but not rated by the presenter yet, so not counted.');
   if (pick(n.noBooker, n.midNoBooker, n.weekNoBooker)) warn.push('⚠️ ' + pick(n.noBooker, n.midNoBooker, n.weekNoBooker) + ' with no confirmed booker, so nobody\'s credited for them. Assign them in Appts Attended.');
-  // The office's appointments: counted, never named (Angad, 19 Nov). Said here so nobody looks for them on the poster.
+  // The office's appointments aren't on the bulletin (Angad, 19 + 20 Nov). Said here, with how many, so the poster's numbers
+  // can be squared with Today and Appts Attended (which count everyone).
   const off = pick(n.office, n.midOffice, n.weekOffice);
-  if (off) warn.push('🏢 ' + off + ' office appointment' + (off === 1 ? '' : 's') + pick(' today', ' Monday to Wednesday', ' this week') + ': ' + pick('in “attended”, ', 'in the total, ', '') + 'not named (the office is off the bulletin).');
+  if (off.attended + off.nonQual) warn.push('🏢 Not on the bulletin: the office\'s ' + off.attended + ' attended' + (off.nonQual ? ' and ' + off.nonQual + ' non-qualifier' + (off.nonQual === 1 ? '' : 's') : '') +
+    pick(' today', ', Monday to Wednesday', ' this week') + '. Today and Appts Attended still count them.');
   const field = (id, label, val, area) => '<label class="q">' + label + '</label>' + (area ? '<textarea id="' + id + '" rows="2">' + h(val) + '</textarea>' : '<input type="text" id="' + id + '" value="' + h(val) + '">');
   const edit = '<details class="card" id="bedit"><summary><b>✏️ Edit wording</b> <span class="small muted">· optional</span></summary>' +
     (kind === 'daily'
@@ -2203,7 +2209,7 @@ function viewBulletin() {
         if (S.bullUrl) URL.revokeObjectURL(S.bullUrl);
         S.bullUrl = URL.createObjectURL(blob);
         img.src = S.bullUrl;
-        img.dataset.info = JSON.stringify({ kind: kind, day: kind === 'daily' ? day : we, attended: data.attended, nonQual: data.nonQual, walkOuts: data.walkOuts, weekTotal: data.weekTotal, midTotal: data.midTotal, rows: data.rows.map(r => r.medal + ' ' + r.name + ' ' + r.n + (r.bar ? ' BAR' : '')) });
+        img.dataset.info = JSON.stringify({ kind: kind, day: kind === 'daily' ? day : we, attended: data.attended, nonQual: data.nonQual, walkOuts: data.walkOuts, weekTotal: data.weekTotal, midTotal: data.midTotal, office: off, rows: data.rows.map(r => r.medal + ' ' + r.name + ' ' + r.n + (r.bar ? ' BAR' : '')) });
         document.getElementById('bload').hidden = true;
         document.getElementById('bshare').disabled = false;
         sv.hidden = false;

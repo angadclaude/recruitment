@@ -111,7 +111,7 @@ Put the two QR codes on the presentation once. They never change:
    - **Question 1: "Who ran today's presentation?"** One tap on a presenter's first name (everyone with the **Presenter** role: Team → tap them → tick Presenter, admins included if they present), or **Someone else** (they type the name) or **Not sure**. Saved in the Sheet as `presented_by` (+ `presented_by_id`), shown on their page as *"🎤 Presentation by Nathan Mcgrath"*, and on **Incentive** (admins) as **🎤 Presenters this week**: in the room → evaluated → booked → started (arrived on Day 1), per presenter.
 4. **Booker** gets *"📋 Jasraj's evaluation is in"* → one-page snapshot → call → log outcome → tap **🎉 Send BA Academy Day 1 details**.
 5. Candidate taps the link in WhatsApp → their **personal welcome page** (Week 1 plan, poster, directions, add to calendar) → taps **🔒 Confirm I'm coming** → booker gets *"✅ Jasraj confirmed Day 1!"*
-6. **Admins, end of day:** **Today → 📣 Today's bulletin → 📤 Share to WhatsApp**. The stats poster is built from the app: attended, non-qualifiers and top performers, on the same rules as the recruitment incentive. **First appointments attended** leaves the non-qualifiers out (29 came in, 6 non-qualifiers → 23), and so does the weekly total it adds on Fridays. **Two is a bell 🔔, three is a gong 💿:** only bookers on 2 or more are on the poster (daily and Week top 5). Anyone on 1 isn't on it at all, so the names won't add up to *first appointments attended* (which counts everyone); *non-qualifiers* is the same number as **Non-qual** on Today; tap **🏆 Week top 5** for the leaderboard. **The office's appointments are never named** (since 19 Nov 2026): anything booked by an admin, the office recruiter or Megan counts in *first appointments attended* and the weekly total, but nobody from the office is on Top performers, Week top 5 or the midweek; the screen says how many ("🏢 3 office appointments today: in “attended”, not named"). **📈 Midweek** (the middle tab on the bulletin screen, and a button on Today on Wednesday and Thursday) is the Week top 5 poster for **Monday, Tuesday and Wednesday** only, with how many attended on those three days: post it on Wednesday evening. **✏️ Edit wording** lets you change the messages, tag someone as (BAR), and change the Mission / Plan numbers or the cash amount.
+6. **Admins, end of day:** **Today → 📣 Today's bulletin → 📤 Share to WhatsApp**. The stats poster is built from the app: attended, non-qualifiers and top performers, on the same rules as the recruitment incentive. **First appointments attended** leaves the non-qualifiers out (29 came in, 6 non-qualifiers → 23), and so does the weekly total it adds on Fridays. **Two is a bell 🔔, three is a gong 💿:** only bookers on 2 or more are on the poster (daily and Week top 5). Anyone on 1 isn't on it at all, so the names won't add up to *first appointments attended* (which counts every field booker's); tap **🏆 Week top 5** for the leaderboard. **The office isn't on the bulletin** (since 20 Nov 2026): anything booked by Megan, Christie or an admin is neither named nor counted on a poster, so *first appointments attended*, *non-qualifiers*, walk outs and the weekly total are the field bookers' only. The poster's number is therefore lower than Today's whenever the office had someone in; the bulletin screen says by how much ("🏢 Not on the bulletin: the office's 3 attended and 1 non-qualifier today. Today and Appts Attended still count them."). **📈 Midweek** (the middle tab on the bulletin screen, and a button on Today on Wednesday and Thursday) is the Week top 5 poster for **Monday, Tuesday and Wednesday** only, with how many attended on those three days: post it on Wednesday evening. **✏️ Edit wording** lets you change the messages, tag someone as (BAR), and change the Mission / Plan numbers or the cash amount.
 
 ## Push alerts
 | When | Who |
@@ -394,16 +394,16 @@ Every screen, PDF and alert counts the same way, so they always agree:
 Where you'll see them, all equal:
 - **Each day:**
   - Today's *Checked in* and *Non-qual*;
-  - the daily poster's two bubbles;
-  - the poster's Top performers: the bookers on 2+ only, each with their own number (nobody on 1);
-  - that day's column on the **Appointments total** PDF.
+  - that day's column on the **Appointments total** PDF;
+  - the daily poster's two bubbles, **plus the office's** (the poster leaves the office out, see below);
+  - the poster's Top performers: the field bookers on 2+ only, each with their own number (nobody on 1).
 - **Each week:**
-  - Friday's poster's *Weekly total*;
   - the PDF's *Appointments Attended* total and its *Non qualifiers* column;
   - **Appts Attended → Team this week → Attended**. Under the list: *Bookers N + booked by admins N + no booker yet N = attended*, because admins aren't on the incentive;
   - the Friday **Team week** alert;
   - each booker's Friday **Week roundup**, their *net*, and their row on Appts Attended.
-- **Week top 5:** each person's week net (field bookers only: the office isn't named).
+- **The bulletins are the one exception:** every poster leaves the office's appointments out (Megan, Christie, admins), so poster + the office's = Today. Friday's *Weekly total* on the poster = the week's attended minus the office's.
+- **Week top 5:** each person's week net (field bookers only).
 - **Midweek bulletin:** *N appointments attended* = Monday's + Tuesday's + Wednesday's posters added up; each name's number is their net for those three days.
 - **The bookers' 18:00 alert:** "Today: N attended".
 - **Rows on Appts Attended:** say *N checked in*, meaning everyone who came for that booker; the big number is their net.
