@@ -1,4 +1,4 @@
-window.APP_VERSION = '7eafdd33';
+window.APP_VERSION = '74e0e84d';
 
 (function () {
 'use strict';
@@ -1729,7 +1729,9 @@ function viewToday(quiet) {
     // Non-qualifiers next to who checked in, the same number as the poster's (Angad, 26 Oct)
     body = '<div class="hero">' + FX + top + kpis([[items.length, 'Checked in'], [items.filter(notCounting).length, 'Non-qual'], [rated, 'Rated'], [items.filter(c => c.eval_at).length, 'Evaluated'], [toCall, 'To call', toCall > 0]]) + '</div>' +
       (isAdmin() || canThank() ? thanksButton(items) : '') +
-      (isAdmin() ? '<div class="bullbtns"><button class="btn" id="bullDaily">📣 ' + (isToday ? 'Today\'s' : DAYS[D(S.day).getUTCDay()]) + ' bulletin</button><button class="btn ghost" id="bullWeek">🏆 Week top 5</button></div>' : '') +
+      (isAdmin() ? '<div class="bullbtns"><button class="btn" id="bullDaily">📣 ' + (isToday ? 'Today\'s' : DAYS[D(S.day).getUTCDay()]) + ' bulletin</button><button class="btn ghost" id="bullWeek">🏆 Week top 5</button>' +
+        // Wednesday and Thursday, when it's posted (any day: the middle tab on the bulletin screen)
+        ([3, 4].indexOf(D(S.day).getUTCDay()) >= 0 ? '<button class="btn ghost" id="bullMid">📈 Midweek bulletin · Mon to Wed</button>' : '') + '</div>' : '') +
       (items.length ? '<div class="section-h"><b>In the room</b><span>' + rated + ' of ' + toRate.length + ' rated</span></div>' +
         (isPresenter() ? '<p class="hint">Tap Green, Amber or Red to rate. Rating = they were in the room (that\'s what counts for the recruitment incentive). Left before the end? Tap 🚶 Walk out. Under 18 or no right to work: no rating needed. Tap a name for stars and notes.</p>' : '') +
         (items.some(c => c.limited) ? '<p class="hint">🔒 You see your own candidates in full. Everyone else\'s: name, who booked them and the room rating only.</p>' : '') +
@@ -1740,7 +1742,7 @@ function viewToday(quiet) {
   const page = paint('', body, quiet);
   bindItems(page);
   const ta = document.getElementById('thanksAll'); if (ta) ta.onclick = thanksSheet;
-  [['bullDaily', 'daily'], ['bullWeek', 'weekly']].forEach(b => { const el = document.getElementById(b[0]); if (el) el.onclick = () => nav('bulletin', { day: S.day, kind: b[1] }, true); });
+  [['bullDaily', 'daily'], ['bullWeek', 'weekly'], ['bullMid', 'midweek']].forEach(b => { const el = document.getElementById(b[0]); if (el) el.onclick = () => nav('bulletin', { day: S.day, kind: b[1] }, true); });
   document.getElementById('dprev').onclick = () => { S.day = addDays(S.day, -1); render(); };
   document.getElementById('dnext').onclick = () => { if (S.day < S.me.today) { S.day = addDays(S.day, 1); render(); } };
 }
@@ -2070,14 +2072,22 @@ function counted(c) { return inRoom(c) || !!c.non_qual; }
 function notCounting(c) { return c.limited ? noRating(c) || !!c.not_counting : counted(c) && !!c.pay_reason; }
 /** Poster numbers, on the same rules as the recruitment incentive: rated by the presenter (or a non-qualifier), Mon–Fri,
  *  and only people who count. "First appointments attended" and the Friday weekly total leave the non-qualifiers out:
- *  they have their own bubble (Angad, 26 Oct). */
+ *  they have their own bubble (Angad, 26 Oct). And they're the field bookers' only: the office's are left off (next). */
 const HYRRE_BOOKER_ID = 'hyrremegan';  // = HYRRE_BOOKER_ID in Code.gs
-/** A booker's name on the posters: Megan (Hyrre's AI caller) is "Office" (Angad, 28 Oct). */
-function posterName(c, short) { return c.booker_id === HYRRE_BOOKER_ID ? 'Office' : short(c.booker_name); }
+/** The office's appointments aren't on the bulletins at all (Angad, 19 Nov: "the office appointments should go off the bulletin
+ *  that we post daily and weekly"; 20 Nov: "office stats should not appear as well. That means Christy or Megan. Daily, weekly,
+ *  and half weekly bulletins"). Office = booked by an admin, by OFFICE_BOOKERS (Christie) or by Megan (Hyrre's AI caller, who
+ *  showed as "Office" from 28 Oct until then): the app's one "Office", as in the Day 1 results. Not named, and not counted in
+ *  any number on a poster (attended, non-qualifiers, walk outs, the week's and the midweek's totals). So a poster's numbers are
+ *  Today's and Appts Attended's minus the office's; the bulletin screen says how many were left off. */
+function officeAppt(c) { return !!c.office || c.booker_id === HYRRE_BOOKER_ID; }
 function bulletinNumbers(items, day, prevItems) {
-  const we = weekEndingOf(day), week = [6, 5, 4, 3, 2].map(n => addDays(we, -n));
-  const att = items.filter(counted), today = att.filter(c => c.attended_date === day), inWeek = att.filter(c => week.indexOf(c.attended_date) >= 0);
-  const twoWeeks = inWeek.concat((prevItems || []).filter(counted));
+  const we = weekEndingOf(day), week = [6, 5, 4, 3, 2].map(n => addDays(we, -n)), midDays = week.slice(0, 3);  // midweek = Mon, Tue, Wed
+  const field = items.filter(c => !officeAppt(c)), off = items.filter(c => counted(c) && officeAppt(c));
+  const att = field.filter(counted), today = att.filter(c => c.attended_date === day), inWeek = att.filter(c => week.indexOf(c.attended_date) >= 0);
+  const mid = inWeek.filter(c => midDays.indexOf(c.attended_date) >= 0), prevAtt = (prevItems || []).filter(c => counted(c) && !officeAppt(c));
+  // What the office had on the same days: left off the poster, shown on the screen so the numbers can be squared with Today
+  const offOf = days => { const l = off.filter(c => days.indexOf(c.attended_date) >= 0); return { attended: l.filter(c => !c.pay_reason).length, nonQual: l.filter(notCounting).length }; };
   // First names, unless two people on the team share one (then the full name)
   const firsts = {};
   (S.users || []).map(u => u.name).concat(items.map(c => c.booker_name)).forEach(n => { if (n) { const f = n.split(' ')[0].toLowerCase(); (firsts[f] = firsts[f] || {})[n] = 1; } });
@@ -2086,19 +2096,22 @@ function bulletinNumbers(items, day, prevItems) {
     const m = {};
     list.forEach(c => {
       if (c.pay_reason || !c.booker_name) return;
-      const k = c.booker_id || c.booker_name, r = (m[k] = m[k] || { key: k, name: posterName(c, short), n: 0, bars: 0 });
+      const k = c.booker_id || c.booker_name, r = (m[k] = m[k] || { key: k, name: short(c.booker_name), n: 0, bars: 0 });
       r.n++; if (isBar(c)) r.bars++;
     });
     return Object.keys(m).map(k => m[k]).sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
   };
   const noBooker = list => list.filter(c => !c.pay_reason && !c.booker_name).length;
+  const bars = list => tally(list).filter(r => r.bars).sort((a, b) => b.bars - a.bars);
   return {
     day: day, weekday: D(day).getUTCDay(), target: (S.me && S.me.payTarget) || 5,
     attended: today.filter(c => !c.pay_reason).length, nonQual: today.filter(notCounting).length, walkOuts: today.filter(c => c.rag === 'W').length,
-    unrated: items.filter(c => c.attended_date === day && !counted(c)).length,
-    noBooker: noBooker(today), weekNoBooker: noBooker(inWeek),
+    unrated: field.filter(c => c.attended_date === day && !counted(c)).length,
+    noBooker: noBooker(today), weekNoBooker: noBooker(inWeek), midNoBooker: noBooker(mid),
+    office: offOf([day]), weekOffice: offOf(week), midOffice: offOf(midDays),
     today: tally(today), week: tally(inWeek), weekAttended: inWeek.filter(c => !c.pay_reason).length,
-    bars2w: tally(twoWeeks).filter(r => r.bars).sort((a, b) => b.bars - a.bars), twoWeeksKnown: !!prevItems,
+    mid: tally(mid), midAttended: mid.filter(c => !c.pay_reason).length, midUnrated: field.filter(c => midDays.indexOf(c.attended_date) >= 0 && !counted(c)).length,
+    bars2w: bars(inWeek.concat(prevAtt)), barsMid: bars(mid.concat(prevAtt)), twoWeeksKnown: !!prevItems,
   };
 }
 function bulletinWording(n) {
@@ -2114,29 +2127,52 @@ function bulletinWording(n) {
     ],
   };
 }
+/** The midweek bulletin (Angad, 19 Nov: "I need a midweek bulletin. So from the appointments from Monday, Tuesday & Wednesday"):
+ *  the Week top 5's poster and rules (2 and above, nobody from the office) on Monday to Wednesday's appointments, with what's
+ *  attended so far and two days left to hit the incentive. */
+function midweekWording(n) {
+  const hit = n.mid.filter(r => r.n >= n.target).map(r => r.name), close = n.mid.filter(r => r.n === n.target - 1).map(r => r.name), top = n.mid.filter(r => r.n >= 2)[0];
+  return {
+    tagline: TAGLINE,
+    msgs: [
+      (hit.length ? 'Already qualified for the weekly recruitment incentive: {' + joinAnd(hit) + '}!!' : 'The weekly recruitment incentive is still up for grabs!') +
+        (close.length ? ' {' + joinAnd(close) + '} just {1} away!' : ''),
+      n.barsMid.length ? 'Big shout out to {' + n.barsMid[0].name + '} shooting for the BAR incentive after having {' + n.barsMid[0].bars + ' BAR' + (n.barsMid[0].bars > 1 ? 's' : '') + '} over the past ' + (n.twoWeeksKnown ? '2 weeks' : 'week') + '!!'
+        : top ? 'Big shout out to {' + top.name + '} leading the way with {' + top.n + '} so far this week!!' : 'Big shout out to everyone booking this week!!',
+      'Two days left to hit {' + n.target + '}!\nLet\'s have a big Thursday and Friday team!!',
+    ],
+  };
+}
+const BULL_KINDS = [['daily', '📊 Daily'], ['midweek', '📈 Midweek'], ['weekly', '🏆 Week top 5']];
 function viewBulletin() {
-  const day = S.params.day || S.day, kind = S.params.kind === 'weekly' ? 'weekly' : 'daily';
-  const we = weekEndingOf(day), d = want(we), prev = kind === 'weekly' ? want(addDays(we, -7)) : null;
+  const day = S.params.day || S.day, kind = BULL_KINDS.some(k => k[0] === S.params.kind) ? S.params.kind : 'daily';
+  const we = weekEndingOf(day), d = want(we), prev = kind !== 'daily' ? want(addDays(we, -7)) : null;
   if (!S.users && !S.usersAsked) { S.usersAsked = true; fetchWeek(we, { withUsers: true }).then(() => { if (S.view === 'bulletin') render(true); }).catch(() => {}); }
-  const seg = '<div class="seg bullseg" id="bkind"><button data-k="daily" class="' + (kind === 'daily' ? 'on' : '') + '">📊 Daily stats</button>' +
-    '<button data-k="weekly" class="' + (kind === 'weekly' ? 'on' : '') + '">🏆 Week top 5</button></div>';
+  const seg = '<div class="seg bullseg" id="bkind">' + BULL_KINDS.map(k => '<button data-k="' + k[0] + '" class="' + (kind === k[0] ? 'on' : '') + '">' + k[1] + '</button>').join('') + '</div>';
   const mon = addDays(we, -6), days = [0, 1, 2, 3, 4].map(i => addDays(mon, i)), today = S.me.today;
   const dayBar = '<div class="daybar"><button class="iconbtn" id="bwprev" aria-label="Previous week">‹</button>' +
     (kind === 'daily' ? days.map(x => '<button class="dchip' + (x === day ? ' on' : '') + '" data-d="' + x + '"' + (x > today ? ' disabled' : '') + '><b>' + DAYS[D(x).getUTCDay()] + '</b><span>' + Number(x.slice(8)) + '</span></button>').join('')
-      : '<div class="dweek">Week ending ' + h(fmt(we)) + '</div>') +
+      : '<div class="dweek">' + (kind === 'midweek' ? 'Mon to Wed · w/e ' : 'Week ending ') + h(fmt(we)) + '</div>') +
     '<button class="iconbtn" id="bwnext" aria-label="Next week"' + (addDays(mon, 7) > today ? ' disabled' : '') + '>›</button></div>';
   if (!window.JLBulletin) return paint('Bulletin', '<div class="err">Bulletins work in the installed app. Open it from your home-screen icon.</div>', false, true);
   if (!d) return bindBullSeg(paint('Bulletin', seg + dayBar + skeleton(3), false, true), day);
   const n = bulletinNumbers(d.items, day, prev && prev.items);
   const key = kind + day + (prev ? '+' : '');
   // Fresh wording when the day/kind changes, or once last week's numbers arrive (unless already edited)
-  if (!S.bull || (S.bull.key !== key && !(S.bull.edited && S.bull.key.replace('+', '') === key.replace('+', '')))) S.bull = Object.assign({ key: key }, bulletinWording(n));
+  if (!S.bull || (S.bull.key !== key && !(S.bull.edited && S.bull.key.replace('+', '') === key.replace('+', '')))) S.bull = Object.assign({ key: key }, kind === 'midweek' ? midweekWording(n) : bulletinWording(n));
   const o = Object.assign({}, BULL_DEFAULTS, store.get('bullOpts') || {});
   const barSet = () => { const ov = (store.get('barTags') || {})[day] || {}; const m = {}; n.today.forEach(r => { m[r.key] = r.key in ov ? ov[r.key] : r.bars > 0; }); return m; };
   const bar = barSet();
-  const warn = [];
-  if (kind === 'daily' && n.unrated) warn.push(n.unrated + ' checked in but not rated by the presenter yet, so not counted.');
-  if (kind === 'daily' ? n.noBooker : n.weekNoBooker) warn.push((kind === 'daily' ? n.noBooker : n.weekNoBooker) + ' with no confirmed booker, so nobody\'s credited for them. Assign them in Appts Attended.');
+  const warn = [], pick = (a, b, c) => (kind === 'daily' ? a : kind === 'midweek' ? b : c), wed = addDays(mon, 2);
+  // The midweek is Monday to Wednesday: opened before Wednesday it's what's in so far, and says so
+  if (kind === 'midweek' && today < wed) warn.push('⚠️ Wednesday isn\'t in yet: this is ' + (today === mon ? 'Monday' : 'Monday and Tuesday') + ' so far.');
+  if (pick(n.unrated, n.midUnrated, 0)) warn.push('⚠️ ' + pick(n.unrated, n.midUnrated, 0) + ' checked in ' + (kind === 'midweek' ? 'Monday to Wednesday ' : '') + 'but not rated by the presenter yet, so not counted.');
+  if (pick(n.noBooker, n.midNoBooker, n.weekNoBooker)) warn.push('⚠️ ' + pick(n.noBooker, n.midNoBooker, n.weekNoBooker) + ' with no confirmed booker, so nobody\'s credited for them. Assign them in Appts Attended.');
+  // The office's appointments aren't on the bulletin (Angad, 19 + 20 Nov). Said here, with how many, so the poster's numbers
+  // can be squared with Today and Appts Attended (which count everyone).
+  const off = pick(n.office, n.midOffice, n.weekOffice);
+  if (off.attended + off.nonQual) warn.push('🏢 Not on the bulletin: the office\'s ' + off.attended + ' attended' + (off.nonQual ? ' and ' + off.nonQual + ' non-qualifier' + (off.nonQual === 1 ? '' : 's') : '') +
+    pick(' today', ', Monday to Wednesday', ' this week') + '. Today and Appts Attended still count them.');
   const field = (id, label, val, area) => '<label class="q">' + label + '</label>' + (area ? '<textarea id="' + id + '" rows="2">' + h(val) + '</textarea>' : '<input type="text" id="' + id + '" value="' + h(val) + '">');
   const edit = '<details class="card" id="bedit"><summary><b>✏️ Edit wording</b> <span class="small muted">· optional</span></summary>' +
     (kind === 'daily'
@@ -2148,7 +2184,7 @@ function viewBulletin() {
     '<button class="btn ghost sm" id="breset" style="margin-top:12px">↺ Reset wording</button></details>';
   const page = paint('Bulletin', seg + dayBar +
     '<div class="bullbtns"><button class="btn wa" id="bshare" disabled>📤 Share to WhatsApp</button><button class="btn ghost" id="bsave" hidden>⬇️ Save</button></div>' +
-    (warn.length ? '<div class="card tight small">⚠️ ' + warn.map(h).join('<br>⚠️ ') + '</div>' : '') +
+    (warn.length ? '<div class="card tight small" id="bnotes">' + warn.map(h).join('<br>') + '</div>' : '') +
     '<div class="bullimg"><img id="bimg" alt="Bulletin"><div class="loading" id="bload"><span class="spinner inline"></span> Making your bulletin…</div></div>' + edit, false, true);
   bindBullSeg(page, day);
   const draw = () => {
@@ -2158,19 +2194,22 @@ function viewBulletin() {
     const data = kind === 'daily'
       ? { day: day, weekday: n.weekday, target: n.target, attended: n.attended, nonQual: n.nonQual, walkOuts: n.walkOuts, weekTotal: n.weekday === 5 ? n.weekAttended : null,
           rows: JLBulletin.dailyRows(n.today.map(r => Object.assign({}, r, { bar: !!barSet()[r.key] }))) }
-      : { target: n.target, rows: JLBulletin.weeklyRows(n.week, n.target), msgs: S.bull.msgs };
+      : kind === 'midweek'
+        ? { target: n.target, rows: JLBulletin.weeklyRows(n.mid, n.target), msgs: S.bull.msgs, midTotal: n.midAttended, title: 'MIDWEEK TOP 5 RECRUITERS:',
+            sub: 'MONDAY TO WEDNESDAY · {' + n.midAttended + '} APPOINTMENT' + (n.midAttended === 1 ? '' : 'S') + ' ATTENDED' }
+        : { target: n.target, rows: JLBulletin.weeklyRows(n.week, n.target), msgs: S.bull.msgs };
     return JLBulletin.load('').then(assets => new Promise(res => {
       const cv = JLBulletin.draw(document.createElement('canvas'), kind, data, opts, assets);
       cv.toBlob(blob => {
         if (S.view !== 'bulletin' || S.bullTok !== tok) return res();
-        const name = kind === 'daily' ? 'JL-stats-' + day + '.jpg' : 'JL-top5-' + we + '.jpg';
+        const name = kind === 'daily' ? 'JL-stats-' + day + '.jpg' : kind === 'midweek' ? 'JL-midweek-' + we + '.jpg' : 'JL-top5-' + we + '.jpg';
         S.bullFile = new File([blob], name, { type: 'image/jpeg' });
         const img = document.getElementById('bimg'), sv = document.getElementById('bsave');
         if (!img) return;
         if (S.bullUrl) URL.revokeObjectURL(S.bullUrl);
         S.bullUrl = URL.createObjectURL(blob);
         img.src = S.bullUrl;
-        img.dataset.info = JSON.stringify({ kind: kind, day: kind === 'daily' ? day : we, attended: data.attended, nonQual: data.nonQual, walkOuts: data.walkOuts, weekTotal: data.weekTotal, rows: data.rows.map(r => r.medal + ' ' + r.name + ' ' + r.n + (r.bar ? ' BAR' : '')) });
+        img.dataset.info = JSON.stringify({ kind: kind, day: kind === 'daily' ? day : we, attended: data.attended, nonQual: data.nonQual, walkOuts: data.walkOuts, weekTotal: data.weekTotal, midTotal: data.midTotal, office: off, rows: data.rows.map(r => r.medal + ' ' + r.name + ' ' + r.n + (r.bar ? ' BAR' : '')) });
         document.getElementById('bload').hidden = true;
         document.getElementById('bshare').disabled = false;
         sv.hidden = false;

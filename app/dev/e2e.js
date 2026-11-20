@@ -1029,25 +1029,62 @@ async function fillEval(p) {
   await ap.locator('.pres-row').first().scrollIntoViewIfNeeded(); await shot(ap, '14b-presenters');
 
   // ── Bulletins: one tap for admins, same numbers as Pay ──
-  await ap.click('.tabbar button[data-tab=today]'); await ap.waitForSelector('#bullDaily');
-  for (let i = 0; i < 6; i++) await ap.click('#dprev');
-  await ap.waitForFunction(() => document.querySelectorAll('.hero .kpi b').length === 5 && /Monday/.test(document.querySelector('.hero').innerText));
+  const toMonday = async () => {
+    await ap.click('.tabbar button[data-tab=today]'); await ap.waitForSelector('#bullDaily');
+    for (let i = 0; i < 6; i++) await ap.click('#dprev');
+    await ap.waitForFunction(() => document.querySelectorAll('.hero .kpi b').length === 5 && /Monday/.test(document.querySelector('.hero').innerText));
+  };
+  const bInfo = async () => JSON.parse(await ap.getAttribute('#bimg', 'data-info'));
+  const infoIs = (re) => ap.waitForFunction(r => { const i = document.getElementById('bimg'); return i && new RegExp(r).test(i.dataset.info || ''); }, re, { timeout: 15000 });
+  // The office's appointments aren't on a bulletin at all (Angad, 19 Nov: "the office appointments should go off the bulletin
+  // that we post daily and weekly"; 20 Nov: "office stats should not appear as well… Daily, weekly, and half weekly bulletins").
+  // Fiza is an office booker in the app's settings (OFFICE_BOOKERS), like the admins and Megan. So first the posters as they
+  // really are: her 3 on Monday aren't in "attended", and she's on none of the three by name.
+  await toMonday();
+  ok(!(await ap.$('#bullMid')), 'Today on a Monday: "Today\'s bulletin" and "Week top 5" (the midweek button is for Wednesday and Thursday)');
+  await ap.click('#bullDaily'); await infoIs('"kind":"daily"');
+  const offDay = await bInfo(), offNote = await ap.innerText('#bnotes').catch(() => '');
+  const monCnt = (await api(admin, 'listWeek', { weekEnding: '2026-10-18' })).items.filter(c => c.attended_date === '2026-10-12' && (c.in_room === true || c.in_room === 'TRUE' || c.non_qual));
+  const offMon = monCnt.filter(c => !c.pay_reason), fizaMon = offMon.filter(c => c.booker_name === 'Fiza Iqbal'), offN = offMon.filter(c => c.office).length, offNq = monCnt.filter(c => c.pay_reason && c.office).length;
+  ok((await ap.$$eval('#bkind button', b => b.map(x => x.textContent))).join(' | ') === '📊 Daily | 📈 Midweek | 🏆 Week top 5', 'the bulletin screen has three: 📊 Daily | 📈 Midweek | 🏆 Week top 5');
+  await ap.click('#bkind button[data-k=weekly]'); await infoIs('"kind":"weekly"');
+  const offWeek = await bInfo();
+  await ap.click('#bkind button[data-k=midweek]'); await infoIs('"kind":"midweek"');
+  const offMid = await bInfo(), namesOffice = i => i.rows.some(r => /Fiza|Office/.test(r));
+  ok(fizaMon.length >= 2 && fizaMon.every(c => c.office) && offN >= fizaMon.length && offDay.attended === offMon.length - offN && offDay.office.attended === offN && offDay.office.nonQual === offNq &&
+    offDay.nonQual === monCnt.filter(c => c.pay_reason && !c.office).length && offWeek.office.attended >= offN && offMid.office.attended >= offN && !namesOffice(offDay) && !namesOffice(offWeek) && !namesOffice(offMid) &&
+    offNote.includes('🏢 Not on the bulletin: the office\'s ' + offN + ' attended' + (offNq ? ' and ' + offNq + ' non-qualifier' + (offNq === 1 ? '' : 's') : '') + ' today. Today and Appts Attended still count them.'),
+    'the office is off the bulletins (Angad, 19 + 20 Nov): Fiza, an office booker, has ' + fizaMon.length + ' on Monday: none of the office\'s ' + offN + ' is in "attended" (' + offDay.attended + ' of the ' + offMon.length +
+    ' who came), and she\'s not on Top performers (' + (offDay.rows.join(' · ') || 'nobody') + '), Week top 5 (' + (offWeek.rows.join(' · ') || 'nobody') + ') or the midweek (' + (offMid.rows.join(' · ') || 'nobody') + '); the screen says "' + offNote.replace(/\n/g, ' / ') + '"');
+  await ap.click('#abBack'); await ap.waitForSelector('#bullDaily');
+  // The rest of this section runs with Fiza as a field booker (the office list without her), so the names, medals and (BAR)
+  // tags are tested on someone who is named. Put back, with a fresh app, before the numbers are checked everywhere.
+  const officeWas = (await post('/dev/eval', { js: 'JSON.stringify(CONFIG.OFFICE_BOOKERS)' })).out;
+  // (the phone's saved copy of the weeks is cleared from a page where the app isn't running, so nothing saves it again)
+  const freshApp = async () => { await ap.goto(APP + 'config.js'); await ap.evaluate(() => localStorage.removeItem('lr_cache')); await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button[data-tab=today]'); };
+  await post('/dev/eval', { js: "CONFIG.OFFICE_BOOKERS = ['Christie Zammit']; 'ok'" });
+  await freshApp();
+  await toMonday();
   const monHero = await ap.$$eval('.hero .kpi', k => k.map(x => Number(x.querySelector('b').dataset.n)));
   await ap.click('#bullDaily');
-  await ap.waitForSelector('#bimg[data-info]', { timeout: 15000 });
-  const bInfo = async () => JSON.parse(await ap.getAttribute('#bimg', 'data-info'));
+  await infoIs('"kind":"daily".*Fiza');
   const monAll = (await api(admin, 'listWeek', { weekEnding: '2026-10-18' })).items.filter(c => c.attended_date === '2026-10-12');
   const monday = monAll.filter(c => c.in_room === true || c.in_room === 'TRUE' || c.non_qual);
   let bi = await bInfo();
-  ok(bi.kind === 'daily' && bi.attended === monday.filter(c => !c.pay_reason).length && bi.nonQual === monday.filter(c => c.pay_reason).length && bi.nonQual > 0,
-    'daily bulletin: ' + bi.attended + ' attended (' + monday.length + ' came in, minus the non-qualifiers), ' + bi.nonQual + ' non-qualifiers (same rules as the incentive)');
+  const fld = c => !c.office, offNow = monday.filter(c => c.office);  // with Fiza a field booker: the office is the admins only
+  ok(bi.kind === 'daily' && bi.attended > offDay.attended && bi.attended === monday.filter(c => !c.pay_reason && fld(c)).length && bi.nonQual === monday.filter(c => c.pay_reason && fld(c)).length && bi.nonQual > 0 &&
+    bi.office.attended === offNow.filter(c => !c.pay_reason).length && bi.office.nonQual === offNow.filter(c => c.pay_reason).length,
+    'daily bulletin: ' + bi.attended + ' attended (' + monday.length + ' came in, minus the non-qualifiers and the office\'s ' + offNow.length + '), ' + bi.nonQual + ' non-qualifiers (same rules as the incentive); with Fiza a field booker her ' +
+    fizaMon.length + ' are in it (' + offDay.attended + ' → ' + bi.attended + ')');
   // The headline adds up (Angad, 26 Oct): Today's Checked in = attended + non-qualifiers + not rated yet.
   // Top performers = bookers on 2+ only (Angad, 27 Oct: "anyone that gets one appointment in should not be on the bulletin").
   const rowSum = rows => rows.reduce((t, r) => t + Number(/ (\d+)(?: BAR)?$/.exec(r)[1]), 0);
-  const monNet = {}; monday.filter(c => !c.pay_reason && c.booker_name).forEach(c => { const k = c.booker_id || c.booker_name; monNet[k] = (monNet[k] || 0) + 1; });
+  const monNet = {}; monday.filter(c => !c.pay_reason && c.booker_name && !c.office).forEach(c => { const k = c.booker_id || c.booker_name; monNet[k] = (monNet[k] || 0) + 1; });
   const mon2 = Object.values(monNet).filter(n => n >= 2);
-  ok(rowSum(bi.rows) === mon2.reduce((t, n) => t + n, 0) && bi.rows.every(r => Number(/ (\d+)(?: BAR)?$/.exec(r)[1]) >= 2) && monHero[1] === bi.nonQual && monHero[0] === bi.attended + bi.nonQual + (monAll.length - monday.length),
-    'it adds up: Today\'s Checked in ' + monHero[0] + ' = ' + bi.attended + ' attended + ' + bi.nonQual + ' non-qual (same as Today\'s ' + monHero[1] + ') + ' + (monAll.length - monday.length) + ' not rated; top performers = the ' + mon2.length + ' bookers on 2+ (' + rowSum(bi.rows) + ' of the ' + bi.attended + ')');
+  ok(rowSum(bi.rows) === mon2.reduce((t, n) => t + n, 0) && bi.rows.every(r => Number(/ (\d+)(?: BAR)?$/.exec(r)[1]) >= 2) && monHero[1] === bi.nonQual + bi.office.nonQual &&
+    monHero[0] === bi.attended + bi.nonQual + bi.office.attended + bi.office.nonQual + (monAll.length - monday.length),
+    'it adds up: Today\'s Checked in ' + monHero[0] + ' = the poster\'s ' + bi.attended + ' attended + ' + bi.nonQual + ' non-qual + the office\'s ' + bi.office.attended + ' + ' + bi.office.nonQual + ' (Today\'s Non-qual ' + monHero[1] + ' = both) + ' +
+    (monAll.length - monday.length) + ' not rated; top performers = the ' + mon2.length + ' bookers on 2+ (' + rowSum(bi.rows) + ' of the ' + bi.attended + ')');
   // A busy day like 26 Oct (13 bookers, 23 attended; Fiza's 2 were Angad's). Two is a bell, three is a gong (Angad, 27 Oct):
   // only bookers on 2+ are on the bulletin at all. Nobody on 1, no "1 each" line, no "no booker yet" line.
   const busy = await ap.evaluate(() => {
@@ -1088,7 +1125,6 @@ async function fillEval(p) {
   await ap.click('#bbar .chip');
   await ap.waitForFunction(() => /Fiza 3 BAR/.test(document.getElementById('bimg').dataset.info), null, { timeout: 5000 });
   ok(/BAR$/.test((await bInfo()).rows[0]), 'admin can still tap a name to add/remove (BAR)');
-  const infoIs = (re) => ap.waitForFunction(r => { const i = document.getElementById('bimg'); return i && new RegExp(r).test(i.dataset.info || ''); }, re, { timeout: 10000 });
   await ap.click('.daybar .dchip[data-d="2026-10-13"]'); await infoIs('"attended":0');
   ok(await ap.$('.daybar .dchip.on[data-d="2026-10-13"]'), "tap Tue inside the bulletin → Tuesday's poster (no going back to Today)");
   await ap.click('#bwprev'); await ap.waitForSelector('.daybar .dchip.on[data-d="2026-10-06"]');
@@ -1097,8 +1133,8 @@ async function fillEval(p) {
   ok(await ap.$('#bwnext[disabled]'), "› stops at this week (can't go into the future)");
   await ap.click('.daybar .dchip[data-d="2026-10-16"]'); await infoIs('"weekTotal":\\d');
   const friWk = (await api(admin, 'listWeek', { weekEnding: '2026-10-18' })).items.filter(c => c.attended_date >= '2026-10-12' && c.attended_date <= '2026-10-16' && (c.in_room === true || c.in_room === 'TRUE' || c.non_qual));
-  ok((await bInfo()).weekTotal === friWk.filter(c => !c.pay_reason).length && friWk.some(c => c.pay_reason),
-    'Friday poster: "Weekly total appointments" ' + (await bInfo()).weekTotal + ' (' + friWk.length + ' came in, minus the non-qualifiers)');
+  ok((await bInfo()).weekTotal === friWk.filter(c => !c.pay_reason && !c.office).length && friWk.some(c => c.pay_reason),
+    'Friday poster: "Weekly total appointments" ' + (await bInfo()).weekTotal + ' (' + friWk.length + ' came in, minus the non-qualifiers and the office\'s ' + friWk.filter(c => c.office).length + ')');
   await ap.click('.daybar .dchip[data-d="2026-10-12"]'); await infoIs('"attended":[1-9]');
   await ap.click('#bkind button[data-k=weekly]');
   await ap.waitForFunction(() => /weekly/.test((document.getElementById('bimg') || {}).dataset ? document.getElementById('bimg').dataset.info || '' : ''), null, { timeout: 10000 });
@@ -1109,7 +1145,36 @@ async function fillEval(p) {
   await saveImg('16-bulletin-week.jpg');
   const [dl] = await Promise.all([ap.waitForEvent('download'), ap.click('#bshare')]);
   ok(dl.suggestedFilename() === 'JL-top5-2026-10-18.jpg', 'Share → image ready for WhatsApp (saved where sharing isn\'t available)');
+  // The midweek bulletin (Angad, 19 Nov: "I need a midweek bulletin. So from the appointments from Monday, Tuesday & Wednesday"):
+  // the Week top 5's poster and rules on those three days, with how many attended and its own wording.
+  await ap.click('#bkind button[data-k=midweek]'); await infoIs('"kind":"midweek"');
+  const mw = await bInfo(), wkItems = (await api(admin, 'listWeek', { weekEnding: '2026-10-18' })).items;
+  const netC = c => (c.in_room === true || c.in_room === 'TRUE' || !!c.non_qual) && !c.pay_reason, midDays = ['2026-10-12', '2026-10-13', '2026-10-14'];
+  const midNet = {}; wkItems.filter(c => netC(c) && midDays.includes(c.attended_date) && c.booker_name && !c.office).forEach(c => { const f = c.booker_name.split(' ')[0]; midNet[f] = (midNet[f] || 0) + 1; });
+  const midExp = Object.keys(midNet).filter(f => midNet[f] >= 2).sort((a, b) => midNet[b] - midNet[a] || a.localeCompare(b)).map(f => f + ' ' + midNet[f]);
+  const midMsgs = [await ap.inputValue('#bm0').catch(async () => { await ap.click('#bedit summary'); return ap.inputValue('#bm0'); }), await ap.inputValue('#bm1'), await ap.inputValue('#bm2')];
+  ok(mw.day === '2026-10-18' && mw.midTotal === wkItems.filter(c => netC(c) && midDays.includes(c.attended_date) && !c.office).length && mw.midTotal > 0 && midExp.length >= 1 && midExp.length <= 5 &&
+    JSON.stringify(mw.rows.map(r => r.replace(/^\S+ /, ''))) === JSON.stringify(midExp) && /^🥇 /.test(mw.rows[0]) && /Mon to Wed · w\/e Sun 18 Oct/.test(await ap.innerText('.daybar')),
+    '📈 Midweek: Monday to Wednesday\'s ' + mw.midTotal + ' attended, the bookers on 2+ with their three days\' net (' + mw.rows.join(' · ') + '); "' + (await ap.innerText('.daybar .dweek')) + '"');
+  ok(/^The weekly recruitment incentive is still up for grabs!/.test(midMsgs[0]) && /BAR incentive|so far this week!!$|everyone booking this week!!$/.test(midMsgs[1]) && midMsgs[2] === 'Two days left to hit {5}!\nLet\'s have a big Thursday and Friday team!!',
+    'its wording writes itself: "' + midMsgs.join('" / "').replace(/\n/g, ' ') + '"');
+  await saveImg('16b-bulletin-midweek.jpg');
+  await shot(ap, '16c-bulletin-midweek-screen');
+  const [dlM] = await Promise.all([ap.waitForEvent('download'), ap.click('#bshare')]);
+  ok(dlM.suggestedFilename() === 'JL-midweek-2026-10-18.jpg', 'Share → "JL-midweek-2026-10-18.jpg"');
   await ap.click('#abBack'); await ap.waitForSelector('#bullDaily');
+  // Today on a Wednesday (and Thursday): one tap to the midweek
+  for (let i = 0; i < 2; i++) await ap.click('#dnext');
+  await ap.waitForFunction(() => /Wednesday/.test(document.querySelector('.hero').innerText) && document.getElementById('bullMid'));
+  await shot(ap, '16d-today-wednesday-buttons');
+  ok((await ap.textContent('#bullMid')).trim() === '📈 Midweek bulletin · Mon to Wed', 'Today on a Wednesday: a third button, "📈 Midweek bulletin · Mon to Wed"');
+  await ap.click('#bullMid'); await infoIs('"kind":"midweek"');
+  ok(await ap.$('#bkind button.on[data-k=midweek]') && (await bInfo()).midTotal === mw.midTotal, 'it opens the midweek poster for that week');
+  await ap.click('#abBack'); await ap.waitForSelector('#bullDaily');
+  // Back to the app's real office list (Fiza on it) for everything after this
+  await post('/dev/eval', { js: 'CONFIG.OFFICE_BOOKERS = ' + officeWas + '; "ok"' });
+  await freshApp();
+  await ap.click('.tabbar button[data-tab=today]'); await ap.waitForSelector('#bullDaily');
 
   // ── The numbers agree everywhere (Angad, 26 Oct: "make sure I don't have to explain this again"). One week, every place
   //    a figure shows: Today's summary, each daily poster, Friday's weekly total, Week top 5, Appts Attended, its PDF and
@@ -1143,6 +1208,9 @@ async function fillEval(p) {
     await ap.click('#bkind button[data-k=weekly]');
     await ap.waitForFunction(() => /"kind":"weekly"/.test((document.getElementById('bimg') || { dataset: {} }).dataset.info || ''), null, { timeout: 10000 });
     const top5 = JSON.parse(await ap.getAttribute('#bimg', 'data-info')).rows;
+    await ap.click('#bkind button[data-k=midweek]');
+    await ap.waitForFunction(() => /"kind":"midweek"/.test((document.getElementById('bimg') || { dataset: {} }).dataset.info || ''), null, { timeout: 10000 });
+    const midP = JSON.parse(await ap.getAttribute('#bimg', 'data-info'));
     await ap.click('#abBack'); await ap.waitForSelector('#bullDaily');
     await ap.click('.tabbar button[data-tab=pay]'); await ap.waitForSelector('#payPdf');
     const payHero = await ap.$$eval('.hero .kpi', k => k.map(x => x.querySelector('span').textContent + '=' + x.querySelector('b').dataset.n));
@@ -1154,30 +1222,47 @@ async function fillEval(p) {
     const rowSum2 = rows => rows.reduce((t, r) => t + Number(/ (\d+)(?: BAR)?$/.exec(r)[1]), 0);
     const bad = [];
     DD.forEach((day, i) => {
-      const dayAll = all.filter(c => c.attended_date === day), p = posterOf[day], hro = heroOf[day], unrated = dayAll.filter(c => !cntd(c)).length;
-      if (p.attended !== dayAll.filter(net).length) bad.push(day + ': poster attended ' + p.attended);
+      const dayAll = all.filter(c => c.attended_date === day), p = posterOf[day], hro = heroOf[day], unrated = dayAll.filter(c => !cntd(c)).length, po = p.office;
+      // The poster is the field bookers' (Angad, 20 Nov: "office stats should not appear as well"): everyone's minus the office's,
+      // and what it left off (shown on the bulletin screen) is exactly the office's attended and non-qualifiers that day
+      if (p.attended !== dayAll.filter(c => net(c) && !c.office).length) bad.push(day + ': poster attended ' + p.attended);
+      if (po.attended !== dayAll.filter(c => net(c) && c.office).length || po.nonQual !== dayAll.filter(c => cntd(c) && c.pay_reason && c.office).length) bad.push(day + ': the office\'s left off ' + JSON.stringify(po));
+      if (p.walkOuts !== dayAll.filter(c => cntd(c) && c.rag === 'W' && !c.office).length) bad.push(day + ': poster walk outs ' + p.walkOuts);
       // Top performers = the bookers on 2+ that day, each with their net (two is a bell, three is a gong; nobody on 1)
-      const nb = {}; dayAll.filter(c => net(c) && c.booker_name).forEach(c => { const k = c.booker_id || c.booker_name; nb[k] = (nb[k] || 0) + 1; });
+      const nb = {}; dayAll.filter(c => net(c) && c.booker_name && !c.office).forEach(c => { const k = c.booker_id || c.booker_name; nb[k] = (nb[k] || 0) + 1; });
       const two = Object.values(nb).filter(n => n >= 2).reduce((t, n) => t + n, 0);
       if (rowSum2(p.rows) !== two) bad.push(day + ': top performers ' + rowSum2(p.rows) + ' ≠ the bookers on 2+ ' + two);
-      if (hro[0] !== p.attended + p.nonQual + unrated) bad.push(day + ': Today checked in ' + hro[0] + ' ≠ ' + p.attended + ' + ' + p.nonQual + ' + ' + unrated);
-      if (hro[1] !== p.nonQual) bad.push(day + ': Today non-qual ' + hro[1] + ' ≠ poster ' + p.nonQual);
-      if (big12[i] !== p.attended) bad.push(day + ': PDF day ' + big12[i] + ' ≠ poster ' + p.attended);
+      if (hro[0] !== p.attended + p.nonQual + po.attended + po.nonQual + unrated) bad.push(day + ': Today checked in ' + hro[0] + ' ≠ ' + p.attended + ' + ' + p.nonQual + ' + office ' + po.attended + ' + ' + po.nonQual + ' + ' + unrated);
+      if (hro[1] !== p.nonQual + po.nonQual) bad.push(day + ': Today non-qual ' + hro[1] + ' ≠ poster ' + p.nonQual + ' + office ' + po.nonQual);
+      if (big12[i] !== p.attended + po.attended) bad.push(day + ': PDF day ' + big12[i] + ' ≠ poster ' + p.attended + ' + office ' + po.attended);
       if (p.rows.some(r => /^(👏|❓)|1 each|No booker/.test(r) || (!/×/.test(r) && Number(/ (\d+)(?: BAR)?$/.exec(r)[1]) < 2))) bad.push(day + ': someone on 1 (or a 1s / no-booker line) on the poster');
     });
-    const wkAtt = DD.reduce((t, d) => t + posterOf[d].attended, 0), wkNq = DD.reduce((t, d) => t + posterOf[d].nonQual, 0);
+    // The week: the posters' days added up (the field's) is Friday's weekly total; with the office's it's everyone's, which is
+    // what Appts Attended, its PDF and the roundup say
+    const fieldWk = DD.reduce((t, d) => t + posterOf[d].attended, 0), offWk = DD.reduce((t, d) => t + posterOf[d].office.attended, 0);
+    const wkAtt = fieldWk + offWk, wkNq = DD.reduce((t, d) => t + posterOf[d].nonQual + posterOf[d].office.nonQual, 0);
     const fri = DD[4];  // Friday's poster carries the week's total (only once Friday has come)
-    if (fri && posterOf[fri].weekTotal !== wkAtt) bad.push('Friday weekly total ' + posterOf[fri].weekTotal + ' ≠ the days ' + wkAtt);
+    if (fri && posterOf[fri].weekTotal !== fieldWk) bad.push('Friday weekly total ' + posterOf[fri].weekTotal + ' ≠ the days ' + fieldWk);
     if (big12[5] !== wkAtt || big12[6] !== wkNq) bad.push('PDF total ' + big12[5] + ' / non-qual ' + big12[6] + ' ≠ ' + wkAtt + ' / ' + wkNq);
     if (payHero[0] !== 'Attended=' + wkAtt) bad.push('Appts Attended hero ' + payHero[0] + ' ≠ ' + wkAtt);
     const bookersNet = prW.rows.reduce((t, r) => t + r.net, 0), sumParts = /Bookers (\d+)(?: \+ booked by admins (\d+))?(?: \+ no booker yet (\d+))? = (\d+) attended/.exec(paySum);
     if (bookersNet !== wkAtt && !(sumParts && Number(sumParts[1]) === bookersNet && Number(sumParts[1]) + Number(sumParts[2] || 0) + Number(sumParts[3] || 0) === wkAtt && Number(sumParts[4]) === wkAtt))
       bad.push('Appts Attended list ' + bookersNet + ' doesn\'t add up to ' + wkAtt + ' (' + paySum + ')');
     if (!new RegExp('Team week: ' + wkAtt + ' appointments').test(roundup)) bad.push('roundup "' + roundup + '" ≠ ' + wkAtt);
-    const netBy = {}; all.filter(c => net(c) && DD.includes(c.attended_date) && c.booker_name).forEach(c => { const f = c.booker_name.split(' ')[0]; netBy[f] = (netBy[f] || 0) + 1; });
-    top5.forEach(r => { const m = /^\S+ (.+) (\d+)$/.exec(r); if (m && !/×|more/.test(m[1]) && netBy[m[1]] !== Number(m[2])) bad.push('Week top 5 ' + r + ' ≠ ' + netBy[m[1]]); if (m && Number(m[2]) < 2) bad.push('Week top 5 names ' + r); });
-    ok(!bad.length, 'the numbers agree everywhere, w/e ' + WE + ' (' + DD.length + ' days): each day Today\'s checked in = attended + non-qual + not rated, poster = the PDF\'s day, top performers = the bookers on 2+ only; ' +
-      wkAtt + ' attended = ' + (fri ? 'Friday\'s weekly total = ' : '') + 'the PDF = Appts Attended (' + payHero[0] + (paySum ? ', ' + paySum : '') + ') = the roundup; ' + wkNq + ' non-qualifiers; Week top 5 = each person\'s net' + (bad.length ? ' ✗ ' + bad.join(' | ') : ''));
+    // The names are the field bookers' only (Angad, 19 Nov: the office is off the bulletin): each with their own net, never the
+    // office's. The midweek is the same on Monday to Wednesday, and its total is those three days' posters added up.
+    const byFirst = days => { const m = {}; all.filter(c => net(c) && days.includes(c.attended_date) && c.booker_name && !c.office).forEach(c => { const f = c.booker_name.split(' ')[0]; m[f] = (m[f] || 0) + 1; }); return m; };
+    const namesAre = (what, rows, by) => rows.forEach(r => { const m = /^\S+ (.+) (\d+)$/.exec(r); if (m && !/×|more/.test(m[1]) && by[m[1]] !== Number(m[2])) bad.push(what + ' ' + r + ' ≠ ' + by[m[1]]); if (m && Number(m[2]) < 2) bad.push(what + ' names ' + r); });
+    const netBy = byFirst(DD), midD = DD.slice(0, 3), midBy = byFirst(midD), midTot = midD.reduce((t, d) => t + posterOf[d].attended, 0);
+    namesAre('Week top 5', top5, netBy); namesAre('Midweek', midP.rows, midBy);
+    if (midP.midTotal !== midTot) bad.push('midweek total ' + midP.midTotal + ' ≠ its days\' posters ' + midTot);
+    if (Object.keys(midBy).some(f => midBy[f] >= 2) !== midP.rows.length > 0) bad.push('midweek names ' + (midP.rows.join(' · ') || 'nobody') + ', bookers on 2+ Mon–Wed: ' + JSON.stringify(midBy));
+    const offFirst = [...new Set(all.filter(c => c.office && c.booker_name).map(c => c.booker_name.split(' ')[0]))];
+    top5.concat(midP.rows, ...DD.map(d => posterOf[d].rows)).forEach(r => { if (/\bOffice\b/.test(r) || offFirst.some(f => new RegExp('\\b' + f + '\\b').test(r))) bad.push('the office is named: ' + r); });
+    ok(!bad.length, 'the numbers agree everywhere, w/e ' + WE + ' (' + DD.length + ' days): each day Today\'s checked in = attended + non-qual + not rated, the poster = that minus the office\'s, poster + office = the PDF\'s day, top performers = the field bookers on 2+ only; ' +
+      wkAtt + ' attended = the PDF = Appts Attended (' + payHero[0] + (paySum ? ', ' + paySum : '') + ') = the roundup; ' + wkNq + ' non-qualifiers; the posters\' ' + fieldWk + (fri ? ' = Friday\'s weekly total' : '') + ' + the office\'s ' + offWk +
+      ' = that ' + wkAtt + '; Week top 5 = each person\'s net; the midweek = Mon–Wed\'s ' + midTot + ' and each person\'s net for those days; nobody from the office (' + (offFirst.join(', ') || 'none that week') + ') is named or counted' +
+      (bad.length ? ' ✗ ' + bad.join(' | ') : ''));
     return { wkAtt: wkAtt, paySum: paySum };
   };
   await figuresAgree('2026-10-18', ['2026-10-12', '2026-10-13', '2026-10-14', '2026-10-15', '2026-10-16']);
@@ -1851,9 +1936,11 @@ async function fillEval(p) {
   await ap.click('.tabbar button[data-tab=today]'); await ap.waitForSelector('#bullDaily'); await ap.click('#bullDaily');
   await ap.waitForSelector('#bimg[data-info]', { timeout: 15000 });
   const bi2 = JSON.parse(await ap.getAttribute('#bimg', 'data-info'));
-  const jessToday = (await api(admin, 'listWeek', {})).items.filter(c => c.attended_date === bi2.day && c.booker_id === jessId && !c.pay_reason && (c.in_room === true || c.in_room === 'TRUE' || c.non_qual)).length;
-  ok(bi2.attended >= jessToday && jessToday === 1 && !bi2.rows.some(r => /Jess|Abdullahi/.test(r)) && bi2.nonQual >= 1,
-    'bulletin: admins count too (Jess\'s 1 is in "attended", but on 1 she\'s not on the poster); a non-qualifier is never credited to the booker, only in the Non-qualifiers number');
+  const bi2Day = (await api(admin, 'listWeek', {})).items.filter(c => c.attended_date === bi2.day && (c.in_room === true || c.in_room === 'TRUE' || c.non_qual));
+  const jessToday = bi2Day.filter(c => c.booker_id === jessId && !c.pay_reason).length;
+  ok(jessToday === 1 && bi2.attended === bi2Day.filter(c => !c.pay_reason && !c.office).length && bi2.office.attended === bi2Day.filter(c => !c.pay_reason && c.office).length && bi2.office.attended >= jessToday &&
+    !bi2.rows.some(r => /Jess|Abdullahi/.test(r)) && bi2.nonQual >= 1,
+    'bulletin: an admin\'s appointment is the office\'s, so it\'s left off (Jess\'s 1 is among the office\'s ' + bi2.office.attended + ', not in the ' + bi2.attended + ' attended, and she isn\'t named); a non-qualifier is never credited to the booker, only in the Non-qualifiers number');
   await ap.click('#abBack');
   await post('/dev/eval', { js: `globalThis.__pushOff = ['${abd.id}']` });
   const mailBefore = (await getJson('/dev/mail')).length;
@@ -2974,17 +3061,35 @@ async function fillEval(p) {
   ok(/\(Walk out: do not book/.test(wpRaw) && (wpRaw.match(/0\.99 0\.88 0\.88 rg/g) || []).length === 2 && /1 walk out/.test(wpRaw),
     'the week\'s Appointments PDF: the whole row in light red for the walk out ("Walk out: do not book") and the non-qualifier; "1 walk out" in the day\'s line');
   try { require('child_process').execFileSync('pdftoppm', ['-png', '-r', '70', '-singlefile', wpPath, `${SHOTS}/42-week-walk-out`]); } catch (e) { /* no renderer here */ }
-  // The poster: Nadia (not eligible, never rated: the team spoke to her) counts as a non-qualifier, not in "attended"
+  // The poster. Wally and Nadia were booked by Fiza, an office booker, so as things are neither is on it (Angad, 20 Nov: "office
+  // stats should not appear as well"): not in attended, non-qualifiers or walk outs, and the screen says what was left off.
   await ap.click('.tabbar button[data-tab=today]'); await ap.waitForSelector('#bullDaily');
   await ap.click('#bullDaily'); await ap.waitForSelector('#bimg[data-info]', { timeout: 15000 });
-  const tueAll = (await api(admin, 'listWeek', {})).items.filter(c => c.attended_date === '2026-10-27');
-  const tueCnt = tueAll.filter(c => c.in_room === 'TRUE' || c.non_qual);
+  const tueOf = async () => (await api(admin, 'listWeek', {})).items.filter(c => c.attended_date === '2026-10-27' && (c.in_room === 'TRUE' || c.non_qual));
+  const tueOff = await tueOf(), bwOff = await bInfo();
+  ok(tueOff.some(c => c.id === wally.id && c.office && c.rag === 'W') && tueOff.some(c => c.id === nadia.id && c.office && c.pay_reason) && bwOff.walkOuts === tueOff.filter(c => c.rag === 'W' && !c.office).length &&
+    bwOff.attended === tueOff.filter(c => !c.pay_reason && !c.office).length && bwOff.nonQual === tueOff.filter(c => c.pay_reason && !c.office).length &&
+    bwOff.office.attended === tueOff.filter(c => !c.pay_reason && c.office).length && bwOff.office.nonQual === tueOff.filter(c => c.pay_reason && c.office).length && bwOff.office.attended >= 1 && bwOff.office.nonQual >= 1 &&
+    /🏢 Not on the bulletin: the office's \d+ attended and \d+ non-qualifiers? today\./.test(await ap.innerText('#bnotes')),
+    'daily stats poster: an office booker\'s walk out and non-qualifier (Wally, Nadia: Fiza\'s) are left off: ' + bwOff.attended + ' attended, ' + bwOff.nonQual + ' non-qualifiers, ' + bwOff.walkOuts + ' walk outs; "' +
+    (await ap.innerText('#bnotes')).split('\n').filter(l => /🏢/.test(l)).join('') + '"');
+  await ap.click('#abBack'); await ap.waitForSelector('#bullDaily');
+  // With Fiza a field booker (as before, then put back): Nadia (not eligible, never rated: the team spoke to her) counts as a
+  // non-qualifier, not in "attended"; Wally the walk out is in "attended" and in the walk outs strip
+  await post('/dev/eval', { js: "CONFIG.OFFICE_BOOKERS = ['Christie Zammit']; 'ok'" });
+  await freshApp();
+  await ap.click('.tabbar button[data-tab=today]'); await ap.waitForSelector('#bullDaily');
+  await ap.click('#bullDaily'); await infoIs('"kind":"daily".*"walkOuts":1');
+  const tueCnt = await tueOf();
   const bw = await bInfo();
-  ok(tueCnt.some(c => c.id === nadia.id && c.in_room !== 'TRUE' && c.pay_reason) && tueCnt.some(c => c.id === wally.id && !c.pay_reason) && bw.attended === tueCnt.filter(c => !c.pay_reason).length &&
-    bw.nonQual === tueCnt.filter(c => c.pay_reason).length && bw.nonQual >= 1 && !/not rated by the presenter/.test(await ap.innerText('#page')) && bw.walkOuts === 1,
+  ok(tueCnt.some(c => c.id === nadia.id && c.in_room !== 'TRUE' && c.pay_reason && !c.office) && tueCnt.some(c => c.id === wally.id && !c.pay_reason && !c.office) && bw.attended === tueCnt.filter(c => !c.pay_reason && !c.office).length &&
+    bw.nonQual === tueCnt.filter(c => c.pay_reason && !c.office).length && bw.nonQual >= 1 && !/not rated by the presenter/.test(await ap.innerText('#page')) && bw.walkOuts === 1,
     'daily stats poster: the unrated non-qualifier (Nadia) is in "non qualifiers" (' + bw.nonQual + ') and not in "attended" (' + bw.attended + ', with the walk out), and isn\'t "not rated"; then "🚶 WALK OUTS ' + bw.walkOuts + '"');
   ok(bw.rows.every(r => Number(/ (\d+)(?: BAR)?$/.exec(r)[1]) >= 2) && rowSum(bw.rows) <= bw.attended, 'and its top performers are the bookers on 2+ only: ' + (bw.rows.join(' · ') || 'nobody yet'));
   await saveImg('15c-bulletin-walk-outs.jpg');
+  await ap.click('#abBack'); await ap.waitForSelector('#bullDaily');
+  await post('/dev/eval', { js: 'CONFIG.OFFICE_BOOKERS = ' + officeWas + '; "ok"' });
+  await freshApp();
   // The Appointments total grid: the same, and what the non qualifiers are
   await ap.goto(APP + 'index.html'); await ap.waitForSelector('.tabbar button[data-tab=pay]');
   await ap.click('.tabbar button[data-tab=pay]'); await ap.waitForSelector('#payPdf');
@@ -3456,10 +3561,27 @@ async function fillEval(p) {
     const quiet = bw({ weekday: 5, target: 5, week: [{ name: 'Hasini', n: 1 }, { name: 'Ramis', n: 1 }], bars2w: [] }).msgs[1], busy = bw({ weekday: 5, target: 5, week: [{ name: 'Hasini', n: 3 }, { name: 'Ramis', n: 1 }], bars2w: [] }).msgs[1];
     ok(quiet === 'Big shout out to everyone booking this week!!' && busy === 'Big shout out to {Hasini} leading the way with {3} this week!!',
       'Week top 5\'s shout-out never names someone on 1: "' + quiet + '" / "' + busy + '"');
-    // Megan (Hyrre's AI caller) is "Office" on the posters (Angad, 28 Oct); everyone else by name
-    const pn = new Function(fnOf(/const HYRRE_BOOKER_ID = [^\n]*/) + '\n' + fnOf(/function posterName\(c, short\) \{[^\n]*\}/) + '; return posterName;')();
-    ok(pn({ booker_id: 'hyrremegan', booker_name: 'Megan Hyrre' }, n => n.split(' ')[0]) === 'Office' && pn({ booker_id: 'x', booker_name: 'Hasini Perera' }, n => n.split(' ')[0]) === 'Hasini',
-      'Megan (Hyrre) shows as "Office" on Top performers and Week top 5; everyone else by name');
+    // The office isn't on the bulletins (Angad, 19 + 20 Nov): admins, OFFICE_BOOKERS and Megan (Hyrre's AI caller, "Office" on the
+    // posters from 28 Oct until then) are neither named nor counted. And the midweek is Monday, Tuesday and Wednesday only.
+    const bn = new Function('S', [/function D\(ymd\) \{[^\n]*\}/, /function addDays\(ymd, n\) \{[^\n]*\}/, /function weekEndingOf\(ymd\) \{[^\n]*\}/, /function isBar\(c\) \{[^\n]*\}/, /function inRoom\(c\) \{[^\n]*\}/,
+      /function counted\(c\) \{[^\n]*\}/, /function notCounting\(c\) \{[^\n]*\}/, /const HYRRE_BOOKER_ID = [^\n]*/, /function officeAppt\(c\) \{[^\n]*\}/, /const TAGLINE = [^\n]*/, /function joinAnd\(a\) \{[^\n]*\}/,
+      /function bulletinNumbers\(items, day, prevItems\) \{[\s\S]*?\n\}/, /function midweekWording\(n\) \{[\s\S]*?\n\}/].map(fnOf).join('\n') + '; return { numbers: bulletinNumbers, wording: midweekWording };')({ users: [], me: { payTarget: 5 } });
+    const appts = (day, booker, n, extra) => Array.from({ length: n }, () => Object.assign({ in_room: true, attended_date: day, booker_name: booker, booker_id: booker.toLowerCase().replace(/\W/g, '') }, extra || {}));
+    const wkB = [].concat(appts('2026-11-16', 'Hasini Perera', 2), appts('2026-11-17', 'Hasini Perera', 2), appts('2026-11-18', 'Hasini Perera', 1), appts('2026-11-19', 'Hasini Perera', 1),  // 5 by Wednesday, 6 in the week
+      appts('2026-11-16', 'Nathan Mcgrath', 2), appts('2026-11-18', 'Nathan Mcgrath', 2), appts('2026-11-20', 'Nathan Mcgrath', 3),  // 4 by Wednesday, 7 in the week
+      appts('2026-11-19', 'Ramis Ali', 4),  // Thursday only: in the week, not the midweek
+      // the office: Megan 3 + a walk out (4 attended), a repeat (a non-qualifier) and one not rated on Monday; an admin's 4; Christie's 2
+      appts('2026-11-16', 'Megan Hyrre', 3, { booker_id: 'hyrremegan' }), appts('2026-11-16', 'Megan Hyrre', 1, { booker_id: 'hyrremegan', rag: 'W' }), appts('2026-11-16', 'Megan Hyrre', 1, { booker_id: 'hyrremegan', pay_reason: 'Repeat' }),
+      appts('2026-11-16', 'Megan Hyrre', 1, { booker_id: 'hyrremegan', in_room: false }), appts('2026-11-17', 'Jess Admin', 4, { office: true }), appts('2026-11-18', 'Christie Zammit', 2, { office: true }),
+      appts('2026-11-16', 'Zara Khan', 1, { pay_reason: 'Under 18' }), appts('2026-11-18', 'Tia Lee', 1), appts('2026-11-16', 'Tia Lee', 1, { rag: 'W' }), appts('2026-11-16', '', 1, { booker_id: '' }));
+    const bN = bn.numbers(wkB, '2026-11-16'), rowsTxt = l => l.map(r => r.name + ' ' + r.n).join(', '), bW = bn.wording(bN).msgs, offIs = (o, a, q) => o.attended === a && o.nonQual === q;
+    ok(rowsTxt(bN.today) === 'Hasini 2, Nathan 2, Tia 1' && bN.attended === 6 && bN.nonQual === 1 && bN.walkOuts === 1 && bN.unrated === 0 && bN.noBooker === 1 && offIs(bN.office, 4, 1) &&
+      rowsTxt(bN.week) === 'Nathan 7, Hasini 6, Ramis 4, Tia 2' && bN.weekAttended === 20 && offIs(bN.weekOffice, 10, 1),
+      'the office isn\'t on a bulletin at all, Megan included: Monday "' + rowsTxt(bN.today) + '" with ' + bN.attended + ' attended, ' + bN.nonQual + ' non-qualifier, ' + bN.walkOuts + ' walk out, nobody "not rated" (the office\'s ' + bN.office.attended +
+      ' attended, its non-qualifier, its walk out and its unrated one are left off); the week "' + rowsTxt(bN.week) + '" with ' + bN.weekAttended + ' attended (the office\'s ' + bN.weekOffice.attended + ' left off)');
+    ok(rowsTxt(bN.mid) === 'Hasini 5, Nathan 4, Tia 2' && bN.midAttended === 12 && offIs(bN.midOffice, 10, 1) &&
+      bW[0] === 'Already qualified for the weekly recruitment incentive: {Hasini}!! {Nathan} just {1} away!' && bW[1] === 'Big shout out to {Hasini} leading the way with {5} so far this week!!' && /^Two days left to hit \{5\}!/.test(bW[2]),
+      'the midweek is Monday to Wednesday only: "' + rowsTxt(bN.mid) + '" of ' + bN.midAttended + ' attended (Thursday\'s and Friday\'s aren\'t in it, nor the office\'s ' + bN.midOffice.attended + '); "' + bW[0] + '" / "' + bW[1] + '"');
     // The bell sheets: the same person typed a little differently is the same person
     const bk = await ev("[bellKey('HILAIRE (EMMANUEL) EBILA'), bellKey('Hilaire Ebila'), bellKey('Jasraj Bhuller-Singh'), bellKey('JOSÉ  GARCÍA')]");
     ok(bk.join() === 'HILAIRE EBILA,HILAIRE EBILA,JASRAJ SINGH,JOSE GARCIA', 'bell sheets match a name however it was typed: ' + bk.join(', '));

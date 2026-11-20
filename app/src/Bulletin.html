@@ -385,7 +385,8 @@
     footer(o);
   }
 
-  // ── Weekly top 5 poster ──
+  // ── Weekly top 5 poster. The midweek (Mon–Wed, Angad 19 Nov) is the same poster with its own banner (d.title) and a line
+  //    under it saying which days and how many attended (d.sub, {curly} = orange). ──
   function drawWeekly(canvas, d, o, assets) {
     begin(canvas, o.scale || 1.5);
     logos(assets, 16, 168);
@@ -397,12 +398,18 @@
     const by = 312;
     X.save(); X.shadowColor = 'rgba(160,40,0,.35)'; X.shadowOffsetY = 5; rr(56, by, W - 112, 84, 26); X.fillStyle = grad(56, 0, W - 56, 0, [ORANGE, '#f7931e', ORANGE]); X.fill(); X.restore();
     emoji('⭐', 104, by + 42, 48); emoji('⭐', W - 104, by + 42, 48);
-    text('THIS WEEKS TOP 5 RECRUITERS:', W / 2, by + 64, { size: 56, weight: 700, italic: true, align: 'center', color: '#fff', maxW: W - 260 });
+    text(d.title || 'THIS WEEKS TOP 5 RECRUITERS:', W / 2, by + 64, { size: 56, weight: 700, italic: true, align: 'center', color: '#fff', maxW: W - 260 });
+    const subH = d.sub ? 54 : 0;
+    if (d.sub) {
+      let ss = 36; while (ss > 22 && wrapRich(d.sub, ss, 700, W - 220).length > 1) ss--;
+      drawRich(wrapRich(d.sub, ss, 700, W - 220)[0], W / 2, by + 136, ss, 700, NAVY, ORANGE, 'center');
+      X.fillStyle = ORANGE; X.fillRect(36, by + 122, 58, 3); X.fillRect(W - 94, by + 122, 58, 3);
+    }
     // leaderboard
-    const rows = d.rows, msgsH = 3 * 108 + 2 * 16, footTop = FOOT - 12;
-    const avail = footTop - (by + 104) - msgsH - 30, rh = Math.max(70, Math.min(104, (avail - 20) / Math.max(rows.length, 1)));
+    const rows = d.rows, msgsH = 3 * 108 + 2 * 16, footTop = FOOT - 12, ltop = by + 104 + subH;
+    const avail = footTop - ltop - msgsH - 30, rh = Math.max(70, Math.min(104, (avail - 20) / Math.max(rows.length, 1)));
     const lh = rh * Math.max(rows.length, 1) + 20, spare = Math.max(0, avail - lh);  // a quiet week: spread out, don't leave a hole
-    const ly = by + 104 + spare * 0.3;
+    const ly = ltop + spare * 0.3;
     panel(30, ly, W - 60, lh, '#f5b08a');
     if (!rows.length) text('No qualifying appointments yet this week', W / 2, ly + lh / 2 + 12, { size: 34, weight: 500, italic: true, align: 'center', color: '#6b7280' });
     rows.forEach((r, i) => {
@@ -592,7 +599,7 @@
     DAY_TITLES: DAY_TITLES, dailyRows: dailyRows, weeklyRows: weeklyRows, load: load,
     NS_ASPECT: NS_ASPECT, findFace: findFace, faceFrame: faceFrame, autoFrame: autoFrame,
     /** kind 'daily' | 'weekly' | 'starters' → draws onto canvas. */
-    draw: function (canvas, kind, d, o, assets) { (kind === 'weekly' ? drawWeekly : kind === 'starters' ? drawStarters : drawDaily)(canvas, d, o, assets || {}); return canvas; },
+    draw: function (canvas, kind, d, o, assets) { (kind === 'weekly' || kind === 'midweek' ? drawWeekly : kind === 'starters' ? drawStarters : drawDaily)(canvas, d, o, assets || {}); return canvas; },
   };
 })();
 </script>
