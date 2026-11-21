@@ -145,6 +145,14 @@ ready.then(gas => http.createServer(async (req, res) => {
       const out = await require('../../server/bell').bellToSheets({ call: (fn, ...args) => gas.run(fn, args) }, relay);
       res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ out: out === undefined ? null : JSON.parse(JSON.stringify(out)) }));
     }
+    if (u.pathname === '/dev/site' && req.method === 'POST') {  // Vercel's 5-minute read of the website's applications (server/site.js), as api/cron.js runs it
+      // b.rows = the website's list as its table holds it ({ id, created_at (ISO), first_name, last_name, phone, email, visa_status, preferred_day,
+      // availability, how_heard, additional_notes }); b.fail = the list can't be read
+      const b = await body(req);
+      const sql = () => (b.fail ? Promise.reject(new Error(b.fail)) : Promise.resolve((b.rows || []).map(r => Object.assign({}, r, { created_at: new Date(r.created_at) }))));
+      const out = await require('../../server/site').siteApplicants({ call: (fn, ...args) => gas.run(fn, args) }, sql);
+      res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ out: out === undefined ? null : JSON.parse(JSON.stringify(out)) }));
+    }
     if (u.pathname === '/dev/sheet') {
       const data = await gas.sheet(u.searchParams.get('name'));
       res.writeHead(200, { 'content-type': 'application/json' }); return res.end(JSON.stringify(data));
