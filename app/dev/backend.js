@@ -164,6 +164,52 @@ async function columns() {
   await rt.stop(); await db.end();
 }
 
+// 6. Website applicants (server/site.js, 20 Nov): Vercel's 5-minute read of the website's own list of applications, with the real
+//    query on a table built as the website builds it (JUSS Website/lib/apply.js). Only the Apply form's rows of the last month are
+//    read, each comes in once, and nothing in the website's list is ever written. What happens to them next (the card, the alerts,
+//    one-tap booking) is book.js's, on both back ends.
+async function site() {
+  const { siteApplicants, london } = require('../../server/site');
+  ok(london(new Date('2026-07-01T10:30:00Z')) === '2026-07-01 11:30' && london(new Date('2026-12-01T23:45:00Z')) === '2026-12-01 23:45',
+    'website applicants: when they applied is kept in London time, summer and winter (' + london(new Date('2026-07-01T10:30:00Z')) + ')');
+  const db = await pgliteAdapter(); await db.migrate();
+  const rt = new Runtime({ db, testMode: true, env: {} });
+  const sql = (s, ...v) => db.db.query(s.reduce((a, x, i) => a + '$' + i + x), v).then(r => r.rows);
+  // No such list in this database (a test copy): said, never thrown, so the rest of the 5-minute run carries on
+  const none = await siteApplicants(rt, sql);
+  ok(none && /jsite/.test(none.error || '') && none.added === undefined, 'website applicants: a database with no website list says so and stops there (' + String(none.error).slice(0, 50) + ')');
+  await db.db.exec(`create schema if not exists jsite;
+    create table jsite.applications (id bigserial primary key, created_at timestamptz not null default now(), first_name text not null, last_name text not null default '',
+      email text not null, phone text not null, over_18 boolean, visa_status text not null default '', programme text not null default '', availability text not null default '',
+      how_heard text not null default '', additional_notes text not null default '', status text not null default 'new', origin text not null default 'website', ip_hash text,
+      emailed_at timestamptz, email_error text);
+    alter table jsite.applications add column if not exists preferred_day text not null default '';
+    insert into jsite.applications (created_at, first_name, last_name, email, phone, visa_status, origin) values
+      (now() - interval '40 days', 'Too', 'Old', 'old@example.net', '07700 900501', 'British or Irish citizen', 'website'),
+      (now() - interval '3 days', 'Import', 'Ed', 'manus@example.net', '07700 900502', 'British Citizen', 'manus'),
+      (now() - interval '2 days', 'earlier', 'one', 'earlier@example.net', '+44 7700 900503', 'Settled or pre-settled status', 'website');`);
+  const print = async () => JSON.stringify(await sql`select * from jsite.applications order by id`);
+  const before = await print();
+  const first = await siteApplicants(rt, sql);
+  ok(first.read === 1 && first.backfill === 1 && first.added === 0, 'website applicants: only the Apply form\'s rows of the last month are read (not the old import\'s, not one from 40 days ago): ' + JSON.stringify(first));
+  await sql`insert into jsite.applications (first_name, last_name, email, phone, visa_status, preferred_day, availability, how_heard, additional_notes)
+    values ('new', 'person', 'new@example.net', '07700 900504', 'British or Irish citizen', 'Tuesday', 'Within 1 week', 'A friend told me', 'Hello')`;
+  const mid = await print();
+  const second = await siteApplicants(rt, sql), third = await siteApplicants(rt, sql);
+  const rows = await rt.withDb(async q => {
+    const t = (await q("select headers from jl.tabs where name = 'Applicants'"))[0];
+    return (await q("select vals from jl.rows where tab = 'Applicants' order by pos")).map(r => Object.fromEntries(t.headers.map((h, i) => [h, r.vals[i]])));
+  });
+  const np = rows.find(r => r.first_name === 'New');
+  ok(second.read === 2 && second.added === 1 && third.read === 2 && third.added + third.backfill + third.again + third.known === 0 && rows.length === 2,
+    'website applicants: someone who applies is added at the next read, and never again at the ones after (' + rows.length + ' held after three reads)');
+  ok(np && np.site_id === '4' && np.last_name === 'Person' && np.mobile === '07700900504' && np.preferred_day === 'Tuesday' && np.can_start === 'Within 1 week' && np.note === 'Hello' &&
+    np.status === 'new' && /^\d{4}-\d\d-\d\d \d\d:\d\d$/.test(np.applied_at) && rows.find(r => r.first_name === 'Earlier').backfill === 'TRUE',
+    'website applicants: kept under the application\'s own number on the website\'s list, with what they said on the form');
+  ok(before !== mid && (await print()) === mid, 'website applicants: the website\'s own list is only ever read: not one of its rows changed');
+  await rt.stop(); await db.end();
+}
+
 (async () => {
   console.log('Back end (PGlite)');
   await claims();
@@ -171,6 +217,7 @@ async function columns() {
   await outbox();
   await mirror();
   await columns();
+  await site();
   console.log(fails ? '\n' + fails + ' FAILED' : '\nALL BACK END CHECKS PASSED');
   process.exit(fails ? 1 : 0);
 })().catch(e => { console.error('FAILED', e); process.exit(1); });

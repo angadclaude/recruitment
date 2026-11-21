@@ -51,6 +51,18 @@ const CONFIG = {
   // Who hosts the presentation, by first name (Angad, 12 Nov): "Rubal or Jess will be hosting and expecting you" in the reminder and the
   // welcome, and "…will have your name ready at the door" on the link's preview card (app/build.js reads this line for the card)
   BOOK_HOSTS: ['Rubal', 'Jess'],
+  // Website applicants (Angad, 20 Nov: "Yes, as recommended"): everyone who sends the Apply form on jussmarketing.co.uk comes onto Book Appts
+  // within 5 minutes, with a phone alert to the people who call them (webAlerts). The email to the recruitment inbox carries on as before.
+  // People are named here by their name in the app, never by an address (this repo is public).
+  WEB: {
+    CALLERS: ['Rubal Oshan', 'Jess Grace', 'Christie Zammit'],  // alerted for each new applicant
+    STALLED_ALSO: ['Angad Oshan'],  // …and he hears too, once, when nobody has called or booked after STALL_MIN working minutes
+    ALERT_FROM: '08:00', ALERT_TO: '20:00',  // alerts go between these, every day; anyone who applies overnight arrives in one alert at ALERT_FROM
+    WORK_FROM: '09:00', WORK_TO: '18:00', STALL_MIN: 60,  // "one working hour": Monday to Friday between these
+    CARD_DAYS: 14,      // off the card after this, whatever happened (the same blanket rule as a missed Day 1 on Chase)
+    KEEP_DAYS: 180,     // the app's copy is deleted this long after they applied: before the website's own 6 months, so it never outlives it
+    BACKFILL_DAYS: 30,  // at switch-on: the last month's with no record in the app come in quietly (one summary alert)
+  },
   // Hyrre (Angad, 27 Oct): its AI caller "Megan" screens Slough's CVs and pencils them into the 10:00; Rubal approves them in Hyrre.
   // At 08:45, 11:15 and 16:45 (17:15 as its backup) a scheduled task on Angad's computer reads the approved ones from Hyrre (Rubal's login, look-only) and sends
   // them here (hyrreImport). They show on Book Appts as booked by Megan Hyrre (Office Recruitment, no incentive), or by Rubal / Jess when
@@ -194,6 +206,12 @@ const SHEETS = {
     // their ID badge (Angad, 10 Nov): the number(s) the client gives (NDCS one, HelloFresh three, one a line), NDCS's expiry if not the usual
     'badge_no', 'badge_expiry', 'badge_by', 'badge_at', 'badge_printed_at', 'badge_printed_by', 'badge_camp', 'photo_at'],
   StarterPhotos: ['id', 'data', 'updated_at'],  // one photo per Availability row (same id), a small JPEG as a data: URL
+  // Everyone who sent the Apply form on jussmarketing.co.uk (Angad, 20 Nov), copied from the website's own list every 5 minutes.
+  // site_id: the application's number on that list (never added twice). status: new (to call) · booked · closed.
+  // tries: "No answer" taps. alert_at / stalled_at: their alerts, marked before they go. backfill: applied before switch-on.
+  Applicants: ['id', 'created_at', 'site_id', 'applied_at', 'first_name', 'last_name', 'mobile', 'email', 'right_to_work', 'preferred_day',
+    'can_start', 'how_heard', 'note', 'status', 'tries', 'tried_at', 'tried_by', 'booking_id', 'closed_at', 'closed_by', 'closed_why',
+    'alert_at', 'stalled_at', 'backfill', 'again_at', 'updated_at'],
 };
 
 // ───────────────────────── WEB APP ─────────────────────────
@@ -1177,6 +1195,7 @@ function me(req, u) {
     badges: canBadge(u),  // Day 1 → 🪪 Badges: Jess, Rubal and Christie only
     book: { time: CONFIG.BOOK_TIME, co: CONFIG.BOOK_CO, missed: CONFIG.BOOK_MISSED_TIME, sources: BOOK_SOURCES,
       hosts: CONFIG.BOOK_HOSTS, lengthMin: CONFIG.BOOK_LENGTH_MIN,  // "Rubal or Jess will be hosting…", "done by 11:30"
+      webWhy: WEB_WHY, webDays: CONFIG.WEB.CARD_DAYS,  // website applicants: the reasons for "Not going ahead", and how long they stay on the card
       welcomeFrom: hyrreWelcomeFrom(),  // Megan's bookings first pulled from this day get the welcome
       hyrre: canBook(u) ? hyrreInfo() : null, hyrreBy: CONFIG.HYRRE.BOOKER,  // the last pull from Hyrre (Book Appts)
       hyrreManager: isHyrreManager(u),  // manages Megan: what they send for her bookings is signed "Christie / Megan"
@@ -1206,6 +1225,7 @@ function bundle(req, u) {
   if (req.withUsers && isAdmin(u)) out.users = listUsers(req, u).users;
   out.today = todayStr();  // an app left open overnight asks for "me" again when this moves on (11 Nov: Monday's reminders said "tomorrow")
   if (canBook(u)) { out.bookings = bookingList(req, u).items; out.hyrre = hyrreInfo(); }  // Jess, Rubal, Angad: who's booked for the presentations, and Hyrre's last pull
+  if (canBook(u)) out.applicants = webApplicants(u);  // …and who applied on the website and is still to call (Book Appts' top card)
   // The number on the Chase tab: this week's people to chase (nothing is carried over from earlier weeks since 11 Nov: chaseCarry stays 0)
   const cw = weekEnding(todayStr()), now = chaseNow(u);
   out.chase = now.length;
@@ -1741,6 +1761,7 @@ function namedInSettings(name) {
   if (is(CONFIG.BADGE_TEAM)) out.push('badges');
   if (is(CONFIG.RECRUIT_TEAM)) out.push('the recruitment team');
   if (is(CONFIG.BOOK_TEAM)) out.push('Book Appts');
+  if (is(CONFIG.WEB.CALLERS.concat(CONFIG.WEB.STALLED_ALSO))) out.push('the website applicants\' alerts');
   if (is([CONFIG.HYRRE.MANAGER])) out.push('Megan\'s bookings');
   if (is(CONFIG.OFFICE_BOOKERS)) out.push('Office bookings');
   if (is((CONFIG.HANDOVER || []).map(h => h.to))) out.push('a leaver\'s alerts');
@@ -1965,7 +1986,7 @@ const STAFF_ACTIONS = {
   alertsCheck: alertsCheck, testAlert: testAlert, sendSetupEmails: sendSetupEmails, adminCode: adminCode,
   chaseOutcomes: chaseOutcomes, chaseList: chaseList, academyList: academyList, markDay1: markDay1, markConfirmed: markConfirmed,
   onboardStep: onboardStep, onboardPreview: onboardPreview, onboardSend: onboardSend, setBrand: setBrand,
-  saveBooking: saveBooking, bookingAction: bookingAction, bookingList: bookingList,
+  saveBooking: saveBooking, bookingAction: bookingAction, bookingList: bookingList, applicantAction: applicantAction,
   setCampaign: setCampaign, fixName: fixName, fixContact: fixContact, day1Photo: day1Photo,
   availWeek: availWeek, saveAvail: saveAvail, addStarter: addStarter, removeStarter: removeStarter, restoreStarter: restoreStarter, gradeStarter: gradeStarter, saveStarterPhoto: saveStarterPhoto, availPhotos: availPhotos,
   setBellSheets: setBellSheets,
@@ -2588,6 +2609,7 @@ function keepWarm() {
   try { maybeBookingReminders(); } catch (e) { console.error(e); }
   try { maybeMissedBookings(); } catch (e) { console.error(e); }
   try { maybeHyrreLate(); } catch (e) { console.error(e); }
+  try { webAlerts(); } catch (e) { console.error(e); }  // website applicants: the 08:00 overnight alert, and the one "nobody's called yet"
 }
 
 /** Every day at THANKS_TIME: Jess / Rubal get "N thank-you messages to send" for today's appointments not thanked yet.
@@ -2924,7 +2946,7 @@ function maybeDay1Reminder() {
 // Jess, Rubal and Angad call the applicants (Teamtailor CVs, all JUSS), book them into a 10:00 presentation in the app, and send
 // the confirmation from their own WhatsApp. The evening before, whoever booked them gets "N to remind for tomorrow"; anyone who
 // hasn't checked in by 10:30 "didn't come" (a "sorry we missed you" + rebook). At check-in their mobile finds the booking.
-const BOOK_SOURCES = ['Teamtailor', 'Indeed', 'Referral', 'Other'];
+const BOOK_SOURCES = ['Teamtailor', 'Indeed', 'Website', 'Referral', 'Other'];  // "Website" (20 Nov): the Apply form on jussmarketing.co.uk (WEB_SOURCE)
 function bookTeam() {
   const list = (CONFIG.BOOK_TEAM || []).map(e => String(e).toLowerCase()), emails = list.filter(e => e.indexOf('@') >= 0), names = list.filter(e => e.indexOf('@') < 0).map(normName);
   return usersAll().filter(x => truthy(x.active) && (emails.indexOf(String(x.email).toLowerCase()) >= 0 || names.indexOf(normName(x.name)) >= 0)).map(x => ({ id: x.id, name: x.name }));
@@ -3107,12 +3129,16 @@ function saveBooking(req, u) {
     const hy = !!(old && (old.hyrre_id || hyrreRootOf(old, readTable('Bookings'))));
     if (old && old.hyrre_id && old.status === 'booked' && !bookingOver(old)) throw new Error(HYRRE_OWNS);
     if (old && old.status === 'booked') { old.status = 'no_show'; old.updated_at = nowStr(); writeRow('Bookings', old); }
+    // Booked from the website's list (Book Appts → 🌐 Website applicants, 20 Nov): where they applied is the website, and they leave
+    // that list. Booked from the form instead: anyone still on the list under that mobile leaves it too (the form's source stays)
+    const ap = old ? null : webOpenFor(f.applicant_id, mobile), web = !!ap && !!f.applicant_id && ap.id === f.applicant_id;
     const b = appendRow('Bookings', {
       id: uid(), created_at: nowStr(), booked_by_id: hy ? old.booked_by_id : u.id, booked_by: hy ? old.booked_by : u.name, first_name: first, last_name: last, mobile: mobile,
-      source: hy ? old.source : source, notes: notes, slot_date: day, slot_time: CONFIG.BOOK_TIME, company: CONFIG.BOOK_CO, status: 'booked', confirm_token: token().slice(0, 24),
+      source: hy ? old.source : web ? WEB_SOURCE : source, notes: notes, slot_date: day, slot_time: CONFIG.BOOK_TIME, company: CONFIG.BOOK_CO, status: 'booked', confirm_token: token().slice(0, 24),
       rebook_of: old ? old.id : '', no_whatsapp: old ? old.no_whatsapp : '', updated_at: nowStr(), short_code: bookCode(bookCodes(readTable('Bookings'))),
     });
-    log(u, old ? 'booking_rebooked' : 'booking', '', first + ' ' + last + ' → ' + day);
+    if (ap) { Object.assign(ap, { status: 'booked', booking_id: b.id, closed_at: '', closed_by: '', closed_why: '', updated_at: nowStr() }); writeRow('Applicants', ap); }
+    log(u, old ? 'booking_rebooked' : 'booking', '', first + ' ' + last + ' → ' + day + (web ? ' (from the website)' : ''));
     return bookOut(b);
   });
 }
@@ -3136,7 +3162,7 @@ function bookingAction(req, u) {
       if (via === 'sms') b.no_whatsapp = 'TRUE';  // not on WhatsApp: their next message goes by text too
     }
     if (req.act === 'yes' && !b.confirmed_at) { b.confirmed_at = nowStr(); b.confirmed_by = u.name; }
-    if (req.act === 'cancel') { if (b.status !== 'booked') throw new Error('Only a booking still to come can be cancelled.'); b.status = 'cancelled'; }
+    if (req.act === 'cancel') { if (b.status !== 'booked') throw new Error('Only a booking still to come can be cancelled.'); b.status = 'cancelled'; webBack(b); }
     b.updated_at = nowStr();
     writeRow('Bookings', b);
     log(u, 'booking_' + (req.act === 'sent' ? via + '_' + req.kind : req.act), b.candidate_id || '', b.first_name + ' ' + b.last_name + ' · ' + b.slot_date);
@@ -3424,6 +3450,201 @@ function maybeHyrreLate() {
   notify(usersAll().filter(canBook), '🤖 Hyrre\'s bookings didn\'t come in this morning',
     'The 08:45 pull from Hyrre hasn\'t run today (last one: ' + String(last.at).slice(0, 16) + '). It runs on Angad\'s computer: it needs to be on, ' +
     'with Chrome open and Hyrre logged in. Then ask Claude to "pull Hyrre now". Until then, today\'s list is in Hyrre.', 'book');
+}
+
+// ───────────────────────── WEBSITE APPLICANTS → Book Appts (Angad, 20 Nov 2026: "Yes, as recommended") ─────────────────────────
+// Everyone who sends the Apply form on jussmarketing.co.uk is saved in the website's own list (the shared Supabase, schema jsite) and
+// emailed to the recruitment inbox, where they waited to be read, called and typed in here: of the 7 who applied in the month to
+// 20 Nov the app had no record of 5. Now Vercel's 5-minute timer reads that list (server/site.js: look-only, nothing on the website
+// changes) and hands it to siteImport. Anyone new goes on a card at the top of Book Appts, the people who call them get a phone
+// alert, and one tap books them into the 10:00 with "Website" as where they applied. The email carries on as before.
+//  - Never twice: each application's own number on the website's list (site_id) is kept, and one already held is skipped.
+//  - No new message to them (his decision 1): the site says "We'll call you"; they get the call, then the usual confirmation once booked.
+//  - Alerts (decision 2): CONFIG.WEB.CALLERS for each new one, between ALERT_FROM and ALERT_TO (overnight ones together at ALERT_FROM);
+//    and once, after STALL_MIN working minutes with no call logged and no booking, to them and STALLED_ALSO. Never a daily nag.
+//  - At switch-on (decision 3) the last BACKFILL_DAYS' come in quietly, one summary alert, without anyone who already has a
+//    booking or a check-in since they applied.
+//  - Their details: their answers go after 12 weeks, the row KEEP_DAYS after they applied (before the website's own 6 months).
+//    Never a mobile or an email in the Log or in an alert: a first name and the day they picked.
+const WEB_SOURCE = 'Website';
+const WEB_WHY = ['Not interested', 'Not suitable', 'Can\'t reach them', 'Already booked'];
+function webTeam(list) { return usersAll().filter(u => truthy(u.active) && (list || []).some(e => namedAs(u, e))); }
+/** What the app gets of an applicant (the booking team only). */
+function webOut(a) {
+  return { id: a.id, applied_at: a.applied_at, added_at: a.created_at, first_name: a.first_name, last_name: a.last_name, mobile: a.mobile, email: a.email,
+    right_to_work: a.right_to_work, preferred_day: a.preferred_day, can_start: a.can_start, how_heard: a.how_heard, note: a.note, status: a.status,
+    tries: Number(a.tries || 0), tried_at: a.tried_at, tried_by: a.tried_by, backfill: truthy(a.backfill), again_at: a.again_at };
+}
+/** The website's applications of the last month, as server/site.js read them: [{ id, at ('yyyy-MM-dd HH:mm', London), first_name,
+ *  last_name, phone, email, visa_status, preferred_day, availability, how_heard, notes }]. The ones not held yet are added; then
+ *  their alert. Called every 5 minutes with the same list, so it must cost nothing when there's nobody new. */
+function siteImport(rows) {
+  const list = (Array.isArray(rows) ? rows : []).filter(r => r && r.id !== undefined && r.id !== null && String(r.id) !== '').slice(0, 500);
+  const p = PropertiesService.getScriptProperties(), held = {}, n = { added: 0, backfill: 0, again: 0, known: 0 };
+  readTable('Applicants').forEach(a => { held[a.site_id] = true; });
+  if (p.getProperty('WEB_LIVE_AT') && !list.some(r => !held[String(r.id).slice(0, 40)])) return n;  // nobody new: no lock, nothing written
+  withLock(() => {
+    delete MEMO.Applicants; delete MEMO.Bookings; delete MEMO.Candidates;
+    const now = nowStr(), all = readTable('Applicants'), have = {};
+    all.forEach(a => { have[a.site_id] = true; });
+    let liveAt = p.getProperty('WEB_LIVE_AT');
+    if (!liveAt) { liveAt = now; p.setProperty('WEB_LIVE_AT', now); }  // switch-on: anything sent before this moment is the back-fill
+    const from = addDays(liveAt.slice(0, 10), -CONFIG.WEB.BACKFILL_DAYS), open = all.filter(a => a.status === 'new');
+    const text = (v, max) => String(v === null || v === undefined ? '' : v).replace(/\s+/g, ' ').trim().slice(0, max);
+    list.slice().sort((a, b) => Number(a.id) - Number(b.id)).forEach(r => {
+      const sid = String(r.id).slice(0, 40);
+      if (have[sid]) return;
+      const at = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(String(r.at || '')) ? String(r.at) : now;
+      if (at.slice(0, 10) < from) return;  // older than the back-fill: never comes in
+      const first = cleanName(text(r.first_name, 60)), last = cleanName(text(r.last_name, 60));
+      if (!first) return;
+      have[sid] = true;
+      const mobile = normMobile(r.phone) || String(r.phone || '').replace(/[^\d+]/g, '').slice(0, 16);  // not a UK mobile: kept as typed, for someone to check
+      const back = at < liveAt;
+      const a = { id: uid(), created_at: now, site_id: sid, applied_at: at, first_name: first, last_name: last, mobile: mobile, email: text(r.email, 120).toLowerCase(),
+        right_to_work: text(r.visa_status, 80), preferred_day: text(r.preferred_day, 30), can_start: text(r.availability, 40), how_heard: text(r.how_heard, 60),
+        note: text(r.notes, 500), status: 'new', tries: '', backfill: back ? 'TRUE' : '', updated_at: now };
+      const shut = why => Object.assign(a, { status: 'closed', closed_at: now, closed_by: 'Website', closed_why: why, alert_at: now });
+      // The same mobile again while they're still on the card: one person, "applied again" (their newer answers win)
+      const same = mobile ? open.filter(o => o.mobile === mobile)[0] : null;
+      if (same) {
+        same.again_at = at; ['preferred_day', 'can_start', 'note'].forEach(k => { if (a[k]) same[k] = a[k]; });
+        same.updated_at = now; writeRow('Applicants', same);
+        appendRow('Applicants', shut('Applied again')); n.again++; return;
+      }
+      // The back-fill leaves out anyone the team already got to: a booking made, or a check-in, since they applied
+      if (back && mobile && (readTable('Bookings').some(b => b.mobile === mobile && String(b.created_at).slice(0, 10) >= at.slice(0, 10)) ||
+          readTable('Candidates').some(c => c.mobile === mobile && c.attended_date >= at.slice(0, 10)))) {
+        appendRow('Applicants', shut('Already in the app')); n.known++; return;
+      }
+      open.push(appendRow('Applicants', a));
+      if (back) n.backfill++; else n.added++;
+    });
+  });
+  if (n.added || n.backfill || n.again || n.known) {
+    log({ name: 'Website' }, 'web_applicants', '', [n.added ? n.added + ' new' : '', n.backfill ? n.backfill + ' from before switch-on' : '',
+      n.again ? n.again + ' applied again' : '', n.known ? n.known + ' already in the app' : ''].filter(String).join(' · '));
+    try { webAlerts(); } catch (e) { console.error(e); }  // straight away (in hours), not at the next 5-minute tick
+  }
+  return n;
+}
+/** Minutes of Monday-to-Friday WORK_FROM–WORK_TO between two 'yyyy-MM-dd HH:mm' times. */
+function webWorkMins(from, to) {
+  const W = CONFIG.WEB, mins = hm => Number(hm.slice(0, 2)) * 60 + Number(hm.slice(3, 5)), a = mins(W.WORK_FROM), b = mins(W.WORK_TO);
+  let n = 0;
+  for (let d = from.slice(0, 10), i = 0; d <= to.slice(0, 10) && i < 40; d = addDays(d, 1), i++) {
+    if (weekday(d) === 0 || weekday(d) === 6) continue;
+    const s = d === from.slice(0, 10) ? Math.max(a, mins(from.slice(11, 16))) : a, e = d === to.slice(0, 10) ? Math.min(b, mins(to.slice(11, 16))) : b;
+    if (e > s) n += e - s;
+  }
+  return n;
+}
+/** Alerted a working hour ago, and still nobody has logged a call or booked them (asked in working hours, so it lands when someone can act). */
+function webStalled(a, now) {
+  const W = CONFIG.WEB, wd = weekday(now.slice(0, 10)), hm = now.slice(11, 16);
+  return a.status === 'new' && !!a.alert_at && !a.stalled_at && !truthy(a.backfill) && !Number(a.tries || 0) &&
+    wd > 0 && wd < 6 && hm >= W.WORK_FROM && hm <= W.WORK_TO && webWorkMins(a.alert_at, now) >= W.STALL_MIN;
+}
+function webCould(a) { return a.preferred_day ? 'Could come ' + (/^as soon as/i.test(a.preferred_day) ? 'as soon as possible' : a.preferred_day) : 'No day picked'; }
+/** "an hour ago" · "3 hours ago" · "yesterday" · "on Friday 13th November" */
+function webAgo(at, now) {
+  const d = daysBetween(at.slice(0, 10), now.slice(0, 10)), mins = (new Date(now.replace(' ', 'T') + ':00Z') - new Date(at.replace(' ', 'T') + ':00Z')) / 60000;
+  return d === 0 ? (mins < 90 ? 'an hour ago' : Math.round(mins / 60) + ' hours ago') : d === 1 ? 'yesterday' : 'on ' + longDate(at.slice(0, 10));
+}
+/** The alerts. New applicants → the callers: one each as they arrive ("🌐 New website applicant: Sam"), or one for several at once
+ *  (overnight, at ALERT_FROM). The back-fill at switch-on → one summary. Nobody's called after a working hour → the callers and
+ *  STALLED_ALSO, once. Each is marked on the applicant (and saved) before it goes, so a retry can't send it again. From siteImport
+ *  (straight away) and every 5 minutes (keepWarm). */
+function webAlerts() {
+  const W = CONFIG.WEB, now = nowStr(), hm = now.slice(11, 16);
+  if (hm < W.ALERT_FROM || hm >= W.ALERT_TO) return;  // overnight: they wait for ALERT_FROM and arrive together
+  if (!readTable('Applicants').some(a => a.status === 'new' && (!a.alert_at || webStalled(a, now)))) return;
+  const got = withLock(() => {
+    delete MEMO.Applicants; delete MEMO.Bookings;
+    const today = now.slice(0, 10), booked = {};
+    readTable('Bookings').forEach(b => { if (b.status === 'booked' && b.slot_date >= today) booked[b.mobile] = true; });
+    const rows = readTable('Applicants').filter(a => a.status === 'new');
+    const fresh = rows.filter(a => !a.alert_at), stalled = rows.filter(a => webStalled(a, now));
+    fresh.forEach(a => { a.alert_at = now; a.updated_at = now; writeRow('Applicants', a); });
+    stalled.forEach(a => { a.stalled_at = now; a.updated_at = now; writeRow('Applicants', a); });
+    // Booked another way meanwhile (the form, or Megan in Hyrre): nobody needs chasing about them
+    return { fresh: fresh, stalled: stalled.filter(a => !(a.mobile && booked[a.mobile])) };
+  });
+  const callers = webTeam(W.CALLERS), names = l => firstNames(l.map(a => ({ full_name: a.first_name })), 6);
+  const live = got.fresh.filter(a => !truthy(a.backfill)), back = got.fresh.filter(a => truthy(a.backfill)), st = got.stalled;
+  if (live.length === 1) {
+    notify(callers, '🌐 New website applicant: ' + live[0].first_name,
+      [webCould(live[0]), live[0].right_to_work.replace(/\s*\(.*$/, '')].filter(String).join(' · ') + '. Tap to call and book.', 'bookweb');
+  } else if (live.length) {
+    notify(callers, '🌐 ' + live.length + ' website applicants to call', names(live) + ' applied on the website. Tap to call and book them.', 'bookweb');
+  }
+  if (back.length) {
+    notify(callers, '🌐 ' + plural(back.length, 'earlier website applicant') + ' to try', names(back) + ' applied on the website in the last month and the app had no record of ' +
+      (back.length === 1 ? 'them. Give them one try, or close them if you\'ve already spoken.' : 'any of them. Try each once, and close anyone you\'ve already spoken to.'), 'bookweb');
+  }
+  if (st.length) {
+    const to = callers.concat(webTeam(W.STALLED_ALSO));
+    if (st.length === 1) notify(to, '⏰ ' + st[0].first_name + ' applied ' + webAgo(st[0].applied_at, now), 'On the website. No call logged and not booked yet. Tap to call.', 'bookweb');
+    else notify(to, '⏰ ' + st.length + ' website applicants still waiting', names(st) + ': no call logged and not booked yet. Tap to call.', 'bookweb');
+  }
+}
+/** Book Appts' top card (the booking team): everyone still to call, newest first, for CARD_DAYS from the day they came onto it.
+ *  booked_for: their mobile already has a booking to come (the form, or Megan in Hyrre). came_on: that mobile has checked in before. */
+function webApplicants(u) {
+  if (!canBook(u)) return [];
+  const today = todayStr(), from = addDays(today, 1 - CONFIG.WEB.CARD_DAYS);
+  const rows = readTable('Applicants').filter(a => a.status === 'new' && String(a.created_at).slice(0, 10) >= from);
+  if (!rows.length) return [];
+  const open = readTable('Bookings').filter(b => b.status === 'booked' && b.slot_date >= today), cands = readTable('Candidates');
+  return rows.sort((a, b) => String(b.applied_at).localeCompare(String(a.applied_at))).map(a => {
+    const o = webOut(a), bk = a.mobile ? open.filter(b => b.mobile === a.mobile)[0] : null;
+    const seen = a.mobile ? cands.filter(c => c.mobile === a.mobile).map(c => c.attended_date).sort().pop() : '';
+    if (bk) o.booked_for = { slot_date: bk.slot_date, by: bk.booked_by };
+    if (seen) o.came_on = seen;
+    return o;
+  });
+}
+/** The applicant a new booking is for: the one tapped on the card, else anyone still to call under that mobile. */
+function webOpenFor(id, mobile) {
+  delete MEMO.Applicants;
+  const rows = readTable('Applicants');
+  return (id ? rows.filter(a => a.id === id && a.status !== 'booked')[0] : null) || rows.filter(a => a.status === 'new' && !!mobile && a.mobile === mobile)[0] || null;
+}
+/** A booking made from the website's list is cancelled: they're back on it (a mis-tap undone; someone who pulled out can be called again, or closed). */
+function webBack(b) {
+  const a = readTable('Applicants').filter(x => x.booking_id === b.id && x.status === 'booked')[0];
+  if (a) { Object.assign(a, { status: 'new', booking_id: '', updated_at: nowStr() }); writeRow('Applicants', a); }
+}
+/** act: tried (called, no answer: they stay on the card, with who tried and when) · close (not going ahead: why, off the card). */
+function applicantAction(req, u) {
+  if (!canBook(u)) throw new Error('Only the booking team can do that.');
+  if (['tried', 'close'].indexOf(req.act) < 0) throw new Error('Unknown action');
+  return withLock(() => {
+    const r = rowOfId('Applicants', String(req.id || ''));
+    if (!r) throw new Error('They\'re no longer on the list. Pull down to refresh.');
+    const a = readRow('Applicants', r), now = nowStr();
+    if (a.status !== 'new') throw new Error(a.status === 'booked' ? 'They\'ve been booked: open their booking.' : 'They\'ve already been taken off the list.');
+    if (req.act === 'tried') Object.assign(a, { tries: String(Number(a.tries || 0) + 1), tried_at: now, tried_by: u.name });
+    else Object.assign(a, { status: 'closed', closed_at: now, closed_by: u.name, closed_why: WEB_WHY.indexOf(req.why) >= 0 ? req.why : 'Other' });
+    a.updated_at = now;
+    writeRow('Applicants', a);
+    log(u, 'web_applicant_' + req.act, '', a.first_name + ' ' + a.last_name + (req.act === 'close' ? ' · ' + a.closed_why : ''));
+    return webOut(a);
+  });
+}
+/** After 12 weeks an applicant keeps their name, mobile and what happened (someone applying again is recognised); their email,
+ *  right-to-work answer, message and the rest go. Anyone still "to call" once they're off the card is closed. */
+const WEB_TRIM = ['email', 'right_to_work', 'preferred_day', 'can_start', 'how_heard', 'note'];
+function trimOldApplicants(before, today) {
+  const off = addDays(today, -CONFIG.WEB.CARD_DAYS);
+  readTable('Applicants').forEach(a => {
+    let changed = false;
+    if (a.status === 'new' && String(a.created_at).slice(0, 10) <= off) {
+      Object.assign(a, { status: 'closed', closed_at: nowStr(), closed_by: 'Website', closed_why: 'Off the list after ' + CONFIG.WEB.CARD_DAYS + ' days' }); changed = true;
+    }
+    if (String(a.applied_at).slice(0, 10) < before && WEB_TRIM.some(k => a[k])) { WEB_TRIM.forEach(k => { a[k] = ''; }); changed = true; }
+    if (changed) writeRow('Applicants', a);
+  });
 }
 
 // ───────────────────────── NEW STARTER ONBOARDING (admins only: their details for Databyte, and the welcome email) ─────────────────────────
@@ -3824,6 +4045,9 @@ function dailyMaintenance() {
     deleteWhere('Bookings', r => !!r.slot_date && r.slot_date < cutoff);
     trimOldDetails(trim);
     trimOldBookings(trim);
+    // Website applicants: gone KEEP_DAYS after they applied (before the website's own copy goes), their answers after 12 weeks
+    deleteWhere('Applicants', r => !!r.applied_at && String(r.applied_at).slice(0, 10) < addDays(today, -CONFIG.WEB.KEEP_DAYS));
+    trimOldApplicants(trim, today);
   });
 }
 /** After 12 weeks: keep name, contact, booker, result and what pay needs (to spot repeat applicants); wipe the rest,

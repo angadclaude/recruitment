@@ -1,4 +1,4 @@
-window.APP_VERSION = '74e0e84d';
+window.APP_VERSION = '16536b85';
 
 (function () {
 'use strict';
@@ -1002,7 +1002,7 @@ function saveCacheNow() {
   Object.keys(S.data).sort().slice(-3).forEach(k => { keep[k] = S.data[k]; });
   const base = { me: S.me, data: keep, users: S.users };
   // Phone storage full? Keep the essentials rather than lose the whole cache.
-  try { localStorage.setItem('lr_cache', JSON.stringify(Object.assign({ chase: S.chase || null, academy: S.academy || null, bookings: S.bookings || null }, base))); } catch (e) { store.set('cache', base); }
+  try { localStorage.setItem('lr_cache', JSON.stringify(Object.assign({ chase: S.chase || null, academy: S.academy || null, bookings: S.bookings || null, applicants: S.applicants || null }, base))); } catch (e) { store.set('cache', base); }
 }
 function setSync(d) {
   S.syncing = Math.max(0, S.syncing + d);
@@ -1026,6 +1026,7 @@ function fetchWeek(we, extra) {
     S.data[b.weekEnding] = { items: b.items, pay: b.pay, at: Date.now() };
     if (b.users) S.users = b.users;
     if (b.bookings) S.bookings = { items: b.bookings, at: Date.now() };  // Jess, Rubal, Angad: presentations they've booked
+    if (b.applicants) { const was = webToCall().length; S.applicants = { items: b.applicants, at: Date.now() }; if (webToCall().length !== was) paintTabs(); }  // website applicants still to call
     if (b.hyrre && !b.me && S.me && S.me.book) S.me.book.hyrre = b.hyrre;  // Hyrre's last pull, as it is now (11 Nov: "Not today yet" stayed up after the 08:45 pull, until a reload)
     if (typeof b.chase === 'number' && (b.chase !== S.chaseN || (b.chaseCarry || 0) !== (S.chaseCarry || 0))) { S.chaseN = b.chase; S.chaseCarry = b.chaseCarry || 0; paintTabs(); }
     if (b.me) {
@@ -1077,7 +1078,7 @@ function upsert(c) {
 
 /** Signed in (login code or the hub): keep the token, start fresh. */
 function signedIn(token) {
-  S.token = token; store.set('tok', token); store.del('cache'); store.del('codeSent'); S.data = {}; S.users = null; S.chase = null; S.chaseN = 0; S.chaseCarry = 0; S.academy = null; S.d1Old = null; S.d1Pick = null; S.bookings = null; startStaff();
+  S.token = token; store.set('tok', token); store.del('cache'); store.del('codeSent'); S.data = {}; S.users = null; S.chase = null; S.chaseN = 0; S.chaseCarry = 0; S.academy = null; S.d1Old = null; S.d1Pick = null; S.bookings = null; S.applicants = null; startStaff();
 }
 function startStaff() {
   stopTimer();
@@ -1098,6 +1099,7 @@ function startStaff() {
     S.me = cached.me; S.data = Object.assign(cached.data || {}, S.data); S.users = cached.users || null;
     S.chase = S.chase || cached.chase || null; S.academy = S.academy || cached.academy || null;
     S.bookings = S.bookings || (cached.bookings ? { items: cached.bookings.items || [], at: 0 } : null);
+    S.applicants = S.applicants || (cached.applicants ? { items: cached.applicants.items || [], at: 0 } : null);
     Object.keys(S.data).forEach(k => { if (!S.inflight[k]) S.data[k].at = 0; });
     boot();
   } else {
@@ -1221,6 +1223,9 @@ function boot() {
       if (wel) bookWelcomeSheet();
     };
     setTimeout(open, 300);
+  } else if (BOOT.cid === 'bookweb') {
+    // From "🌐 New website applicant" / "⏰ … still waiting": Book Appts, where they're the top card
+    BOOT.cid = ''; nav(canBook() ? 'book' : S.tab, {}, false);
   } else if (BOOT.cid) { const id = BOOT.cid; BOOT.cid = ''; nav('cand', { id: id }, true); } else nav(S.tab, {}, false);
   stopTimer();
   S.lastPoll = Date.now();
@@ -1465,7 +1470,7 @@ function toggleMenu() {
   const ma = document.getElementById('mAvail'); if (ma) ma.onclick = () => { m.hidden = true; nav('avail', {}, true); };
   document.getElementById('mLogout').onclick = () => {
     if (outbox().length && !navigator.onLine) { toast('Wait for signal first: you have changes that haven\'t synced'); return; }
-    store.del('outbox'); store.del('tok'); store.del('cache'); S.token = ''; S.me = null; S.data = {}; S.users = null; S.chase = null; S.chaseN = 0; S.chaseCarry = 0; S.academy = null; S.d1Old = null; S.d1Pick = null; S.booted = false; S.tab = '';
+    store.del('outbox'); store.del('tok'); store.del('cache'); S.token = ''; S.me = null; S.data = {}; S.users = null; S.chase = null; S.chaseN = 0; S.chaseCarry = 0; S.academy = null; S.d1Old = null; S.d1Pick = null; S.bookings = null; S.applicants = null; S.booted = false; S.tab = '';
     if (PUSH.os) PUSH.os.logout().catch(() => {});
     startStaff();
   };
@@ -2854,7 +2859,7 @@ function msgRebook(c) {
     'Your place is still there: let\'s get you *rebooked*. Which day works for you? 📅\n\n' +
     '– ' + S.me.user.name.split(' ')[0] + ', ' + brandOf(c);
 }
-function paintTabs() { const tb = document.getElementById('tabbar'); if (tb && S.me) setHtml(tb, tabs().map(t => '<button data-tab="' + t[0] + '" class="' + (S.tab === t[0] ? 'on' : '') + '">' + icon(t[0]) + (t[0] === 'chase' && S.chaseN ? '<i class="tbadge">' + chaseBadge() + '</i>' : '') + (t[0] === 'mine' && !isAdmin() && doNow().length ? '<i class="tbadge">' + doNow().length + '</i>' : '') + '<span' + (t[1].length > 10 ? ' class="tl"' : '') + '>' + t[1] + '</span></button>').join('')); }
+function paintTabs() { const tb = document.getElementById('tabbar'); if (tb && S.me) setHtml(tb, tabs().map(t => '<button data-tab="' + t[0] + '" class="' + (S.tab === t[0] ? 'on' : '') + '">' + icon(t[0]) + (t[0] === 'chase' && S.chaseN ? '<i class="tbadge">' + chaseBadge() + '</i>' : '') + (t[0] === 'mine' && !isAdmin() && doNow().length ? '<i class="tbadge">' + doNow().length + '</i>' : '') + (t[0] === 'book' && webToCall().length ? '<i class="tbadge">' + webToCall().length + '</i>' : '') + '<span' + (t[1].length > 10 ? ' class="tl"' : '') + '>' + t[1] + '</span></button>').join('')); }
 /** Make `from` look like `to`, keeping every node that's already right (and its taps / listeners). Rows match by data-id. */
 function morph(from, to, inner) {
   if (!inner) {  // the page itself keeps its own id / classes; only what's inside it changes
@@ -3381,7 +3386,7 @@ function day1Sheet(date) {
 }
 
 // ───── Booking a presentation straight after the call (Angad, 23 Oct): Jess, Rubal and Angad book, the app writes the messages ─────
-const BOOK_DEFAULT = { time: '10:00', co: 'JUSS', missed: '10:30', sources: ['Teamtailor', 'Indeed', 'Referral', 'Other'], hosts: ['Rubal', 'Jess'], lengthMin: 90 };
+const BOOK_DEFAULT = { time: '10:00', co: 'JUSS', missed: '10:30', sources: ['Teamtailor', 'Indeed', 'Website', 'Referral', 'Other'], hosts: ['Rubal', 'Jess'], lengthMin: 90 };
 function canBook() { return !!S.me && (S.me.bookTeam || []).some(t => t.id === S.me.user.id); }
 function bookCfg() { return (S.me && S.me.book) || BOOK_DEFAULT; }
 function bookings() { return (S.bookings && S.bookings.items) || []; }
@@ -3578,7 +3583,7 @@ function viewBook(quiet) {
   if (!canBook()) return go(tabs()[0][0]);
   const d = want(weekEndingOf(S.me.today));  // the week's bundle brings the bookings, and keeps them fresh
   const p = bookPick();
-  const page = paint('Book Appts', '<div class="card bookcard"><button class="btn block" id="bookNew">📅 Book a presentation</button>' +
+  const page = paint('Book Appts', webCard() + '<div class="card bookcard"><button class="btn block" id="bookNew">📅 Book a presentation</button>' +
       '<p class="hint" style="margin:8px 2px 0">Just booked someone on the phone? Tap here: their confirmation is ready to send on WhatsApp, signed by you.</p>' + bookHyLine() + bookWelBtn() + '</div>' +
     '<div class="chips bkmode">' + [['day', 'Day'], ['week', 'Week']].map(m => '<button type="button" class="chip' + (p.mode === m[0] ? ' on' : '') + '" data-bkmode="' + m[0] + '">' + m[1] + '</button>').join('') + '</div>' +
     (d || S.bookings ? (p.mode === 'week' ? bookWeekHtml(p.we) : bookDayHtml(p.day)) : skeleton(3)) +
@@ -3714,6 +3719,13 @@ function bindBookings(root) {
   root.querySelectorAll('[data-bkre]').forEach(b => { b.onclick = e => { e.stopPropagation(); const x = bookById(b.dataset.bkre); if (x) bookForm(x, 'rebook'); }; });
   root.querySelectorAll('[data-bkrem]').forEach(b => { b.onclick = () => bookRemindSheet(b.dataset.bkrem); });
   on('bkwel', () => bookWelcomeSheet());
+  // Website applicants (the top card). onclick, never addEventListener: this page is patched in place on every refresh
+  const web = (attr, fn) => root.querySelectorAll('[data-' + attr + ']').forEach(b => { b.onclick = () => fn(b.getAttribute('data-' + attr), b); });
+  web('webbook', webBook);
+  web('webday', id => { const a = webById(id); if (a) bookForm(webPre(a), 'web'); });
+  web('webtry', webTried);
+  web('webno', id => webCloseSheet(id));
+  web('webdone', (id, b) => webCloseSheet(id, 'Already booked', b));
 }
 /** They replied YES on WhatsApp: one tap and they show as ✅ Confirmed. */
 function bookYes(id, btn, then) {
@@ -3743,7 +3755,7 @@ function bookForm(pre, mode) {
   const ownSrc = mode === 'edit' && !!pre.source && cfg.sources.indexOf(pre.source) < 0;  // "Hirematic" (Megan's): not one of the chips, so it stays as it is
   const dayChip = d => '<button type="button" class="chip' + (d === sel ? ' on' : '') + '" data-day="' + d + '">' + DAYS[D(d).getUTCDay()] + ' ' + D(d).getUTCDate() + ' ' + MONTHS[D(d).getUTCMonth()] + '</button>';
   const back = bookSheetOpen('Book a presentation',
-    '<div class="sheet-h"><div><div class="label muted">' + (mode === 'edit' ? 'Change the day · ' + h(bookName(pre)) : mode === 'rebook' ? 'Rebook · they didn\'t come' : 'After the call') + '</div><div class="display">📅 Book a presentation</div></div></div>' +
+    '<div class="sheet-h"><div><div class="label muted">' + (mode === 'edit' ? 'Change the day · ' + h(bookName(pre)) : mode === 'rebook' ? 'Rebook · they didn\'t come' : mode === 'web' ? 'From the website · ' + h(bookName(pre)) : 'After the call') + '</div><div class="display">📅 Book a presentation</div></div></div>' +
     '<div class="two"><div><label class="q" for="bkfn">First name <span class="req">*</span></label><input type="text" id="bkfn" autocomplete="off" autocapitalize="words" value="' + h(pre.first_name || '') + '"></div>' +
     '<div><label class="q" for="bksn">Surname</label><input type="text" id="bksn" autocomplete="off" autocapitalize="words" value="' + h(pre.last_name || '') + '"></div></div>' +
     '<label class="q" for="bkmob">Mobile <span class="req">*</span></label><input type="tel" id="bkmob" inputmode="tel" placeholder="07…" value="' + h(pre.mobile || '') + '">' +
@@ -3768,7 +3780,7 @@ function bookForm(pre, mode) {
   box.querySelector('#bksave').onclick = () => {
     const err = box.querySelector('#bkerr'), val = id => box.querySelector(id).value;
     const f = { id: mode === 'edit' ? pre.id : '', rebook_of: mode === 'rebook' ? pre.id : '', first_name: val('#bkfn'), last_name: val('#bksn'), mobile: val('#bkmob'),
-      slot_date: day, source: hyRe || ownSrc ? pre.source : chipVal(box, 'bksrc'), notes: val('#bknotes') };
+      slot_date: day, source: hyRe || ownSrc ? pre.source : chipVal(box, 'bksrc'), notes: val('#bknotes'), applicant_id: pre.applicant_id || '' };
     if (!f.first_name.trim()) return showErr(err, 'Add their first name.');
     if (!ukMobile(f.mobile)) return showErr(err, 'Add a valid UK mobile (07…).');
     if (!f.slot_date) return showErr(err, 'Pick the day of their presentation.');
@@ -3779,6 +3791,7 @@ function bookForm(pre, mode) {
     call('saveBooking', { booking: f }).then(b => {
       bookUpsert(b);
       if (mode === 'rebook') bookUpsert(Object.assign({}, pre, { status: 'no_show' }));
+      if (pre.applicant_id) webDrop(pre.applicant_id);  // booked: off the website applicants' card
       bookSendSheet(b, 'confirm');
     }).catch(e => { busy(btn, false); showErr(err, e.message); });
   };
@@ -3893,9 +3906,106 @@ function bookSheet(id) {
   on('#bkx', e => {
     if (!window.confirm('Cancel ' + bookName(b) + '\'s presentation on ' + fmtLong(b.slot_date) + '?')) return;
     busy(e.currentTarget, true, 'Cancelling…');
-    call('bookingAction', { id: b.id, act: 'cancel' }).then(nb => { bookUpsert(nb); closeSheet(); toast('Booking cancelled'); if (S.view === 'book') render(true); })
+    call('bookingAction', { id: b.id, act: 'cancel' }).then(nb => {
+      bookUpsert(nb); closeSheet(); toast('Booking cancelled');
+      if (nb.source === 'Website') { const d = S.data[weekEndingOf(S.me.today)]; if (d) d.at = 0; }  // from the website's list: they're back on it
+      if (S.view === 'book') render(true);
+    })
       .catch(ex => { busy(e.currentTarget, false); toast(ex.message); });
   });
+}
+// ───── Website applicants (Angad, 20 Nov): everyone who sent the Apply form on jussmarketing.co.uk and is still to call, on a card at the
+//       top of Book Appts (the booking team only). Call or WhatsApp from the row; one tap books them into the 10:00 on the day they picked,
+//       as "Website", with their usual confirmation ready to send. No answer: they stay, with who tried and when. Not going ahead: why, and
+//       off the card. Nothing new is sent to them (his decision). The rules are the server's: Code.gs "WEBSITE APPLICANTS". ─────
+const WEB_WHY = ['Not interested', 'Not suitable', 'Can\'t reach them', 'Already booked'];
+function webList() { return (S.applicants && S.applicants.items) || []; }
+/** Still to call: the number on the Book Appts tab (someone already booked another way needs nothing). */
+function webToCall() { return canBook() ? webList().filter(a => !a.booked_for) : []; }
+function webById(id) { return webList().filter(a => a.id === id)[0] || null; }
+function webName(a) { return (a.first_name + ' ' + (a.last_name || '')).trim(); }
+/** The day one tap books them for: the next 10:00 on the weekday they picked, from tomorrow. No day, or "As soon as possible": the next weekday. */
+function webDay(a) {
+  const want = DAYS_LONG.indexOf(a.preferred_day), any = want < 1 || want > 5;
+  for (let d = addDays(S.me.today, 1), i = 0; i < 14; d = addDays(d, 1), i++) { const w = D(d).getUTCDay(); if (w > 0 && w < 6 && (any || w === want)) return d; }
+  return bookWeekday(addDays(S.me.today, 1), 1);
+}
+/** "4 min ago" · "2 h ago" · "yesterday 22:04" · "Fri 13 Nov" */
+function webAgo(ts) {
+  const now = londonNow(), day = String(ts).slice(0, 10), n = Math.round((D(now.slice(0, 10)) - D(day)) / 86400000);
+  const mins = Math.round((new Date(now.replace(' ', 'T') + ':00Z') - new Date(String(ts).replace(' ', 'T') + ':00Z')) / 60000);
+  return n <= 0 ? (mins < 60 ? Math.max(1, mins) + ' min ago' : Math.floor(mins / 60) + ' h ago') : n === 1 ? 'yesterday ' + String(ts).slice(11, 16) : fmt(day);
+}
+/** What the booking form starts with, opened from their row: their name and mobile, "Website", and which applicant it is. */
+function webPre(a) { return { first_name: a.first_name, last_name: a.last_name, mobile: a.mobile, source: 'Website', applicant_id: a.id }; }
+function webDrop(id) { if (!S.applicants) return; S.applicants.items = S.applicants.items.filter(a => a.id !== id); saveCache(); paintTabs(); }
+function webRow(a) {
+  const uk = !!ukMobile(a.mobile), day = webDay(a), rtw = String(a.right_to_work || '').replace(/\s*\(.*$/, ''), ok = /citizen|settled/i.test(rtw);
+  const when = ts => (String(ts).slice(0, 10) === S.me.today ? '' : fmt(String(ts).slice(0, 10)) + ' ') + String(ts).slice(11, 16);
+  const sub = [a.preferred_day ? (/^as soon as/i.test(a.preferred_day) ? 'As soon as possible' : 'Could come ' + a.preferred_day) : '',
+    a.can_start ? 'can start ' + a.can_start.charAt(0).toLowerCase() + a.can_start.slice(1) : '', a.how_heard ? 'heard: ' + a.how_heard : ''].filter(String).join(' · ');
+  const note = String(a.note || '');
+  return '<div class="webrow" data-id="web' + h(a.id) + '"><div class="webtop"><span class="av co-JUSS">' + h(initials(webName(a))) + '</span><div class="main">' +
+    '<div class="name">' + h(webName(a)) + ' <small class="webago">' + h(webAgo(a.applied_at)) + '</small></div>' +
+    (sub ? '<div class="sub wrap">' + h(sub) + '</div>' : '') +
+    '<div class="sub wrap webcontact"><a href="tel:' + h(a.mobile) + '">' + h(a.mobile) + '</a>' + (a.email ? ' · <a href="mailto:' + h(a.email) + '">' + h(a.email) + '</a>' : '') + '</div>' +
+    (note ? '<div class="sub wrap webnote">💬 ' + h(note.length > 180 ? note.slice(0, 177) + '…' : note) + '</div>' : '') +
+    '<div class="pills">' + (rtw ? '<span class="pill ' + (ok ? 'green' : /visa/i.test(rtw) ? 'blue' : '') + '">' + (ok ? '✅ ' : '') + h(rtw) + '</span>' : '') +
+      (uk ? '' : '<span class="pill red">⚠️ Check the number</span>') +
+      (a.tries ? '<span class="pill amber">📵 Tried ' + (a.tries > 1 ? a.tries + '× · last ' : '') + h(when(a.tried_at)) + ' · ' + h(String(a.tried_by).split(' ')[0]) + '</span>' : '') +
+      (a.again_at ? '<span class="pill blue">↩️ Applied again ' + h(webAgo(a.again_at)) + '</span>' : '') +
+      (a.came_on ? '<span class="pill amber">⚠️ Came in ' + h(fmt(a.came_on)) + '</span>' : '') + '</div></div></div>' +
+    (a.booked_for ? '<p class="hint weboff">📅 Already booked for ' + h(fmt(a.booked_for.slot_date)) + ' (by ' + h(String(a.booked_for.by).split(' ')[0]) + '). Nothing to do.</p>' +
+        '<button type="button" class="btn ghost sm" data-webdone="' + h(a.id) + '">✓ Take off this list</button>'
+      : '<div class="webbtns"><a class="btn ghost sm" href="tel:' + h(a.mobile) + '">📞 Call</a>' +
+          '<a class="btn wa sm" href="https://wa.me/' + h(intlNo(a.mobile)) + '" target="_blank" rel="noopener">💬 WhatsApp</a></div>' +
+        '<button type="button" class="btn block webbook" data-webbook="' + h(a.id) + '">📅 ' + (uk ? 'Book ' + h(fmt(day)) + ' · ' + h(bookCfg().time) : 'Fix the number and book') + '</button>' +
+        '<div class="weblinks"><button type="button" class="linkbtn" data-webday="' + h(a.id) + '">Other day</button>' +
+          '<button type="button" class="linkbtn" data-webtry="' + h(a.id) + '">No answer</button>' +
+          '<button type="button" class="linkbtn" data-webno="' + h(a.id) + '">Not going ahead</button></div>') +
+    '</div>';
+}
+function webCard() {
+  const l = canBook() ? webList() : [], n = webToCall().length;
+  if (!l.length) return '';
+  return '<div class="card webcard" id="webcard"><div class="webh"><b>🌐 Website applicants to call</b>' + (n ? '<span class="webn">' + n + '</span>' : '') + '</div>' +
+    l.map(webRow).join('') +
+    '<p class="hint">From the Apply form on jussmarketing.co.uk, newest first. The site told them we\'ll call. Booked here = where they applied is "Website", and their ' +
+      'confirmation is ready to send. Off this list after ' + (bookCfg().webDays || 14) + ' days.</p></div>';
+}
+/** One tap: booked into the 10:00 on the day they picked, by you, and their confirmation ready to send. */
+function webBook(id, btn) {
+  const a = webById(id); if (!a) return;
+  if (!ukMobile(a.mobile)) return bookForm(webPre(a), 'web');  // a booking needs a UK mobile: put it right in the form
+  busy(btn, true, 'Booking…');
+  call('saveBooking', { booking: Object.assign(webPre(a), { slot_date: webDay(a), notes: '' }) })
+    .then(b => { bookUpsert(b); webDrop(a.id); bookSendSheet(b, 'confirm'); })
+    .catch(e => { busy(btn, false); toast(e.message); });
+}
+/** Called, no answer: they stay on the card, with who tried and when (so two people don't ring the same person twice). */
+function webTried(id, btn) {
+  const a = webById(id); if (!a) return;
+  busy(btn, true, '…');
+  call('applicantAction', { id: id, act: 'tried' })
+    .then(na => { Object.assign(a, na); saveCache(); toast('📵 No answer logged. ' + a.first_name + ' stays on the list.'); if (S.view === 'book') render(true); })
+    .catch(e => { busy(btn, false); toast(e.message); });
+}
+/** Not going ahead: why, then off the card. Nothing is sent to them. (why given: straight away, for "already booked".) */
+function webCloseSheet(id, why, btn) {
+  const a = webById(id); if (!a) return;
+  const send = (w, b) => {
+    busy(b, true, '…');
+    call('applicantAction', { id: id, act: 'close', why: w })
+      .then(() => { webDrop(id); closeSheet(); toast(a.first_name + ' is off the list · ' + w.toLowerCase()); if (S.view === 'book') render(true); })
+      .catch(e => { busy(b, false); toast(e.message); });
+  };
+  if (why) return send(why, btn);
+  const back = bookSheetOpen('Not going ahead',
+    '<div class="sheet-h"><div><div class="label muted">' + h(webName(a)) + ' · from the website</div><div class="display">Not going ahead</div></div></div>' +
+    '<p class="hint" style="margin-top:-6px">Why? They come off the list. Nothing is sent to them.</p>' +
+    (bookCfg().webWhy || WEB_WHY).filter(w => w !== 'Already booked').map(w => '<button type="button" class="btn ghost block" data-why="' + h(w) + '" style="margin-top:8px">' + h(w) + '</button>').join('') +
+    '<button class="btn ghost block" id="bkdone" style="margin-top:14px">Cancel</button>');
+  back.querySelectorAll('[data-why]').forEach(b => { b.onclick = () => send(b.dataset.why, b); });
 }
 /** Appts Attended (admins): of the people booked after a call, how many came, by who booked them and where they applied. */
 function showupCard(s) {
