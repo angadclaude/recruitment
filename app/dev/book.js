@@ -516,6 +516,198 @@ const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked 
   const beni = await api('', 'checkin', form('Beni Bofoya', '07700900171'));
   ok((await api(angad, 'getCandidate', { id: beni.id })).booking_id === benie.id && (await api(jess, 'bookingList', {})).items.find(b => b.id === benie.id).status === 'came',
     'a name a letter out ("Beni" booked as "Benie", another mobile) still finds today\'s booking (30 Oct: Sitar / Sitara)');
+  // Website applicants (Angad, 20 Nov 2026: "Yes, as recommended"). Everyone who sends the Apply form on jussmarketing.co.uk comes onto
+  // Book Appts within 5 minutes with a phone alert, and one tap books them as "Website". /dev/site is Vercel's 5-minute read of the
+  // website's own list (server/site.js), given the list as the website's table holds it; the same whole list every time, like the real one.
+  console.log('website applicants → Book Appts');
+  await setTime('2026-11-03T14:00:00+00:00');  // Tuesday 3 Nov, 14:00
+  const site = rows => post('/dev/site', { rows }).then(r => r.out);
+  const appl = (id, at, first, last, phone, more) => Object.assign({ id, created_at: at, first_name: first, last_name: last, phone, email: first.toLowerCase() + '@example.net',
+    visa_status: 'British or Irish citizen', preferred_day: '', availability: 'Immediately', how_heard: 'Instagram', additional_notes: '' }, more || {});
+  const webOf = async tok => (await api(tok, 'bundle', {})).applicants;
+  const heads = l => l.map(p => p.body.headings.en);
+  const tab = async () => { const t = await getJson('/dev/sheet?name=Applicants'); return t.slice(1).map(r => Object.fromEntries(t[0].map((k, i) => [k, r[i] === undefined || r[i] === null ? '' : String(r[i])]))); };
+  ok(JSON.stringify(await webOf(jess)) === '[]' && (await api(fiza, 'bundle', {})).applicants === undefined && (await api(satpal, 'bundle', {})).applicants === undefined,
+    'before anyone applies: an empty list for the booking team, and none at all for anyone else (a booker; an admin who isn\'t on the booking team)');
+  // Switch-on: the last month's come in quietly, without anyone the team already got to (a check-in, a booking) or anyone older
+  const LIST = [
+    appl(101, '2026-09-20T10:00:00Z', 'Too', 'Old', '07700 900401'),
+    appl(102, '2026-10-20T11:00:00Z', 'Sam', 'Carter', '07700 900123'),      // checked in on 27 Oct
+    appl(103, '2026-10-21T11:00:00Z', 'Priya', 'Patel', '+44 7700 900140'),  // booked on 2 Nov
+    appl(104, '2026-10-28T12:00:00Z', 'amira', 'HASSAN', '07700 900402', { visa_status: 'British Citizen' }),
+    appl(105, '2026-11-01T22:10:00Z', 'Dev', 'Rao', '+44 7700 900403'),
+  ];
+  let w0 = (await getJson('/dev/pushes')).length;
+  const first = await site(LIST);
+  let wp = await pushesSince(w0), at = await tab();
+  ok(first.read === 5 && first.added === 0 && first.backfill === 2 && first.known === 2 && first.again === 0 && at.length === 4 && !at.some(a => a.site_id === '101') &&
+    JSON.stringify(at.filter(a => a.status === 'closed').map(a => [a.site_id, a.closed_why])) === '[["102","Already in the app"],["103","Already in the app"]]',
+    'switch-on: of the last month\'s 5, the 2 with no record in the app come in; the one who checked in and the one already booked don\'t; 6 weeks old never does');
+  ok(heads(to(wp, jessId)).join() === '🌐 2 earlier website applicants to try' && heads(to(wp, rubalId)).join() === '🌐 2 earlier website applicants to try' && !to(wp, angadId).length &&
+    to(wp, jessId)[0].body.contents.en === 'Amira, Dev applied on the website in the last month and the app had no record of any of them. Try each once, and close anyone you\'ve already spoken to.' &&
+    /\?c=bookweb$/.test(to(wp, jessId)[0].body.web_url), 'one summary alert to the callers (Jess, Rubal), not one each: "' + heads(to(wp, jessId)).join() + '"; it opens Book Appts');
+  w0 = (await getJson('/dev/pushes')).length;
+  const twice = await site(LIST);
+  ok(twice.read === 5 && twice.added + twice.backfill + twice.known + twice.again === 0 && !(await pushesSince(w0)).length && (await tab()).length === 4,
+    '5 minutes later, the same list: nobody comes in twice (each application\'s own number is kept) and nobody is alerted again');
+  // Someone applies now: on the list and on the callers' phones straight away
+  LIST.push(appl(106, '2026-11-03T14:00:00Z', 'sam', 'taylor', '07700 900404', { visa_status: 'Visa with the right to work (Graduate, Skilled Worker, dependant…)', preferred_day: 'Thursday',
+    availability: 'Within 1 week', additional_notes: 'Can do evenings too' }));
+  w0 = (await getJson('/dev/pushes')).length;
+  const live = await site(LIST);
+  wp = await pushesSince(w0);
+  const sj = to(wp, jessId)[0];
+  ok(live.added === 1 && sj && sj.body.headings.en === '🌐 New website applicant: Sam' && sj.body.contents.en === 'Could come Thursday · Visa with the right to work. Tap to call and book.' &&
+    /\?c=bookweb$/.test(sj.body.web_url) && to(wp, rubalId).length === 1 && !to(wp, angadId).length,
+    'Sam applies → Jess and Rubal: "' + (sj ? sj.body.headings.en + ' | ' + sj.body.contents.en : 'none') + '" (first name and the day he picked; no mobile, no email)');
+  let wl = await webOf(jess);
+  ok(JSON.stringify(wl.map(a => [a.first_name + ' ' + a.last_name, a.mobile, a.applied_at, a.backfill])) ===
+      JSON.stringify([['Sam Taylor', '07700900404', '2026-11-03 14:00', false], ['Dev Rao', '07700900403', '2026-11-01 22:10', true], ['Amira Hassan', '07700900402', '2026-10-28 12:00', true]]) &&
+    wl[0].email === 'sam@example.net' && wl[0].preferred_day === 'Thursday' && wl[0].can_start === 'Within 1 week' && wl[0].note === 'Can do evenings too' &&
+    wl.every(a => !('site_id' in a) && !('_row' in a) && !('alert_at' in a)),
+    'the booking team\'s list: newest first, names tidied, mobiles as 07…, what they said on the form');
+  const failed = (await post('/dev/site', { fail: 'relation "jsite.applications" does not exist' })).out;
+  ok(/does not exist/.test(failed.error) && (await webOf(jess)).length === 3, 'the website\'s list can\'t be read (database busy; a test copy with no list): it says so, nothing changes, and it\'s read again in 5 minutes');
+  const wlog = await getJson('/dev/sheet?name=Log');
+  ok(wlog.some(r => r[1] === 'Website' && r[2] === 'web_applicants' && r[4] === '2 from before switch-on · 2 already in the app') && wlog.some(r => r[2] === 'alert' && /^🌐 New website applicant: Sam → /.test(r[4])) &&
+    !/0770090040\d|example\.net/.test(JSON.stringify(wlog)), 'the Log says how many came in and who was alerted, by first name: never an applicant\'s mobile or email');
+  // One working hour with no call logged and no booking: once, to the callers and to Angad
+  w0 = (await getJson('/dev/pushes')).length;
+  await setTime('2026-11-03T14:59:00+00:00'); await post('/dev/run', { fn: 'keepWarm' });
+  const soon = heads(await pushesSince(w0)).filter(t => /^⏰/.test(t));
+  await setTime('2026-11-03T15:01:00+00:00'); await post('/dev/run', { fn: 'keepWarm' });
+  wp = (await pushesSince(w0)).filter(p => /^⏰/.test(p.body.headings.en));
+  ok(!soon.length && heads(to(wp, angadId)).join() === '⏰ Sam applied an hour ago' && to(wp, angadId)[0].body.contents.en === 'On the website. No call logged and not booked yet. Tap to call.' &&
+    to(wp, jessId).length === 1 && to(wp, rubalId).length === 1, 'an hour on, nobody has called or booked Sam → Jess, Rubal and Angad: "⏰ Sam applied an hour ago" (nothing at 59 minutes)');
+  w0 = (await getJson('/dev/pushes')).length;
+  await post('/dev/run', { fn: 'keepWarm' }); await setTime('2026-11-03T16:30:00+00:00'); await post('/dev/run', { fn: 'keepWarm' });
+  ok(!heads(await pushesSince(w0)).some(t => /^⏰|^🌐/.test(t)), 'that alert goes once, never a nag; and never for the ones from before switch-on');
+  const dev = wl.find(a => a.first_name === 'Dev');
+  const tried = await api(rubal, 'applicantAction', { id: dev.id, act: 'tried' });
+  ok(tried.tries === 1 && tried.tried_by === 'Rubal Oshan' && /^2026-11-03 16:30/.test(tried.tried_at) && tried.status === 'new' && (await webOf(jess)).length === 3 &&
+    await refused(fiza, 'applicantAction', { id: dev.id, act: 'tried' }) === 'Only the booking team can do that.' && await refused(rubal, 'applicantAction', { id: 'nope', act: 'tried' }) === 'They\'re no longer on the list. Pull down to refresh.',
+    'No answer: Dev stays on the list with who tried and when; only the booking team can');
+  // The same mobile applies again: one person, not two
+  await setTime('2026-11-03T16:45:00+00:00');
+  LIST.push(appl(109, '2026-11-03T16:40:00Z', 'Sam', 'Taylor', '07700900404', { availability: '', additional_notes: 'Any update?' }));
+  w0 = (await getJson('/dev/pushes')).length;
+  const again = await site(LIST);
+  wl = await webOf(jess);
+  ok(again.again === 1 && again.added === 0 && !(await pushesSince(w0)).length && wl.length === 3 && wl[0].first_name === 'Sam' && wl[0].again_at === '2026-11-03 16:40' && wl[0].note === 'Any update?' &&
+    wl[0].preferred_day === 'Thursday' && wl[0].can_start === 'Within 1 week', 'Sam sends the form again: still one Sam on the list ("applied again", his newer message), no second alert');
+  // Overnight: on the list at once, the phones at 08:00, together
+  await setTime('2026-11-03T22:45:00+00:00');
+  LIST.push(appl(107, '2026-11-03T22:30:00Z', 'Lena', 'Fox', '07700 900405', { preferred_day: 'As soon as possible' }), appl(108, '2026-11-03T22:40:00Z', 'Omar', 'Aziz', '+353 87 123 4567'));
+  w0 = (await getJson('/dev/pushes')).length;
+  const night = await site(LIST);
+  const late = (await pushesSince(w0)).length, onList = (await webOf(jess)).length;
+  await setTime('2026-11-04T07:55:00+00:00'); await post('/dev/run', { fn: 'keepWarm' });
+  const early = heads(await pushesSince(w0)).filter(t => /^🌐/.test(t));
+  await setTime('2026-11-04T08:02:00+00:00'); await post('/dev/run', { fn: 'keepWarm' });
+  wp = (await pushesSince(w0)).filter(p => /^🌐/.test(p.body.headings.en));
+  ok(night.added === 2 && !late && onList === 5 && !early.length && heads(to(wp, jessId)).join() === '🌐 2 website applicants to call' &&
+    to(wp, jessId)[0].body.contents.en === 'Lena, Omar applied on the website. Tap to call and book them.' && to(wp, rubalId).length === 1 && !to(wp, angadId).length,
+    'two apply at 22:30: on the list straight away, no phone buzzes at night; at 08:00 one alert for both: "🌐 2 website applicants to call"');
+  await setTime('2026-11-04T08:30:00+00:00');
+  LIST.push(appl(110, '2026-11-04T08:30:00Z', 'Leah', 'Brown', '07700 900126', { preferred_day: 'Wednesday' }));  // she came in on 29 Oct
+  w0 = (await getJson('/dev/pushes')).length;
+  await site(LIST);
+  wp = await pushesSince(w0);
+  ok(heads(to(wp, rubalId)).join() === '🌐 New website applicant: Leah' && to(wp, rubalId)[0].body.contents.en === 'Could come Wednesday · British or Irish citizen. Tap to call and book.',
+    'in the day each one has an alert of their own: "' + heads(to(wp, rubalId)).join() + '"');
+  w0 = (await getJson('/dev/pushes')).length;
+  await setTime('2026-11-04T10:05:00+00:00'); await post('/dev/run', { fn: 'keepWarm' });
+  wp = (await pushesSince(w0)).filter(p => /^⏰/.test(p.body.headings.en));
+  ok(heads(to(wp, angadId)).join() === '⏰ 3 website applicants still waiting' && to(wp, angadId)[0].body.contents.en === 'Lena, Omar, Leah: no call logged and not booked yet. Tap to call.' &&
+    to(wp, jessId).length === 1 && to(wp, rubalId).length === 1,
+    'the working hour runs from 09:00: at 10:05 the three still waiting go in one alert, to the callers and Angad ("' + heads(to(wp, angadId)).join() + '")');
+  // Booked another way meanwhile (Megan, in Hyrre): the list says so
+  await post('/dev/eval', { js: `(() => { appendRow('Bookings', { id: 'hyweb1', created_at: nowStr(), booked_by_id: 'hyrremegan', booked_by: 'Megan Hyrre', first_name: 'Lena', last_name: 'Fox',
+    mobile: '07700900405', source: 'Hirematic', notes: '', slot_date: '2026-11-05', slot_time: '10:00', company: 'JUSS', status: 'booked' }); return 'ok'; })()` });
+  wl = await webOf(rubal);
+  ok(JSON.stringify(wl.map(a => a.first_name)) === '["Leah","Omar","Lena","Sam","Dev","Amira"]' && JSON.stringify(wl.find(a => a.first_name === 'Lena').booked_for) === '{"slot_date":"2026-11-05","by":"Megan Hyrre"}' &&
+    wl.find(a => a.first_name === 'Leah').came_on === '2026-10-29' && !wl.find(a => a.first_name === 'Sam').came_on && wl.find(a => a.first_name === 'Omar').mobile === '+353871234567',
+    'the list knows who\'s already booked another way (Lena, by Megan), who has been in before (Leah, 29 Oct), and keeps a number from abroad as typed');
+
+  // The card, on Rubal's phone, from the alert's tap
+  await setTime('2026-11-04T10:10:00+00:00');  // Wednesday
+  const rp = await as(rubal, APP + 'index.html?c=bookweb');
+  await rp.waitForSelector('#webcard .webrow');
+  const cardNames = () => rp.$$eval('#webcard .webrow .name', l => l.map(x => x.firstChild.textContent.trim()));
+  const rowText = n => rp.innerText('.webrow:has-text("' + n + '")');
+  ok(/Book Appts/.test(await rp.textContent('#abTitle')) && JSON.stringify(await cardNames()) === '["Leah Brown","Omar Aziz","Lena Fox","Sam Taylor","Dev Rao","Amira Hassan"]' &&
+    await rp.textContent('#webcard .webn') === '5' && await rp.textContent('.tabbar button[data-tab=book] .tbadge') === '5' && await rp.evaluate(() => document.querySelector('#page').firstElementChild.id === 'webcard'),
+    'the alert opens Book Appts: "🌐 Website applicants to call" is the top card, newest first, 5 to call (the same number on the tab; Lena is already booked)');
+  const samT = await rowText('Sam Taylor');
+  ok(/yesterday 14:00/.test(samT) && /Could come Thursday · can start within 1 week · heard: Instagram/.test(samT) && /07700900404 · sam@example\.net/.test(samT) && /💬 Any update\?/.test(samT) &&
+    /Visa with the right to work/.test(samT) && !/Graduate/.test(samT) && /↩️ Applied again yesterday 16:40/.test(samT) && /📅 Book Thu 5 Nov · 10:00/.test(samT) &&
+    /Other day/.test(samT) && /No answer/.test(samT) && /Not going ahead/.test(samT),
+    'Sam\'s row: when he applied, the day he picked, when he can start, his message, his right to work, "applied again", and 📅 Book Thu 5 Nov · 10:00');
+  ok(await rp.getAttribute('.webrow:has-text("Sam Taylor") .webbtns a.btn.ghost', 'href') === 'tel:07700900404' && await rp.getAttribute('.webrow:has-text("Sam Taylor") .webbtns a.btn.wa', 'href') === 'https://wa.me/447700900404',
+    '📞 Call rings his mobile; 💬 WhatsApp opens his chat empty (no new message is written for a website applicant: Angad\'s decision)');
+  const leahT = await rowText('Leah Brown'), omarT = await rowText('Omar Aziz'), lenaT = await rowText('Lena Fox'), devT = await rowText('Dev Rao'), amiraT = await rowText('Amira Hassan');
+  ok(/1 h ago/.test(leahT) && /Could come Wednesday/.test(leahT) && /📅 Book Wed 11 Nov · 10:00/.test(leahT) && /⚠️ Came in Thu 29 Oct/.test(leahT),
+    'Leah picked Wednesday and today is Wednesday: the button books next Wednesday, never today; "⚠️ Came in Thu 29 Oct" says she\'s been in before');
+  ok(/Check the number/.test(omarT) && /📅 Fix the number and book/.test(omarT) && /\+353871234567/.test(omarT), 'Omar\'s number isn\'t a UK mobile: "⚠️ Check the number", and his button opens the form to put it right');
+  ok(/Already booked for Thu 5 Nov \(by Megan\)\. Nothing to do\./.test(lenaT) && /Take off this list/.test(lenaT) && !/Book Thu/.test(lenaT) && !/No answer/.test(lenaT),
+    'Lena: "📅 Already booked for Thu 5 Nov (by Megan). Nothing to do." and no Book button');
+  ok(/Sun 1 Nov/.test(devT) && /📵 Tried Tue 3 Nov 16:30 · Rubal/.test(devT) && /Wed 28 Oct/.test(amiraT) && /✅ British Citizen/.test(amiraT) && /📅 Book Thu 5 Nov · 10:00/.test(amiraT),
+    'Dev: "📵 Tried Tue 3 Nov 16:30 · Rubal"; Amira (no day picked): the next weekday, Thu 5 Nov');
+  await shot(rp, 'b9-website-applicants', true);
+  await rp.click('.webrow:has-text("Lena Fox") [data-webdone]');
+  await rp.waitForFunction(() => !/Lena Fox/.test(document.querySelector('#page').textContent));
+  ok((await tab()).find(a => a.first_name === 'Lena').closed_why === 'Already booked' && await rp.textContent('#webcard .webn') === '5', '✓ Take off this list → Lena is off it ("Already booked"); still 5 to call');
+  await rp.click('.webrow:has-text("Leah Brown") [data-webtry]');
+  await rp.waitForSelector('.webrow:has-text("Leah Brown") .pill:has-text("Tried")');
+  ok(/📵 Tried 10:10 · Rubal/.test(await rowText('Leah Brown')) && /No answer logged\. Leah stays on the list\./.test(await rp.textContent('#toast')) && await rp.textContent('#webcard .webn') === '5',
+    'No answer → "📵 Tried 10:10 · Rubal" on her row; she stays on the list');
+  await rp.click('.webrow:has-text("Amira Hassan") [data-webno]'); await rp.waitForSelector('.bksheet [data-why]');
+  const whys = await rp.$$eval('.bksheet [data-why]', l => l.map(x => x.textContent));
+  await shot(rp, 'b9-not-going-ahead');
+  await rp.click('.bksheet [data-why="Not suitable"]');
+  await rp.waitForFunction(() => !document.querySelector('.sheet-back') && !/Amira Hassan/.test(document.querySelector('#page').textContent));
+  at = await tab();
+  ok(JSON.stringify(whys) === '["Not interested","Not suitable","Can\'t reach them"]' && at.find(a => a.first_name === 'Amira').closed_why === 'Not suitable' && at.find(a => a.first_name === 'Amira').closed_by === 'Rubal Oshan' &&
+    await rp.textContent('#webcard .webn') === '4', 'Not going ahead → why (not interested · not suitable · can\'t reach them) → off the list, and who closed it is kept');
+  await rp.click('.webrow:has-text("Omar Aziz") [data-webbook]'); await rp.waitForSelector('.bksheet #bkfn');
+  ok(/From the website · Omar Aziz/i.test(await rp.innerText('.bksheet .label')) && await rp.inputValue('#bkfn') === 'Omar' && await rp.inputValue('#bkmob') === '+353871234567' &&
+    await rp.$('.bksheet .chips[data-name=bksrc] .chip.on:has-text("Website")'), 'his button (and "Other day") opens the usual booking form, filled in: "From the website · Omar Aziz", where they applied: Website');
+  await rp.fill('#bkmob', '07700 900406'); await rp.click('[data-day="2026-11-05"]'); await rp.click('#bksave'); await rp.waitForSelector('.waprev');
+  const omarB = (await api(rubal, 'bookingList', {})).items.find(b => b.first_name === 'Omar');
+  ok(omarB.source === 'Website' && omarB.mobile === '07700900406' && omarB.slot_date === '2026-11-05' && omarB.booked_by === 'Rubal Oshan' && /Hey Omar! 👋/.test(await rp.innerText('.waprev')),
+    'number put right, Thursday picked → booked as "Website" by Rubal, his confirmation ready');
+  await rp.click('#bkdone'); await rp.waitForFunction(() => !document.querySelector('.sheet-back'));
+  await rp.click('.webrow:has-text("Sam Taylor") [data-webbook]'); await rp.waitForSelector('.waprev');
+  const samB = (await api(rubal, 'bookingList', {})).items.find(b => b.first_name === 'Sam' && b.last_name === 'Taylor');
+  const samHref = await rp.getAttribute('.bksheet a.btn.wa', 'href');
+  ok(samB.source === 'Website' && samB.slot_date === '2026-11-05' && samB.booked_by_id === rubalId && /✅ Sam Taylor is booked · Thursday 5th November, 10:00 AM/.test(await rp.innerText('.bksheet')),
+    'one tap on 📅 Book Thu 5 Nov · 10:00 → Sam is booked for Thursday, by Rubal, where he applied: Website');
+  ok(/^https:\/\/wa\.me\/447700900404\?text=/.test(samHref) && textOf(samHref) === CONFIRM_SAM.replace('Tuesday 27th October', 'Thursday 5th November').replace('Jess Grace', 'Rubal Oshan')
+    .replace('{LINK}', PUBLIC + 'booked.html?t=' + samB.confirm_token + '&n=Sam&d=2026-11-05'), 'and what\'s ready to send is the usual confirmation, word for word, signed by whoever tapped');
+  await shot(rp, 'b9-website-booked');
+  await rp.click('#bkdone'); await rp.waitForFunction(() => !document.querySelector('.sheet-back'));
+  ok(JSON.stringify(await cardNames()) === '["Leah Brown","Dev Rao"]' && await rp.textContent('.tabbar button[data-tab=book] .tbadge') === '2', 'booked = off the list: Leah and Dev are left, 2 on the tab');
+  await rp.click('#bknext'); await rp.waitForFunction(() => /Thursday 5 November/.test(document.querySelector('.bknav').textContent));
+  ok(/booked by Rubal · Website/.test(await rp.innerText('.bkrow:has-text("Sam Taylor")')), 'and he\'s on Thursday\'s list like any booking: "booked by Rubal · Website"');
+  await rp.context().close();
+  // Booked from the usual form instead: off the list too, with the source the form gave. A cancelled booking puts them back on it
+  const devB = await api(jess, 'saveBooking', { booking: { first_name: 'Dev', last_name: 'Rao', mobile: '07700900403', slot_date: '2026-11-05', source: 'Indeed' } });
+  ok(devB.source === 'Indeed' && !(await webOf(jess)).some(a => a.first_name === 'Dev') && (await tab()).find(a => a.first_name === 'Dev').booking_id === devB.id,
+    'Jess books Dev from "📅 Book a presentation" instead: he leaves the list too (where he applied stays what she picked)');
+  await api(rubal, 'bookingAction', { id: samB.id, act: 'cancel' });
+  const samA = (await webOf(rubal)).find(a => a.first_name === 'Sam');
+  const samB2 = samA && await api(jess, 'saveBooking', { booking: { first_name: 'Sam', last_name: 'Taylor', mobile: '07700900404', slot_date: '2026-11-05', source: 'Teamtailor', applicant_id: samA.id } });
+  ok(!!samA && samB2.source === 'Website' && samB2.booked_by === 'Jess Grace' && !(await webOf(jess)).some(a => a.first_name === 'Sam'),
+    'a booking made from the list and cancelled (a mis-tap; they pulled out): back on the list; booked again from it → "Website" again');
+  // Show-up by where they applied counts them
+  await setTime('2026-11-05T09:50:00+00:00');
+  await api('', 'checkin', form('Sam Taylor', '07700900404'));
+  await setTime('2026-11-05T10:40:00+00:00');
+  const wsu = (await api(satpal, 'payReport', {})).showup, wsrc = wsu.bySource.rows.find(r => r.source === 'Website');
+  ok(wsrc && wsrc.week.booked === 2 && wsrc.week.came === 1 && JSON.stringify(wsu.sources.filter(x => x.source === 'Website').map(x => [x.booked, x.came])) === '[[2,1]]' &&
+    sum(wsu.bySource.rows, r => r.week.booked) === wsu.booked && sum(wsu.bySource.rows, r => r.week.came) === wsu.came,
+    'show-up by where they applied has a "Website" row: 2 booked (Sam, Omar), 1 came (Sam checked in); the rows still add up to the card');
+
   await browser.close();
   require('./watch').report(pageErrors); passed++;
 
@@ -523,8 +715,13 @@ const CONFIRM_SAM = 'Hey Sam! 👋\n\nGreat speaking with you! You’re *booked 
   await setTime('2027-01-28T03:00:00+00:00'); await post('/dev/run', { fn: 'dailyMaintenance' });
   const bt = await getJson('/dev/sheet?name=Bookings'), iN = bt[0].indexOf('notes');
   ok(bt.length > 1 && bt.slice(1).every(r => !r[iN]), 'after 12 weeks a booking keeps who and when; the notes from the call go');
+  at = await tab();
+  ok(at.length === 9 && at.every(a => a.first_name && a.mobile && a.applied_at && !a.email && !a.right_to_work && !a.preferred_day && !a.can_start && !a.how_heard && !a.note) && !at.some(a => a.status === 'new') &&
+    at.find(a => a.first_name === 'Leah').closed_why === 'Off the list after 14 days',
+    'after 12 weeks a website applicant keeps their name, mobile and what happened; their email, right-to-work answer and message go. Nobody is left "to call" past 14 days');
   await setTime('2027-05-08T03:00:00+00:00'); await post('/dev/run', { fn: 'dailyMaintenance' });
   ok((await getJson('/dev/sheet?name=Bookings')).length === 1, 'after 6 months every booking is deleted');
+  ok((await tab()).length === 0, 'and 180 days after they applied every website applicant is deleted (before the website\'s own copy goes at 6 months)');
 
   console.log('\nALL ' + passed + ' ✓');
   process.exit(0);

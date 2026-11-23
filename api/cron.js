@@ -1,13 +1,14 @@
 // Google's timers, run by Vercel Cron every 5 minutes (vercel.json). Times are London time, like the Apps Script triggers:
 // keepWarm every 5 min (it sends the 10:00 / 12:00 / 18:00 reminders when they're due), dailyMaintenance 02:00,
 // weeklyProgressEmails Wed + Fri 10:00, saturdayDeadlineEmails Sat 14:00, mondayPayReportEmail Mon 09:00.
-// Then the week's new starters onto the bell sheets (server/bell.js) and the live copy of the data into the team's Google Sheet
-// (server/mirror.js).
+// Then anyone who applied on the website onto Book Appts (server/site.js), the week's new starters onto the bell sheets
+// (server/bell.js) and the live copy of the data into the team's Google Sheet (server/mirror.js).
 // Nothing runs until switch day sets VERCEL_LIVE (until then Google's own timers are the live ones).
 'use strict';
 const { runtime, relay, db } = require('../server/live');
 const { mirrorToSheet } = require('../server/mirror');
 const { bellToSheets } = require('../server/bell');
+const { siteApplicants } = require('../server/site');
 
 const SCHEDULE = [
   { fn: 'dailyMaintenance', days: [0, 1, 2, 3, 4, 5, 6], hour: 2 },
@@ -39,6 +40,10 @@ module.exports = async (req, res) => {
     try { await rt.call(s.fn); ran.push(s.fn); } catch (e) { console.error(s.fn, e); ran.push(s.fn + ' FAILED'); }
   }
   try { await rt.call('keepWarm'); ran.push('keepWarm'); } catch (e) { console.error('keepWarm', e); ran.push('keepWarm FAILED'); }
+  // People who sent the Apply form on jussmarketing.co.uk: onto Book Appts, with the alert to whoever calls them (Angad, 20 Nov)
+  let site;
+  try { site = await siteApplicants(rt, db().sql); } catch (e) { console.error('site', e); site = { error: e.message }; }
+  if (site && site.error) console.error('site', site.error);
   const retried = await relay().retry();
   // Keep the app's API and Google's email relay awake, so a login code goes out straight away even after a quiet spell
   // (19 Oct: 9 s from tap to Gmail with both asleep; 0.2 s for the app when awake)
@@ -56,5 +61,5 @@ module.exports = async (req, res) => {
   let mirrored;
   try { mirrored = await mirrorToSheet(db().sql, relay().call); } catch (e) { console.error('mirror', e); mirrored = 'failed: ' + e.message; }
   res.setHeader('content-type', 'application/json');
-  res.end(JSON.stringify({ at: now, ran, mailRetried: retried, warm, bell: bell && bell.sheets ? bell.sheets.map(s => s.key + ': ' + (s.error || s.rows.map(r => r.status).join(','))) : bell, mirrored }));
+  res.end(JSON.stringify({ at: now, ran, site, mailRetried: retried, warm, bell: bell && bell.sheets ? bell.sheets.map(s => s.key + ': ' + (s.error || s.rows.map(r => r.status).join(','))) : bell, mirrored }));
 };
