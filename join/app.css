@@ -1038,6 +1038,13 @@ img.av.avph.avpic { border-radius: 12px; object-position: 50% 50%; }
 .cropcard input[type=range] { width: 100%; margin-top: 12px; background: none; border: 0; padding: 0; box-shadow: none; min-height: 0; accent-color: #234a99; }
 .cropcard .row { width: 100%; }
 .cropcard .row .btn { flex: 1; }
+/* A starter's photo at full size (23 Nov): on top of whatever is open */
+.photoback { z-index: 60; }
+.photocard { max-width: 440px; max-height: calc(100vh - 32px); overflow: auto; align-items: stretch; }
+.photocard .pvhead { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.photocard #pvimg { width: 100%; border-radius: 14px; background: #eee; display: block; }
+.photocard #pvnote { margin: 8px 2px 0; text-align: left; }
+img[data-view] { cursor: zoom-in; }
 .avchips { display: flex; gap: 3px; margin: 6px 0 2px; flex-wrap: nowrap; }
 /* A booker's view (Angad, 27 Oct): Week 1 and Week 2 on each card, labelled */
 .avwk2 { display: flex; align-items: center; gap: 6px; margin-top: 4px; }

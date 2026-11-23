@@ -2521,10 +2521,11 @@ function availSheet(r, we, wk) {
   const said = saidDays(r.said_days);
   const back = document.createElement('div');
   back.className = 'sheet-back';
-  const ph = () => st.photo ? '<img class="av lg avph avpic" src="' + (thumbNow(r.id) || st.photo) + '" data-thumb="' + h(r.id) + '" alt="">' : '<span class="av lg avpic co-' + h(r.company) + '">' + h(initials(r.full_name)) + '</span>';
+  const ph = () => st.photo ? '<img class="av lg avph avpic" src="' + (thumbNow(r.id) || st.photo) + '" data-thumb="' + h(r.id) + '" data-view="' + h(r.id) + '" alt="">' : '<span class="av lg avpic co-' + h(r.company) + '">' + h(initials(r.full_name)) + '</span>';
   back.innerHTML = '<div class="sheet" role="dialog" aria-label="Availability"><div class="grab"></div>' +
     '<div class="sheet-h"><span id="avph">' + ph() + '</span><div style="min-width:0"><div class="label muted">' + (avCamp(r) === 'TMM' ? 'The Modern Milkman' : avCamp(r) === 'HF' ? 'HelloFresh' : 'Fundraising') + ' · Day 1 ' + h(fmt(r.day1_date)) + '</div><div class="display">' + h(r.full_name) + '</div></div></div>' +
     '<div id="avf"><div class="row" style="gap:8px;margin:2px 0 6px"><label class="btn ghost sm" style="margin:0">📷 ' + (st.photo ? 'New photo' : 'Add photo') + '<input type="file" id="avcam" accept="image/*" hidden></label>' +
+      '<button type="button" class="btn ghost sm" id="avphview"' + (st.photo ? '' : ' hidden') + '>🔍 Full size</button>' +
       '<button type="button" class="btn ghost sm" id="avphadj"' + (st.photo ? '' : ' hidden') + '>✂️ Adjust</button>' +
       '<button type="button" class="btn ghost sm" id="avphx"' + (st.photo ? '' : ' hidden') + '>Remove</button></div>' +
     '<label class="q">Driver</label>' + chips('driver', ['Yes', 'No'], r.driver) +
@@ -2551,16 +2552,23 @@ function availSheet(r, we, wk) {
   back.querySelectorAll('.avfill').forEach(b => { b.onclick = () => { const k = b.dataset.w; st[k] = st[k].map((x, i) => k === 'w1' && pre1[i] ? '-' : i < 5 ? 'I' : 'O'); paintDays(k); }; });
   back.onclick = e => { if (e.target === back) closeSheet(); };
   back.querySelector('#avcancel').onclick = () => closeSheet();
-  const setPhoto = (data, btn) => call('saveStarterPhoto', { id: r.id, data: data }).then(() => {
+  const viewIt = () => bindPhotoViews(back, () => r);
+  const setPhoto = (pic, btn) => call('saveStarterPhoto', { id: r.id, data: pic ? pic.data : '', hd: pic ? pic.hd : '' }).then(res => {
+    const data = pic ? pic.data : '';
     st.photo = data; S.avPh = S.avPh || {}; if (data) S.avPh[r.id] = data; else delete S.avPh[r.id];
-    r.has_photo = !!data; back.querySelector('#avph').innerHTML = ph(); fillThumbs(back); back.querySelector('#avphx').hidden = back.querySelector('#avphadj').hidden = !data; toast(data ? 'Photo saved ✓' : 'Photo removed');
+    hdKeep(r, res, pic && pic.hd);
+    r.has_photo = !!data; back.querySelector('#avph').innerHTML = ph(); fillThumbs(back); viewIt();
+    back.querySelector('#avphx').hidden = back.querySelector('#avphadj').hidden = back.querySelector('#avphview').hidden = !data; toast(data ? 'Photo saved ✓' : 'Photo removed');
   }).catch(e => toast(e.message)).then(() => { if (btn) busy(btn, false); });
+  viewIt();
+  back.querySelector('#avphview').onclick = () => photoView(r);
   back.querySelector('#avcam').onchange = e => {
     const file = e.target.files && e.target.files[0]; e.target.value = ''; if (!file) return;
-    framePhoto(file, r.full_name).then(data => { if (data) setPhoto(data); }).catch(() => toast('Couldn\'t read that photo. Try again.'));
+    framePhoto(file, r.full_name).then(pic => { if (pic) setPhoto(pic); }).catch(() => toast('Couldn\'t read that photo. Try again.'));
   };
-  back.querySelector('#avphadj').onclick = () => { if (st.photo) framePhoto(st.photo, r.full_name).then(data => { if (data) setPhoto(data); }).catch(() => toast('Couldn\'t open that photo.')); };
-  back.querySelector('#avphx').onclick = e => { busy(e.currentTarget, true, 'Removing…'); setPhoto('', e.currentTarget); };
+  // ✂️ Adjust cuts the new frame from the full-size photo, so moving it doesn't cost any sharpness
+  back.querySelector('#avphadj').onclick = () => { if (st.photo) hdPhoto(r).then(src => framePhoto(src || st.photo, r.full_name)).then(pic => { if (pic) setPhoto(pic); }).catch(() => toast('Couldn\'t open that photo.')); };
+  back.querySelector('#avphx').onclick = e => { busy(e.currentTarget, true, 'Removing…'); setPhoto(null, e.currentTarget); };
   // Anyone can be taken off (Angad, 27 Oct). Two taps, and "↩️ Put back" on the list undoes it.
   const del = back.querySelector('#avdel');
   let armed = false;
@@ -2580,6 +2588,73 @@ function availSheet(r, we, wk) {
       .catch(x => { busy(btn, false); showErr(back.querySelector('#averr'), x.message); });
   };
 }
+/** A starter's photo at full size (their row says photo_hd), asked for once and kept while the app is open; a retake (a new
+ *  photo_at) is asked for again. Someone with only the small copy (taken before 23 Nov, or over 6 months ago) gets that.
+ *  strict: a badge print must not quietly fall back to the small copy when the full-size one didn't arrive. */
+function hdPhoto(r, strict) {
+  const small = (S.avPh || {})[r.id] || '';
+  if (!r.photo_hd) return Promise.resolve(small);
+  S.avHd = S.avHd || {};
+  const have = S.avHd[r.id], at = r.photo_at || '';
+  if (have && have.at === at) return have.p;
+  const p = call('starterPhoto', { id: r.id }).then(x => x.data || small);
+  S.avHd[r.id] = { at: at, p: p };
+  p.catch(() => { if (S.avHd[r.id] && S.avHd[r.id].p === p) delete S.avHd[r.id]; });
+  return strict ? p.catch(() => { throw new Error('Couldn\'t get ' + r.full_name.split(' ')[0] + '\'s full-size photo. Check your signal and try again.'); }) : p.catch(() => small);
+}
+/** After a photo is saved: this phone has the full-size one already, so it isn't fetched back. */
+function hdKeep(r, res, hd) {
+  r.photo_at = (res && res.photo_at) || ''; r.photo_hd = !!(res && res.photo_hd);
+  S.avHd = S.avHd || {};
+  if (hd && r.photo_hd) S.avHd[r.id] = { at: r.photo_at, p: Promise.resolve(hd) }; else delete S.avHd[r.id];
+}
+function canSeePhotos() { return canAvail() || !!(S.me && S.me.badges); }
+/** Tap a starter's picture: their photo at full size, with Save and Share (Angad, 23 Nov: pressing and holding the little
+ *  picture on a list saved a 168 px copy). For the people who make the poster and the badges. */
+function photoView(r) {
+  if (!r || !canSeePhotos()) return;
+  const old = document.getElementById('pvback'); if (old) old.remove();
+  // On top of whatever is open (a starter's sheet stays as it was underneath), like the framing screen
+  const back = document.createElement('div');
+  back.className = 'cropback photoback'; back.id = 'pvback';
+  back.innerHTML = '<div class="cropcard photocard" role="dialog" aria-label="Photo"><div class="pvhead"><div style="min-width:0;text-align:left"><b>' + h(r.full_name) + '</b><div class="small muted" id="pvsize">Getting the full-size photo…</div></div>' +
+    '<button type="button" class="iconbtn" id="pvx" aria-label="Close">✕</button></div>' +
+    '<img id="pvimg" alt="' + h(r.full_name) + '" src="' + ((S.avPh || {})[r.id] || '') + '">' +
+    '<p class="small muted" id="pvnote" hidden></p>' +
+    '<div class="row" style="gap:8px;margin-top:10px"><button class="btn wa" id="pvshare" disabled>📤 Share</button><button class="btn ghost" id="pvsave" disabled>⬇️ Save</button></div></div>';
+  document.body.appendChild(back);
+  const close = () => back.remove();
+  back.onclick = e => { if (e.target === back) close(); };
+  back.querySelector('#pvx').onclick = close;
+  hdPhoto(r).then(src => {
+    const im = back.querySelector('#pvimg'); if (!im.isConnected || !src) return;
+    im.onload = () => {
+      const w = im.naturalWidth, hh = im.naturalHeight, low = w < 600;
+      back.querySelector('#pvsize').textContent = (low ? 'Low-res photo · ' : 'Full size · ') + w + ' × ' + hh;
+      const note = back.querySelector('#pvnote');
+      note.hidden = !low;
+      if (low) note.textContent = 'This one was taken before photos were kept at full size (23 Nov), so this is all there is. Take it again (📷 New photo) for a sharp one.';
+      im.dataset.size = w + 'x' + hh;
+      fetch(src).then(x => x.blob()).then(blob => {
+        const file = new File([blob], r.full_name.replace(/[^\p{L}\p{N} .'-]/gu, '').trim() + '.jpg', { type: 'image/jpeg' }), url = URL.createObjectURL(blob);
+        const sv = back.querySelector('#pvsave'), sh = back.querySelector('#pvshare');
+        if (!sv) return;
+        sv.disabled = sh.disabled = false;
+        sv.onclick = () => savePoster(file, url);
+        sh.onclick = () => {
+          if (navigator.canShare && navigator.canShare({ files: [file] })) navigator.share({ files: [file] }).catch(e => { if (e && e.name !== 'AbortError') toast('Couldn\'t open sharing. Use Save instead.'); });
+          else { savePoster(file, url); toast('Saved. Attach it from your photos.'); }
+        };
+      });
+    };
+    im.src = src;
+  });
+}
+/** Pictures that open at full size when tapped (data-view = their availability row's id). */
+function bindPhotoViews(root, rowOf) {
+  if (!canSeePhotos()) return;
+  root.querySelectorAll('img[data-view]').forEach(im => { im.style.cursor = 'zoom-in'; im.onclick = e => { e.stopPropagation(); photoView(rowOf(im.dataset.view)); }; });
+}
 /** A starter's picture in the app, cropped to their face so it's clearly visible (Angad, 27 Oct). New photos are head and
  *  shoulders already; the first ones (360 px squares, head to waist) are framed from the face. Made once per photo, kept. */
 function thumbKey(src) { return src ? src.length + src.slice(-24) : ''; }
@@ -2591,8 +2666,8 @@ function avThumb(id) {
   if (S.avTh[id] && S.avTh[id].key === key) return S.avTh[id].p;
   const p = new Promise(res => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; })
     .then(img => (!img ? src : JLBulletin.autoFrame(img, '').then(f => {
-      const cv = document.createElement('canvas'); cv.width = 168; cv.height = 200;
-      cv.getContext('2d').drawImage(img, f.x, f.y, f.w, f.h, 0, 0, 168, 200);
+      const cv = document.createElement('canvas'); cv.width = 336; cv.height = 400;  // twice the 168 × 200 they were to 23 Nov: sharp on a phone's screen
+      cv.getContext('2d').drawImage(img, f.x, f.y, f.w, f.h, 0, 0, 336, 400);
       return cv.toDataURL('image/jpeg', 0.86);
     }))).catch(() => src);
   S.avTh[id] = { key: key, p: p, url: null };
@@ -2652,7 +2727,12 @@ function photoImport(pk) {
 }
 /** A starter's photo, framed head and shoulders like the team's Canva pages (Angad, 27 Oct: "you can't even see someone's
  *  face"). Their face is found and framed by itself; drag or pinch (or the slider) if it needs moving, then ✅ Use photo.
- *  Saved at 480 × 572, sharp on the poster. src: the phone's photo (a File) or a saved one (a data URL). null = cancelled. */
+ *  src: the phone's photo (a File) or a saved one (a data URL). Gives { data, hd }, or null when cancelled:
+ *  - data: the small copy, 480 × 572, for lists;
+ *  - hd: the same frame at full size (Angad, 23 Nov: "this needs to be high res to the best of the capabilities"): every pixel the
+ *    camera gave for that frame, up to PHOTO_HD_W wide, never blown up. '' when the source has no more than the small copy does.
+ *  Until 23 Nov only the 480 × 572 one was kept, and the poster, the badges and anything saved from the app were made from it. */
+const PHOTO_HD_W = 1440, PHOTO_HD_CHARS = 1300000;
 function framePhoto(src, who) {
   const url = typeof src === 'string' ? src : URL.createObjectURL(src);
   const img = new Image();
@@ -2695,13 +2775,19 @@ function framePhoto(src, who) {
       const close = v => { back.remove(); if (typeof src !== 'string') URL.revokeObjectURL(url); done(v); };
       back.querySelector('#cropx').onclick = () => close(null);
       back.querySelector('#cropok').onclick = () => {
-        const cv = document.createElement('canvas'), OW = 480, OH = Math.round(OW / A);
-        cv.width = OW; cv.height = OH;
-        const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, OW, OH);
-        g.drawImage(img, -ox / k, -oy / k, VW / k, VH / k, 0, 0, OW, OH);
-        let q = 0.86, data = cv.toDataURL('image/jpeg', q);
-        while (data.length > 120000 && q > 0.4) { q -= 0.08; data = cv.toDataURL('image/jpeg', q); }
-        close(data);
+        const sx = -ox / k, sy = -oy / k, sw = VW / k, sh = VH / k;  // the frame, in the photo's own pixels
+        const cut = (OW, q, max) => {
+          const cv = document.createElement('canvas'), OH = Math.round(OW / A);
+          cv.width = OW; cv.height = OH;
+          const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, OW, OH);
+          g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+          g.drawImage(img, sx, sy, sw, sh, 0, 0, OW, OH);
+          let data = cv.toDataURL('image/jpeg', q);
+          while (data.length > max && q > 0.4) { q -= 0.08; data = cv.toDataURL('image/jpeg', q); }
+          return data;
+        };
+        const HW = Math.round(Math.min(PHOTO_HD_W, sw));
+        close({ data: cut(480, 0.86, 120000), hd: HW > 560 ? cut(HW, 0.92, PHOTO_HD_CHARS) : '' });
       };
     }));
 }
@@ -2764,8 +2850,9 @@ function savePoster(file, url) {
 function availPoster(we, wk, rows) {
   if (!window.JLBulletin) return toast('Posters work in the installed app. Open it from your home-screen icon.');
   const img = src => new Promise(res => { if (!src) return res(null); const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = src; });
-  toast('Making the poster…');
-  Promise.all(rows.map(r => img((S.avPh || {})[r.id]))).then(pics => JLBulletin.load('').then(assets =>
+  // From each starter's full-size photo (23 Nov), one at a time; someone with only the small copy is drawn from that
+  toast(rows.some(r => r.photo_hd) ? 'Getting the full-size photos…' : 'Making the poster…');
+  rows.reduce((ch, r) => ch.then(l => hdPhoto(r).then(img).then(i => l.concat([i]))), Promise.resolve([])).then(pics => JLBulletin.load('').then(assets =>
     Promise.all(pics.map(p => (p ? JLBulletin.autoFrame(p, '') : null))).then(frames => {
       const coach = r => (r.office ? '' : (r.coach_name || '').split(' ')[0]);
       const n = {}; rows.forEach(r => { n[coach(r)] = (n[coach(r)] || 0) + 1; });
@@ -3163,7 +3250,7 @@ function drawAcademy(r, quiet) {
     const left = c.day1_status === 'arrived' && c.day1_left_at;
     // Their photo, taken here on Day 1 by Jess / Rubal (Angad, 27 Oct): it's their availability photo, and it shows as their picture
     const avr = ((S.avail || {})[weekEndingOf(c.academy_date)] || { rows: [] }).rows.filter(x => x.candidate_id === c.id)[0], ph = avr && (S.avPh || {})[avr.id];
-    const pic = ph ? '<img class="av avph" src="' + (thumbNow(avr.id) || ph) + '" data-thumb="' + h(avr.id) + '" alt="">' : avatar(c);
+    const pic = ph ? '<img class="av avph" src="' + (thumbNow(avr.id) || ph) + '" data-thumb="' + h(avr.id) + '" data-view="' + h(avr.id) + '" alt="">' : avatar(c);
     const camBtn = admin && started && c.day1_status === 'arrived' && !left ? '<label class="btn sm ghost d1cam">📷 ' + (ph ? 'Retake' : 'Photo') +
       '<input type="file" accept="image/*" capture="environment" data-cam="' + h(c.id) + '" hidden></label>' : '';
     if (dropped) return '<div class="trow dropped" data-cand="' + h(c.id) + '"' + dq + '>' + avatar(c) + '<div class="main"><div class="name">' + h(c.full_name) + ' <span class="co ' + h(c.company) + '">' + h(c.company) + '</span></div>' +
@@ -3267,16 +3354,18 @@ function drawAcademy(r, quiet) {
     if (c) { c.offer_sent_at = londonNow(); setTimeout(() => { if (S.view === 'academy') drawAcademy(r, true); }, 400); }
   }));
   page.querySelectorAll('[data-remall]').forEach(b => { b.onclick = () => day1Sheet(b.dataset.remall); });
-  // 📷 on an arrived starter: the phone's camera, made small, saved as their availability photo
+  // 📷 on an arrived starter: the phone's camera, saved as their availability photo (a small copy for lists and the full-size one)
   fillThumbs(page);
+  bindPhotoViews(page, id => Object.keys(S.avail || {}).reduce((f, we) => f || (S.avail[we].rows || []).filter(x => x.id === id)[0], null));
   page.querySelectorAll('[data-cam]').forEach(inp => {
     inp.onchange = () => {
       const file = inp.files && inp.files[0], c = pool.filter(x => x.id === inp.dataset.cam)[0]; inp.value = ''; if (!file || !c) return;
-      framePhoto(file, c.full_name).then(data => {
-        if (!data) return;
+      framePhoto(file, c.full_name).then(pic => {
+        if (!pic) return;
         toast('Saving ' + c.first_name + '\'s photo…');
-        return call('day1Photo', { id: c.id, data: data }).then(res => {
-          S.avPh = S.avPh || {}; S.avPh[res.avail_id] = data;
+        return call('day1Photo', { id: c.id, data: pic.data, hd: pic.hd }).then(res => {
+          S.avPh = S.avPh || {}; S.avPh[res.avail_id] = pic.data;
+          hdKeep({ id: res.avail_id }, res, pic.hd);
           return loadAvail(res.weekEnding).then(() => { drawAcademy(S.academy || r, true); toast('📷 ' + c.first_name + '\'s photo saved'); });
         });
       }).catch(e => toast(e.message || 'Couldn\'t read that photo. Try again.'));
@@ -4669,12 +4758,22 @@ function viewBadges(quiet) {
       '<label class="btn ghost block">📥 Add the badge artwork<input type="file" id="bdartf" hidden></label></div>') +
     '<p class="hint" style="margin:0 2px 10px">Type each starter\'s number' + ' as the client sends it, tick who to print, then 📄 Print. Starters from the last ' + d.weeks + ' weeks, newest first. ' +
       '<b>Print at 100% (Actual size)</b> so they fit the holders. HelloFresh: <b>double-sided, flip on the long edge</b> (page 2 is the backs).</p>' +
-    sec('ndcs') + sec('hf') + sec('tmm') +
+    bdLowRes(rows) + sec('ndcs') + sec('hf') + sec('tmm') +
     (d.weeks < 26 ? '<button type="button" class="linkbtn" id="bdolder" style="display:block;margin:14px auto 0">Show starters from the last 6 months (to reprint a lost badge)</button>' : '<p class="hint" style="text-align:center">Showing everyone from the last 6 months.</p>') +
     (artOk ? '<label class="linkbtn" style="display:block;margin:14px auto 0;text-align:center">🎨 Change the badge artwork<input type="file" id="bdartf" hidden></label>' : ''), quiet, true);
   bindBadges(page);
   bdSync(page, hold);
   fillThumbs(page);
+  bindPhotoViews(page, bdRowOf);
+}
+/** Whose badge would still be printed from a low-res photo (taken before 23 Nov, when only a 480 px copy was kept): said once,
+ *  by name, for badges not printed yet, so they can be retaken first. A badge is physical: better to know before it's printed. */
+function bdLowRes(rows) {
+  const low = rows.filter(r => r.has_photo && !r.photo_hd && !r.badge_printed_at);
+  if (!low.length) return '';
+  const names = low.slice(0, 8).map(r => h(r.full_name.split(' ')[0])).join(', ') + (low.length > 8 ? ' and ' + (low.length - 8) + ' more' : '');
+  return '<div class="card tight small" id="bdlow">📷 <b>' + low.length + ' low-res photo' + (low.length === 1 ? '' : 's') + '</b> (taken before photos were kept at full size): ' + names +
+    '. Their badge will print soft. For a sharp one, take the photo again first: <b>Day 1 → 🗓️ Availability → their name → 📷 New photo</b>.</div>';
 }
 /** What's typed and not saved yet, and where the cursor is, before the list is redrawn. */
 function bdHold() {
@@ -4717,7 +4816,7 @@ function bdRow(r) {
     (kind === 'ndcs' ? ' inputmode="numeric"' : '') + ' aria-label="' + (kind === 'hf' ? 'Number ' + (i + 1) : kind === 'tmm' ? 'MMC number' : 'ID number') + '">').join('') +
     (kind === 'ndcs' ? '<label class="bdexpl">Expiry <input type="date" class="bdexp" value="' + h(bdExpiry(r)) + '" aria-label="Expiry date"></label>' : '');
   return '<div class="trow bdrow" data-id="bd-' + h(r.id) + '" data-bd="' + h(r.id) + '"><label class="bdtick"><input type="checkbox" class="bdpick"' + (pick ? ' checked' : '') + (bdReady(r) ? '' : ' disabled') + ' aria-label="Print ' + h(r.full_name) + '"></label>' +
-    (ph ? '<img class="av avph" src="' + (thumbNow(r.id) || ph) + '" data-thumb="' + h(r.id) + '" alt="">' : '<span class="av co-' + (kind === 'ndcs' ? 'LINK' : 'JUSS') + '">' + h(initials(r.full_name)) + '</span>') +
+    (ph ? '<img class="av avph" src="' + (thumbNow(r.id) || ph) + '" data-thumb="' + h(r.id) + '" data-view="' + h(r.id) + '" alt="">' : '<span class="av co-' + (kind === 'ndcs' ? 'LINK' : 'JUSS') + '">' + h(initials(r.full_name)) + '</span>') +
     '<div class="main"><div class="name">' + h(r.full_name) + '</div><div class="sub">Day 1 ' + h(fmt(r.day1_date)) + (r.coach_name ? ' · ' + h(String(r.coach_name).split(' ')[0]) : '') + '</div>' +
     '<div class="pills">' + (dup ? '' : st) + noPh + warn + '</div><div class="bdin">' + ins + '</div></div></div>';
 }
@@ -4847,7 +4946,7 @@ function badgeAssets() {
 /** Their photo for the badge, cut from their availability photo around the face: a square (NDCS, HelloFresh), or the photo's own
  *  head and shoulders shape (the Modern Milkman's portrait card). */
 function bdFace(r, tall) {
-  return bdImg((S.avPh || {})[r.id]).then(img => !img ? null : (window.JLBulletin ? JLBulletin.autoFrame(img, '') : Promise.resolve(null)).then(f => {
+  return hdPhoto(r, true).then(bdImg).then(img => !img ? null : (window.JLBulletin ? JLBulletin.autoFrame(img, '') : Promise.resolve(null)).then(f => {
     const w = img.naturalWidth, hh = img.naturalHeight;
     f = f || { x: 0, y: 0, w: w, h: hh };
     if (tall) return { img: img, x: f.x, y: f.y, s: f.w, t: f.h };
@@ -4979,6 +5078,11 @@ function badgePdf(kind) {
   bdFlush().then(() => loadBadges(true)).then(() => {
     const stale = S.badges.rows.filter(r => bdKind(r) === kind && bdPicked(r) && r.has_photo && (!bdPhoto(r) || (r.photo_at || '') !== ((S.bdPhAt || {})[r.id] || '')));
     return stale.map(r => r.week_ending).filter((w, i, a) => a.indexOf(w) === i).reduce((ch, we) => ch.then(() => bdPhotos(we)), Promise.resolve());
+  }).then(() => {
+    // 4. each one's full-size photo (23 Nov), one at a time: a badge is never printed from the small copy when a full-size one exists
+    const big = S.badges.rows.filter(r => bdKind(r) === kind && bdPicked(r) && r.photo_hd);
+    if (big.length) toast('Getting ' + big.length + ' full-size photo' + (big.length === 1 ? '' : 's') + '…');
+    return big.reduce((ch, r) => ch.then(() => hdPhoto(r, true)), Promise.resolve());
   }).then(() => { done(); if (S.view !== 'badges') return; render(true); badgePdfNow(kind); }, e => { done(); toast(e.message); });
 }
 function badgePdfNow(kind) {

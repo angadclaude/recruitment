@@ -192,8 +192,9 @@ const SHEETS = {
   Availability: ['id', 'created_at', 'week_ending', 'candidate_id', 'day1_date', 'full_name', 'mobile', 'company', 'coach_id', 'coach_name',
     'driver', 'w1', 'w2', 'notes', 'has_photo', 'updated_at', 'updated_by', 'campaign', 'removed_at', 'removed_by', 'grade', 'grade_by', 'grade_at',
     // their ID badge (Angad, 10 Nov): the number(s) the client gives (NDCS one, HelloFresh three, one a line), NDCS's expiry if not the usual
-    'badge_no', 'badge_expiry', 'badge_by', 'badge_at', 'badge_printed_at', 'badge_printed_by', 'badge_camp', 'photo_at'],
-  StarterPhotos: ['id', 'data', 'updated_at'],  // one photo per Availability row (same id), a small JPEG as a data: URL
+    'badge_no', 'badge_expiry', 'badge_by', 'badge_at', 'badge_printed_at', 'badge_printed_by', 'badge_camp', 'photo_at',
+    'photo_hd'],  // TRUE = their photo is also kept full size (PHOTO_HD, 23 Nov). NEW COLUMNS GO HERE, AT THE END, ALWAYS
+  StarterPhotos: ['id', 'data', 'updated_at'],  // one photo per Availability row (same id): the small copy for lists, a JPEG as a data: URL
 };
 
 // ───────────────────────── WEB APP ─────────────────────────
@@ -1967,7 +1968,7 @@ const STAFF_ACTIONS = {
   onboardStep: onboardStep, onboardPreview: onboardPreview, onboardSend: onboardSend, setBrand: setBrand,
   saveBooking: saveBooking, bookingAction: bookingAction, bookingList: bookingList,
   setCampaign: setCampaign, fixName: fixName, fixContact: fixContact, day1Photo: day1Photo,
-  availWeek: availWeek, saveAvail: saveAvail, addStarter: addStarter, removeStarter: removeStarter, restoreStarter: restoreStarter, gradeStarter: gradeStarter, saveStarterPhoto: saveStarterPhoto, availPhotos: availPhotos,
+  availWeek: availWeek, saveAvail: saveAvail, addStarter: addStarter, removeStarter: removeStarter, restoreStarter: restoreStarter, gradeStarter: gradeStarter, saveStarterPhoto: saveStarterPhoto, availPhotos: availPhotos, starterPhoto: starterPhoto,
   setBellSheets: setBellSheets,
   badgeList: badgeList, saveBadge: saveBadge, badgesPrinted: badgesPrinted, badgeArt: badgeArt, saveBadgeArt: saveBadgeArt,
 };
@@ -2010,7 +2011,7 @@ function availRows(we) {
       company: r.company, campaign: c ? campaignOf(c) : r.campaign || (r.company === 'JUSS' ? 'HF' : 'FR'), coach_id: r.coach_id, coach_name: r.coach_name, driver: r.driver, w1: r.w1 || AV_BLANK, w2: r.w2 || AV_BLANK, notes: r.notes,
       office: r.coach_id === 'office' || isOffice(r.coach_name, r.coach_id),  // "OFFICE" on the poster, else "HASINI - PR"
       grade: r.grade === 'A' ? 'A' : '',  // A = one of the best new starts (Angad, 27 Oct): green, a tap
-      has_photo: truthy(r.has_photo), updated_at: r.updated_at, updated_by: r.updated_by, manual: !r.candidate_id,
+      has_photo: truthy(r.has_photo), photo_at: r.photo_at || '', photo_hd: truthy(r.photo_hd), updated_at: r.updated_at, updated_by: r.updated_by, manual: !r.candidate_id,
       said_days: c ? c.q6_days : '', no_longer: !!(c && !still(c)), left: !!(c && c.day1_left_at) };
   });
 }
@@ -2118,6 +2119,7 @@ function badgeRow(r, a) {
   const mine = !a.badge_camp || a.badge_camp === r.campaign;
   return { id: r.id, week_ending: r.week_ending, day1_date: r.day1_date, full_name: r.full_name, campaign: r.campaign, coach_name: r.coach_name, has_photo: r.has_photo,
     photo_at: a.photo_at || '',  // when their photo last changed: a phone prints from a fresh one
+    photo_hd: truthy(a.photo_hd),  // kept full size too: the badge prints from that
     badge_no: mine ? a.badge_no || '' : '', badge_expiry: mine ? a.badge_expiry || '' : '', badge_at: a.badge_at || '', badge_by: a.badge_by || '',
     badge_printed_at: mine ? a.badge_printed_at || '' : '', badge_printed_by: mine ? a.badge_printed_by || '' : '' };
 }
@@ -2184,22 +2186,61 @@ function saveBadgeArt(req, u) {
   return badgeArtInfo();
 }
 
-/** The photo taken in the app: a small JPEG (the phone shrinks it first), or '' to take it off. */
+/** A starter's photo (Angad, 23 Nov 2026: "the pictures taken from the app are absolutely rubbish. This needs to be high res to
+ *  the best of the capabilities… I never had an issue with Canva"). Until then the phone shrank every photo to 480 × 572 at up
+ *  to 120k characters, a limit from the Google Sheet days, and lists showed a 168 px copy of that. Now each photo is kept twice:
+ *  - `data`: the small copy (480 × 572) in the StarterPhotos tab, for lists. A tab is loaded whole on Vercel, so nothing big
+ *    may live in one.
+ *  - `hd`: the full-size original (up to PHOTO_HD_W wide, cut to head and shoulders), by itself under its own key (PHOTO_HD_<id>,
+ *    like the badge artwork): fetched one at a time, only when it's needed (the poster, a badge print, looking at it, saving it),
+ *    never loaded with a tab and never copied to the Sheet. Kept for PHOTO_HD_WEEKS (as long as a badge can be reprinted), then
+ *    only the small copy stays (trimHdPhotos).
+ *  A phone still on the old version sends only `data`: that works as before, and any full-size copy of the old photo goes. */
+const PHOTO_MAX = 140000, PHOTO_HD_MAX = 1500000, PHOTO_HD_WEEKS = 26;
+const PHOTO_RE = /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/;
+function photoHdKey(id) { return 'PHOTO_HD_' + id; }
+/** The photo taken in the app: the small copy and, from a phone on this version, the full-size one; '' takes it off. */
 function saveStarterPhoto(req, u) {
   if (!canAvail(u)) throw new Error('Not allowed');
-  const data = String(req.data || '');
-  // 480 × 572 head and shoulders (framePhoto), ~40–120k characters; the first ones (to 27 Oct) were 360 px squares
-  if (data && (!/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(data) || data.length > 140000)) throw new Error('That photo didn\'t come through. Try again.');
+  const data = String(req.data || ''), hd = data ? String(req.hd || '') : '';
+  // the small copy: 480 × 572 head and shoulders (framePhoto), ~40–120k characters; the first ones (to 27 Oct) were 360 px squares
+  if (data && (!PHOTO_RE.test(data) || data.length > PHOTO_MAX)) throw new Error('That photo didn\'t come through. Try again.');
+  if (hd && (!PHOTO_RE.test(hd) || hd.length > PHOTO_HD_MAX)) throw new Error('That photo didn\'t come through. Try again.');
+  let at = '';
   withLock(() => {
-    const a = availRecord(req.id), pr = rowOfId('StarterPhotos', a.id);
+    const a = availRecord(req.id), pr = rowOfId('StarterPhotos', a.id), p = PropertiesService.getScriptProperties();
     if (!data) { if (pr) deleteWhere('StarterPhotos', x => x.id === a.id); }
     else if (pr) writeRow('StarterPhotos', { _row: pr, id: a.id, data: data, updated_at: nowStr() });
     else appendRow('StarterPhotos', { id: a.id, data: data, updated_at: nowStr() });
-    a.has_photo = data ? 'TRUE' : ''; a.photo_at = nowStr() + ' ' + uid().slice(0, 4);  // changes with every photo, even two in one minute: a phone holding the old one fetches it again before a badge print
+    if (hd) p.setProperty(photoHdKey(a.id), hd); else if (truthy(a.photo_hd)) p.deleteProperty(photoHdKey(a.id));
+    a.photo_hd = hd ? 'TRUE' : '';
+    a.has_photo = data ? 'TRUE' : ''; a.photo_at = at = nowStr() + ' ' + uid().slice(0, 4);  // changes with every photo, even two in one minute: a phone holding the old one fetches it again before a badge print
     a.updated_at = nowStr(); a.updated_by = u.name;
     writeRow('Availability', a);
   });
-  return { ok: true, has_photo: !!data };
+  return { ok: true, has_photo: !!data, photo_at: at, photo_hd: !!hd };
+}
+/** One starter's photo at full size, for the people who make the poster and the badges (availability editors, the badge team).
+ *  `data` is '' when only the small copy exists (a photo from before 23 Nov, or one over PHOTO_HD_WEEKS old): the app shows that. */
+function starterPhoto(req, u) {
+  if (!canAvail(u) && !canBadge(u)) throw new Error('Not allowed');
+  const a = availRecord(req.id);
+  const hd = truthy(a.photo_hd) ? String(PropertiesService.getScriptProperties().getProperty(photoHdKey(a.id)) || '') : '';
+  return { id: a.id, data: hd, hd: !!hd, photo_at: a.photo_at || '' };
+}
+/** Once a day: the full-size copy of a photo goes PHOTO_HD_WEEKS after their Day 1 week (26: as long as a badge can be reprinted).
+ *  The small copy, their name, numbers and notes stay for good, as before (Angad, 27 Oct). */
+function trimHdPhotos() {
+  const today = todayStr();
+  if (!claim('PHOTO_HD_TRIMMED', today)) return 0;
+  const before = addDays(weekEnding(today), -7 * PHOTO_HD_WEEKS);
+  return withLock(() => {
+    const p = PropertiesService.getScriptProperties();
+    const old = readTable('Availability').filter(a => truthy(a.photo_hd) && a.week_ending && a.week_ending < before);
+    old.forEach(a => { p.deleteProperty(photoHdKey(a.id)); a.photo_hd = ''; writeRow('Availability', a); });
+    if (old.length) log({ name: 'App' }, 'photos_trimmed', '', old.length + ' full-size photo' + (old.length === 1 ? '' : 's') + ' over ' + PHOTO_HD_WEEKS + ' weeks old (the small copies stay)');
+    return old.length;
+  });
 }
 /** A week's photos in one go: { id: data URL }. Read by position, so all the other weeks' photos aren't loaded. */
 function availPhotos(req, u) {
@@ -2217,8 +2258,8 @@ function day1Photo(req, u) {
   if (c.day1_status !== 'arrived') throw new Error('Tick them Arrived first.');
   const we = weekEnding(c.academy_date), row = availRows(we).filter(r => r.candidate_id === c.id)[0];
   if (!row) throw new Error(readTable('Availability').some(r => r.candidate_id === c.id && r.removed_at) ? 'They were taken off availability. Put them back there first.' : 'They aren\'t on availability yet. Pull down to refresh.');
-  saveStarterPhoto({ id: row.id, data: req.data }, u);
-  return { avail_id: row.id, weekEnding: we, has_photo: !!req.data };
+  const saved = saveStarterPhoto({ id: row.id, data: req.data, hd: req.hd }, u);
+  return { avail_id: row.id, weekEnding: we, has_photo: !!req.data, photo_at: saved.photo_at, photo_hd: saved.photo_hd };
 }
 /** The afternoon after Day 1 (AVAIL_REMIND_TIME, Angad 27 Oct: the one-to-one where they commit to their days is Tuesday around
  *  2-3pm), every day Monday to Saturday, for the week's starters who've had their Day 1 before today. Done = Week 1 days in.
@@ -2588,6 +2629,7 @@ function keepWarm() {
   try { maybeBookingReminders(); } catch (e) { console.error(e); }
   try { maybeMissedBookings(); } catch (e) { console.error(e); }
   try { maybeHyrreLate(); } catch (e) { console.error(e); }
+  try { trimHdPhotos(); } catch (e) { console.error(e); }  // once a day
 }
 
 /** Every day at THANKS_TIME: Jess / Rubal get "N thank-you messages to send" for today's appointments not thanked yet.
