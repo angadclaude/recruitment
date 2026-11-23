@@ -250,6 +250,7 @@ No more Canva. **Day 1 tab → 🪪 Badges · NDCS, HelloFresh & TMM.** Only Jes
 5. **Print at 100% (Actual size)**, never "fit to page", so they fit the holders. **HelloFresh: double-sided, flip on the long edge** (page 2 is the backs). NDCS and Modern Milkman: one side, cut out and fold in the middle.
 6. Once shared or saved they show **✓ Printed** and aren't ticked next time. Tick them again to reprint.
 - **No photo?** Take it on the Day 1 list (📷 Photo on their row) first.
+- **A badge prints from the full-size photo** (since 23 Nov 2026). A photo taken before then was only kept small: the Badges screen names whose would print soft ("📷 3 low-res photos…"). Take those again first: **Day 1 → 🗓️ Availability → their name → 📷 New photo**.
 - **Red "same number as …"**: two people have the same number. Fix the wrong one; neither is ticked until then. **Amber "check this number"**: it doesn't look like the client's usual (HelloFresh JU…, R…, GD2D… in that order; NDCS 5 digits; Modern Milkman MMC…). Check it against the client's email before printing.
 - **Lost badge?** Tap **Show starters from the last 6 months**, tick them, print.
 - Each page's bottom margin says how to print it (100%, which side, which page).
@@ -343,6 +344,7 @@ No more highlighters on the printed list:
 
 - **The week:**
   - **Monday (Jess / Rubal):** on the Day 1 list, tick **Arrived**, then tap **📷 Photo** on the same row. That's their availability photo; it shows as their picture.
+  - **To look at a photo or save it, tap the picture** (on the Day 1 list, on Badges, or **🔍 Full size** on their availability sheet): it opens at full size with **📤 Share** and **⬇️ Save** (on an iPhone: Save → *Save Image* puts it in Photos). Don't press and hold the little picture on a list: that saves the little picture. Photos are kept at full size since 23 Nov 2026 (up to 1440 × 1716); one taken before then says "Low-res photo" and needs taking again to be sharp.
   - **Tuesday 2–3pm:** the one-to-one. Fill in their days (blank until then).
   - **18:00** (the one-to-one can run long): Satpal, Rubal, Jess and Angad hear once, when everyone's Week 1 days are in: "✅ Availability ready: 15 new starters · Week 1 in: Tue 13 · … · 🚗 4 drive" (tap it for the poster and the PDF). No daily "still to fill in" nag (Angad, 2 Nov). Each coach gets their own new starters, done vs missing, daily while any are missing, then "✅ Your new starters' days" once.
   - **Then:** **📸 Poster** → Share to the team WhatsApp, and **📄 PDF**.

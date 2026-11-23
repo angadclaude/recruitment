@@ -6,7 +6,7 @@
   "Codes": ["email","code_hash","expires","attempts"],
   "Sessions": ["token","user_id","expires"],
   "Log": ["at","user","action","candidate_id","detail"],
-  "Availability": ["id","created_at","week_ending","candidate_id","day1_date","full_name","mobile","company","coach_id","coach_name","driver","w1","w2","notes","has_photo","updated_at","updated_by","campaign","removed_at","removed_by","grade","grade_by","grade_at","badge_no","badge_expiry","badge_by","badge_at","badge_printed_at","badge_printed_by","badge_camp","photo_at"],
+  "Availability": ["id","created_at","week_ending","candidate_id","day1_date","full_name","mobile","company","coach_id","coach_name","driver","w1","w2","notes","has_photo","updated_at","updated_by","campaign","removed_at","removed_by","grade","grade_by","grade_at","badge_no","badge_expiry","badge_by","badge_at","badge_printed_at","badge_printed_by","badge_camp","photo_at","photo_hd"],
   "StarterPhotos": ["id","data","updated_at"],
   "Applicants": ["id","created_at","site_id","applied_at","first_name","last_name","mobile","email","right_to_work","preferred_day","can_start","how_heard","note","status","tries","tried_at","tried_by","booking_id","closed_at","closed_by","closed_why","alert_at","stalled_at","backfill","again_at","updated_at"]
 }

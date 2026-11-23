@@ -2391,9 +2391,10 @@ async function fillEval(p) {
       (await ap.$$eval('.avd i', e => e.map(x => x.textContent)))[0] === String(monIn) && /🚗 1/.test(await ap.innerText('.avdays')) && !!(await ap.$('.avrow img.avph')),
       'Day 1 → 🗓️ Availability: Week 1 w/e 25 Oct, headcount per day (Mon ' + monIn + ', 🚗 1), each starter\'s days, photo, and "' + blanks.length + ' with no Week 1 days yet: ' + bNames.join(', ') + '"');
     // Pictures on the list: bigger, and cropped to the face (Angad, 27 Oct: "so it's clearly visible")
-    await ap.waitForFunction(() => { const i = document.querySelector('.avrow img[data-thumb]'); return i && i.naturalWidth === 168; }, null, { timeout: 15000 });
+    // (336 × 400 since 23 Nov, twice what they were: sharp on a phone's screen)
+    await ap.waitForFunction(() => { const i = document.querySelector('.avrow img[data-thumb]'); return i && i.naturalWidth === 336; }, null, { timeout: 15000 });
     const thumb = await ap.$eval('.avrow img[data-thumb]', i => i.naturalWidth + '×' + i.naturalHeight + ' shown ' + i.clientWidth + '×' + i.clientHeight);
-    ok(thumb === '168×200 shown 64×76', 'each starter\'s picture on availability is bigger and cropped to the face (' + thumb + ')');
+    ok(thumb === '336×400 shown 64×76', 'each starter\'s picture on availability is bigger and cropped to the face (' + thumb + ')');
     await shot(ap, '50-availability');
     // The bell sheets card (admins): how many are on each, and the links pasted once
     const bellTxt = await ap.innerText('.avbell');
@@ -2451,7 +2452,7 @@ async function fillEval(p) {
     await ap.waitForSelector('.sheet #avph img.avph');
     const miraPh = (await api(admin, 'availPhotos', { weekEnding: WE })).photos[mira.id] || '';
     const miraDim = await ap.evaluate(src => new Promise(r => { const i = new Image(); i.onload = () => r(i.naturalWidth + '×' + i.naturalHeight); i.src = src; }), miraPh);
-    ok(miraDim === '480×572' && miraPh.length < 140000, 'saved cropped, 480×572 (' + Math.round(miraPh.length / 1000) + 'k characters), sharp on the poster');
+    ok(miraDim === '480×572' && miraPh.length < 140000, 'saved cropped: the small copy for lists is 480×572 (' + Math.round(miraPh.length / 1000) + 'k characters); the full-size one is kept beside it (dev/photos.js)');
     // A long note, as the team write them (Angad, 27 Oct: "I want to see all the notes" on the PDF)
     const MIRA_NOTE = 'Slough | retail. Lives in Southall, two buses to the office, so 10:00 on Thursdays; wants HelloFresh later on; her sister works at Tesco Slough and may refer two friends';
     await ap.fill('#avnotes', MIRA_NOTE);
@@ -2593,6 +2594,13 @@ async function fillEval(p) {
     const avAdPh = (await api(admin, 'availWeek', { weekEnding: '2026-10-25' })).rows.find(r => r.candidate_id === adham.id);
     ok(avAdPh && avAdPh.has_photo && /Retake/.test(await ap.textContent('.trow[data-cand="' + adham.id + '"] .d1cam')) && !(await ap.$('[data-cam="' + adham.id + '"][capture="user"]')),
       '📷 Photo on Adham\'s Day 1 row (back camera): saved as his availability photo, shows as his picture, the button says Retake');
+    // Tap the picture on the Day 1 list: his photo, as big as there is (Angad, 23 Nov: pressing and holding the little picture
+    // saved a 168 px copy). The test's "camera" picture is only 300 px, so nothing is claimed as full size and it says low-res.
+    await ap.click('.trow[data-cand="' + adham.id + '"] img.avph[data-view]'); await ap.waitForSelector('#pvimg[data-size]');
+    const pvTxt = await ap.innerText('#pvsize');
+    ok(!avAdPh.photo_hd && pvTxt === 'Low-res photo · 480 × 572' && !(await ap.$eval('#pvnote', n => n.hidden)) && await ap.$('#pvsave'),
+      'tap his picture on the Day 1 list → it opens with Share and Save ("' + pvTxt + '": a 300 px picture is never blown up and called full size)');
+    await ap.click('#pvx');
     const avJrow = (await api(admin, 'availWeek', { weekEnding: '2026-10-25' })).rows.find(r => r.candidate_id === jasId);
     if (avJrow) await api(admin, 'saveAvail', { id: avJrow.id, w1: avJrow.w1, w2: avJrow.w2, driver: avJrow.driver || '', notes: 'Filled in before he left' });
     const lb = '[data-d1="left"][data-id="' + jasId + '"]';
