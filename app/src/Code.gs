@@ -2881,6 +2881,9 @@ function markDay1(req, u) {
       log(u, 'day1_' + req.status, c.id, '');
       return shape(c, u);
     }
+    // A move says which day it's moving them from (24 Nov): asked twice because the first answer was lost on a bad signal, they've
+    // already moved, so the second isn't another day on top. Nothing is changed.
+    if (move && /^\d{4}-\d\d-\d\d$/.test(req.from || '') && req.from !== c.academy_date) return shape(c, u);
     if (req.status !== 'arrived') { c.day1_left_at = ''; c.day1_left_by = ''; }
     if (req.status && !move && req.status !== 'dropped' && c.academy_date > todayStr()) throw new Error('Their Day 1 hasn\'t happened yet.');
     if (move) {

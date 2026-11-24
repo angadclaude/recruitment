@@ -970,7 +970,7 @@ function isPresenter() { return isAdmin() || roles().indexOf('presenter') >= 0; 
 function isBooker() { return roles().indexOf('booker') >= 0; }
 
 Object.assign(S, { data: {}, inflight: {}, view: '', params: {}, viewId: 0, booted: false, syncing: 0 });
-const STALE_MS = 20000, POLL_MS = 30000, LIST_STALE_MS = 300000;
+const STALE_MS = 20000, POLL_MS = 30000, LIST_STALE_MS = 300000, D1_POLL_MS = 8000;
 
 // ───── A busy room (20 people checking in): never rebuild a page under someone's finger, or over taps they haven't saved ─────
 const FINGER = { down: false, up: 0 };
@@ -1062,7 +1062,10 @@ function findCand(id) {
 }
 function chaseKeep(c) { if (S.chase) { const i = S.chase.items.findIndex(x => x.id === c.id); if (i >= 0) S.chase.items[i] = Object.assign({ leak: S.chase.items[i].leak }, c); } }
 const SENDING = {}, SENT_DONE = {};  // who sent what, still on its way to Google: see noteSent
+const SAVED_AT = {};  // candidate id → this phone's count of saves when they last came back from one (not a clock time: phones' clocks jump): see loadAcademy
+let SAVES = 0;
 function upsert(c) {
+  SAVED_AT[c.id] = ++SAVES;
   sendingOver(c);
   chaseKeep(c);
   if (S.academy) { const i = S.academy.items.findIndex(x => x.id === c.id); if (i >= 0) S.academy.items[i] = c; }
@@ -1265,7 +1268,9 @@ function swVersion() {
 function tick() {
   if (document.visibilityState !== 'visible' || !S.me) return;
   const hr = Number(londonNow().slice(11, 13));
-  const live = (S.view === 'book' || (S.view === 'today' && S.day === S.me.today)) && hr >= 7 && hr < 17;
+  // A Day 1 today, its list on screen: live like Today (the room is being ticked in on two or three phones at once)
+  const d1Live = S.view === 'academy' && !!S.academy && S.academy.items.some(c => c.academy_date === S.me.today);
+  const live = (S.view === 'book' || (S.view === 'today' && S.day === S.me.today) || d1Live) && hr >= 7 && hr < 17;
   if (Date.now() - S.lastPoll >= (live ? 10000 : POLL_MS)) { S.lastPoll = Date.now(); refreshQuiet(); }
   if (outbox().length) flush();
   if (S.swReg && Date.now() - (S.swCheck || 0) > 15 * 60000) { S.swCheck = Date.now(); S.swReg.update().catch(() => {}); }
@@ -2980,9 +2985,29 @@ function loadChase() {
 }
 function loadAcademy() {
   if (S.academyP) return S.academyP;
-  S.academyP = call('academyList').then(r => { S.academy = r; S.academyAt = Date.now(); saveCache(); return r; });
+  const asked = SAVES;
+  S.academyP = call('academyList').then(r => {
+    // Someone saved on this phone after this request left (a tick, 🚫 Dropped out), or a change still on its way: this answer
+    // may have been read before it, so their row stays as this phone has it (24 Nov: nothing stopped an older answer putting a
+    // just-dropped starter back to "expected" until the next refresh, five minutes later)
+    const pend = pendingIds(), old = S.academy;
+    if (old) r.items = r.items.map(x => SAVED_AT[x.id] > asked || pend.indexOf(x.id) >= 0 ? old.items.filter(y => y.id === x.id)[0] || x : x);
+    S.academy = r; S.academyAt = Date.now(); saveCache(); return r;
+  });
   const done = () => { S.academyP = null; }; S.academyP.then(done, done);
   return S.academyP;
+}
+/** What a Day 1 list shows, as one string: has anything on it changed? */
+function d1Sig(r) { return JSON.stringify([r.today, r.items, r.pending || []]); }
+/** The Day 1 list again, quietly. The page is rebuilt only when something on it changed (another phone's tick), never under a
+ *  finger or behind a sheet: a rebuild every few seconds for nothing would swallow taps. */
+function academyQuiet() {
+  return loadAcademy().then(r => {
+    const quiet = () => !document.querySelector('.sheet-back');
+    if (S.view === 'mine') { if (quiet()) render(true); return; }
+    if (S.view !== 'academy' || d1Sig(r) === S.d1Drawn) return;
+    whenCalm('d1', () => { if (S.view === 'academy' && S.academy && quiet() && d1Sig(S.academy) !== S.d1Drawn) drawAcademy(S.academy, true); });
+  }).catch(() => {});
 }
 /** Chase and Day 1 load quietly in the background when the app opens (and every few minutes while it's open),
  *  so the first tap on them is as instant as every other tab. */
@@ -2991,7 +3016,10 @@ function prefetchLists(maxAge) {
   const old = at => Date.now() - (at || 0) > (maxAge || LIST_STALE_MS);
   const quiet = () => !document.querySelector('.sheet-back');
   if ((isAdmin() || isBooker()) && old(S.chaseAt)) loadChase().then(() => { if (S.view === 'chase' && quiet()) drawChase(true); else if (S.view === 'mine' && quiet()) render(true); paintTabs(); }).catch(() => {});
-  if ((isAdmin() || isBooker()) && old(S.academyAt)) loadAcademy().then(r => { if (S.view === 'academy' && quiet()) drawAcademy(r, true); else if (S.view === 'mine' && quiet()) render(true); }).catch(() => {});
+  // The Day 1 tab on screen: on every poll, so a tick or a 🚫 Dropped out made on another phone shows here in seconds (24 Nov: it
+  // was every five minutes, so Jess, Rubal and Christie each worked from their own copy of Monday's list)
+  const d1Open = S.view === 'academy' && Math.abs(Date.now() - (S.academyAt || 0)) > D1_POLL_MS;
+  if ((isAdmin() || isBooker()) && (old(S.academyAt) || d1Open)) academyQuiet();
 }
 function viewChase(quiet) {
   const id = S.viewId;
@@ -3277,15 +3305,13 @@ function drawAcademy(r, quiet) {
     // Booked for Tuesday instead of Monday: "📅 Tuesday" on a Monday starter ("📅 Monday" on a Tuesday one, to undo),
     // before the day or on it: their Day 1 moves there
     const mv = d1Move(c, today);
-    // "Move to Tue?" (the first of the two taps) stays put if the list refreshes in the background before the second
-    const sureOf = act => S.d1Sure && S.d1Sure.id === c.id && S.d1Sure.act === act && Date.now() < S.d1Sure.until, sure = mv && sureOf('move');
-    const mvBtn = mv ? '<button class="btn sm ' + (sure ? 'ghost sure' : 'ghost') + '" data-d1="' + mv.st + '" data-day="' + mv.day + '" data-id="' + h(c.id) + '">' +
-      (sure ? 'Move to ' + mv.day.slice(0, 3) + '?' : '📅 ' + mv.day) + '</button>' : '';
-    // 🚫 Dropped out (Angad, 26 Oct): any time until they've arrived, two taps like a move
-    const dropBtn = c.day1_status === 'arrived' ? '' : '<button class="btn sm ghost' + (sureOf('drop') ? ' sure' : '') + '" data-d1="dropped" data-id="' + h(c.id) + '">' + (sureOf('drop') ? 'Dropped out?' : '🚫 Dropped out') + '</button>';
-    // Came on Day 1 but not back after it (the struck-through arrivals on the team's Tuesday list): two taps, Undo
+    // A move, 🚫 Dropped out and 🚪 Didn't continue ask first, on a sheet that stays until it's answered (d1Ask, 24 Nov)
+    const mvBtn = mv ? '<button class="btn sm ghost" data-d1="' + mv.st + '" data-day="' + mv.day + '" data-id="' + h(c.id) + '">📅 ' + mv.day + '</button>' : '';
+    // 🚫 Dropped out (Angad, 26 Oct): any time until they've arrived
+    const dropBtn = c.day1_status === 'arrived' ? '' : '<button class="btn sm ghost" data-d1="dropped" data-id="' + h(c.id) + '">🚫 Dropped out</button>';
+    // Came on Day 1 but not back after it (the struck-through arrivals on the team's Tuesday list): Undo puts them back
     const leftBtn = c.day1_status !== 'arrived' ? '' : left ? '<button class="btn sm ghost" data-d1="stayed" data-id="' + h(c.id) + '">↩️ Undo</button>'
-      : '<button class="btn sm ghost' + (sureOf('left') ? ' sure' : '') + '" data-d1="left" data-id="' + h(c.id) + '">' + (sureOf('left') ? 'Didn\'t continue?' : '🚪 Didn\'t continue') + '</button>';
+      : '<button class="btn sm ghost" data-d1="left" data-id="' + h(c.id) + '">🚪 Didn\'t continue</button>';
     // On the day and after it the ticks are the admins' (Jess, Rubal); a booker sees how it went (the pills)
     const act = started
       ? (!admin ? '' : '<div class="d1btns"><button class="btn sm ' + (c.day1_status === 'arrived' ? 'green' : 'ghost') + '" data-d1="arrived" data-id="' + h(c.id) + '">Arrived</button>' +
@@ -3332,6 +3358,7 @@ function drawAcademy(r, quiet) {
     '<div class="chips d1chips"><span class="d1lbl">Sort</span>' + fchip('data-d1sort', '', S.d1Sort !== 'az', 'By booker') + fchip('data-d1sort', 'az', S.d1Sort === 'az', 'Name A–Z') + '</div>' +
     '<div class="chips d1chips"><span class="d1lbl">Campaign</span>' + fchip('data-d1camp', '', !S.d1Camp, 'All <b>' + live.length + '</b>') + fchip('data-d1camp', 'FR', S.d1Camp === 'FR', 'FR <b>' + nCamp('FR') + '</b>') + fchip('data-d1camp', 'HF', S.d1Camp === 'HF', 'HF <b>' + nCamp('HF') + '</b>') +
       (nCamp('TMM') || S.d1Camp === 'TMM' ? fchip('data-d1camp', 'TMM', S.d1Camp === 'TMM', 'TMM <b>' + nCamp('TMM') + '</b>') : '') + '</div>' : '';  // the Modern Milkman, when anyone's placed there
+  S.d1Drawn = d1Sig(r);
   const page = paint(d1Title(),
     (pend.length ? '<div class="card needs"><b>⚖️ Waiting on your decision · ' + pend.length + '</b><p class="small muted" style="margin:4px 0 2px">Booked onto the Academy, but marked RED or not suitable before. Tap a name to approve or decline.</p>' +
       pend.map(c => '<button class="nm" data-cand="' + h(c.id) + '">' + h(c.first_name) + ' · ' + h(fmt(c.academy_date)) + '</button>').join('') + '</div>' : '') +
@@ -3344,7 +3371,7 @@ function drawAcademy(r, quiet) {
     (!wk ? skeleton(3) : dates.length ? dates.map(block).join('')
       : empty('🎓', we === thisWe ? 'Nobody booked to start this week.' : we > thisWe ? 'Nobody booked to start that week yet.' : 'Nobody started that week.')) +
     '<p class="hint">' + (admin ? '📲 Send reminders: the Day 1 reminder to every starter, signed by you (Jess / Rubal: you get a nudge at 10:00 on the day). ✅ Confirmed = they tapped CONFIRM on their welcome page. Said yes on WhatsApp instead? Tap "Mark as confirmed". 📄 New Starts List: the week\'s sign-in sheet for the room. ' : '💬 Remind sends them the Day 1 reminder (time, address, Maps pin). ✅ Confirmed = they tapped CONFIRM on their welcome page. Said yes on WhatsApp instead? Tap "Mark as confirmed". ') +
-    'Pulled out? Tap 🚫 Dropped out (twice), any time: they leave the reminders and the expected count (↩️ Undo puts them back). On Day 1, tap Arrived or No-show for everyone: that\'s your show-up rate. Booked for Tuesday instead of Monday? Tap 📅 Tuesday (twice), before the day or on it: they move to Tuesday\'s list (📅 Monday moves them back). The PDF shows the same ticks. ‹ › go week by week.</p>', quiet, d1Sub());
+    'Pulled out? Tap 🚫 Dropped out, then Yes, any time: they leave the reminders and the expected count and go to the bottom of the list (↩️ Undo puts them back). On Day 1, tap Arrived or No-show for everyone: that\'s your show-up rate. Booked for Tuesday instead of Monday? Tap 📅 Tuesday, then Yes, before the day or on it: they move to Tuesday\'s list (📅 Monday moves them back). The PDF shows the same ticks. ‹ › go week by week.</p>', quiet, d1Sub());
   const go = w => { S.d1Pick = { on: today, auto: false, we: w }; drawAcademy(r, true); window.scrollTo(0, 0); };
   page.querySelector('#d1prev').onclick = () => go(addDays(we, -7));
   const gav = page.querySelector('#goAvail'); if (gav) gav.onclick = () => nav('avail', { we: we }, true);
@@ -3408,24 +3435,52 @@ function drawAcademy(r, quiet) {
     b.onclick = () => {
       const c = pool.filter(x => x.id === b.dataset.id)[0]; if (!c) return;
       const move = b.dataset.d1 === 'next_day' || b.dataset.d1 === 'prev_day', drop = b.dataset.d1 === 'dropped' && c.day1_status !== 'dropped', leave = b.dataset.d1 === 'left';
-      // Moving their Day 1 (or marking them dropped out) is a bigger change than a tick: the first tap asks, the second (within
-      // 4 s) does it. Kept in S.d1Sure, not just on the button, so a background refresh of the list between the two taps doesn't undo the first.
-      const kind = move ? 'move' : drop ? 'drop' : leave ? 'left' : '', asked = S.d1Sure && S.d1Sure.id === c.id && S.d1Sure.act === kind && Date.now() < S.d1Sure.until;
-      if (kind && !asked) {
-        const mine = S.d1Sure = { id: c.id, act: kind, until: Date.now() + 4000 };
-        b.classList.add('sure'); b.textContent = move ? 'Move to ' + b.dataset.day.slice(0, 3) + '?' : leave ? 'Didn\'t continue?' : 'Dropped out?';
-        setTimeout(() => { if (S.d1Sure === mine) { S.d1Sure = null; if (S.view === 'academy' && S.academy) drawAcademy(S.academy, true); } }, 4000);
-        return;
-      }
-      if (kind) S.d1Sure = null;
       const st = move || leave || b.dataset.d1 === 'stayed' ? b.dataset.d1 : c.day1_status === b.dataset.d1 ? '' : b.dataset.d1;  // tap again to clear
-      busy(b, true, '…');
-      call('markDay1', { id: c.id, status: st }).then(nc => {
-        Object.assign(c, nc); upsert(nc); drawAcademy(r, true);
+      // `from` on a move: asked twice (the first answer lost on a bad signal), they still only move one day
+      const save = () => call('markDay1', Object.assign({ id: c.id, status: st }, move ? { from: c.academy_date } : {})).then(nc => {
+        Object.assign(c, nc); upsert(nc); closeSheet(true); drawAcademy(S.academy || r, true);
         toast(move ? '📅 ' + c.first_name + ' starts ' + fmtLong(nc.academy_date) + ' instead' : st === 'left' ? '🚪 ' + c.first_name + ': didn\'t continue' : st === 'stayed' ? '↩️ ' + c.first_name + ' is back on' : st === 'arrived' ? '🎓 ' + c.first_name + ' arrived' : st === 'no_show' ? c.first_name + ': no-show' : st === 'dropped' ? '🚫 ' + c.first_name + ': dropped out' : 'Cleared');
-      }).catch(e => { busy(b, false); toast(e.message); });
+      });
+      // Moving their Day 1, dropped out and "didn't continue" are bigger than a tick: they ask first (d1Ask). A tick and every Undo save on the tap.
+      if (move || drop || leave) return d1Ask(c, move ? 'move' : drop ? 'drop' : 'left', save, move ? addDays(c.academy_date, st === 'next_day' ? 1 : -1) : '');
+      busy(b, true, '…');
+      save().catch(e => { busy(b, false); toast(e.message); });
     };
   });
+}
+/** "Are you sure?" for the three Day 1 changes that are bigger than a tick: 🚫 Dropped out, a move to the other day, 🚪 Didn't
+ *  continue. A sheet that stays until it's answered (Angad, 24 Nov 2026: "we're clicking dropped out and it's not saving… it's
+ *  just going back to its original form"). Until then the first tap turned the button into "Dropped out?" and only a second tap
+ *  inside four seconds saved it: it read as done, so it was tapped once, and it went back by itself with nothing saved (Mon 23
+ *  Nov: one drop reached the server all morning; four in a month). A save that fails says so here, and stays to be tried again. */
+function d1Ask(c, kind, save, to) {
+  closeSheet(true);
+  const n = h(c.first_name), was = S.academy, day = to ? DAYS_LONG[D(to).getUTCDay()] : '';
+  const T = kind === 'move' ? { h: '📅 Move to ' + day + '?', yes: '📅 Yes, move ' + n + ' to ' + day, cls: '',
+      p: n + '\'s Day 1 moves from ' + h(fmtLong(c.academy_date)) + ' to <b>' + h(fmtLong(to)) + '</b>. They go onto that day\'s list to tick there (📅 ' + h(DAYS_LONG[D(c.academy_date).getUTCDay()]) + ' on their row moves them back).' }
+    : kind === 'left' ? { h: '🚪 Didn\'t continue?', yes: '🚪 Yes, ' + n + ' didn\'t continue', cls: ' red',
+      p: n + ' came on Day 1 but hasn\'t come back. They still count as a Day 1 start, and they come off availability (↩️ Undo on their row puts them back).' }
+    : { h: '🚫 Dropped out?', yes: '🚫 Yes, ' + n + ' dropped out', cls: ' red',
+      p: n + ' comes off the reminders, the expected count and onboarding, and goes to the bottom of the list as dropped out (↩️ Undo on their row puts them back).' };
+  const back = document.createElement('div');
+  back.className = 'sheet-back';
+  back.innerHTML = '<div class="sheet d1ask" role="dialog" aria-label="' + h(T.h) + '" data-kind="' + kind + '" data-id="' + h(c.id) + '"><div class="grab"></div>' +
+    '<div class="sheet-h">' + avatar(c) + '<div style="min-width:0"><div class="label muted">' + h(c.full_name) + ' · Day 1 ' + h(fmtLong(c.academy_date)) + '</div><div class="display">' + T.h + '</div></div></div>' +
+    '<p class="hint" style="margin:0 2px 4px">' + T.p + '</p><div id="d1err"></div>' +
+    '<button class="btn block' + T.cls + '" id="d1yes" style="margin-top:12px">' + T.yes + '</button>' +
+    '<button class="btn ghost block" id="d1no" style="margin-top:8px">No, go back</button>' +
+    '<p class="small muted center">Nothing is saved until you tap Yes.</p></div>';
+  document.body.appendChild(back);
+  document.body.style.overflow = 'hidden';
+  // Left without a Yes: the list as it is now (a refresh that came in behind the sheet wasn't drawn)
+  const leave = () => { closeSheet(); if (S.view === 'academy' && S.academy && S.academy !== was) drawAcademy(S.academy, true); };
+  back.onclick = e => { if (e.target === back) leave(); };
+  back.querySelector('#d1no').onclick = leave;
+  const yes = back.querySelector('#d1yes');
+  yes.onclick = () => {
+    busy(yes, true, 'Saving…'); showErr(back.querySelector('#d1err'), '');
+    save().catch(e => { busy(yes, false); showErr(back.querySelector('#d1err'), 'Not saved yet: ' + e.message + (/[.!?]$/.test(e.message) ? '' : '.') + ' Tap Yes again.'); });
+  };
 }
 /** They replied "Yes" to the reminder on WhatsApp (instead of tapping CONFIRM): count them as confirmed in the app too. */
 function saidYes(c, btn) {

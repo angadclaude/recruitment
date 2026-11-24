@@ -1711,13 +1711,16 @@ async function fillEval(p) {
   const tueB = '[data-d1="next_day"][data-id="' + adham.id + '"]';
   await ap.waitForSelector(tueB);
   ok(/📅 Tuesday/.test(await ap.textContent(tueB)), 'a third button on the day: Arrived · No-show · "📅 Tuesday"');
-  await ap.click(tueB);
-  ok(/Move to Tue\?/.test(await ap.textContent(tueB)) && (await api(admin, 'getCandidate', { id: adham.id })).academy_date === '2026-10-19', 'the first tap asks "Move to Tue?" (nothing moved yet)');
-  await ap.click(tueB);
+  // The tap asks on a sheet that stays until it's answered (24 Nov: it was a second tap on the same button inside four seconds,
+  // and a tap that came later was lost without a word)
+  await ap.click(tueB); await ap.waitForSelector('.d1ask[data-kind="move"] #d1yes');
+  ok(/Move to Tuesday\?/.test(await ap.innerText('.d1ask')) && /Yes, move Adham to Tuesday/.test(await ap.textContent('#d1yes')) && /📅 Tuesday/.test(await ap.textContent(tueB)) &&
+    (await api(admin, 'getCandidate', { id: adham.id })).academy_date === '2026-10-19', 'the tap asks on a sheet: "📅 Move to Tuesday?" · "📅 Yes, move Adham to Tuesday" (nothing moved yet)');
+  await ap.click('#d1yes');
   await ap.waitForFunction(() => /Tuesday 20 October · TOMORROW/i.test(document.getElementById('page').innerText));
   const tue = await api(admin, 'getCandidate', { id: adham.id });
   ok(tue.academy_date === '2026-10-20' && !tue.day1_status && !(await api(admin, 'academyList', {})).items.some(c => c.id === adham.id && c.academy_date === '2026-10-19'),
-    'the second tap moves Adham\'s Day 1 to Tue 20 Oct: on Tuesday\'s list to tick there, off Monday\'s (and its PDF)');
+    'Yes moves Adham\'s Day 1 to Tue 20 Oct: on Tuesday\'s list to tick there, off Monday\'s (and its PDF)');
   await shot(ap, '28b-day1-moved-to-tuesday', true);
   // One New Starts List for the week (one 📄 for the week, under ‹ ›), each person with their start day
   const wkPdf = async x => {
@@ -1735,10 +1738,10 @@ async function fillEval(p) {
   const monB = '[data-d1="prev_day"][data-id="' + adham.id + '"]';
   await ap.waitForSelector(monB);
   ok(/📅 Monday/.test(await ap.textContent(monB)) && !(await ap.$('[data-d1="next_day"][data-id="' + adham.id + '"]')), 'on Tuesday\'s list he has "📅 Monday" instead, to undo it');
-  await ap.click(monB); await ap.click(monB);  // "Move to Mon?" → yes
+  await ap.click(monB); await ap.click('.d1ask[data-kind="move"] #d1yes');  // "Move to Monday?" → Yes
   await ap.waitForFunction(() => !/Tuesday 20 October/i.test(document.getElementById('page').innerText));
   const backMon = await api(admin, 'getCandidate', { id: adham.id });
-  ok(backMon.academy_date === '2026-10-19' && !backMon.day1_status, '📅 Monday (twice) puts him back on Monday\'s list');
+  ok(backMon.academy_date === '2026-10-19' && !backMon.day1_status, '📅 Monday, then Yes, puts him back on Monday\'s list');
 
   // ── Day 1: campaign (FR / HF), search, sort by name, one campaign (Angad, 26 Oct) ──
   const campOf = id => ap.$eval('.trow[data-cand="' + id + '"] [data-campsw] button.on', b => b.textContent);
@@ -2604,12 +2607,12 @@ async function fillEval(p) {
     const avJrow = (await api(admin, 'availWeek', { weekEnding: '2026-10-25' })).rows.find(r => r.candidate_id === jasId);
     if (avJrow) await api(admin, 'saveAvail', { id: avJrow.id, w1: avJrow.w1, w2: avJrow.w2, driver: avJrow.driver || '', notes: 'Filled in before he left' });
     const lb = '[data-d1="left"][data-id="' + jasId + '"]';
-    await ap.click(lb); await ap.waitForSelector(lb + '.sure'); await ap.click(lb);
+    await ap.click(lb); await ap.click('.d1ask[data-kind="left"] #d1yes');
     await ap.waitForSelector('.trow.left[data-cand="' + jasId + '"]');
     const card2 = await ap.innerText('.d1res[data-res="' + D1 + '"]'), jasNow = await api(admin, 'getCandidate', { id: jasId });
     const avJ = (await api(admin, 'availWeek', { weekEnding: '2026-10-25' })).rows.find(r => r.candidate_id === jasId);
     ok(jasNow.day1_status === 'arrived' && !!jasNow.day1_left_at && /1 didn't continue/.test(card2) && /2 of 2 started/.test(card2) && (!avJ || avJ.left),
-      '🚪 Didn\'t continue (twice) on Jasraj: still a Day 1 start (2 of 2), "1 didn\'t continue", off availability (or flagged there if already filled in)');
+      '🚪 Didn\'t continue, then Yes, on Jasraj: still a Day 1 start (2 of 2), "1 didn\'t continue", off availability (or flagged there if already filled in)');
     // Flagged for the editors (his notes are kept), but off the bookers' New starts, the poster, the PDFs and the day counts (28 Oct)
     if (avJ) {
       await bp.goto(APP + 'index.html'); await bp.waitForSelector('.tabbar button[data-tab=avail]');
@@ -2925,19 +2928,21 @@ async function fillEval(p) {
   await ap.unroute('**/api');
   ok(await pollFor(async () => (await api(admin, 'getCandidate', { id: tia.id })).academy_date === '2026-11-09'), 'and the new date reaches Google');
 
-  // ── 🚫 Dropped out (Angad, 26 Oct): any time before they've arrived, two taps; off the reminders, onboarding and the
-  //    expected count, at the bottom of the list and the New Starts List; ↩️ Undo puts them back ──
+  // ── 🚫 Dropped out (Angad, 26 Oct): any time before they've arrived; it asks on a sheet that stays until it's answered
+  //    (24 Nov: day1.js has the slow tap, the failed save and two phones); off the reminders, onboarding and the expected
+  //    count, at the bottom of the list and the New Starts List; ↩️ Undo puts them back ──
   await ap.goto(APP + 'index.html?c=academy'); await ap.waitForSelector('#d1next');
   const dropB = '[data-d1="dropped"][data-id="' + tia.id + '"]';
   for (let i = 0; i < 6 && !(await ap.$(dropB)); i++) { await ap.click('#d1next'); await ap.waitForTimeout(500); }
   ok(/🚫 Dropped out/.test(await ap.textContent(dropB)) && await ap.$('.quick[data-for="' + tia.id + '"]'), 'Tia (Day 1 Mon 9 Nov, details not sent yet): 🚫 Dropped out on her row, before the day too');
-  await ap.click(dropB);
-  ok(/Dropped out\?/.test(await ap.textContent(dropB)) && !(await api(admin, 'getCandidate', { id: tia.id })).day1_status, 'the first tap asks ("Dropped out?"); nothing saved yet');
-  await ap.click(dropB); await ap.waitForSelector('.trow.dropped[data-cand="' + tia.id + '"]');
+  await ap.click(dropB); await ap.waitForSelector('.d1ask[data-kind="drop"] #d1yes');
+  ok(/Dropped out\?/.test(await ap.innerText('.d1ask')) && /Yes, Tia dropped out/.test(await ap.textContent('#d1yes')) && (await ap.textContent(dropB)).trim() === '🚫 Dropped out' && !(await api(admin, 'getCandidate', { id: tia.id })).day1_status,
+    'the tap asks on a sheet that names her ("🚫 Dropped out?" · "🚫 Yes, Tia dropped out"): nothing saved yet, and the button behind it keeps its words');
+  await ap.click('#d1yes'); await ap.waitForSelector('.trow.dropped[data-cand="' + tia.id + '"]');
   const tD = await api(admin, 'getCandidate', { id: tia.id }), tRow = await ap.innerText('.trow.dropped[data-cand="' + tia.id + '"]');
   ok(tD.day1_status === 'dropped' && tD.day1_by === 'Angad Oshan' && /🚫 Dropped out/.test(tRow) && /↩️ Undo/.test(tRow) && !(await ap.$('.quick[data-for="' + tia.id + '"]')) && !(await ap.$('[data-rem1="' + tia.id + '"]')) &&
     /0 expected · 0 confirmed · 1 dropped out/.test(await ap.innerText('#page')) && !(await ap.$$eval('.onbq .nm', b => b.map(x => x.dataset.cand))).includes(tia.id),
-    'the second tap saves it (by Angad): "🚫 Dropped out" with ↩️ Undo, no Day 1 details or Remind to send, off 🚀 To onboard, the day says "0 expected · 0 confirmed · 1 dropped out"');
+    'Yes saves it (by Angad): "🚫 Dropped out" with ↩️ Undo, no Day 1 details or Remind to send, off 🚀 To onboard, the day says "0 expected · 0 confirmed · 1 dropped out"');
   await ap.locator('.trow.dropped[data-cand="' + tia.id + '"]').screenshot({ path: SHOTS + '/31-dropped-row.png' });
   const tPdl = await pdfDl(ap, '[data-pdf="2026-11-09"]'), tPath = `${SHOTS}/31-dropped.pdf`; await tPdl.saveAs(tPath);
   const tRaw = fs.readFileSync(tPath, 'latin1');
