@@ -142,6 +142,24 @@ const ok = (cond, msg) => { assert.ok(cond, msg); passed++; console.log('  ✓ '
   await p.click('.trow.dropped[data-cand="d1f"] [data-d1="dropped"]'); await p.waitForSelector('.trow:not(.dropped)[data-cand="d1f"]');
   ok(!(await cand('d1f')).day1_status && !(await p.$('.sheet-back')), '↩️ Undo is still one tap, no sheet: Fay is expected again');
 
+  console.log('with the cursor still in the search box (27 Nov)');
+  // Thu 26 Nov, live: Jess marked two starters dropped out and, a minute later, no-show, with no Undo between: their rows never
+  // showed as dropped out, so No-show was still there to tap. The list wasn't redrawn after a save while the cursor was in
+  // "Search name or mobile". Here the taps are made as Safari makes them, without moving the cursor out of the box.
+  await p.fill('#d1q', 'Dee');
+  const seenRows = () => p.$$eval('.alist .trow[data-cand]', r => r.filter(x => !x.hidden).map(x => x.dataset.cand).join());
+  await p.waitForFunction(() => Array.from(document.querySelectorAll('.alist .trow[data-cand]')).filter(r => !r.hidden).map(r => r.dataset.cand).join() === 'd1d');
+  const tap = sel => p.evaluate(s => document.querySelector(s).click(), sel);  // a tap that doesn't take the cursor out of the box
+  ok(await p.evaluate(() => document.activeElement.id) === 'd1q', 'Dee found by typing her name in the search box; the cursor is still in it');
+  await tap(dropB('d1d')); await p.waitForSelector('.d1ask[data-kind="drop"] #d1yes');
+  await tap('#d1yes'); await gone(p);
+  ok((await cand('d1d')).day1_status === 'dropped', 'Dropped out → Yes: saved on the server');
+  const shown = await p.waitForSelector('.trow.dropped[data-cand="d1d"]', { timeout: 4000 }).then(() => true, () => false);
+  ok(shown && !(await p.$('.trow[data-cand="d1d"] [data-d1="no_show"]')) && await p.$('.trow.dropped[data-cand="d1d"] [data-d1="dropped"]') &&
+    (await p.inputValue('#d1q')) === 'Dee' && (await seenRows()) === 'd1d',
+    'and her row shows it straight away: greyed "🚫 Dropped out" with ↩️ Undo, no No-show left to tap, the search still "Dee" and still only her');
+  await p.fill('#d1q', ''); await p.evaluate(() => document.activeElement.blur());
+
   console.log('a move to Tuesday and 🚪 Didn\'t continue ask the same way');
   const tueB = '[data-d1="next_day"][data-id="d1c"]';
   await p.click(tueB); await p.waitForSelector('.d1ask[data-kind="move"] #d1yes');

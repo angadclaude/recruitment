@@ -1,4 +1,4 @@
-window.APP_VERSION = '51ff626c';
+window.APP_VERSION = 'ff9122d9';
 
 (function () {
 'use strict';
@@ -3232,6 +3232,11 @@ function d1Search(root) {
   root.querySelectorAll('.trow[data-q]').forEach(r => { r.hidden = !!q && r.dataset.q.indexOf(q) < 0 && !(digits.length >= 3 && r.dataset.q.replace(/\D/g, '').indexOf(digits) >= 0); });
   root.querySelectorAll('.d1grp').forEach(g => { g.hidden = !!q; });  // the booker headings go while searching
 }
+/** A tap on a starter's row means the search is done: the cursor leaves the search box first (27 Nov 2026). The list is never
+ *  rebuilt while someone is typing there (drawAcademy waits for them to leave it), so with the cursor still in the box a save
+ *  wasn't shown: on Thu 26 Nov Jess marked two starters dropped out, their rows stayed as they were, and she tapped No-show on
+ *  both a minute later. iPhones don't move the cursor out of a box when a button is tapped. */
+function d1Unfocus() { const a = document.activeElement; if (a && a.id === 'd1q') a.blur(); }
 /** Some starters are booked for Tuesday instead of the usual Monday (Angad, 19 Oct): a Monday starter can move to
  *  Tuesday, a Tuesday one back to Monday (the undo), before the day or on it, while that day is still to come. */
 function d1Move(c, today) {
@@ -3384,6 +3389,7 @@ function drawAcademy(r, quiet) {
   // Sent the Day 1 details from here → the reminder button takes its place straight away
   page.querySelectorAll('[data-send]').forEach(a => a.addEventListener('click', () => {
     const c = pool.filter(x => x.id === a.closest('.quick').dataset.for)[0];
+    d1Unfocus();
     if (c) { c.offer_sent_at = londonNow(); setTimeout(() => { if (S.view === 'academy') drawAcademy(r, true); }, 400); }
   }));
   page.querySelectorAll('[data-remall]').forEach(b => { b.onclick = () => day1Sheet(b.dataset.remall); });
@@ -3392,6 +3398,7 @@ function drawAcademy(r, quiet) {
   bindPhotoViews(page, id => Object.keys(S.avail || {}).reduce((f, we) => f || (S.avail[we].rows || []).filter(x => x.id === id)[0], null));
   page.querySelectorAll('[data-cam]').forEach(inp => {
     inp.onchange = () => {
+      d1Unfocus();
       const file = inp.files && inp.files[0], c = pool.filter(x => x.id === inp.dataset.cam)[0]; inp.value = ''; if (!file || !c) return;
       framePhoto(file, c.full_name).then(pic => {
         if (!pic) return;
@@ -3407,7 +3414,7 @@ function drawAcademy(r, quiet) {
   // FR / HF: one tap, saved straight away (the list, the PDF, availability and the results follow it)
   page.querySelectorAll('[data-campsw] button').forEach(b => {
     b.onclick = e => {
-      e.stopPropagation();
+      e.stopPropagation(); d1Unfocus();
       // A tap on the one already lit saves it too (their default, now set: it also sets the company they join)
       const c = pool.filter(x => x.id === b.parentNode.dataset.campsw)[0]; if (!c || c.campaign === b.dataset.camp) return;
       const was = c.campaign; c.campaign = b.dataset.camp; drawAcademy(r, true);
@@ -3429,12 +3436,14 @@ function drawAcademy(r, quiet) {
     b.onclick = e => {
       e.stopPropagation();
       const c = pool.filter(x => x.id === b.dataset.yes)[0]; if (!c) return;
+      d1Unfocus();
       saidYes(c, b).then(() => drawAcademy(r, true));
     };
   });
   page.querySelectorAll('[data-d1]').forEach(b => {
     b.onclick = () => {
       const c = pool.filter(x => x.id === b.dataset.id)[0]; if (!c) return;
+      d1Unfocus();
       const move = b.dataset.d1 === 'next_day' || b.dataset.d1 === 'prev_day', drop = b.dataset.d1 === 'dropped' && c.day1_status !== 'dropped', leave = b.dataset.d1 === 'left';
       const st = move || leave || b.dataset.d1 === 'stayed' ? b.dataset.d1 : c.day1_status === b.dataset.d1 ? '' : b.dataset.d1;  // tap again to clear
       // `from` on a move: asked twice (the first answer lost on a bad signal), they still only move one day
